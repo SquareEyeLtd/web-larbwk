@@ -1,0 +1,95 @@
+/*
+Theme Name: London Arbitration Week
+Theme URI: https://londonarbitrationweek.co.uk
+Description: Custom theme for London Arbitration Week (LAW). Migrated from ExpressionEngine by Square Eye.
+Author: Square Eye
+Author URI: https://squareeye.com
+Version: 1.0.0
+Text Domain: law
+*/
+
+/* Content width */
+.text-page .section-title {
+    max-width: 45rem;
+}
+
+/* Button links — Foundation and WP block buttons */
+.page-section .section-title a.wp-block-button__link,
+.page-section .section-title a.wp-element-button,
+.page-section .section-title a.button,
+.text-page .section-title a.wp-block-button__link,
+.text-page .section-title a.wp-element-button,
+.text-page .section-title a.button {
+    text-decoration: none;
+    color: #fff;
+    font-weight: normal;
+}
+
+.page-section .section-title a.wp-block-button__link:hover,
+.page-section .section-title a.wp-element-button:hover,
+.page-section .section-title a.button:hover,
+.text-page .section-title a.wp-block-button__link:hover,
+.text-page .section-title a.wp-element-button:hover,
+.text-page .section-title a.button:hover {
+    text-decoration: none;
+    color: #fff;
+}
+
+/* Contact page — block editor to match original Foundation layout */
+.contact-page h2 {
+    color: #ef7d05;
+    line-height: 1.1;
+    font-family: poppins, sans-serif;
+    margin-top: 2rem;
+}
+
+.contact-page .wp-block-column h2,
+.contact-page .wp-block-column h3,
+.contact-page .wp-block-column h4 {
+    color: #292459;
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: .5rem;
+    margin-top: 0;
+}
+
+.contact-page h3,
+.contact-page h4 {
+    color: #292459;
+    margin-bottom: .5rem;
+}
+
+.contact-page .wp-block-columns {
+    margin-top: 30px;
+    margin-bottom: 0;
+}
+
+.contact-page .wp-block-column {
+    margin-bottom: 1.5rem;
+}
+
+.contact-page p,
+.contact-page .wp-block-column p {
+    color: #000;
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.contact-page a:not(.button):not(.wp-block-button__link),
+.contact-page .wp-block-column p a {
+    color: #ef7d05;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+
+/* WP-specific overrides */
+.admin-bar .nav {
+    top: 32px;
+}
+
+@media screen and (max-width: 782px) {
+    .admin-bar .nav {
+        top: 46px;
+    }
+}

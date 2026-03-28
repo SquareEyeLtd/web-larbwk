@@ -1,0 +1,138 @@
+/**
+ * Accordion styles — WP Accordion block, WP Details block, and Foundation accordion.
+ * Reusable across any page.
+ */
+
+/* WP core Accordion block */
+.page-section .wp-block-accordion-item {
+    border: none;
+    border-bottom: 1px solid #ef7d05;
+}
+
+.page-section .wp-block-accordion-heading__toggle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    background: none;
+    border: none;
+    padding: 20px 0;
+    cursor: pointer;
+    text-align: left;
+}
+
+.page-section .wp-block-accordion-heading__toggle-title {
+    color: #292459;
+    font-family: poppins, sans-serif;
+    font-size: 1.4rem;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.page-section .wp-block-accordion-heading__toggle:hover .wp-block-accordion-heading__toggle-title {
+    color: #ef7d05;
+}
+
+.page-section .wp-block-accordion-heading__toggle-icon {
+    color: #ef7d05;
+    font-size: 1.5rem;
+    flex-shrink: 0;
+    margin-left: 1rem;
+}
+
+.page-section .wp-block-accordion-heading {
+    margin: 0;
+}
+
+.page-section .wp-block-accordion-panel {
+    padding: 0 0 20px;
+}
+
+.page-section .wp-block-accordion-panel p {
+    color: #000;
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.page-section .wp-block-accordion-panel a {
+    color: #ef7d05;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+/* WP Details block */
+.page-section details.wp-block-details {
+    border: none;
+    border-bottom: 1px solid #ef7d05;
+    padding: 20px 0;
+}
+
+.page-section details.wp-block-details summary {
+    color: #292459;
+    font-family: poppins, sans-serif;
+    font-size: 1.4rem;
+    font-weight: 600;
+    line-height: 1.1;
+    cursor: pointer;
+}
+
+.page-section details.wp-block-details summary:hover {
+    color: #ef7d05;
+}
+
+.page-section details.wp-block-details p {
+    color: #000;
+    font-size: 1rem;
+    line-height: 1.3;
+    padding-top: 10px;
+}
+
+.page-section details.wp-block-details p a {
+    color: #ef7d05;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+/* Foundation accordion */
+.page-section .accordion-section .accordion-item .accordion-title {
+    font-size: 1.4rem;
+    color: #ef7d05;
+    border: none;
+    padding: 20px 0;
+}
+
+.page-section .accordion-section .accordion-item .accordion-title:hover,
+.page-section .accordion-section .accordion-item .accordion-title:focus {
+    background: none;
+    text-decoration: none;
+}
+
+.page-section .accordion-section .accordion-item .accordion-title .title-text h4 {
+    color: #292459;
+    line-height: 1.1;
+    font-family: poppins, sans-serif;
+    font-size: 1.4rem;
+}
+
+.page-section .accordion-section .accordion-item .accordion-content {
+    border: none;
+    background: none;
+    padding: 30px 0 10px;
+    color: #000;
+}
+
+.page-section .accordion-section .accordion-item .accordion-content p {
+    color: #000;
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.page-section .accordion-section .accordion-item .accordion-content a {
+    color: #ef7d05;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.page-section .accordion-section .accordion-item.is-active .accordion-content {
+    border-bottom: 1px solid #ef7d05;
+}
