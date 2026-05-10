@@ -1683,6 +1683,12 @@ footer ul.footer-pages {
     text-decoration: underline;
 }
 
+.page-section.text-page .content select a {
+    color: revert;
+    font-weight: revert;
+    text-decoration: revert;
+}
+
 .page-section .people-details h3,
 .page-section .people-details h4 {
     color: #292459;
