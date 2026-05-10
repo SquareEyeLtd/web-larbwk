@@ -18,3 +18,27 @@ add_filter( 'gppa_input_choices_1_7', function( $choices, $field, $objects ) {
 
 	return $choices;
 }, 10, 3 );
+
+
+
+
+
+/* User registration > create & attach organisation ________________________________________________________ */
+
+
+add_action( 'gform_after_submission_1', 'law_set_organisation_user_meta', 10, 2 );
+
+function law_set_organisation_user_meta( $entry, $form ) {
+    $user_id         = rgar( $entry, 'created_by' );
+    $org_field_value = rgar( $entry, '7' );
+
+    if ( $org_field_value === 'other' ) {
+        $created_posts = gform_get_meta( $entry['id'], 'gravityformsadvancedpostcreation_post_id' );
+        if ( ! empty( $created_posts ) ) {
+            $post_id = $created_posts[0]['post_id'];
+            update_field( 'organisation', [ $post_id ], 'user_' . $user_id );
+        }
+    } else {
+        update_field( 'organisation', [ absint( $org_field_value ) ], 'user_' . $user_id );
+    }
+}
