@@ -1683,7 +1683,9 @@ footer ul.footer-pages {
     text-decoration: underline;
 }
 
-.page-section.text-page .content select a {
+.page-section.text-page .content select a,
+.page-section.text-page .content .ginput_container_select a,
+.page-section.text-page .content .chosen-container a {
     color: revert;
     font-weight: revert;
     text-decoration: revert;
