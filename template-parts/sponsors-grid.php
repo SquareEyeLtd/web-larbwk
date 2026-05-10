@@ -57,7 +57,7 @@ foreach ( $tiers as $slug => $tier ) :
 
       <div class="large-12 cell">
         <div class="sponsors-title<?php echo esc_attr( $tier['title_extra'] ); ?>">
-          <h4><?php echo esc_html( $label ); ?></h4>
+          <h3><?php echo esc_html( $label ); ?></h3>
         </div>
 <?php if ( $tier['wrap_inner'] ) : ?>
         <div class="grid-x grid-padding-x">

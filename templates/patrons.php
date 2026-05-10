@@ -71,7 +71,7 @@ if ( $patrons ) : ?>
 
             <div class="large-9 medium-7 cell wow fadeIn">
                 <div class="people-details matchbox">
-                    <h4><?php echo esc_html( $name ); ?></h4>
+                    <h3><?php echo esc_html( $name ); ?></h3>
 <?php if ( $quote ) : ?>
                     <blockquote><?php echo esc_html( $quote ); ?></blockquote>
 <?php endif; ?>
@@ -136,13 +136,13 @@ if ( $committee ) : ?>
 ?>
                     <div class="medium-6 cell wow fadeIn">
                         <div class="people-details small">
-                            <h4><?php echo esc_html( $name ); ?></h4>
+                            <h3><?php echo esc_html( $name ); ?></h3>
 <?php if ( $organisation || $law_role ) : ?>
-                            <h4 class="company"><?php echo esc_html( $organisation ); ?>
+                            <p class="company"><?php echo esc_html( $organisation ); ?>
 <?php   if ( $law_role && $law_role !== 'Committee Member' ) : ?>
                                 <br/><?php echo esc_html( $law_role ); ?>
 <?php   endif; ?>
-                            </h4>
+                            </p>
 <?php endif; ?>
 <?php if ( $url ) : ?>
                             <a class="normal-link" href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener">VIEW PROFILE</a>

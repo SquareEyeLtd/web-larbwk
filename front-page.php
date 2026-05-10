@@ -16,9 +16,9 @@ $hero_url = is_array( $hero_bg ) ? $hero_bg['url'] : ( $hero_bg ?: law_asset( 'a
       <div class="grid-x grid-padding-x">
         <div class="large-12 cell">
           <div class="grid-x grid-padding-x hero-text">
-            <div class="large-10 medium-11 cell wow fadeIn">
-                <h3><?php echo esc_html( get_field( 'hero_dates' ) ); ?></h3>
+            <div class="large-10 medium-11 cell wow fadeIn hero-text__stack">
               <h1><?php echo esc_html( get_field( 'hero_strapline' ) ); ?></h1>
+              <p class="hero-dates"><?php echo esc_html( get_field( 'hero_dates' ) ); ?></p>
             </div>
           </div>
         </div>
@@ -26,7 +26,8 @@ $hero_url = is_array( $hero_bg ) ? $hero_bg['url'] : ( $hero_bg ?: law_asset( 'a
     </div>
 </section>
 
-<section class="featured-section">
+<section class="featured-section" aria-labelledby="home-sponsor-spotlight-heading">
+  <h2 id="home-sponsor-spotlight-heading" class="screen-reader-text">Sponsorship opportunities</h2>
   <div class="fadeIn-tint-right"></div>
   <div class="grid-container" style="background-image: url('<?php echo law_asset( 'assets/images/scroll-bg.jpg' ); ?>');">
     <div class="grid-x">
@@ -35,7 +36,7 @@ $hero_url = is_array( $hero_bg ) ? $hero_bg['url'] : ( $hero_bg ?: law_asset( 'a
         <div class="tint"></div>
         <div class="block-details wow fadeIn flex new">
           <img class="icons" src="<?php echo law_asset( 'assets/images/sponsorship-icon.svg' ); ?>" title="sponsorship">
-           <h3 style="margin-top:.5em; margin-bottom:0; line-height: 1.2;"><?php echo esc_html( get_field( 'sponsor_heading' ) ); ?></h3>
+           <h3 class="sponsor-feature__heading"><?php echo esc_html( get_field( 'sponsor_heading' ) ); ?></h3>
         </div>
       </div>
      </div>
@@ -43,7 +44,7 @@ $hero_url = is_array( $hero_bg ) ? $hero_bg['url'] : ( $hero_bg ?: law_asset( 'a
        <div class="featured-block sponsorship text">
        <div class="tint"></div>
         <div class="block-details wow fadeIn">
-           <h4 style="margin-top:0; font-weight: normal;margin-bottom: 1rem; line-height: 1.2;"><?php echo esc_html( get_field( 'sponsor_text' ) ); ?></h4>
+           <p class="block-details__lede"><?php echo esc_html( get_field( 'sponsor_text' ) ); ?></p>
           <a class="button second" href="<?php echo esc_url( get_field( 'sponsor_button_link' ) ); ?>" target="_blank" rel="noopener"><?php echo esc_html( get_field( 'sponsor_button_label' ) ); ?></a>
         </div>
         </div>
@@ -61,7 +62,7 @@ $corner_url = is_array( $corner_bg ) ? $corner_bg['url'] : ( $corner_bg ?: law_a
     <div class="grid-x grid-padding-x">
       <div class="large-6 cell">
         <div class="section-heading wow fadeIn">
-          <h3><?php echo esc_html( get_field( 'cornerstone_text' ) ); ?></h3>
+          <h2><?php echo esc_html( get_field( 'cornerstone_text' ) ); ?></h2>
         </div>
       </div>
     </div>
@@ -84,7 +85,7 @@ $thought_alt = is_array( $thought_img ) && ! empty( $thought_img['alt'] ) ? $tho
       </div>
       <div class="large-8 cell">
         <div class="text-block wow fadeIn">
-          <h4><?php echo esc_html( get_field( 'thought_text' ) ); ?></h4>
+          <h2><?php echo esc_html( get_field( 'thought_text' ) ); ?></h2>
         </div>
       </div>
     </div>
