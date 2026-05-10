@@ -9,6 +9,7 @@
     <link rel="icon" type="image/png" sizes="32x32" href="<?php echo law_asset( 'favicon_io/favicon-32x32.png' ); ?>">
     <link rel="icon" type="image/png" sizes="16x16" href="<?php echo law_asset( 'favicon_io/favicon-16x16.png' ); ?>">
     <?php wp_head(); ?>
+    <script src="https://kit.fontawesome.com/a87ec65596.js" crossorigin="anonymous"></script>
 </head>
 
 <body <?php body_class(); ?> <?php if ( ! is_front_page() ) echo 'id="pages"'; ?>>

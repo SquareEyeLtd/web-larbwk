@@ -9,28 +9,28 @@ Text Domain: law
 */
 
 /* Content width */
-.text-page .section-title {
+.text-page .content {
     max-width: 45rem;
 }
 
 /* Button links — Foundation and WP block buttons */
-.page-section .section-title a.wp-block-button__link,
-.page-section .section-title a.wp-element-button,
-.page-section .section-title a.button,
-.text-page .section-title a.wp-block-button__link,
-.text-page .section-title a.wp-element-button,
-.text-page .section-title a.button {
+.page-section .content a.wp-block-button__link,
+.page-section .content a.wp-element-button,
+.page-section .content a.button,
+.text-page .content a.wp-block-button__link,
+.text-page .content a.wp-element-button,
+.text-page .content a.button {
     text-decoration: none;
     color: #fff;
     font-weight: normal;
 }
 
-.page-section .section-title a.wp-block-button__link:hover,
-.page-section .section-title a.wp-element-button:hover,
-.page-section .section-title a.button:hover,
-.text-page .section-title a.wp-block-button__link:hover,
-.text-page .section-title a.wp-element-button:hover,
-.text-page .section-title a.button:hover {
+.page-section .content a.wp-block-button__link:hover,
+.page-section .content a.wp-element-button:hover,
+.page-section .content a.button:hover,
+.text-page .content a.wp-block-button__link:hover,
+.text-page .content a.wp-element-button:hover,
+.text-page .content a.button:hover {
     text-decoration: none;
     color: #fff;
 }

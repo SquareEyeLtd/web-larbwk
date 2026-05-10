@@ -48,7 +48,7 @@ if ( $patrons ) : ?>
     <div class="grid-container">
         <div class="grid-x grid-padding-x">
             <div class="large-9 large-offset-3 cell">
-                <div class="section-title wow fadeIn ">
+                <div class="section-heading wow fadeIn ">
                     <h2>Our Patrons</h2>
                 </div>
             </div>
@@ -122,7 +122,7 @@ if ( $committee ) : ?>
      <div class="grid-container">
         <div class="grid-x grid-padding-x">
             <div class="large-9 large-offset-3 cell">
-                <div class="section-title wow fadeIn">
+                <div class="section-heading wow fadeIn">
                     <h2>London Arbitration Week Committee</h2>
                 </div>
 

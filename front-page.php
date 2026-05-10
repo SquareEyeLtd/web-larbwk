@@ -60,7 +60,7 @@ $corner_url = is_array( $corner_bg ) ? $corner_bg['url'] : ( $corner_bg ?: law_a
   <div class="grid-container">
     <div class="grid-x grid-padding-x">
       <div class="large-6 cell">
-        <div class="section-title wow fadeIn">
+        <div class="section-heading wow fadeIn">
           <h3><?php echo esc_html( get_field( 'cornerstone_text' ) ); ?></h3>
         </div>
       </div>
@@ -95,7 +95,7 @@ $thought_alt = is_array( $thought_img ) && ! empty( $thought_img['alt'] ) ? $tho
   <div class="grid-container">
     <div class="grid-x grid-padding-x grid-padding-y">
       <div class="large-9 cell">
-        <div class="section-title wow fadeIn">
+        <div class="section-heading wow fadeIn">
           <h2>Our 2026 Sponsors</h2>
         </div>
       </div>

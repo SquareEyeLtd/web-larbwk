@@ -24,7 +24,7 @@ get_header();
   <div class="grid-container">
     <div class="grid-x grid-padding-x grid-padding-y">
       <div class="large-9 cell">
-        <div class="section-title wow fadeIn">
+        <div class="section-heading wow fadeIn">
           <h2>Our 2025 Sponsors</h2>
         </div>
       </div>
@@ -58,7 +58,7 @@ foreach ( $extra_sections as $slug ) :
     }
 ?>
       <div class="large-12 cell">
-        <div class="section-title sponsors-title">
+        <div class="section-heading sponsors-title">
           <h2><?php echo esc_html( $term->name ); ?></h2>
         </div>
         <div class="grid-x grid-padding-x">

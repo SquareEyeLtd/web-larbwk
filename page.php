@@ -24,7 +24,7 @@ get_header();
     <div class="grid-container">
         <div class="grid-x grid-padding-x align-center">
             <div class="large-9 medium-10 cell">
-                <div class="section-title wow fadeIn">
+                <div class="content wow fadeIn">
                     <?php the_content(); ?>
                 </div>
             </div>

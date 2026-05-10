@@ -8,7 +8,7 @@ $img = get_template_directory_uri() . '/images/uploads/sponsors/_webp/';
 
       <!---Media Partners-->
       <div class="large-12 cell">
-        <div class="section-title sponsors-title">
+        <div class="section-heading sponsors-title">
           <h2>Media Partners</h2>
         </div>
         <div class="grid-x grid-padding-x">
@@ -22,7 +22,7 @@ $img = get_template_directory_uri() . '/images/uploads/sponsors/_webp/';
 
       <!---Supporting Organisations-->
       <div class="large-12 cell">
-        <div class="section-title sponsors-title">
+        <div class="section-heading sponsors-title">
           <h2>Supporting Organisations</h2>
         </div>
         <div class="grid-x grid-padding-x">
