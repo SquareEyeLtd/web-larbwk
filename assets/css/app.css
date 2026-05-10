@@ -1686,9 +1686,9 @@ footer ul.footer-pages {
 .page-section.text-page .content select a,
 .page-section.text-page .content .ginput_container_select a,
 .page-section.text-page .content .chosen-container a {
-    color: revert;
-    font-weight: revert;
-    text-decoration: revert;
+    color: #000000;
+    font-weight: normal;
+    text-decoration: none;
 }
 
 .page-section .people-details h3,
