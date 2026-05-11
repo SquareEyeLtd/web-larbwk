@@ -999,13 +999,14 @@ nav .button.primary{
 body .banner-account-status {
     width: 100%;
     box-sizing: border-box;
-    background-color: #8b84ac !important;
-    border-bottom: 1px solid rgba(41, 36, 89, 0.35);
+    background-color: #e8e9ed !important;
+    border-bottom: 1px solid rgba(41, 36, 89, 0.12);
 }
 
 body .banner-account-status .banner-account-status__inner {
     position: relative;
     background-color: transparent !important;
+    text-align: right;
 }
 
 body .banner-account-status p.banner-account-status__text {
@@ -1015,6 +1016,7 @@ body .banner-account-status p.banner-account-status__text {
     line-height: 1.45;
     font-family: poppins, sans-serif;
     color: #1a1740 !important;
+    text-align: right;
 }
 
 body .banner-account-status .banner-account-status__prefix {
