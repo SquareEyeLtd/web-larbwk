@@ -2320,6 +2320,252 @@ margin-bottom: .5rem;
     }
 }
 
+/* -----------------------------------------------------------------------------
+   Gravity Flow — inbox / entry detail (runs inside theme .content on front-end)
+   ----------------------------------------------------------------------------- */
+
+.gravityflow_workflow_wrap.gravityflow_workflow_detail {
+    max-width: 100%;
+}
+
+.gravityflow_workflow_wrap .gravityflow-back-link-container {
+    margin-bottom: 1.25rem;
+}
+
+.gravityflow_workflow_wrap .gravityflow-back-link-container .back-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 1rem;
+    font-family: poppins, sans-serif;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    text-decoration: none;
+    color: #292459 !important;
+    border: 1px solid rgba(239, 125, 5, 0.55);
+    border-radius: 9999px;
+    background-color: rgba(255, 255, 255, 0.95);
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.gravityflow_workflow_wrap .gravityflow-back-link-container .back-link:hover,
+.gravityflow_workflow_wrap .gravityflow-back-link-container .back-link:focus {
+    background-color: rgba(239, 125, 5, 0.08);
+    border-color: #ef7d05;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view.widefat {
+    border: 1px solid rgba(41, 36, 89, 0.12);
+    border-radius: 10px;
+    overflow: hidden;
+    border-collapse: collapse;
+    box-shadow: 0 4px 20px rgba(41, 36, 89, 0.07);
+    margin-bottom: 1.75rem;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view thead th {
+    padding: 0.85rem 1rem;
+    font-family: poppins, sans-serif;
+    font-weight: 600;
+    font-size: 1rem;
+    vertical-align: middle;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view thead th:last-child label {
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view > tbody > tr > td[colspan="2"]:first-child {
+    padding: 1rem 1rem 1.25rem;
+}
+
+.gravityflow_workflow_wrap .gf_entry_wrap #poststuff,
+.gravityflow_workflow_wrap #poststuff {
+    padding: 0;
+    margin: 0;
+}
+
+.gravityflow_workflow_wrap #post-body-content {
+    min-height: 0;
+}
+
+.gravityflow_workflow_wrap .gform_wrapper .gsection_title {
+    margin-top: 2rem;
+    padding-bottom: 0.35rem;
+    margin-bottom: 1rem;
+    border-bottom: 2px solid rgba(239, 125, 5, 0.45);
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+}
+
+.gravityflow_workflow_wrap .gform_wrapper .gfield--type-section:first-of-type .gsection_title {
+    margin-top: 0;
+}
+
+.gravityflow_workflow_wrap .gravityflow-status-box-field-assignees ul {
+    margin: 0.35rem 0 0;
+    padding-left: 1.2rem;
+    list-style: disc;
+}
+
+.gravityflow_workflow_wrap .gfield:not(.gsection):not(.gfield--type-section) {
+    padding-bottom: 1rem;
+    margin-bottom: 0;
+}
+
+.gravityflow_workflow_wrap .gsection_description {
+    margin-bottom: 0.75rem;
+}
+
+.gravityflow_workflow_wrap .gravityflow-field-value {
+    display: block;
+    padding: 0.65rem 1rem;
+    margin-top: 0.35rem;
+    margin-bottom: 0.15rem;
+    background-color: #f5f6f9;
+    border: 1px solid rgba(41, 36, 89, 0.1);
+    border-radius: 6px;
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    color: #1a1740 !important;
+}
+
+.gravityflow_workflow_wrap .gravityflow-field-value:last-child {
+    margin-bottom: 0;
+}
+
+.gravityflow_workflow_wrap .gravityflow-field-value p {
+    margin: 0 0 0.65rem;
+    color: inherit;
+}
+
+.gravityflow_workflow_wrap .gravityflow-field-value p:last-of-type {
+    margin-bottom: 0;
+}
+
+.gravityflow_workflow_wrap .gravityflow-field-value a {
+    color: #cf6500 !important;
+    font-weight: 600;
+}
+
+.gravityflow_workflow_wrap .entry-products th,
+.gravityflow_workflow_wrap .entry-products td {
+    padding: 0.65rem 0.85rem !important;
+}
+
+.gravityflow_workflow_wrap td.gravityflow-order-summary {
+    padding: 0.75rem 1rem !important;
+    font-weight: 700;
+    font-family: poppins, sans-serif;
+    background-color: rgba(239, 125, 5, 0.08);
+    border-top: 2px solid rgba(239, 125, 5, 0.35);
+}
+
+.gravityflow_workflow_wrap .entry-view-field-value.lastrow {
+    padding: 1rem !important;
+}
+
+.gravityflow_workflow_wrap #gravityflow-status-box-container.postbox {
+    border: 1px solid rgba(41, 36, 89, 0.14);
+    border-radius: 10px;
+    margin-top: 2rem;
+    overflow: hidden;
+    box-shadow: 0 3px 16px rgba(41, 36, 89, 0.06);
+}
+
+.gravityflow_workflow_wrap #gravityflow-status-box-container .hndle {
+    margin: 0 !important;
+    padding: 0.75rem 1.1rem !important;
+    font-family: poppins, sans-serif;
+    font-weight: 700;
+    font-size: 1rem;
+    background-color: #edeef3;
+    border-bottom: 1px solid rgba(41, 36, 89, 0.1);
+}
+
+.gravityflow_workflow_wrap .gravityflow-status-box {
+    padding: 1rem 1.1rem 1.25rem !important;
+}
+
+.gravityflow_workflow_wrap .gravityflow-status-box-field {
+    padding: 0.4rem 0;
+    line-height: 1.45;
+}
+
+.gravityflow_workflow_wrap .gravityflow-status-box-field-label {
+    font-weight: 600;
+    color: #292459;
+}
+
+.gravityflow_workflow_wrap .gravityflow-status-box-field h4 {
+    margin: 0.65rem 0 0.35rem;
+    padding: 0;
+    color: #292459 !important;
+    font-size: 1rem !important;
+}
+
+.gravityflow_workflow_wrap #gravityflow-note {
+    padding: 0.65rem;
+    border-radius: 6px;
+    border-color: rgba(41, 36, 89, 0.2);
+}
+
+.gravityflow_workflow_wrap .gravityflow-action-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(41, 36, 89, 0.08);
+}
+
+.gravityflow_workflow_wrap .gravityflow-action-buttons .button {
+    min-height: 2.5rem;
+    padding: 0.5rem 1rem !important;
+    font-family: poppins, sans-serif !important;
+    font-weight: 600 !important;
+    border-radius: 6px !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.gravityflow_workflow_wrap .detail-view-print {
+    margin-top: 1.5rem;
+    padding: 0.85rem 0;
+}
+
+.gravityflow_workflow_wrap .gravityflow-timeline.postbox .inside {
+    padding: 1rem;
+}
+
+.gravityflow_workflow_wrap .gravityflow-note {
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.75rem;
+    background: #fafbfc;
+    border: 1px solid rgba(41, 36, 89, 0.1);
+    border-radius: 8px;
+}
+
+.gravityflow_workflow_wrap .gravityflow-note:last-child {
+    margin-bottom: 0;
+}
+
+/* Commerce / pricing — hidden on workflow reviews (shown elsewhere for finance) */
+.gravityflow_workflow_wrap .gfield_price,
+.gravityflow_workflow_wrap .gfield_product,
+.gravityflow_workflow_wrap .gfield--type-product,
+.gravityflow_workflow_wrap .gfield--type-multiproduct,
+.gravityflow_workflow_wrap .gfield--type-total {
+    display: none !important;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view > tbody > tr:has(td.gravityflow-order-summary),
+.gravityflow_workflow_wrap table.entry-detail-view > tbody > tr:has(table.entry-products) {
+    display: none !important;
+}
+
 
 /*---My Account--*/
 
