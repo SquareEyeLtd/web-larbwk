@@ -132,3 +132,14 @@ sortBookings();
 
   $(window).on('scroll', updateNavAffix);
 });
+
+
+/* Limit events by this year's dates ________________________________________________________ */
+
+gform.addFilter('gform_datepicker_options_pre_init', function(optionsObj, formId, fieldId) {
+    if ( formId === 2 && fieldId === 18 ) { // adjust IDs
+        optionsObj.minDate = new Date(2026, 11, 30);  // 1 Jan 2025
+        optionsObj.maxDate = new Date(2026, 12, 04); // 31 Dec 2025
+    }
+    return optionsObj;
+});

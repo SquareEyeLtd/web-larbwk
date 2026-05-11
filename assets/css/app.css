@@ -1063,6 +1063,17 @@ body .banner-account-status .banner-account-status__name a:focus {
     margin-bottom: 0.5rem;
 }
 
+.page-section.text-page .content .callout > p:last-of-type,
+.page-section.text-page .content .callout p:last-of-type,
+.page-section .content .callout > p:last-of-type,
+.page-section .content .callout p:last-of-type,
+.text-page .content .callout > p:last-of-type,
+.text-page .content .callout p:last-of-type,
+.contact-page .content .callout > p:last-of-type,
+.contact-page .content .callout p:last-of-type {
+    margin-bottom: 0;
+}
+
 .matchbox, .my-account {
     position: relative;
     z-index: 2;
