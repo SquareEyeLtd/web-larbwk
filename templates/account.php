@@ -1,15 +1,13 @@
 <?php
 /**
- * Default page template.
+ * Template Name: Account
  *
- * @package LAW
  */
-
 get_header();
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
-<section class="hero" style="background-image: url('<?php echo law_asset( 'assets/images/patrons-and-committee-bg.jpg' ); ?>');">
+<section class="hero" style="">
     <div class="overlay"></div>
     <div class="grid-container">
         <div class="grid-x grid-padding-x">
@@ -18,7 +16,6 @@ get_header();
             </div>
         </div>
     </div>
-    <?php law_render_banner_account_status(); ?>
 </section>
 
 <section class="page-section text-page">

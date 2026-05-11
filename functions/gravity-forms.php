@@ -21,8 +21,6 @@ add_filter( 'gppa_input_choices_1_7', function( $choices, $field, $objects ) {
 
 
 
-
-
 /* User registration > create & attach organisation ________________________________________________________ */
 
 
@@ -42,3 +40,25 @@ function law_set_organisation_user_meta( $entry, $form ) {
         update_field( 'organisation', [ absint( $org_field_value ) ], 'user_' . $user_id );
     }
 }
+
+
+
+/* Populate current user organisation ________________________________________________________ */
+
+
+add_filter( 'gform_field_value_orgid', 'law_prepopulate_orgid' );
+function law_prepopulate_orgid( $value ) {
+    $user_id = get_current_user_id();
+    if ( ! $user_id ) return '';
+    
+    $orgs = get_field( 'organisation', 'user_' . $user_id );
+    
+    if ( ! empty( $orgs ) ) {
+        $org_value = is_object( $orgs[0] ) ? $orgs[0]->ID : (int) $orgs[0];
+        return (string) $org_value;
+    }
+    
+    return '';
+}
+
+

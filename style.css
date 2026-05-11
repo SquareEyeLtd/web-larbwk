@@ -13,26 +13,74 @@ Text Domain: law
     max-width: 45rem;
 }
 
-/* Button links — Foundation and WP block buttons */
+/*
+ * Prose buttons: align <a class="button"> with core Button block (.wp-block-button__link).
+ * Excludes alternate Foundation variants (.second, .white, .grey).
+ */
 .page-section .content a.wp-block-button__link,
-.page-section .content a.wp-element-button,
-.page-section .content a.button,
 .text-page .content a.wp-block-button__link,
-.text-page .content a.wp-element-button,
-.text-page .content a.button {
-    text-decoration: none;
+.contact-page a.wp-block-button__link,
+.page-section .content a.button:not(.second):not(.white):not(.grey),
+.text-page .content a.button:not(.second):not(.white):not(.grey),
+.contact-page a.button:not(.second):not(.white):not(.grey) {
+    display: inline-block;
+    box-sizing: border-box;
+    width: auto;
+    max-width: 100%;
+    margin: 0 0 0.5rem 0;
+    padding: calc(0.65em + 2px) calc(1.25em + 2px);
+    border-radius: 9999px;
+    border: 1px solid #ef7d05;
+    background-color: #ef7d05;
     color: #fff;
-    font-weight: normal;
+    font-family: poppins, sans-serif;
+    font-weight: 600;
+    font-style: normal;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    text-align: center;
+    text-transform: uppercase;
+    text-decoration: none;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
 }
 
 .page-section .content a.wp-block-button__link:hover,
-.page-section .content a.wp-element-button:hover,
-.page-section .content a.button:hover,
+.page-section .content a.wp-block-button__link:focus,
 .text-page .content a.wp-block-button__link:hover,
-.text-page .content a.wp-element-button:hover,
-.text-page .content a.button:hover {
-    text-decoration: none;
+.text-page .content a.wp-block-button__link:focus,
+.contact-page a.wp-block-button__link:hover,
+.contact-page a.wp-block-button__link:focus,
+.page-section .content a.button:not(.second):not(.white):not(.grey):hover,
+.page-section .content a.button:not(.second):not(.white):not(.grey):focus,
+.text-page .content a.button:not(.second):not(.white):not(.grey):hover,
+.text-page .content a.button:not(.second):not(.white):not(.grey):focus,
+.contact-page a.button:not(.second):not(.white):not(.grey):hover,
+.contact-page a.button:not(.second):not(.white):not(.grey):focus {
+    background-color: #292459;
+    border-color: #292459;
     color: #fff;
+    text-decoration: none;
+}
+
+.page-section .content .wp-block-button.is-style-outline > .wp-block-button__link,
+.text-page .content .wp-block-button.is-style-outline > .wp-block-button__link,
+.contact-page .wp-block-button.is-style-outline > .wp-block-button__link {
+    background-color: transparent;
+    color: #ef7d05;
+    border: 2px solid #ef7d05;
+}
+
+.page-section .content .wp-block-button.is-style-outline > .wp-block-button__link:hover,
+.page-section .content .wp-block-button.is-style-outline > .wp-block-button__link:focus,
+.text-page .content .wp-block-button.is-style-outline > .wp-block-button__link:hover,
+.text-page .content .wp-block-button.is-style-outline > .wp-block-button__link:focus,
+.contact-page .wp-block-button.is-style-outline > .wp-block-button__link:hover,
+.contact-page .wp-block-button.is-style-outline > .wp-block-button__link:focus {
+    background-color: rgba(239, 125, 5, 0.08);
+    color: #292459;
+    border-color: #292459;
 }
 
 /* Contact page — block editor to match original Foundation layout */

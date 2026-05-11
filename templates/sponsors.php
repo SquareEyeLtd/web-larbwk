@@ -18,6 +18,7 @@ get_header();
             </div>
           </div>
         </div>
+        <?php law_render_banner_account_status(); ?>
 </section>
 
 <section class="page-section">
@@ -29,7 +30,7 @@ get_header();
         </div>
       </div>
 
-      <?php get_template_part( 'template-parts/sponsors-grid' ); ?>
+      <?php get_template_part( 'parts/sponsors-grid' ); ?>
 
 <?php
 $extra_sections = array( 'media-partners', 'supporting-organisations' );

@@ -995,6 +995,62 @@ nav .button.primary{
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
+.hero .banner-account-status {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 8;
+    background: rgba(41, 36, 89, 0.94);
+    border-top: 1px solid rgba(239, 125, 5, 0.4);
+}
+
+.hero .banner-account-status__inner {
+    position: relative;
+}
+
+.hero .banner-account-status__text {
+    margin: 0;
+    padding: 0.55rem 0;
+    font-size: 0.8125rem;
+    line-height: 1.35;
+    color: rgba(255, 255, 255, 0.92);
+    font-family: poppins, sans-serif;
+}
+
+.hero .banner-account-status__sep {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.hero .banner-account-status__org {
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.hero .banner-account-status__name a {
+    color: #ef7d05;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.hero .banner-account-status__name a:hover,
+.hero .banner-account-status__name a:focus {
+    color: #ff9a4d;
+    text-decoration: underline;
+}
+
+body.logged-in #pages .hero.register-page .grid-container {
+    padding-bottom: 8rem;
+}
+
+body.logged-in #pages .hero:not(.register-page) .grid-container {
+    padding-bottom: 6.75rem;
+}
+
+body.home.logged-in .hero > .grid-container,
+body.front-page.logged-in .hero > .grid-container {
+    padding-bottom: 5rem;
+}
+
 .matchbox, .my-account {
     position: relative;
     z-index: 2;

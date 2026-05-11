@@ -73,7 +73,7 @@ law-theme/
 │   └── uploads/
 │       ├── profile-photos/_webp/   ← Patron headshots
 │       └── sponsors/_webp/         ← Sponsor logos
-├── template-parts/
+├── parts/
 │   ├── sponsors-grid.php           ← Shared sponsors grid (homepage + sponsors page)
 │   └── supporting-orgs.php         ← Media partners + supporting orgs (sponsors page only)
 ├── footer.php

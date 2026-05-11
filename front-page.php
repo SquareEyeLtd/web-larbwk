@@ -24,6 +24,7 @@ $hero_url = is_array( $hero_bg ) ? $hero_bg['url'] : ( $hero_bg ?: law_asset( 'a
         </div>
       </div>
     </div>
+    <?php law_render_banner_account_status(); ?>
 </section>
 
 <section class="featured-section" aria-labelledby="home-sponsor-spotlight-heading">
@@ -101,7 +102,7 @@ $thought_alt = is_array( $thought_img ) && ! empty( $thought_img['alt'] ) ? $tho
         </div>
       </div>
 
-      <?php get_template_part( 'template-parts/sponsors-grid' ); ?>
+      <?php get_template_part( 'parts/sponsors-grid' ); ?>
 
     </div>
   </div>
