@@ -1,6 +1,6 @@
 <?php
 /**
- * Logged-in account strip at the bottom of hero banners.
+ * Thin account strip rendered directly below hero banners when the user is logged in.
  *
  * Reads ACF field `organisation` on the user (`user_{ID}`): array/post object of `organisation` CPT IDs.
  */

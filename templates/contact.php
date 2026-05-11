@@ -23,8 +23,9 @@ get_header();
 <?php endif; ?>
           </div>
         </div>
-        <?php law_render_banner_account_status(); ?>
 </section>
+
+<?php law_render_banner_account_status(); ?>
 
 <section class="page-section contact-page">
     <div class="grid-container">

@@ -24,8 +24,9 @@ $hero_url = is_array( $hero_bg ) ? $hero_bg['url'] : ( $hero_bg ?: law_asset( 'a
         </div>
       </div>
     </div>
-    <?php law_render_banner_account_status(); ?>
 </section>
+
+<?php law_render_banner_account_status(); ?>
 
 <section class="featured-section" aria-labelledby="home-sponsor-spotlight-heading">
   <h2 id="home-sponsor-spotlight-heading" class="screen-reader-text">Sponsorship opportunities</h2>

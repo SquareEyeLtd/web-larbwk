@@ -18,8 +18,9 @@ get_header();
             </div>
         </div>
     </div>
-    <?php law_render_banner_account_status(); ?>
 </section>
+
+<?php law_render_banner_account_status(); ?>
 
 <section class="page-section text-page">
     <div class="grid-container">
