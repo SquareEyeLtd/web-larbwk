@@ -1736,6 +1736,10 @@ footer ul.footer-pages {
     margin-top: 1.5rem;
 }
 
+.content {
+    color: #000000;
+}
+
 .page-section.text-page .content p, .page-section.text-page .content ul li {
     color: #000000;
     font-size: 1rem;
