@@ -9,7 +9,7 @@ add_action( 'wp_enqueue_scripts', function () {
     wp_enqueue_style( 'law-animate', $uri . '/assets/css/animate.min.css', array(), '1.0' );
     wp_enqueue_style( 'law-app', $uri . '/assets/css/app.css', array( 'law-foundation' ), '2.9' );
     wp_enqueue_style( 'law-accordions', $uri . '/assets/css/accordions.css', array( 'law-app' ), '1.0' );
-    wp_enqueue_style( 'law-wp', get_stylesheet_uri(), array( 'law-app' ), '1.0' );
+    wp_enqueue_style( 'law-wp', get_stylesheet_uri(), array( 'law-app' ), '1.0.1' );
 
     // Typekit (Poppins)
     wp_enqueue_style( 'law-typekit-1', 'https://use.typekit.net/vum0moo.css', array(), null );
