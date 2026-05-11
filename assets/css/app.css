@@ -1049,6 +1049,20 @@ body .banner-account-status .banner-account-status__name a:focus {
     outline-offset: 2px;
 }
 
+/* Foundation callouts (e.g. registration success): compact dark heading vs prose h2 styling */
+.page-section.text-page .content .callout h2,
+.page-section .content .callout h2,
+.text-page .content .callout h2,
+.contact-page .content .callout h2 {
+    color: #0a0a0a;
+    font-size: 1.125rem;
+    font-weight: 600;
+    line-height: 1.35;
+    font-family: poppins, sans-serif;
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+}
+
 .matchbox, .my-account {
     position: relative;
     z-index: 2;
