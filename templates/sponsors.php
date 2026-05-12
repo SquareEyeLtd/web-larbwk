@@ -27,7 +27,7 @@ get_header();
     <div class="grid-x grid-padding-x grid-padding-y">
       <div class="large-9 cell">
         <div class="section-heading wow fadeIn">
-          <h2>Our 2025 Sponsors</h2>
+          <h2>Our 2026 Sponsors</h2>
         </div>
       </div>
 
