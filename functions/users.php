@@ -1,4 +1,5 @@
 <?php
+
 	
 	
 /* User registration > set selected user role(s) ________________________________________________________ */
@@ -13,7 +14,7 @@ add_action( 'gform_user_registered', function( $user_id, $feed, $entry, $user_pa
 
     $checkbox_field_id = 11;
 
-    $allowed_roles = [ 'attendee', 'sponsor' ];
+    $allowed_roles = [ 'attendee', 'sponsor', 'event_host' ];
     $selected_roles = [];
 
     foreach ( $entry as $key => $value ) {
