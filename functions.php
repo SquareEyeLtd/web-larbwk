@@ -1,6 +1,5 @@
 <?php
 
-
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
@@ -15,6 +14,7 @@ require_once(get_theme_file_path('/functions/enqueue.php'));
 require_once(get_theme_file_path('/functions/shortcodes.php'));
 
 require_once(get_theme_file_path('/functions/gravity-forms.php'));
+require_once(get_theme_file_path('/functions/users.php'));
 require_once(get_theme_file_path('/functions/banner-account-status.php'));
 
 
