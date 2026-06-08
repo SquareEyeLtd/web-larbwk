@@ -4,3 +4,7 @@
 .gravityflow_workflow_detail #field_2_86 {
 	display: none;
 }
+
+.gravityflow_workflow_detail .gsection {
+	border-bottom: 0;
+}
