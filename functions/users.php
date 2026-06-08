@@ -58,7 +58,9 @@ add_shortcode( 'law_login', function () {
 		'remember'       => true,
 	) );
 
+	$form = str_replace( 'Remember Me', 'Remember me', $form );
+
 	$lost = '<p class="law-lost-password"><a href="' . esc_url( wp_lostpassword_url( home_url( '/login/' ) ) ) . '">Lost your password?</a></p>';
 
-	return $form . $lost;
+	return '<div class="law-login-form">' . $form . $lost . '</div>';
 } );

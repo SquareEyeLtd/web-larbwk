@@ -369,6 +369,41 @@ nav#new-nav .menu {
     margin-bottom: 1rem;
 }
 
+.nav .header-top .top-nav {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 0 1.25rem;
+}
+
+.nav .header-top .top-nav li {
+    width: auto;
+    margin: 0;
+    padding: 0;
+    text-align: right;
+}
+
+.nav .header-top .top-nav a {
+    display: inline-block;
+    color: #fff;
+    font-size: 0.85rem;
+    font-family: poppins, sans-serif;
+    font-weight: 600;
+    line-height: 1.4;
+    text-decoration: none;
+}
+
+.nav .header-top .top-nav a:hover,
+.nav .header-top .top-nav a:focus {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+    color: #ffcc02;
+}
+
 .nav .header-top a{
     display: inline-block;
     margin-left: 10px;
@@ -377,6 +412,20 @@ nav#new-nav .menu {
 .nav .header-top img {
     width: 32px;
     height: 32px;
+}
+
+.hide-for-large .mobile-top-nav {
+    padding: 0 1rem 0.75rem;
+    text-align: left;
+}
+
+.hide-for-large .mobile-top-nav .top-nav {
+    justify-content: flex-start;
+    gap: 0 1rem;
+}
+
+.hide-for-large .mobile-top-nav .top-nav a {
+    font-size: 0.9rem;
 }
 
 .nav div.main_list .top-nav li {
@@ -1682,6 +1731,20 @@ footer ul.footer-pages {
     margin: 0;
 }
 
+footer .footer-social {
+    margin-bottom: 1.25rem;
+    text-align: right;
+}
+
+footer .footer-social a {
+    display: inline-block;
+}
+
+footer .footer-social .social-icon {
+    width: 32px;
+    height: 32px;
+}
+
 /* footer .credit {
     float: right;
 
@@ -2259,6 +2322,11 @@ margin-bottom: .5rem;
         float: left;
         margin-top: 1em;
         margin-bottom: 2rem;
+    }
+
+    footer .footer-social {
+        text-align: left;
+        margin-bottom: 1rem;
     }
 
     .page-section .content h2,

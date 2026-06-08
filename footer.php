@@ -5,6 +5,11 @@
           <img src="<?php echo law_asset( 'assets/images/LAW-bottom-logo.svg' ); ?>" class="logo wow fadeIn" title="London Arbitration Week" alt="London Arbitration Week">
         </div>
         <div class="large-3 medium-6 cell">
+          <div class="footer-social">
+            <a href="https://www.linkedin.com/company/londonarbitrationweek/" target="_blank" rel="noopener noreferrer" aria-label="<?php esc_attr_e( 'London Arbitration Week on LinkedIn', 'law' ); ?>">
+              <img src="<?php echo law_asset( 'assets/images/linkedin-square.svg' ); ?>" class="social-icon" alt="">
+            </a>
+          </div>
           <?php
           wp_nav_menu( array(
               'theme_location' => 'footer-menu',

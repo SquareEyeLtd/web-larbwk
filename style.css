@@ -88,6 +88,71 @@ body.page-template-full-width-php .text-page .content {
     border-color: #292459;
 }
 
+/*
+ * Form submit buttons: match prose / block button style (login + Gravity Forms).
+ */
+.page-section .content #loginform input[type="submit"],
+.text-page .content #loginform input[type="submit"],
+.text-page .content .law-login-form input[type="submit"],
+.page-section .content .gform_wrapper .gform_footer input[type="submit"],
+.text-page .content .gform_wrapper .gform_footer input[type="submit"],
+.page-section .content .gform_wrapper .gform_footer button.gform_button,
+.text-page .content .gform_wrapper .gform_footer button.gform_button,
+.contact-page .gform_wrapper .gform_footer input[type="submit"],
+.contact-page .gform_wrapper .gform_footer button.gform_button {
+    display: inline-block;
+    box-sizing: border-box;
+    width: auto;
+    max-width: 100%;
+    margin: 0 0 0.5rem 0;
+    padding: calc(0.65em + 2px) calc(1.25em + 2px);
+    border-radius: 9999px;
+    border: 1px solid #ef7d05;
+    background-color: #ef7d05;
+    background-image: none;
+    color: #fff;
+    font-family: poppins, sans-serif;
+    font-weight: 600;
+    font-style: normal;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    text-align: center;
+    text-transform: uppercase;
+    text-decoration: none;
+    cursor: pointer;
+    vertical-align: middle;
+    -webkit-appearance: none;
+    appearance: none;
+    transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+.text-page .content .law-login-form #loginform input[type="submit"] {
+    width: 100%;
+}
+
+.page-section .content #loginform input[type="submit"]:hover,
+.page-section .content #loginform input[type="submit"]:focus,
+.text-page .content #loginform input[type="submit"]:hover,
+.text-page .content #loginform input[type="submit"]:focus,
+.text-page .content .law-login-form input[type="submit"]:hover,
+.text-page .content .law-login-form input[type="submit"]:focus,
+.page-section .content .gform_wrapper .gform_footer input[type="submit"]:hover,
+.page-section .content .gform_wrapper .gform_footer input[type="submit"]:focus,
+.text-page .content .gform_wrapper .gform_footer input[type="submit"]:hover,
+.text-page .content .gform_wrapper .gform_footer input[type="submit"]:focus,
+.page-section .content .gform_wrapper .gform_footer button.gform_button:hover,
+.page-section .content .gform_wrapper .gform_footer button.gform_button:focus,
+.text-page .content .gform_wrapper .gform_footer button.gform_button:hover,
+.text-page .content .gform_wrapper .gform_footer button.gform_button:focus,
+.contact-page .gform_wrapper .gform_footer input[type="submit"]:hover,
+.contact-page .gform_wrapper .gform_footer input[type="submit"]:focus,
+.contact-page .gform_wrapper .gform_footer button.gform_button:hover,
+.contact-page .gform_wrapper .gform_footer button.gform_button:focus {
+    background-color: #292459;
+    border-color: #292459;
+    color: #fff;
+}
+
 /* Contact page — block editor to match original Foundation layout */
 .contact-page h2 {
     color: #ef7d05;

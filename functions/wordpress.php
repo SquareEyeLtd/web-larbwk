@@ -11,6 +11,7 @@ add_action( 'after_setup_theme', function () {
     register_nav_menus(
         array(
             'main-menu'   => __( 'Main menu', 'law' ),
+            'top-menu'    => __( 'Top menu', 'law' ),
             'footer-menu' => __( 'Footer menu', 'law' ),
         )
     );

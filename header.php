@@ -27,9 +27,19 @@
         </div>
         <div class="large-9 medium-8 small-6 show-for-large cell">
            <div class="header-top">
-              <a href="https://www.linkedin.com/company/londonarbitrationweek/" target="_blank" rel="noopener">
-              <img src="<?php echo law_asset( 'assets/images/linkedin-square.svg' ); ?>" class="social-icon">
-               </a>
+            <?php
+            wp_nav_menu(
+                array(
+                    'theme_location' => 'top-menu',
+                    'container'      => false,
+                    'menu_class'     => 'top-nav',
+                    'menu_id'        => 'top-menu-desktop',
+                    'fallback_cb'    => false,
+                    'depth'          => 1,
+                    'items_wrap'     => '<ul id="%1$s" class="%2$s">%3$s</ul>',
+                )
+            );
+            ?>
             </div>
           <div class="main_list">
             <?php
@@ -53,6 +63,23 @@
       </div>
     </div>
     <div class="hide-for-large">
+      <?php if ( has_nav_menu( 'top-menu' ) ) : ?>
+      <div class="header-top mobile-top-nav">
+        <?php
+        wp_nav_menu(
+            array(
+                'theme_location' => 'top-menu',
+                'container'      => false,
+                'menu_class'     => 'top-nav',
+                'menu_id'        => 'top-menu-mobile',
+                'fallback_cb'    => false,
+                'depth'          => 1,
+                'items_wrap'     => '<ul id="%1$s" class="%2$s">%3$s</ul>',
+            )
+        );
+        ?>
+      </div>
+      <?php endif; ?>
       <div id="mainListDiv" class="main_list">
         <?php
         wp_nav_menu(
