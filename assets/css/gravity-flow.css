@@ -8,3 +8,19 @@
 .gravityflow_workflow_detail .gsection {
 	border-bottom: 0;
 }
+
+/* Replace Gravity Flow's missing revert icon with our own */
+.gravityflow-action-buttons button[value="revert"] svg,
+.gravityflow-action-buttons button[value="revert"] i {
+	display: none;
+}
+.gravityflow-action-buttons button[value="revert"]::before {
+	content: "";
+	display: inline-block;
+	width: 1em;
+	height: 1em;
+	margin-right: .45em;
+	vertical-align: -0.15em;
+	background: no-repeat center / contain;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232563eb' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 7v6h6'/%3E%3Cpath d='M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13'/%3E%3C/svg%3E");
+}
