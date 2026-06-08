@@ -11,6 +11,7 @@ add_action( 'wp_enqueue_scripts', function () {
     wp_enqueue_style( 'law-app', $uri . '/assets/css/app.css', array( 'law-foundation' ), '3.1' );
     wp_enqueue_style( 'law-accordions', $uri . '/assets/css/accordions.css', array( 'law-app' ), '1.0' );
     wp_enqueue_style( 'law-gravity-flow', $uri . '/assets/css/gravity-flow.css', array( 'law-app' ), '1.0' );
+    wp_enqueue_style( 'law-gravity-kit', $uri . '/assets/css/gravity-kit.css', array( 'law-app' ), '1.0' );
     wp_enqueue_style( 'law-wp', get_stylesheet_uri(), array( 'law-app' ), '1.0.1' );
 
     // Typekit (Poppins)

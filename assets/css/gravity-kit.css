@@ -1,0 +1,27 @@
+/* More breathing room in the events table */
+.gv-table-view th,
+.gv-table-view td {
+	padding: 12px 16px;
+}
+
+/* Search input and button on one row */
+.gv-search-widget-area {
+	display: flex;
+	align-items: flex-end;
+	flex-wrap: wrap;
+	gap: 12px;
+}
+.gv-search-widget-area .gv-search-field-search_all {
+	flex: 1 1 320px;          /* input grows to fill the row */
+}
+.gv-search-widget-area .gv-search p {
+	margin: 0;                /* drop the default paragraph gap so it lines up */
+}
+.gv-search-widget-area .gv-search-box-submit {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.gv-search-widget-area .gv-search-button {
+	width: auto;              /* stop it stretching full width */
+}
