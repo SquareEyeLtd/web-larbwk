@@ -32,11 +32,12 @@
                 array(
                     'theme_location' => 'top-menu',
                     'container'      => false,
-                    'menu_class'     => 'top-nav',
+                    'menu_class'     => 'top-nav dropdown menu',
                     'menu_id'        => 'top-menu-desktop',
                     'fallback_cb'    => false,
-                    'depth'          => 1,
-                    'items_wrap'     => '<ul id="%1$s" class="%2$s">%3$s</ul>',
+                    'depth'          => 0,
+                    'law_menu_mode'  => 'dropdown',
+                    'items_wrap'     => '<ul id="%1$s" class="%2$s" data-dropdown-menu>%3$s</ul>',
                 )
             );
             ?>
@@ -49,6 +50,8 @@
                     'container'      => false,
                     'menu_class'     => 'navlinks dropdown menu',
                     'fallback_cb'    => false,
+                    'depth'          => 0,
+                    'law_menu_mode'  => 'dropdown',
                     'items_wrap'     => '<ul id="%1$s" class="%2$s" data-dropdown-menu>%3$s</ul>',
                 )
             );
@@ -70,11 +73,12 @@
             array(
                 'theme_location' => 'top-menu',
                 'container'      => false,
-                'menu_class'     => 'top-nav',
+                'menu_class'     => 'top-nav vertical menu accordion-menu',
                 'menu_id'        => 'top-menu-mobile',
                 'fallback_cb'    => false,
-                'depth'          => 1,
-                'items_wrap'     => '<ul id="%1$s" class="%2$s">%3$s</ul>',
+                'depth'          => 0,
+                'law_menu_mode'  => 'accordion',
+                'items_wrap'     => '<ul id="%1$s" class="%2$s" data-accordion-menu data-multi-open="false">%3$s</ul>',
             )
         );
         ?>
@@ -86,9 +90,11 @@
             array(
                 'theme_location' => 'main-menu',
                 'container'      => false,
-                'menu_class'     => 'sub-accordion navlinks',
+                'menu_class'     => 'vertical menu accordion-menu navlinks',
                 'fallback_cb'    => false,
-                'items_wrap'     => '<ul id="%1$s" class="%2$s">%3$s</ul>',
+                'depth'          => 0,
+                'law_menu_mode'  => 'accordion',
+                'items_wrap'     => '<ul id="%1$s" class="%2$s" data-accordion-menu data-multi-open="false">%3$s</ul>',
             )
         );
         ?>

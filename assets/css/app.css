@@ -424,8 +424,49 @@ nav#new-nav .menu {
     gap: 0 1rem;
 }
 
+.hide-for-large .mobile-top-nav .top-nav.accordion-menu {
+    display: block;
+}
+
 .hide-for-large .mobile-top-nav .top-nav a {
     font-size: 0.9rem;
+}
+
+.nav .header-top .top-nav.dropdown.menu > li {
+    position: relative;
+}
+
+.nav .header-top .top-nav.dropdown.menu > li.is-dropdown-submenu-parent > a::after {
+    border-color: #fff transparent transparent;
+}
+
+.nav .header-top .top-nav .is-dropdown-submenu {
+    min-width: 12rem;
+    text-align: left;
+    z-index: 10000;
+}
+
+.nav .header-top .top-nav .is-dropdown-submenu a {
+    display: block;
+    padding: 0.45rem 0.85rem;
+    white-space: nowrap;
+}
+
+.hide-for-large .mobile-top-nav .is-accordion-submenu,
+.hide-for-large #mainListDiv .is-accordion-submenu {
+    margin: 0.25rem 0 0.5rem 0.75rem;
+    padding-left: 0.5rem;
+    border-left: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.hide-for-large .accordion-menu .is-accordion-submenu a {
+    display: block;
+    padding: 0.35rem 0;
+    font-size: 0.85rem;
+}
+
+.hide-for-large .accordion-menu .is-accordion-submenu-parent > a::after {
+    border-color: #fff transparent transparent;
 }
 
 .nav div.main_list .top-nav li {
