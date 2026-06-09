@@ -440,18 +440,6 @@ nav#new-nav .menu {
     border-color: #fff transparent transparent;
 }
 
-.nav .header-top .top-nav .is-dropdown-submenu {
-    min-width: 12rem;
-    text-align: left;
-    z-index: 10000;
-}
-
-.nav .header-top .top-nav .is-dropdown-submenu a {
-    display: block;
-    padding: 0.45rem 0.85rem;
-    white-space: nowrap;
-}
-
 .hide-for-large .mobile-top-nav .is-accordion-submenu,
 .hide-for-large #mainListDiv .is-accordion-submenu {
     margin: 0.25rem 0 0.5rem 0.75rem;
@@ -535,9 +523,45 @@ nav.affix .logo {
 }
 
 .is-dropdown-submenu {
-    background: none;
-    border: none;
     display: none;
+    min-width: 12rem;
+    width: auto !important;
+    margin: 0;
+    padding: 0.5rem 0;
+    list-style: none;
+    background-color: #292459;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    z-index: 10000;
+}
+
+.nav .dropdown.menu .is-dropdown-submenu > li,
+.nav .dropdown.menu .is-dropdown-submenu .submenu > li {
+    display: block;
+    float: none;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    text-align: left;
+}
+
+.nav .dropdown.menu .is-dropdown-submenu li a {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.5rem 1rem;
+    white-space: nowrap;
+    color: #fff;
+    text-align: left;
+    text-decoration: none;
+}
+
+.nav .dropdown.menu .is-dropdown-submenu li a:hover,
+.nav .dropdown.menu .is-dropdown-submenu li a:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffcc02;
+    text-decoration: none;
 }
 
 .affix {
@@ -549,15 +573,9 @@ nav.affix .logo {
     padding: 30px 0 30px 0;
 }
 
-.affix .is-dropdown-submenu {
-    background: #292459;
-    padding: .5rem 0;
-}
-
 .is-dropdown-submenu li a {
     text-align: left;
-    font-size: .8rem;
-
+    font-size: .85rem;
 }
 
 .dropdown.menu li a {
@@ -572,10 +590,6 @@ nav.affix .logo {
 
 .dropdown.menu>li.is-dropdown-submenu-parent>a::after {
     border-color: #0eaedd transparent transparent;
-}
-
-.dropdown.menu>li.opens-right>.is-dropdown-submenu {
-    width: 400px;
 }
 
 .nav div.main_list ul li a img {

@@ -17,9 +17,16 @@
 	wp_enqueue_style( 'law-accordions', $uri . '/assets/css/accordions.css', array( 'law-app' ), $v( '/assets/css/accordions.css' ) );
 
 	wp_enqueue_style( 'gravity-flow', get_theme_file_uri( '/assets/css/gravity-flow.css' ), array(), filemtime( get_theme_file_path( '/assets/css/gravity-flow.css' ) ) );
-	wp_enqueue_style( 'gravity-kit', get_theme_file_uri( '/assets/css/gravity-kit.css' ), array(), filemtime( get_theme_file_path( '/assets/css/gravity-kit.css' ) ) );
 
 	wp_enqueue_style( 'law-wp', get_stylesheet_uri(), array( 'law-app' ), $v( '/style.css' ) );
+
+	// After theme + GravityView plugin styles so search/table overrides win.
+	wp_enqueue_style(
+		'gravity-kit',
+		get_theme_file_uri( '/assets/css/gravity-kit.css' ),
+		array( 'law-wp' ),
+		filemtime( get_theme_file_path( '/assets/css/gravity-kit.css' ) )
+	);
 
 	// Typekit (Poppins)
 	wp_enqueue_style( 'law-typekit-1', 'https://use.typekit.net/vum0moo.css', array(), null );

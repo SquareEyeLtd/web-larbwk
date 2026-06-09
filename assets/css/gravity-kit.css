@@ -4,24 +4,95 @@
 	padding: 12px 16px !important;
 }
 
-/* Search input and button on one row */
-.gv-search-widget-area {
-	display: flex;
-	align-items: flex-end;
+/*
+ * Search widget — input and actions on one row.
+ * GravityView often sets flex-direction: column on .gv-search-widget-area; combined
+ * with flex-grow on the field box that creates a huge vertical gap before the buttons.
+ */
+.gv-widget-search .gv-search-widget-area {
+	display: flex !important;
+	flex-direction: row !important;
 	flex-wrap: wrap;
-	gap: 12px;
+	align-items: flex-end;
+	gap: 0.75rem 1rem;
 }
-.gv-search-widget-area .gv-search-field-search_all {
-	flex: 1 1 320px;          /* input grows to fill the row */
+
+.gv-widget-search .gv-search-widget-area .gv-search-box {
+	float: none !important;
+	clear: none !important;
+	width: auto !important;
+	max-width: 100%;
+	margin: 0 !important;
 }
-.gv-search-widget-area .gv-search p {
-	margin: 0;                /* drop the default paragraph gap so it lines up */
+
+.gv-widget-search .gv-search-widget-area .gv-search-field-search_all {
+	flex: 1 1 16rem;
+	min-width: min(100%, 16rem);
+	max-width: 100%;
 }
-.gv-search-widget-area .gv-search-box-submit {
-	display: flex;
+
+.gv-widget-search .gv-search-widget-area .gv-search label {
+	display: block;
+	margin-bottom: 0.35rem;
+}
+
+.gv-widget-search .gv-search-widget-area .gv-search p {
+	margin: 0 !important;
+}
+
+.gv-widget-search .gv-search-widget-area input[type="search"],
+.gv-widget-search .gv-search-widget-area input[type="text"] {
+	width: 100%;
+	max-width: 28rem;
+	box-sizing: border-box;
+	margin: 0;
+}
+
+.gv-widget-search .gv-search-widget-area .gv-search-box-submit {
+	flex: 0 0 auto;
+	display: flex !important;
+	flex-direction: row !important;
+	flex-wrap: nowrap;
 	align-items: center;
-	gap: 8px;
+	gap: 0.5rem;
 }
-.gv-search-widget-area .gv-search-button {
-	width: auto;              /* stop it stretching full width */
+
+.gv-widget-search .gv-search-widget-area .gv-search-button,
+.gv-widget-search .gv-search-widget-area .gv-search-clear {
+	width: auto !important;
+	max-width: none;
+	margin: 0 !important;
+	flex: 0 0 auto;
+	display: inline-block;
+	box-sizing: border-box;
+	padding: calc(0.65em + 2px) calc(1.25em + 2px);
+	border-radius: 9999px;
+	border: 1px solid #ef7d05;
+	background-color: #ef7d05;
+	color: #fff;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 0.8rem;
+	line-height: 1.2;
+	text-align: center;
+	text-transform: uppercase;
+	text-decoration: none;
+	cursor: pointer;
+	-webkit-appearance: none;
+	appearance: none;
+	transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+.gv-widget-search .gv-search-widget-area .gv-search-clear {
+	background-color: transparent;
+	color: #ef7d05;
+}
+
+.gv-widget-search .gv-search-widget-area .gv-search-button:hover,
+.gv-widget-search .gv-search-widget-area .gv-search-button:focus,
+.gv-widget-search .gv-search-widget-area .gv-search-clear:hover,
+.gv-widget-search .gv-search-widget-area .gv-search-clear:focus {
+	background-color: #292459;
+	border-color: #292459;
+	color: #fff;
 }
