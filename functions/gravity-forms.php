@@ -64,3 +64,13 @@ function law_prepopulate_orgid( $value ) {
     
     return '';
 }
+
+
+/* Allow drag and drop on Advanced Select fields  ________________________________________________________ */
+
+add_action( 'gform_enqueue_scripts', function() {
+	wp_enqueue_script( 'jquery-ui-sortable' );
+} );
+
+
+

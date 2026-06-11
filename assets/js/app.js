@@ -143,3 +143,15 @@ gform.addFilter('gform_datepicker_options_pre_init', function(optionsObj, formId
     }
     return optionsObj;
 });
+
+
+/* Allow drag and drop on Advanced Select fields ________________________________________________________ */
+
+window.gform.addFilter( 'gpadvs_settings', function( settings, gpadvs ) {
+	// Target a specific form/field, or remove the check to apply globally
+	if ( gpadvs.formId == 12 && gpadvs.fieldId == 4 ) {
+		settings.plugins = settings.plugins || {};
+		settings.plugins.drag_drop = {};
+	}
+	return settings;
+} );
