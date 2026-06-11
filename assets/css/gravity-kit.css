@@ -4,13 +4,19 @@
 	padding: 12px 16px !important;
 }
 
-/* Section break headings — target section field rows, not every label in a section group */
+/* Section break headings (table view: tr.gv-section; detail view: .gv-field-type-section) */
+.gv-container tr.gv-section .gv-field-label,
 .gv-container .gv-field-type-section .gv-field-label {
 	font-size: 24px;
 	line-height: 1.2;
 	font-weight: 700;
 	font-family: poppins, sans-serif;
 	color: #292459;
+}
+
+.gv-table-view tr.gv-section th,
+.gv-table-view tr.gv-section td {
+	padding-top: 1.25rem;
 }
 
 /*
