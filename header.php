@@ -28,6 +28,7 @@
         <div class="large-9 medium-8 small-6 show-for-large cell">
            <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
            <div class="header-top">
+            <div class="header-top__group">
             <?php law_render_header_member_status(); ?>
             <?php
             if ( has_nav_menu( 'top-menu' ) ) {
@@ -45,6 +46,7 @@
             );
             }
             ?>
+            </div>
             </div>
            <?php endif; ?>
           <div class="main_list">
@@ -73,6 +75,7 @@
     <div class="hide-for-large">
       <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
       <div class="header-top mobile-top-nav">
+        <div class="header-top__group">
         <?php law_render_header_member_status(); ?>
         <?php
         if ( has_nav_menu( 'top-menu' ) ) {
@@ -90,6 +93,7 @@
         );
         }
         ?>
+        </div>
       </div>
       <?php endif; ?>
       <div id="mainListDiv" class="main_list">

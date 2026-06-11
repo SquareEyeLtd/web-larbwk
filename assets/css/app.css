@@ -369,25 +369,49 @@ nav#new-nav .menu {
     flex-wrap: wrap;
     align-items: center;
     justify-content: flex-end;
-    gap: 0.75rem 1.25rem;
-    text-align: right;
     margin-bottom: 1rem;
+}
+
+.nav .header-top__group {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    max-width: 100%;
+    padding: 0.4rem 0.5rem 0.4rem 0.9rem;
+    background-color: rgba(0, 0, 0, 0.22);
+    border-radius: 9999px;
+}
+
+.nav .header-top__group:has(.header-member-status):has(.top-nav) .header-member-status {
+    padding-right: 0.85rem;
+    margin-right: 0.85rem;
+    border-right: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .nav .header-member-status {
     margin: 0;
-    margin-right: auto;
     color: #fff;
     font-size: 0.85rem;
     font-family: poppins, sans-serif;
     font-weight: 400;
     line-height: 1.4;
-    text-align: left;
     white-space: nowrap;
 }
 
-.nav .header-member-status__name {
+.nav .header-member-status__name a {
+    color: #fff;
     font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(255, 255, 255, 0.45);
+}
+
+.nav .header-member-status__name a:hover,
+.nav .header-member-status__name a:focus {
+    color: #ffcc02;
+    text-decoration-color: #ffcc02;
 }
 
 .nav .header-top .top-nav {
@@ -438,13 +462,24 @@ nav#new-nav .menu {
 .hide-for-large .mobile-top-nav {
     padding: 0 1rem 0.75rem;
     text-align: left;
-    flex-direction: column;
-    align-items: flex-start;
 }
 
-.hide-for-large .mobile-top-nav .header-member-status {
+.hide-for-large .mobile-top-nav .header-top__group {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    border-radius: 8px;
+    padding: 0.65rem 0.85rem;
+}
+
+.hide-for-large .mobile-top-nav .header-top__group:has(.header-member-status):has(.top-nav) .header-member-status {
+    width: 100%;
+    padding-right: 0;
     margin-right: 0;
-    margin-bottom: 0.35rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.35);
     white-space: normal;
 }
 

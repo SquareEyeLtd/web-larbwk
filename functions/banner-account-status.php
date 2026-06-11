@@ -82,11 +82,14 @@ function law_render_header_member_status() {
 	}
 
 	$display_name = wp_get_current_user()->display_name;
+	$url          = trailingslashit( home_url( '/account' ) );
 
 	?>
 	<p class="header-member-status" role="status">
 		<span class="header-member-status__prefix"><?php esc_html_e( 'Logged in as ', 'law' ); ?></span>
-		<span class="header-member-status__name"><?php echo esc_html( $display_name ); ?></span>
+		<span class="header-member-status__name">
+			<a href="<?php echo esc_url( $url ); ?>"><?php echo esc_html( $display_name ); ?></a>
+		</span>
 	</p>
 	<?php
 }
