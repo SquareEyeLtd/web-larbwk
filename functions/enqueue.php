@@ -16,6 +16,7 @@
 	wp_enqueue_style( 'law-app', $uri . '/assets/css/app.css', array( 'law-foundation' ), $v( '/assets/css/app.css' ) );
 	wp_enqueue_style( 'law-accordions', $uri . '/assets/css/accordions.css', array( 'law-app' ), $v( '/assets/css/accordions.css' ) );
 
+	wp_enqueue_style( 'gravity-forms', get_theme_file_uri( '/assets/css/gravity-forms.css' ), array(), filemtime( get_theme_file_path( '/assets/css/gravity-forms.css' ) ) );
 	wp_enqueue_style( 'gravity-flow', get_theme_file_uri( '/assets/css/gravity-flow.css' ), array(), filemtime( get_theme_file_path( '/assets/css/gravity-flow.css' ) ) );
 
 	wp_enqueue_style( 'law-wp', get_stylesheet_uri(), array( 'law-app' ), $v( '/style.css' ) );
