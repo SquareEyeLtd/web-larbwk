@@ -26,8 +26,11 @@
           </div>
         </div>
         <div class="large-9 medium-8 small-6 show-for-large cell">
+           <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
            <div class="header-top">
+            <?php law_render_header_member_status(); ?>
             <?php
+            if ( has_nav_menu( 'top-menu' ) ) {
             wp_nav_menu(
                 array(
                     'theme_location' => 'top-menu',
@@ -40,8 +43,10 @@
                     'items_wrap'     => '<ul id="%1$s" class="%2$s" data-dropdown-menu>%3$s</ul>',
                 )
             );
+            }
             ?>
             </div>
+           <?php endif; ?>
           <div class="main_list">
             <?php
             wp_nav_menu(
@@ -66,9 +71,11 @@
       </div>
     </div>
     <div class="hide-for-large">
-      <?php if ( has_nav_menu( 'top-menu' ) ) : ?>
+      <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
       <div class="header-top mobile-top-nav">
+        <?php law_render_header_member_status(); ?>
         <?php
+        if ( has_nav_menu( 'top-menu' ) ) {
         wp_nav_menu(
             array(
                 'theme_location' => 'top-menu',
@@ -81,6 +88,7 @@
                 'items_wrap'     => '<ul id="%1$s" class="%2$s" data-accordion-menu data-multi-open="false">%3$s</ul>',
             )
         );
+        }
         ?>
       </div>
       <?php endif; ?>

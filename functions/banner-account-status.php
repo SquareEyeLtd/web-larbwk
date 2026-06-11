@@ -72,3 +72,21 @@ function law_render_banner_account_status() {
 	</div>
 	<?php
 }
+
+/**
+ * Compact member status for the header top bar (no-op when logged out).
+ */
+function law_render_header_member_status() {
+	if ( ! is_user_logged_in() ) {
+		return;
+	}
+
+	$display_name = wp_get_current_user()->display_name;
+
+	?>
+	<p class="header-member-status" role="status">
+		<span class="header-member-status__prefix"><?php esc_html_e( 'Logged in as ', 'law' ); ?></span>
+		<span class="header-member-status__name"><?php echo esc_html( $display_name ); ?></span>
+	</p>
+	<?php
+}

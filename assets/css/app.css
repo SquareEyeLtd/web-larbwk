@@ -365,8 +365,29 @@ nav#new-nav .menu {
 
 .nav .header-top {
     width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem 1.25rem;
     text-align: right;
     margin-bottom: 1rem;
+}
+
+.nav .header-member-status {
+    margin: 0;
+    margin-right: auto;
+    color: #fff;
+    font-size: 0.85rem;
+    font-family: poppins, sans-serif;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.nav .header-member-status__name {
+    font-weight: 600;
 }
 
 .nav .header-top .top-nav {
@@ -417,6 +438,14 @@ nav#new-nav .menu {
 .hide-for-large .mobile-top-nav {
     padding: 0 1rem 0.75rem;
     text-align: left;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.hide-for-large .mobile-top-nav .header-member-status {
+    margin-right: 0;
+    margin-bottom: 0.35rem;
+    white-space: normal;
 }
 
 .hide-for-large .mobile-top-nav .top-nav {
