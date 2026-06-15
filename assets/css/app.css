@@ -379,7 +379,7 @@ nav#new-nav .menu {
     justify-content: flex-end;
     gap: 0;
     max-width: 100%;
-    padding: 0.4rem 0.5rem 0.4rem 0.9rem;
+    padding: 0.45rem 0.9rem;
     background-color: rgba(0, 0, 0, 0.22);
     border-radius: 9999px;
 }
@@ -461,6 +461,7 @@ nav#new-nav .menu {
 
 .nav .header-top .top-nav a {
     display: inline-block;
+    margin: 0;
     color: #fff;
     font-size: 0.85rem;
     font-family: poppins, sans-serif;
@@ -469,16 +470,30 @@ nav#new-nav .menu {
     text-decoration: none;
 }
 
+.nav .header-top .top-nav a.button {
+    width: auto;
+    max-width: none;
+    padding: 0.45rem 0.9rem;
+    line-height: 1.2;
+    text-align: center;
+    text-transform: none;
+    border: none;
+    background-color: transparent;
+    color: #fff;
+}
+
+.nav .header-top .top-nav a.button:hover,
+.nav .header-top .top-nav a.button:focus {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffcc02;
+    text-decoration: none;
+}
+
 .nav .header-top .top-nav a:hover,
 .nav .header-top .top-nav a:focus {
     text-decoration: underline;
     text-underline-offset: 4px;
     color: #ffcc02;
-}
-
-.nav .header-top a:not(.header-member-status__name):not(.header-member-status__logout) {
-    display: inline-block;
-    margin-left: 10px;
 }
 
 .nav .header-top img {
