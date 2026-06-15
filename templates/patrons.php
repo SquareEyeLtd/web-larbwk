@@ -25,9 +25,6 @@ get_header();
           </div>
         </div>
 </section>
-
-<?php law_render_banner_account_status(); ?>
-
 <?php endwhile; endif; wp_reset_postdata(); ?>
 
 

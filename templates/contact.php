@@ -24,9 +24,6 @@ get_header();
           </div>
         </div>
 </section>
-
-<?php law_render_banner_account_status(); ?>
-
 <section class="page-section contact-page">
     <div class="grid-container">
         <div class="grid-x grid-padding-x">
