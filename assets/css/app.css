@@ -407,13 +407,15 @@ nav#new-nav .menu {
     white-space: nowrap;
 }
 
-.nav .header-member-status__label::after {
-    content: '\00a0';
+.nav .header-member-status__name,
+.nav .header-member-status__logout {
+    margin-left: 0;
 }
 
 .nav .header-member-status__sep {
     opacity: 0.55;
     user-select: none;
+    padding: 0 0.15rem;
 }
 
 .nav .header-member-status__name,
@@ -474,7 +476,7 @@ nav#new-nav .menu {
     color: #ffcc02;
 }
 
-.nav .header-top a{
+.nav .header-top a:not(.header-member-status__name):not(.header-member-status__logout) {
     display: inline-block;
     margin-left: 10px;
 }

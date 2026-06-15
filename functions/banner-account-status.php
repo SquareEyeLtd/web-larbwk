@@ -21,11 +21,8 @@ function law_render_header_member_status() {
 
 	?>
 	<p class="header-member-status" role="status">
-		<span class="header-member-status__label">
-			<?php esc_html_e( 'Logged in as', 'law' ); ?>
-			<a class="header-member-status__name" href="<?php echo esc_url( $account_url ); ?>"><?php echo esc_html( $display_name ); ?></a>
-		</span>
-		<span class="header-member-status__sep" aria-hidden="true">·</span>
+		<span class="header-member-status__label"><?php esc_html_e( 'Logged in as', 'law' ); ?> <a class="header-member-status__name" href="<?php echo esc_url( $account_url ); ?>"><?php echo esc_html( $display_name ); ?></a></span>
+		<span class="header-member-status__sep" aria-hidden="true">|</span>
 		<a class="header-member-status__logout" href="<?php echo esc_url( $logout_url ); ?>"><?php esc_html_e( 'Log out', 'law' ); ?></a>
 	</p>
 	<?php
