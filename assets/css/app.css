@@ -384,6 +384,10 @@ nav#new-nav .menu {
     border-radius: 9999px;
 }
 
+.nav .header-top__group .top-nav {
+    margin: 0;
+}
+
 .nav .header-top__group:has(.header-member-status):has(.top-nav) .header-member-status {
     padding-right: 0.85rem;
     margin-right: 0.85rem;
@@ -459,21 +463,26 @@ nav#new-nav .menu {
     text-align: right;
 }
 
+/* Pill padding lives on .header-top__group — reset Foundation / .button on top-bar links */
+.nav .header-top .top-nav.dropdown.menu li a,
 .nav .header-top .top-nav a {
     display: inline-block;
     margin: 0;
+    padding: 0;
     color: #fff;
     font-size: 0.85rem;
     font-family: poppins, sans-serif;
     font-weight: 600;
-    line-height: 1.4;
+    line-height: 1.2;
     text-decoration: none;
 }
 
-.nav .header-top .top-nav a.button {
+.nav .header-top .top-nav a.button,
+.nav .header-top .top-nav a.button.primary {
     width: auto;
     max-width: none;
-    padding: 0.45rem 0.9rem;
+    margin: 0;
+    padding: 0;
     line-height: 1.2;
     text-align: center;
     text-transform: none;
@@ -483,7 +492,9 @@ nav#new-nav .menu {
 }
 
 .nav .header-top .top-nav a.button:hover,
-.nav .header-top .top-nav a.button:focus {
+.nav .header-top .top-nav a.button:focus,
+.nav .header-top .top-nav a.button.primary:hover,
+.nav .header-top .top-nav a.button.primary:focus {
     background-color: rgba(255, 255, 255, 0.1);
     color: #ffcc02;
     text-decoration: none;
@@ -1066,7 +1077,7 @@ nav .logo {
     max-width: 500px;
 } */
 
-nav .button.primary{
+nav div.main_list .button.primary {
     margin-top: 2.8rem;
 }
 
