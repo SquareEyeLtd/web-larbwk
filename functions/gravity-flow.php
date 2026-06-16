@@ -1,5 +1,7 @@
 <?php
 	
+	
+	
 add_filter( 'gettext_gravityflow', function ( $translation, $text, $domain ) {
 	if ( 'Revert' === $text ) {
 		return 'Send back';
