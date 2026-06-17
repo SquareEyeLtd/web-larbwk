@@ -1,9 +1,117 @@
-
-.ts-control > .item {
-	cursor: grab;
-}
-
 /* Host workflow page (279): comments log append-only — hide Edit/Delete, keep Add Comment */
 .page-id-279 #field_2_99 .gpnf-row-actions {
 	display: none;
+}
+
+/*
+ * Gravity Forms, GravityView & Gravity Flow buttons — match site prose buttons.
+ * Primary: orange pill. Secondary (cancel, revert, reject): orange outline.
+ */
+
+#publishing-action {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.65rem;
+}
+
+.gform_wrapper .gform_footer input[type="submit"],
+.gform_wrapper .gform_footer button.gform_button,
+.gform_wrapper .gform_page_footer input[type="submit"],
+.gform_wrapper .gform_page_footer button.gform_button,
+.gform_wrapper input.gform_button,
+.gform_wrapper button.gform_button,
+#publishing-action input[type="submit"],
+#publishing-action input.gform_button,
+#publishing-action .button-primary,
+#publishing-action .gv-button-update,
+.gravityflow_workflow_wrap #gravityflow_update_button,
+.gravityflow_workflow_wrap .gravityflow-action-buttons .button:not([value="revert"]):not([value="rejected"]) {
+	display: inline-block;
+	box-sizing: border-box;
+	width: auto !important;
+	max-width: 100%;
+	margin: 0 !important;
+	padding: calc(0.65em + 2px) calc(1.25em + 2px) !important;
+	border-radius: 9999px !important;
+	border: 1px solid #ef7d05 !important;
+	background-color: #ef7d05 !important;
+	background-image: none !important;
+	color: #fff !important;
+	font-family: poppins, sans-serif !important;
+	font-weight: 600 !important;
+	font-size: 0.8rem !important;
+	line-height: 1.2 !important;
+	text-align: center;
+	text-transform: uppercase;
+	text-decoration: none;
+	cursor: pointer;
+	vertical-align: middle;
+	-webkit-appearance: none;
+	appearance: none;
+	transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+.gform_wrapper .gform_footer input[type="submit"]:hover,
+.gform_wrapper .gform_footer input[type="submit"]:focus,
+.gform_wrapper .gform_footer button.gform_button:hover,
+.gform_wrapper .gform_footer button.gform_button:focus,
+.gform_wrapper .gform_page_footer input[type="submit"]:hover,
+.gform_wrapper .gform_page_footer input[type="submit"]:focus,
+.gform_wrapper .gform_page_footer button.gform_button:hover,
+.gform_wrapper .gform_page_footer button.gform_button:focus,
+.gform_wrapper input.gform_button:hover,
+.gform_wrapper input.gform_button:focus,
+.gform_wrapper button.gform_button:hover,
+.gform_wrapper button.gform_button:focus,
+#publishing-action input[type="submit"]:hover,
+#publishing-action input[type="submit"]:focus,
+#publishing-action .button-primary:hover,
+#publishing-action .button-primary:focus,
+#publishing-action .gv-button-update:hover,
+#publishing-action .gv-button-update:focus,
+.gravityflow_workflow_wrap #gravityflow_update_button:hover,
+.gravityflow_workflow_wrap #gravityflow_update_button:focus,
+.gravityflow_workflow_wrap .gravityflow-action-buttons .button:not([value="revert"]):not([value="rejected"]):hover,
+.gravityflow_workflow_wrap .gravityflow-action-buttons .button:not([value="revert"]):not([value="rejected"]):focus {
+	background-color: #292459 !important;
+	border-color: #292459 !important;
+	color: #fff !important;
+}
+
+#publishing-action .gv-button-cancel,
+.gravityflow_workflow_wrap .gravityflow-action-buttons button[value="revert"],
+.gravityflow_workflow_wrap .gravityflow-action-buttons button[value="rejected"] {
+	display: inline-block;
+	box-sizing: border-box;
+	width: auto !important;
+	max-width: 100%;
+	margin: 0 !important;
+	padding: calc(0.65em + 2px) calc(1.25em + 2px) !important;
+	border-radius: 9999px !important;
+	border: 2px solid #ef7d05 !important;
+	background-color: transparent !important;
+	background-image: none !important;
+	color: #ef7d05 !important;
+	font-family: poppins, sans-serif !important;
+	font-weight: 600 !important;
+	font-size: 0.8rem !important;
+	line-height: 1.2 !important;
+	text-align: center;
+	text-transform: uppercase;
+	text-decoration: none;
+	cursor: pointer;
+	vertical-align: middle;
+	transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease;
+}
+
+#publishing-action .gv-button-cancel:hover,
+#publishing-action .gv-button-cancel:focus,
+.gravityflow_workflow_wrap .gravityflow-action-buttons button[value="revert"]:hover,
+.gravityflow_workflow_wrap .gravityflow-action-buttons button[value="revert"]:focus,
+.gravityflow_workflow_wrap .gravityflow-action-buttons button[value="rejected"]:hover,
+.gravityflow_workflow_wrap .gravityflow-action-buttons button[value="rejected"]:focus {
+	background-color: rgba(239, 125, 5, 0.08) !important;
+	color: #292459 !important;
+	border-color: #292459 !important;
 }

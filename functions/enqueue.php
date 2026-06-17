@@ -1,6 +1,5 @@
 <?php
-	
-	add_action( 'wp_enqueue_scripts', function () {
+add_action( 'wp_enqueue_scripts', function () {
 	$uri  = get_template_directory_uri();
 	$path = get_template_directory();
 
@@ -16,12 +15,23 @@
 	wp_enqueue_style( 'law-app', $uri . '/assets/css/app.css', array( 'law-foundation' ), $v( '/assets/css/app.css' ) );
 	wp_enqueue_style( 'law-accordions', $uri . '/assets/css/accordions.css', array( 'law-app' ), $v( '/assets/css/accordions.css' ) );
 
-	wp_enqueue_style( 'gravity-forms', get_theme_file_uri( '/assets/css/gravity-forms.css' ), array(), filemtime( get_theme_file_path( '/assets/css/gravity-forms.css' ) ) );
-	wp_enqueue_style( 'gravity-flow', get_theme_file_uri( '/assets/css/gravity-flow.css' ), array(), filemtime( get_theme_file_path( '/assets/css/gravity-flow.css' ) ) );
-
 	wp_enqueue_style( 'law-wp', get_stylesheet_uri(), array( 'law-app' ), $v( '/style.css' ) );
 
-	// After theme + GravityView plugin styles so search/table overrides win.
+	// After theme + plugin styles so GF/GV/GFlow overrides win.
+	wp_enqueue_style(
+		'gravity-forms',
+		get_theme_file_uri( '/assets/css/gravity-forms.css' ),
+		array( 'law-wp' ),
+		filemtime( get_theme_file_path( '/assets/css/gravity-forms.css' ) )
+	);
+	wp_enqueue_style(
+		'gravity-flow',
+		get_theme_file_uri( '/assets/css/gravity-flow.css' ),
+		array( 'law-wp' ),
+		filemtime( get_theme_file_path( '/assets/css/gravity-flow.css' ) )
+	);
+
+	// GravityView table/search tweaks.
 	wp_enqueue_style(
 		'gravity-kit',
 		get_theme_file_uri( '/assets/css/gravity-kit.css' ),
@@ -39,4 +49,4 @@
 	wp_enqueue_script( 'law-wow', $uri . '/assets/js/vendor/wow.min.js', array(), $v( '/assets/js/vendor/wow.min.js' ), true );
 	wp_enqueue_script( 'law-matchheight', 'https://cdnjs.cloudflare.com/ajax/libs/jquery.matchHeight/0.7.2/jquery.matchHeight-min.js', array( 'jquery' ), '0.7.2', true );
 	wp_enqueue_script( 'law-app', $uri . '/assets/js/app.js', array( 'jquery', 'law-foundation', 'law-wow', 'law-matchheight' ), $v( '/assets/js/app.js' ), true );
-} );
+}, 20 );

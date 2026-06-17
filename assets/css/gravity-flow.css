@@ -42,3 +42,23 @@ body.role-event_host #gravityflow-status-box-container .gravityflow-status-box-f
 body.role-event_host #gravityflow-status-box-container hr {
 	display: none !important;
 }
+
+/* Host workflow detail: hide print, strip status box chrome, style Submit */
+body.role-event_host .detail-view-print {
+	display: none !important;
+}
+
+body.role-event_host #gravityflow-status-box-container.postbox {
+	border: 0 !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	margin-top: 1rem !important;
+	overflow: visible !important;
+}
+
+body.role-event_host #gravityflow-status-box-container .submitbox,
+body.role-event_host #gravityflow-status-box-container .gravityflow-status-box,
+body.role-event_host #gravityflow-status-box-container .gravityflow-action-buttons {
+	padding: 0 !important;
+	margin: 0 !important;
+}

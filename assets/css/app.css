@@ -2706,14 +2706,15 @@ margin-bottom: .5rem;
 }
 
 .gravityflow_workflow_wrap .gravityflow-action-buttons .button {
-    min-height: 2.5rem;
-    padding: 0.5rem 1rem !important;
-    font-family: poppins, sans-serif !important;
-    font-weight: 600 !important;
-    border-radius: 6px !important;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
+	min-height: 0;
+	padding: calc(0.65em + 2px) calc(1.25em + 2px) !important;
+	font-family: poppins, sans-serif !important;
+	font-weight: 600 !important;
+	border-radius: 9999px !important;
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	width: auto !important;
 }
 
 .gravityflow_workflow_wrap .detail-view-print {
