@@ -2,3 +2,8 @@
 .ts-control > .item {
 	cursor: grab;
 }
+
+/* Host workflow page (279): comments log append-only — hide Edit/Delete, keep Add Comment */
+.page-id-279 #field_2_99 .gpnf-row-actions {
+	display: none;
+}
