@@ -82,7 +82,7 @@ add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
 
 	$parent_field_id = 99;   // Comments
 	$comment_field   = 1;    // "Your comment" child field
-	$name_field      = 3;    // "Name" child field
+	// Name is a composite field: 3.3 first, 3.6 last
 
 	$children = gp_nested_forms()->get_entries( rgar( $entry, $parent_field_id ) );
 	if ( empty( $children ) ) {
@@ -90,8 +90,11 @@ add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
 	}
 
 	// Child entries come oldest-first; take the last as the latest.
-	$latest = end( $children );
-	$out    = trim( rgar( $latest, $name_field ) . ': ' . rgar( $latest, $comment_field ) );
+	$latest  = end( $children );
+	$name    = trim( rgar( $latest, '3.3' ) . ' ' . rgar( $latest, '3.6' ) );
+	$comment = rgar( $latest, $comment_field );
+
+	$out = '<strong>' . esc_html( $name ) . '</strong>: ' . $comment;
 
 	return str_replace( '{latest_comment}', $out, $text );
 }, 10, 3 );
