@@ -35,3 +35,10 @@ body.role-event_committee .gravityflow-timeline,
 body.role-administrator .gravityflow-timeline {
 	display: block !important;
 }
+
+/* Strip the Workflow status box back to just the Submit button for hosts */
+body.role-event_host #gravityflow-status-box-container .hndle,
+body.role-event_host #gravityflow-status-box-container .gravityflow-status-box-field,
+body.role-event_host #gravityflow-status-box-container hr {
+	display: none !important;
+}
