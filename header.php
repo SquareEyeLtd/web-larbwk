@@ -36,7 +36,7 @@
                 array(
                     'theme_location' => 'top-menu',
                     'container'      => false,
-                    'menu_class'     => 'top-nav dropdown menu',
+                    'menu_class'     => 'top-nav dropdown menu align-right',
                     'menu_id'        => 'top-menu-desktop',
                     'fallback_cb'    => false,
                     'depth'          => 0,
