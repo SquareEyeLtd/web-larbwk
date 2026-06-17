@@ -73,4 +73,25 @@ add_action( 'gform_enqueue_scripts', function() {
 } );
 
 
+/* Insert latest comment field data into notifications ________________________________________________________ */
 
+add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
+	if ( false === strpos( (string) $text, '{latest_comment}' ) || ! function_exists( 'gp_nested_forms' ) ) {
+		return $text;
+	}
+
+	$parent_field_id = 99;   // Comments
+	$comment_field   = 1;    // "Your comment" child field
+	$name_field      = 3;    // "Name" child field
+
+	$children = gp_nested_forms()->get_entries( rgar( $entry, $parent_field_id ) );
+	if ( empty( $children ) ) {
+		return str_replace( '{latest_comment}', '', $text );
+	}
+
+	// Child entries come oldest-first; take the last as the latest.
+	$latest = end( $children );
+	$out    = trim( rgar( $latest, $name_field ) . ': ' . rgar( $latest, $comment_field ) );
+
+	return str_replace( '{latest_comment}', $out, $text );
+}, 10, 3 );
