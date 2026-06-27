@@ -111,3 +111,29 @@
 	border-color: #292459;
 	color: #fff;
 }
+
+/* Tidy the GravityView single-entry table */
+.gv-table-single-container .gv-table-view-content {
+	table-layout: fixed;
+	width: 100%;
+}
+
+.gv-table-single-container .gv-table-view-content th[scope="row"],
+.gv-table-single-container .gv-table-view-content td {
+	vertical-align: top;
+	padding: 8px 14px;
+	height: auto;
+	line-height: 1.4;
+	word-break: break-word;     /* long values wrap instead of overflowing */
+}
+
+/* The label column — fixed, sensible width */
+.gv-table-single-container .gv-table-view-content th[scope="row"] {
+	width: 220px;
+	font-weight: 600;
+}
+
+/* Section header rows (Submitter details, Event details, etc.) span full width */
+.gv-table-single-container .gv-table-view-content tr.gv-section th[scope="row"] {
+	width: auto;
+}
