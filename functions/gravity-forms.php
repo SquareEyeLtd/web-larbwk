@@ -103,32 +103,57 @@ add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
 /* Notify committee assignee when field 90 changes on entry edit ____________________________________________ */
 
 /**
+ * GF form 2 notification ID for the committee "entry edited" alert.
+ * Form → Settings → Notifications → open the notification → ID is in the admin URL.
+ */
+const LAW_GF_EVENT_EDITED_NOTIFICATION_ID = '6a400d916e3fd';
+
+/**
  * Notify the new Committee assignee when field 90 changes on an entry edit.
  * Field 90 stores the assignee's email (Populate Anything → user email as value).
- *
- * Temporarily disabled — change to true to re-enable.
  */
-if ( false ) {
-	add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
+add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
 
-		$old = (string) rgar( $original_entry, '90' );
-		$new = (string) rgar( $entry, '90' );
+	$old = (string) rgar( $original_entry, '90' );
+	$new = (string) rgar( $entry, '90' );
 
-		// Only when it actually changed, and a new assignee is set (not cleared).
-		if ( $old === $new || ! is_email( $new ) ) {
-			return;
-		}
+	// Only when it actually changed, and a new assignee is set (not cleared).
+	if ( $old === $new || ! is_email( $new ) ) {
+		return;
+	}
 
-		$title = rgar( $entry, '17' ); // Event title
-		$ref   = rgar( $entry, '70' ); // LAW reference
-		$link  = 'https://londonarbitrationweek.co.uk/account/dashboard/'; // committee single-entry URL
+	$title = rgar( $entry, '17' ); // Event title
+	$ref   = rgar( $entry, '70' ); // LAW reference
+	$link  = 'https://londonarbitrationweek.co.uk/account/dashboard/'; // committee single-entry URL
 
-		$subject = sprintf( 'You have been assigned an event: %s (%s)', $title, $ref );
-		$body    = '<p>You have been assigned as the committee contact for '
-			. '<strong>' . esc_html( $title ) . '</strong> (' . esc_html( $ref ) . ').</p>'
-			. '<p><a href="' . esc_url( $link ) . '">View it in the committee dashboard</a></p>';
+	$subject = sprintf( 'You have been assigned an event: %s (%s)', $title, $ref );
+	$body    = '<p>You have been assigned as the committee contact for '
+		. '<strong>' . esc_html( $title ) . '</strong> (' . esc_html( $ref ) . ').</p>'
+		. '<p><a href="' . esc_url( $link ) . '">View it in the committee dashboard</a></p>';
 
-		wp_mail( $new, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
+	wp_mail( $new, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
 
-	}, 10, 2 );
-}
+}, 10, 2 );
+
+
+/* Only notify committee of entry edits when an event host made the change ________________________________ */
+
+/**
+ * Only send the "event edited" committee notification when the editor
+ * is NOT committee/admin — i.e. a host edited their own event.
+ */
+add_filter( 'gform_disable_notification_2', function ( $is_disabled, $notification, $form, $entry ) {
+
+	// Target only the edit-alert notification.
+	if ( rgar( $notification, 'id' ) !== LAW_GF_EVENT_EDITED_NOTIFICATION_ID ) {
+		return $is_disabled;
+	}
+
+	// If the editor can edit others' entries, they're committee/admin — suppress.
+	if ( current_user_can( 'gravityview_edit_others_entries' ) ) {
+		return true;
+	}
+
+	return $is_disabled;
+}, 10, 4 );
+
