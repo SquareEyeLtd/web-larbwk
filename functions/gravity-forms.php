@@ -139,6 +139,13 @@ add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
 /* Only notify committee of entry edits when an event host made the change ________________________________ */
 
 /**
+ * True when the current user is committee/admin (not an event host editing their own entry).
+ */
+function law_gf_editor_is_staff_reviewer() {
+	return current_user_can( 'gravityview_edit_others_entries' );
+}
+
+/**
  * Only send the "event edited" committee notification when the editor
  * is NOT committee/admin — i.e. a host edited their own event.
  */
@@ -150,10 +157,25 @@ add_filter( 'gform_disable_notification_2', function ( $is_disabled, $notificati
 	}
 
 	// If the editor can edit others' entries, they're committee/admin — suppress.
-	if ( current_user_can( 'gravityview_edit_others_entries' ) ) {
+	if ( law_gf_editor_is_staff_reviewer() ) {
 		return true;
 	}
 
 	return $is_disabled;
+}, 10, 4 );
+
+/**
+ * Same host-only rule for GravityRevisions "entry updated, revision is saved" emails.
+ * Those are sent via gravityview/entry-revisions/send-notifications, not only gform_disable_notification.
+ *
+ * @see https://www.gravitykit.com/docs/gravityrevisions/entry-revisions-hooks/
+ */
+add_filter( 'gravityview/entry-revisions/send-notifications', function ( $send_notification, $revision_to_add, $current_entry, $changed_fields ) {
+
+	if ( law_gf_editor_is_staff_reviewer() ) {
+		return false;
+	}
+
+	return $send_notification;
 }, 10, 4 );
 
