@@ -108,23 +108,66 @@ add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
  */
 const LAW_GF_EVENT_EDITED_NOTIFICATION_ID = '6a400d916e3fd';
 
+/** Form 2 field ID for the committee assignee (Populate Anything; stores user email as value). */
+const LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID = 90;
+
 /**
- * Notify the new Committee assignee when field 90 changes on an entry edit.
- * Field 90 stores the assignee's email (Populate Anything → user email as value).
+ * Normalise field 90 to an email address.
+ *
+ * @param mixed $value Raw field value.
+ * @return string Email address, or empty string if not resolvable.
  */
-add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
+function law_get_committee_assignee_email_from_field( $value ) {
+	$value = trim( (string) $value );
 
-	$old = (string) rgar( $original_entry, '90' );
-	$new = (string) rgar( $entry, '90' );
+	if ( '' === $value ) {
+		return '';
+	}
 
-	// Only when it actually changed, and a new assignee is set (not cleared).
+	if ( is_email( $value ) ) {
+		return $value;
+	}
+
+	if ( ctype_digit( $value ) ) {
+		$user = get_user_by( 'id', absint( $value ) );
+		if ( $user && is_email( $user->user_email ) ) {
+			return $user->user_email;
+		}
+	}
+
+	return '';
+}
+
+/**
+ * Send assignee notification when field 90 changes.
+ *
+ * @param array $entry          Updated entry.
+ * @param array $original_entry Entry before the update.
+ */
+function law_maybe_notify_committee_assignee( $entry, $original_entry ) {
+	static $sent = array();
+
+	$entry_id = absint( rgar( $entry, 'id' ) );
+	if ( ! $entry_id ) {
+		return;
+	}
+
+	$old = law_get_committee_assignee_email_from_field( rgar( $original_entry, LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID ) );
+	$new = law_get_committee_assignee_email_from_field( rgar( $entry, LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID ) );
+
 	if ( $old === $new || ! is_email( $new ) ) {
 		return;
 	}
 
+	$dedupe_key = $entry_id . '|' . $new;
+	if ( isset( $sent[ $dedupe_key ] ) ) {
+		return;
+	}
+	$sent[ $dedupe_key ] = true;
+
 	$title = rgar( $entry, '17' ); // Event title
 	$ref   = rgar( $entry, '70' ); // LAW reference
-	$link  = 'https://londonarbitrationweek.co.uk/account/dashboard/'; // committee single-entry URL
+	$link  = 'https://londonarbitrationweek.co.uk/account/dashboard/';
 
 	$subject = sprintf( 'You have been assigned an event: %s (%s)', $title, $ref );
 	$body    = '<p>You have been assigned as the committee contact for '
@@ -132,8 +175,45 @@ add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
 		. '<p><a href="' . esc_url( $link ) . '">View it in the committee dashboard</a></p>';
 
 	wp_mail( $new, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
+}
 
+/**
+ * GFAPI::update_entry() — some programmatic updates.
+ */
+add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
+	law_maybe_notify_committee_assignee( $entry, $original_entry );
 }, 10, 2 );
+
+/**
+ * GravityView Edit Entry and wp-admin entry detail — uses save_lead(), not GFAPI::update_entry().
+ */
+add_action( 'gform_after_update_entry_2', function ( $form, $entry_id, $original_entry ) {
+	$entry = GFAPI::get_entry( $entry_id );
+	if ( is_wp_error( $entry ) ) {
+		return;
+	}
+
+	law_maybe_notify_committee_assignee( $entry, $original_entry );
+}, 10, 3 );
+
+/**
+ * GravityEdit inline edit — standard GF update hooks are removed by the plugin.
+ *
+ * @see https://www.gravitykit.com/docs/gravityedit/inline-edit-filters/
+ */
+add_filter( 'gravityview-inline-edit/entry-updated', function ( $update_result, $entry, $form_id, $gf_field, $original_entry ) {
+	if ( 2 !== (int) $form_id || empty( $update_result ) || is_wp_error( $update_result ) ) {
+		return $update_result;
+	}
+
+	if ( $gf_field && (int) $gf_field->id !== LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID ) {
+		return $update_result;
+	}
+
+	law_maybe_notify_committee_assignee( $entry, $original_entry );
+
+	return $update_result;
+}, 10, 5 );
 
 
 /* Only notify committee of entry edits when an event host made the change ________________________________ */
