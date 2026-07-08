@@ -210,6 +210,15 @@ form .button.primary,
     max-width: 100%;
 }
 
+/* Login submit — match/beats former .law-login-form #loginform { width: 100% } rule. */
+.page-section .content .law-login-form #loginform input[type="submit"],
+.text-page .content .law-login-form #loginform input[type="submit"],
+.page-section .content #loginform input[type="submit"],
+.text-page .content #loginform input[type="submit"] {
+    width: auto;
+    max-width: 100%;
+}
+
 
 /* WP-specific overrides */
 .admin-bar .nav {
