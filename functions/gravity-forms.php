@@ -73,6 +73,25 @@ add_action( 'gform_enqueue_scripts', function() {
 } );
 
 
+/* Auto-attach Nested Forms child entries when editing via Gravity Flow ____________________________________ */
+
+/**
+ * By default, child entries (e.g. comments) added while editing a parent entry on a Gravity Flow
+ * user input step are only attached to the parent entry when the workflow Submit button is clicked.
+ * Until then they're orphaned: they don't survive a page refresh and are trashed after a week.
+ *
+ * This attaches the child entry to the parent as soon as the child form (modal) is submitted.
+ *
+ * @see https://gravitywiz.com/snippet-library/gpnf-gflow-auto-attach-child-entries/
+ */
+add_filter( 'gpnf_set_parent_entry_id', function ( $parent_entry_id ) {
+	if ( ! $parent_entry_id && is_callable( 'gravity_flow' ) && gravity_flow()->is_workflow_detail_page() ) {
+		$parent_entry_id = rgget( 'lid' ) ? rgget( 'lid' ) : $parent_entry_id;
+	}
+	return $parent_entry_id;
+} );
+
+
 /* Insert latest comment field data into notifications ________________________________________________________ */
 
 add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
