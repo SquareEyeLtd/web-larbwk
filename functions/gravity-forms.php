@@ -92,6 +92,48 @@ add_filter( 'gpnf_set_parent_entry_id', function ( $parent_entry_id ) {
 } );
 
 
+/* Keep GPNF modal submissions AJAX on Gravity Flow inbox pages ____________________________________________ */
+
+/**
+ * Gravity Flow 3.1 ships a JS filter (js/inbox.js) intended to force plain postback submission
+ * for its own step-status form only. The guard uses `indexOf(...) === false`, but indexOf returns
+ * -1 (never false), so the filter matches EVERY form on the inbox page - including the Nested
+ * Forms comment modal. The modal form then submits as a full-page POST: the page re-renders in a
+ * "nested form submission" context, GPNF's Knockout table never re-binds, and the comments vanish
+ * until the next refresh.
+ *
+ * This re-asserts the iframe submission method for forms inside a GPNF modal, at a later filter
+ * priority than Gravity Flow's. Remove once Gravity Flow fixes the indexOf comparison upstream.
+ */
+add_action( 'wp_footer', function () {
+	// Can't use gravity_flow()->is_workflow_detail_page() here: the entry editor unsets
+	// $_GET['page'] and $_GET['view'] while rendering, so it returns false by footer time.
+	// The buggy filter lives in the gravityflow_inbox script, so key off that instead.
+	if ( ! wp_script_is( 'gravityflow_inbox', 'enqueued' ) ) {
+		return;
+	}
+	?>
+	<script>
+	document.addEventListener( 'gform/post_render', function () {
+		if ( window.lawGpnfSubmissionFixAdded || ! window.gform || ! gform.utils || ! gform.utils.addAsyncFilter ) {
+			return;
+		}
+		window.lawGpnfSubmissionFixAdded = true;
+
+		// Priority 20: runs after Gravity Flow's filter (priority 1) and undoes it for modal forms.
+		gform.utils.addAsyncFilter( 'gform/submission/pre_submission', function ( data ) {
+			var form = data.form;
+			if ( form && form.closest( '.tingle-modal' ) ) {
+				data.submissionMethod = gform.submission.SUBMISSION_METHOD_IFRAME;
+			}
+			return data;
+		}, 20 );
+	} );
+	</script>
+	<?php
+}, 20 );
+
+
 /* Insert latest comment field data into notifications ________________________________________________________ */
 
 add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
