@@ -63,8 +63,8 @@ var x = setInterval(function () {
     if (!nav || !document.querySelector('.law-cal-layout__filters')) {
       return;
     }
-    var top = Math.ceil(nav.getBoundingClientRect().bottom) + 12;
-    document.documentElement.style.setProperty('--law-cal-sticky-top', Math.max(top, 12) + 'px');
+    var top = Math.round(nav.getBoundingClientRect().bottom);
+    document.documentElement.style.setProperty('--law-cal-sticky-top', Math.max(top, 0) + 'px');
   }
 
   function updateNavAffix() {

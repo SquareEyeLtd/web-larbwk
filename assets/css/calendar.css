@@ -29,7 +29,7 @@
 
 	.law-cal-layout__filters {
 		position: sticky;
-		top: var(--law-cal-sticky-top, 9.5rem);
+		top: calc(var(--law-cal-sticky-top, 9.5rem) + 0.75rem);
 	}
 }
 
@@ -89,6 +89,16 @@
 	padding: 10px 0;
 	background: #fff;
 	border-bottom: 1px solid #e3e0ec;
+}
+
+.law-cal__chips::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: 100%;
+	height: 1.25rem;
+	background: #fff;
 }
 
 .law-cal__chip {
