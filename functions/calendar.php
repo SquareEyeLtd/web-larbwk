@@ -834,15 +834,31 @@ function law_calendar_unscheduled_events() {
 	return $grouped['_unscheduled'] ?? array();
 }
 
-function law_calendar_meta_line( $event, $include_host = true ) {
+function law_calendar_meta_line( $event ) {
 	$parts = array( $event['time_label'] );
-	if ( $include_host && $event['host'] ) {
-		$parts[] = $event['host'];
-	}
-	if ( $event['venue'] ) {
+	if ( ! empty( $event['venue'] ) ) {
 		$parts[] = $event['venue'];
 	}
-	return implode( ' · ', $parts );
+	return implode( ' · ', array_filter( $parts ) );
+}
+
+/**
+ * Host line for list/day cards. Empty string if there is no host.
+ */
+function law_calendar_hosted_by( $event ) {
+	$host = trim( (string) ( $event['host'] ?? '' ) );
+	if ( '' === $host ) {
+		return '';
+	}
+	$hosts = array_filter( array_map( 'trim', preg_split( '/;/', $host ) ) );
+	if ( ! $hosts ) {
+		return '';
+	}
+	return sprintf(
+		/* translators: %s: host organisation name(s) */
+		__( 'Hosted by: %s', 'law' ),
+		implode( ', ', $hosts )
+	);
 }
 
 function law_calendar_today_key() {

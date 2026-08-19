@@ -162,8 +162,8 @@ if ( ! $calendar_blocked ) {
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
 							<?php if ( ! empty( $event['speakers'] ) ) : ?>
-								<details class="law-cal-acc">
-									<summary>Speakers</summary>
+								<section class="law-cal-acc">
+									<h2 class="law-cal-acc__heading">Speakers</h2>
 									<ul class="law-cal-speakers">
 										<?php foreach ( $event['speakers'] as $speaker ) : ?>
 											<li>
@@ -181,7 +181,7 @@ if ( ! $calendar_blocked ) {
 											</li>
 										<?php endforeach; ?>
 									</ul>
-								</details>
+								</section>
 							<?php endif; ?>
 						</div>
 					</div>
@@ -189,7 +189,11 @@ if ( ! $calendar_blocked ) {
 
 			<?php else : ?>
 
-				<?php law_calendar_render_search(); ?>
+				<div class="law-cal-layout">
+					<aside class="law-cal-layout__filters">
+						<?php law_calendar_render_search(); ?>
+					</aside>
+					<div class="law-cal-layout__main">
 
 				<nav class="law-cal__tabs" aria-label="<?php esc_attr_e( 'Programme views', 'law' ); ?>">
 					<?php foreach ( array( 'list' => 'List', 'day' => 'Day', 'week' => 'Week' ) as $key => $label ) : ?>
@@ -241,6 +245,12 @@ if ( ! $calendar_blocked ) {
 									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
 								</h3>
 								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
+								<?php
+								$hosted = law_calendar_hosted_by( $item );
+								if ( $hosted ) :
+									?>
+									<p class="law-cal-card__host"><?php echo esc_html( $hosted ); ?></p>
+								<?php endif; ?>
 								<?php if ( $item['excerpt'] ) : ?>
 									<p class="law-cal-card__desc"><?php echo esc_html( $item['excerpt'] ); ?></p>
 								<?php endif; ?>
@@ -259,6 +269,12 @@ if ( ! $calendar_blocked ) {
 									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
 								</h3>
 								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
+								<?php
+								$hosted = law_calendar_hosted_by( $item );
+								if ( $hosted ) :
+									?>
+									<p class="law-cal-card__host"><?php echo esc_html( $hosted ); ?></p>
+								<?php endif; ?>
 								<?php if ( $item['excerpt'] ) : ?>
 									<p class="law-cal-card__desc"><?php echo esc_html( $item['excerpt'] ); ?></p>
 								<?php endif; ?>
@@ -331,7 +347,13 @@ if ( ! $calendar_blocked ) {
 											<p class="law-cal-day__item-title">
 												<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
 											</p>
-											<p class="law-cal-day__item-meta"><?php echo esc_html( law_calendar_meta_line( $item, false ) ); ?></p>
+											<p class="law-cal-day__item-meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
+											<?php
+											$hosted = law_calendar_hosted_by( $item );
+											if ( $hosted ) :
+												?>
+												<p class="law-cal-day__item-host"><?php echo esc_html( $hosted ); ?></p>
+											<?php endif; ?>
 										</div>
 									<?php endforeach; ?>
 								</div>
@@ -419,6 +441,9 @@ if ( ! $calendar_blocked ) {
 					</div>
 
 				<?php endif; ?>
+
+					</div>
+				</div>
 
 			<?php endif; ?>
 

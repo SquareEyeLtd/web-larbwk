@@ -43,7 +43,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		wp_enqueue_style(
 			'law-calendar',
 			get_theme_file_uri( '/assets/css/calendar.css' ),
-			array( 'law-wp' ),
+			array( 'law-wp', 'gravity-kit' ),
 			filemtime( get_theme_file_path( '/assets/css/calendar.css' ) )
 		);
 	}

@@ -58,16 +58,32 @@ var x = setInterval(function () {
 
  
   // Navigation
+  function updateCalendarStickyOffset() {
+    var nav = document.querySelector('.nav');
+    if (!nav || !document.querySelector('.law-cal-layout__filters')) {
+      return;
+    }
+    var top = Math.ceil(nav.getBoundingClientRect().bottom) + 12;
+    document.documentElement.style.setProperty('--law-cal-sticky-top', Math.max(top, 12) + 'px');
+  }
+
   function updateNavAffix() {
     if ($(document).scrollTop() > 5) {
       $('.nav').addClass('affix');
     } else {
       $('.nav').removeClass('affix');
     }
+    updateCalendarStickyOffset();
   }
 
   // Set state on page load.
   updateNavAffix();
+  $(window).on('resize', updateCalendarStickyOffset);
+  $('.nav').on('transitionend', function (e) {
+    if (!e.originalEvent || e.originalEvent.propertyName === 'padding-top') {
+      updateCalendarStickyOffset();
+    }
+  });
 
 $('.navTrigger').click(function () {
 
