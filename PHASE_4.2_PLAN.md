@@ -51,6 +51,34 @@ This file is the working brief for Phase 4.2 of the LAW events platform. It sits
 
 *(Add a dated subsection here as each item starts, so Cursor sessions pick up exactly where the last one left off — approach taken, what's tested, what's still open for that item.)*
 
+### 3. Public programme, event pages and calendar
+*Design settled 19 Aug 2026. Mockup: `design/calendar-view-mockup.html` (open in a browser, tabs switch between the three states). Brand colours read from `assets/css/app.css`: navy #292459, orange #ef7d05, tints #f4f2fa / #e3e0ec / #fdeee0.*
+
+**Four decisions confirmed for build:**
+
+1. **Public programme shows Approved events only, with no status badge.** Confirmed / Proposed / Sent back stay off this page. Status labels come back on the committee calendar (separate job): that view shows all events, filters by status, and uses `law_calendar_status_badge()`.
+2. **Week view shows Mon–Fri including empty days.** Don't collapse to only the days with entries — that reflects the current state of submissions, not the shape of the week, and would need rebuilding once the programme fills out.
+3. **Event pages render from the GF entry via GravityView — this is the permanent architecture, not a stub.** Spec §3.9 specifies the programme is built on 4.1's event entries presented through GravityView, not converted to WP posts. Consistent with the project principle that GF entries are the canonical store. Build once, treat as final.
+4. **Functional skeleton first, design applied after.** The only design decision that risked a rebuild (the three view states) is now settled, so the skeleton can ship without waiting.
+
+**Day view: no indentation.** An earlier draft of the mockup offset overlapping sessions horizontally, borrowing the Google Calendar convention. Removed — that convention only works alongside a true time axis (proportional block heights, real vertical positioning), which the Day view doesn't have. Without it the indent implies a time relationship the layout doesn't encode, and it breaks down past three or four overlapping sessions. Cards sit flush against the time gutter; the printed times carry the overlap information. This keeps Day view as "List view filtered to one day," consistent with list-as-default for accessibility and mobile (§3.1). The timetable-vs-list question is answered in Week view, and doesn't need answering twice.
+
+**Packed-morning handling (Week view):** parallel sessions share their day column as equal-width slices rather than stacking or overlapping. See the Tuesday 09:00 cell in the mockup.
+
+**List view: day jump via anchor chips, not a filter.** A sticky row of five day chips sits at the top of List view, each an in-page anchor to that day's heading. Deliberately *not* a day filter: filtering List view to one day just duplicates Day view, leaving two routes to the same result. Anchor-jumping does what Day view can't, which is keep the whole week in one continuous scroll while letting someone skip to Wednesday without scrolling past ninety events. Implementation is plain `<a href="#day-wed">` links plus `scroll-margin-top` on the day headings to clear the sticky bar; no JS required, so it degrades gracefully.
+
+Two associated decisions:
+- **Chips reflect filter state.** A day with no events under the current search/filter combination renders greyed and non-clickable, rather than jumping to an empty section. Needs handling when the §3.2 search and filter work lands, since the two interact.
+- **No auto-scroll to today during LAW week.** The current day's chip is visually marked instead. Auto-scrolling would fight List view's scan-the-week-end-to-end purpose, and would strand someone arriving on Thursday to plan Friday. Marked rather than jumped is discoverable without deciding for the user. This one is a judgement call rather than clear-cut, and Emily may have a view once she sees how delegates use it during the week, so worth revisiting after year one rather than treating as settled.
+
+**Skeleton (19 Aug 2026, Cursor):** private page `/calendar`, template `templates/calendar.php`, data in `functions/calendar.php`. Reads Form 2 active **Approved** entries with a parseable confirmed slot (field 68). List / Day / Week match the mockup; cards link to `?event={id}` on the same template (GF entry, not a WP post). No status badges on the public page. Members restriction is applied in the dashboard, not in the template. Live slot times (08:30, 10:30…) are used rather than the mockup's illustrative 09:00 hours.
+
+**Hybrid search (19 Aug 2026, Cursor):** List / Day / Week stay custom. Search is a GravityView Search Bar from a new **Programme** View (`/wp-admin` → Views → Programme). The calendar template renders that View's filtered entries, not a separate GFAPI query (GFAPI remains a fallback if the View is missing). Search fields: keyword, confirmed slot (68), host org (105), sector (60), type (63). Advanced Filter on the View is **Approved only**. Page size 500 so week view is not truncated. `embed_only` so `/programme/` is not a public table. Event permalinks stay `?event=` until the View single template is wired. Dashboard still needed: Members restriction on `/calendar`.
+
+**Committee calendar (19 Aug 2026, Cursor):** `templates/calendar-committee.php` at `/calendar-committee/`. Same List / Day / Week as public, but every status, status badges, and a Status dropdown on the search bar (View: **Programme (committee)**). Events without a confirmed slot sit in a “No confirmed slot” list section; Day/Week link there. Members roles match the Committee dashboard (`administrator` / `editor` / `events_committee`).
+
+---
+
 ### 1. Self-service host upgrade
 *Started 19 Aug 2026. Handed to Cursor 19 Aug for build — Claude's role from here is planning/spec only. Cursor has live DB and admin access this plan doesn't.*
 
