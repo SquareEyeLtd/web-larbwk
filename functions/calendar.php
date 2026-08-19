@@ -293,8 +293,11 @@ function law_calendar_excerpt( $html, $words = 18 ) {
 }
 
 /**
- * Form 2 entries for the public programme: GravityView search + Confirmed filter.
- * Falls back to a direct GFAPI query if the View is missing.
+ * Form 2 entries for the programme calendars.
+ *
+ * Status is owned by the GravityView Advanced Filter (Programme = Confirmed,
+ * committee View = all). PHP only re-applies a status filter on the GFAPI
+ * fallback, when that View is missing.
  *
  * @return array<int, array>
  */
@@ -305,8 +308,11 @@ function law_calendar_events() {
 		return $cache[ $key ];
 	}
 
-	$allowed = law_calendar_is_committee() ? array() : law_calendar_public_statuses();
-	$events  = array();
+	$from_view = law_calendar_view() && function_exists( 'gravityview' );
+	$allowed   = ( $from_view || law_calendar_is_committee() )
+		? array()
+		: law_calendar_public_statuses();
+	$events    = array();
 	foreach ( law_calendar_raw_entries() as $entry ) {
 		$mapped = law_calendar_map_entry( $entry, $allowed );
 		if ( $mapped ) {
