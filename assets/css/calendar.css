@@ -1,0 +1,588 @@
+/* Programme calendar — layout from design/calendar-view-mockup.html */
+
+.law-cal {
+	color: #292459;
+	max-width: 72rem;
+}
+
+.law-cal a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.law-cal__note {
+	font-size: 0.8rem;
+	color: #666;
+	margin: 0 0 1.25rem;
+}
+
+.law-cal__tabs {
+	display: flex;
+	gap: 8px;
+	margin: 0 0 1rem;
+}
+
+.law-cal__tab {
+	flex: 1;
+	display: block;
+	padding: 10px;
+	border: 1px solid #292459;
+	background: #fff;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 12px;
+	line-height: 1.2;
+	text-align: center;
+	text-transform: uppercase;
+	border-radius: 4px;
+}
+
+.law-cal__tab:hover,
+.law-cal__tab:focus {
+	background: #ef7d05;
+	border-color: #ef7d05;
+	color: #fff;
+}
+
+.law-cal__tab.is-active {
+	background: #292459;
+	color: #fff;
+}
+
+.law-cal__chips {
+	position: sticky;
+	top: 0;
+	z-index: 10;
+	display: flex;
+	gap: 6px;
+	padding: 10px 0;
+	background: #fff;
+	border-bottom: 1px solid #e3e0ec;
+}
+
+.law-cal__chip {
+	flex: 1;
+	text-align: center;
+	padding: 7px 4px;
+	font-size: 11px;
+	font-weight: 600;
+	text-transform: uppercase;
+	border: 1px solid #292459;
+	color: #292459;
+	border-radius: 4px;
+}
+
+.law-cal__chip:hover,
+.law-cal__chip:focus {
+	background: #ef7d05;
+	border-color: #ef7d05;
+	color: #fff;
+}
+
+.law-cal__chip.is-today {
+	background: #292459;
+	color: #fff;
+}
+
+.law-cal__chip.is-selected {
+	background: #292459;
+	color: #fff;
+}
+
+.law-cal__chip.is-empty {
+	border-color: #d5d2de;
+	color: #b3b0bd;
+	pointer-events: none;
+}
+
+.law-cal__day-heading {
+	font-size: 12px;
+	font-weight: 600;
+	color: #ef7d05;
+	text-transform: uppercase;
+	margin: 24px 0 8px;
+	scroll-margin-top: 56px;
+}
+
+.law-cal-card {
+	position: relative;
+	border: 1px solid #e3e0ec;
+	border-bottom: 2px solid #ef7d05;
+	border-radius: 6px;
+	padding: 12px 14px;
+	margin-bottom: 10px;
+	background: #fff;
+}
+
+.law-cal-card__badge {
+	position: absolute;
+	top: 12px;
+	right: 14px;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	padding: 3px 8px;
+	border-radius: 10px;
+}
+
+.law-cal-card__badge--confirmed {
+	background: #292459;
+	color: #fff;
+}
+
+.law-cal-card__badge--approved {
+	background: #fff;
+	color: #ef7d05;
+	border: 1px solid #ef7d05;
+}
+
+.law-cal-card__badge--proposed {
+	background: #f4f2fa;
+	color: #292459;
+}
+
+.law-cal-card__badge--sent-back {
+	background: #fdeee0;
+	color: #ef7d05;
+}
+
+.law-cal-card__badge--rejected {
+	background: #f3f3f3;
+	color: #666;
+}
+
+.law-cal-card__title {
+	font-weight: 600;
+	color: #292459;
+	margin: 0 0 4px;
+	font-size: 1rem;
+	line-height: 1.25;
+}
+
+.law-cal-card:has(> .law-cal-card__badge) .law-cal-card__title {
+	padding-right: 80px;
+}
+
+.law-cal-card__title a:hover,
+.law-cal-card__title a:focus {
+	color: #ef7d05;
+}
+
+.law-cal-card__meta,
+.law-cal-card__desc {
+	font-size: 12px;
+	margin: 0 0 6px;
+	line-height: 1.35;
+}
+
+.law-cal-card__meta {
+	color: #666;
+}
+
+.law-cal-card__desc {
+	color: #292459;
+	margin-bottom: 0;
+}
+
+.law-cal-day__heading {
+	font-size: 12px;
+	font-weight: 600;
+	color: #ef7d05;
+	text-transform: uppercase;
+	margin: 0 0 12px;
+}
+
+.law-cal-day__slot {
+	display: grid;
+	grid-template-columns: 44px 1fr;
+	gap: 0 0;
+}
+
+.law-cal-day__time {
+	font-size: 11px;
+	color: #666;
+	padding-top: 2px;
+}
+
+.law-cal-day__items {
+	border-left: 2px solid #ef7d05;
+	padding: 0 0 20px 12px;
+}
+
+.law-cal-day__item {
+	background: #f4f2fa;
+	border-radius: 6px;
+	padding: 8px 10px;
+	margin-bottom: 6px;
+}
+
+.law-cal-day__item:last-child {
+	margin-bottom: 0;
+}
+
+.law-cal-day__item-title {
+	font-weight: 600;
+	color: #292459;
+	font-size: 13px;
+	margin: 0;
+	line-height: 1.3;
+}
+
+.law-cal-day__item-title a:hover,
+.law-cal-day__item-title a:focus {
+	color: #ef7d05;
+}
+
+.law-cal-day__item-meta {
+	font-size: 11px;
+	color: #666;
+	margin: 2px 0 0;
+}
+
+.law-cal-week {
+	overflow-x: auto;
+}
+
+.law-cal-week__grid {
+	display: grid;
+	grid-template-columns: 44px repeat(5, minmax(5.5rem, 1fr));
+	gap: 4px;
+	font-size: 11px;
+	min-width: 36rem;
+}
+
+.law-cal-week__head {
+	text-align: center;
+	font-weight: 600;
+	color: #292459;
+	padding-bottom: 6px;
+}
+
+.law-cal-week__time {
+	color: #666;
+	padding-top: 2px;
+}
+
+.law-cal-week__cell {
+	background: #f4f2fa;
+	border-radius: 4px;
+	padding: 6px 4px;
+	color: #292459;
+	min-height: 44px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.law-cal-week__cell.is-empty {
+	background: transparent;
+}
+
+.law-cal-week__cell.is-evening {
+	background: #fdeee0;
+	color: #ef7d05;
+	font-weight: 600;
+}
+
+.law-cal-day__item .law-cal-card__badge,
+.law-cal-week__event .law-cal-card__badge {
+	position: static;
+	display: inline-block;
+	margin: 0 0 4px;
+	font-size: 8px;
+	padding: 2px 6px;
+}
+
+.law-cal-week__event {
+	font-size: 10px;
+	line-height: 1.25;
+	padding: 4px 3px;
+	border-radius: 4px;
+	background: #f4f2fa;
+	color: #292459;
+}
+
+.law-cal-week__event--approved {
+	border-left: 3px solid #ef7d05;
+}
+
+.law-cal-week__event--confirmed {
+	border-left: 3px solid #292459;
+}
+
+.law-cal-week__event--proposed {
+	border-left: 3px solid #9b96b3;
+}
+
+.law-cal-week__event--sent-back {
+	border-left: 3px solid #ef7d05;
+}
+
+.law-cal-week__event--rejected {
+	border-left: 3px solid #999;
+}
+
+.law-cal-week__cell.is-evening .law-cal-week__event {
+	background: transparent;
+	color: #ef7d05;
+	padding: 0;
+}
+
+.law-cal-week__event:hover,
+.law-cal-week__event:focus {
+	color: #ef7d05;
+}
+
+.law-cal-week__more {
+	font-size: 10px;
+	font-weight: 600;
+	color: #ef7d05;
+	padding: 2px 3px;
+}
+
+.law-cal-week__more:hover,
+.law-cal-week__more:focus {
+	color: #292459;
+}
+
+.law-cal-detail__back {
+	display: inline-block;
+	margin-bottom: 1rem;
+	font-size: 12px;
+	font-weight: 600;
+	color: #ef7d05;
+	text-transform: uppercase;
+}
+
+.law-cal-detail__back:hover,
+.law-cal-detail__back:focus {
+	color: #292459;
+}
+
+.law-cal-detail.law-cal-card {
+	padding: 1.25rem 1.25rem 1.5rem;
+}
+
+.law-cal-detail__layout {
+	display: grid;
+	gap: 1.75rem;
+	grid-template-areas: "main" "aside";
+}
+
+.law-cal-detail__aside {
+	grid-area: aside;
+	font-size: 0.9rem;
+	line-height: 1.4;
+	color: #292459;
+}
+
+.law-cal-detail__main {
+	grid-area: main;
+}
+
+@media (min-width: 48em) {
+	.law-cal-detail__layout {
+		grid-template-columns: 15.5rem minmax(0, 65ch);
+		grid-template-areas: "aside main";
+		align-items: start;
+		gap: 2rem 2.5rem;
+	}
+}
+
+.law-cal-detail .law-cal-card__badge {
+	position: static;
+	display: inline-block;
+	margin-bottom: 1rem;
+}
+
+.law-cal-detail__fact {
+	margin: 0 0 1rem;
+}
+
+.law-cal-detail__fact h3 {
+	font-size: 0.95rem;
+	font-weight: 600;
+	color: #ef7d05;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	margin: 0 0 0.3rem;
+	line-height: 1.2;
+}
+
+.law-cal-detail__fact p,
+.law-cal-detail__fact ul {
+	margin: 0;
+	color: #292459;
+}
+
+.law-cal-detail__fact ul {
+	list-style: none;
+	padding: 0;
+}
+
+.law-cal-detail__fact li {
+	margin: 0 0 0.2rem;
+}
+
+.law-cal-map {
+	display: inline-block;
+	width: auto;
+	margin-top: 0.6rem;
+	padding: 0.45em 1.1em;
+	border-radius: 9999px;
+	border: 1px solid #ef7d05;
+	background: #ef7d05;
+	color: #fff;
+	font-family: poppins, sans-serif;
+	font-size: 0.75rem;
+	font-weight: 600;
+	line-height: 1.2;
+	text-transform: uppercase;
+	text-decoration: none;
+}
+
+.law-cal-map:hover,
+.law-cal-map:focus {
+	background: #292459;
+	border-color: #292459;
+	color: #fff;
+}
+
+.law-cal-detail__title {
+	font-size: 1.5rem;
+	font-weight: 600;
+	color: #292459;
+	margin: 0 0 1rem;
+	padding-right: 0;
+	line-height: 1.25;
+	max-width: 65ch;
+	text-shadow: none;
+}
+
+.law-cal-detail__body {
+	max-width: 65ch;
+	font-size: 1rem;
+	line-height: 1.5;
+	color: #292459;
+}
+
+.law-cal-detail__body p,
+.law-cal-detail__body li {
+	margin: 0 0 1rem;
+	line-height: 1.5;
+}
+
+.law-cal-speakers {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.law-cal-speakers li {
+	margin: 0 0 0.65rem;
+	font-size: 0.9rem;
+	line-height: 1.35;
+}
+
+.law-cal-speakers a {
+	color: #ef7d05;
+	font-weight: 600;
+}
+
+.law-cal-speakers a:hover,
+.law-cal-speakers a:focus {
+	color: #292459;
+}
+
+.law-cal-speakers__role {
+	display: block;
+	color: #666;
+	font-size: 0.8rem;
+	font-weight: 400;
+}
+
+.law-cal-acc {
+	max-width: 65ch;
+	margin-top: 0.5rem;
+	border: none;
+	border-bottom: 1px solid #ef7d05;
+	padding: 0;
+}
+
+.law-cal-acc summary {
+	padding: 20px 0;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-size: 1.4rem;
+	font-weight: 600;
+	line-height: 1.1;
+	cursor: pointer;
+	list-style: none;
+}
+
+.law-cal-acc summary::-webkit-details-marker {
+	display: none;
+}
+
+.law-cal-acc summary:hover,
+.law-cal-acc summary:focus {
+	color: #ef7d05;
+}
+
+.law-cal-acc[open] {
+	padding-bottom: 20px;
+}
+
+.law-cal-acc .law-cal-speakers {
+	padding-top: 0.25rem;
+}
+
+#pages .hero .law-cal-banner-title {
+	margin: 0;
+	color: #ffffff;
+	opacity: 1;
+	text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+	line-height: 1.1;
+	font-family: poppins, sans-serif;
+	font-weight: 500;
+	font-style: normal;
+	font-size: 2.8rem;
+}
+
+.law-cal__empty {
+	color: #666;
+	font-size: 0.9rem;
+}
+
+.law-cal-search {
+	margin: 0 0 1.25rem;
+}
+
+.law-cal-search .gv-widget-search {
+	margin: 0;
+}
+
+.law-cal-search .gv-search-widget-area {
+	align-items: flex-end;
+}
+
+.law-cal-search .gv-search-box select,
+.law-cal-search .gv-search-box input[type="text"],
+.law-cal-search .gv-search-box input[type="search"] {
+	min-height: 2.4rem;
+	border: 1px solid #c9c5d6;
+	border-radius: 4px;
+	padding: 0.4rem 0.6rem;
+	font-size: 0.875rem;
+	color: #292459;
+	background: #fff;
+}
+
+.law-cal-search .gv-search-box select {
+	min-width: 10rem;
+}
+
+.law-cal-search .gv-grid-row {
+	row-gap: 0.75rem;
+}

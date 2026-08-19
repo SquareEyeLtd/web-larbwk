@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LAW public programme &mdash; view states mockup</title>
+<style>
+  body { font-family: Poppins, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; background: #fff; }
+  .note { font-size: 12px; color: #999; margin-top: 24px; }
+  .day-chips { position: sticky; top: 0; background: #fff; padding: 10px 0; border-bottom: 1px solid #e3e0ec; display: flex; gap: 6px; z-index: 10; }
+  .day-chip { flex: 1; text-align: center; padding: 7px 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; text-decoration: none; border: 1px solid #292459; color: #292459; border-radius: 4px; }
+  .day-chip:hover { background: #ef7d05; border-color: #ef7d05; color: #fff; }
+  .day-chip.is-today { background: #292459; color: #fff; }
+  .day-chip.is-empty { border-color: #d5d2de; color: #b3b0bd; pointer-events: none; }
+  .day-heading { font-size: 12px; font-weight: 600; color: #ef7d05; text-transform: uppercase; margin: 24px 0 8px; scroll-margin-top: 56px; }
+  .event-card { border: 1px solid #e3e0ec; border-bottom: 2px solid #ef7d05; border-radius: 6px; padding: 12px 14px; margin-bottom: 10px; position: relative; }
+  .badge { position: absolute; top: 12px; right: 14px; font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; }
+  .badge-confirmed { background: #292459; color: #fff; }
+  .badge-approved { background: #fff; color: #ef7d05; border: 1px solid #ef7d05; }
+  .event-title { font-weight: 600; color: #292459; margin: 0 0 4px; padding-right: 80px; }
+  .event-meta { font-size: 12px; color: #666; margin: 0 0 6px; }
+  .event-desc { font-size: 12px; color: #292459; margin: 0; }
+</style>
+</head>
+<body>
+<h1 style="color:#292459; font-size:20px;">Public programme &mdash; view states (List / Day / Week)</h1>
+<p style="font-size:13px; color:#666;">Reference mockup for spec item 3 (public calendar). Not wired to live data &mdash; illustrates layout and card content only. Colours pulled from assets/css/app.css: navy #292459, orange #ef7d05, light background #f4f2fa / #e3e0ec.</p>
+
+<div style="display:flex; gap:8px; margin:20px 0 16px;">
+<button onclick="showView('list')" id="tab-list" style="flex:1; padding:10px; border:1px solid #292459; background:#292459; color:#fff; font-weight:600; font-size:12px; text-transform:uppercase; cursor:pointer; border-radius:4px;">List</button>
+<button onclick="showView('day')" id="tab-day" style="flex:1; padding:10px; border:1px solid #292459; background:#fff; color:#292459; font-weight:600; font-size:12px; text-transform:uppercase; cursor:pointer; border-radius:4px;">Day</button>
+<button onclick="showView('week')" id="tab-week" style="flex:1; padding:10px; border:1px solid #292459; background:#fff; color:#292459; font-weight:600; font-size:12px; text-transform:uppercase; cursor:pointer; border-radius:4px;">Week</button>
+</div>
+
+<div id="view-list">
+
+<nav class="day-chips" aria-label="Jump to day">
+<a class="day-chip" href="#day-mon">Mon 30</a>
+<a class="day-chip is-today" href="#day-tue" aria-current="date">Tue 1</a>
+<a class="day-chip" href="#day-wed">Wed 2</a>
+<a class="day-chip is-empty" aria-disabled="true">Thu 3</a>
+<a class="day-chip" href="#day-fri">Fri 4</a>
+</nav>
+
+<h2 class="day-heading" id="day-mon">Monday 30 November</h2>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Opening remarks and welcome</p>
+<p class="event-meta">09:00-09:30 &middot; London Arbitration Week &middot; Guildhall</p>
+<p class="event-desc">Formal opening of the week by the committee chair.</p>
+</div>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Opening drinks reception</p>
+<p class="event-meta">18:00-20:00 &middot; London Arbitration Week &middot; Guildhall Crypt</p>
+<p class="event-desc">Ticketed reception, discounted for flagship delegates.</p>
+</div>
+
+<h2 class="day-heading" id="day-tue">Tuesday 1 December</h2>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Investor-state arbitration: the year ahead</p>
+<p class="event-meta">09:00-10:00 &middot; Essex Court Chambers &middot; The Great Hall</p>
+<p class="event-desc">Panel discussion on emerging trends in ISDS disputes.</p>
+</div>
+<div class="event-card">
+<span class="badge badge-approved">Approved</span>
+<p class="event-title">Arbitrator challenges: recent case law</p>
+<p class="event-meta">09:30-10:30 &middot; 4 Stone Buildings &middot; Room 2</p>
+<p class="event-desc">A practical review of the last twelve months' challenge decisions.</p>
+</div>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Third-party funding: a users' guide</p>
+<p class="event-meta">10:00-11:00 &middot; 8 New Square &middot; Moot Room</p>
+<p class="event-desc">What funders actually look for before backing a claim.</p>
+</div>
+
+<h2 class="day-heading" id="day-wed">Wednesday 2 December</h2>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Flagship conference keynote</p>
+<p class="event-meta">09:00-10:30 &middot; London Arbitration Week &middot; Central Hall</p>
+<p class="event-desc">Approval-gated. Opening keynote of the flagship programme.</p>
+</div>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Wednesday reception</p>
+<p class="event-meta">18:30-21:00 &middot; London Arbitration Week &middot; Middle Temple</p>
+<p class="event-desc">Included for flagship delegates; open to others to purchase.</p>
+</div>
+
+<h2 class="day-heading" id="day-fri">Friday 4 December</h2>
+<div class="event-card">
+<span class="badge badge-confirmed">Confirmed</span>
+<p class="event-title">Closing reception</p>
+<p class="event-meta">18:00-20:30 &middot; London Arbitration Week &middot; Inner Temple</p>
+<p class="event-desc">Invitation only.</p>
+</div>
+
+<p class="note">Day chips are anchor links, not filters: the whole week stays in one scroll. Thursday is greyed because it has no events matching the current view or filter state. Tuesday is marked as the current day rather than auto-scrolled to.</p>
+</div>
+
+<div id="view-day" style="display:none;">
+<p style="font-size:12px; font-weight:600; color:#ef7d05; text-transform:uppercase;">Tuesday 1 December</p>
+<div style="display:grid; grid-template-columns:44px 1fr; gap:0;">
+<div style="font-size:11px; color:#666; padding-top:2px;">09:00</div>
+<div style="border-left:2px solid #ef7d05; padding-left:12px; padding-bottom:20px;">
+<div style="background:#f4f2fa; border-radius:6px; padding:8px 10px; margin-bottom:6px;">
+<p style="font-weight:600; color:#292459; font-size:13px; margin:0;">Investor-state arbitration: the year ahead</p>
+<p style="font-size:11px; color:#666; margin:2px 0 0;">09:00-10:00 &middot; The Great Hall</p>
+</div>
+<div style="background:#f4f2fa; border-radius:6px; padding:8px 10px; margin-bottom:6px;">
+<p style="font-weight:600; color:#292459; font-size:13px; margin:0;">Arbitrator challenges: recent case law</p>
+<p style="font-size:11px; color:#666; margin:2px 0 0;">09:30-10:30 &middot; Room 2</p>
+</div>
+<div style="background:#f4f2fa; border-radius:6px; padding:8px 10px;">
+<p style="font-weight:600; color:#292459; font-size:13px; margin:0;">Third-party funding: a users' guide</p>
+<p style="font-size:11px; color:#666; margin:2px 0 0;">10:00-11:00 &middot; Moot Room</p>
+</div>
+</div>
+<div style="font-size:11px; color:#666;">11:00</div>
+<div style="border-left:2px solid #e3e0ec; padding-left:12px; color:#999; font-size:12px; padding-top:8px;">No further sessions before lunch</div>
+</div>
+</div>
+
+<div id="view-week" style="display:none;">
+<div style="display:grid; grid-template-columns:44px repeat(5,1fr); gap:4px; font-size:11px;">
+<div></div>
+<div style="text-align:center; font-weight:600; color:#292459; padding-bottom:6px;">Mon</div>
+<div style="text-align:center; font-weight:600; color:#292459; padding-bottom:6px;">Tue</div>
+<div style="text-align:center; font-weight:600; color:#292459; padding-bottom:6px;">Wed</div>
+<div style="text-align:center; font-weight:600; color:#292459; padding-bottom:6px;">Thu</div>
+<div style="text-align:center; font-weight:600; color:#292459; padding-bottom:6px;">Fri</div>
+
+<div style="color:#666; padding-top:2px;">09:00</div>
+<div style="background:#f4f2fa; border-radius:4px; padding:6px 4px; font-size:10px; color:#292459; min-height:44px;">Opening remarks</div>
+<div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:2px;">
+<div style="background:#f4f2fa; border-radius:4px; padding:4px 3px; font-size:9px; color:#292459;">ISDS panel</div>
+<div style="background:#f4f2fa; border-radius:4px; padding:4px 3px; font-size:9px; color:#292459;">Challenges</div>
+<div style="background:#f4f2fa; border-radius:4px; padding:4px 3px; font-size:9px; color:#292459;">Funding</div>
+</div>
+<div style="background:#f4f2fa; border-radius:4px; padding:6px 4px; font-size:10px; color:#292459; min-height:44px;">Flagship keynote</div>
+<div style="background:#f4f2fa; border-radius:4px; padding:6px 4px; font-size:10px; color:#292459; min-height:44px;">GAR breakfast</div>
+<div style="border-radius:4px; padding:6px 4px; font-size:10px; color:#999; min-height:44px;">&nbsp;</div>
+
+<div style="color:#666; padding-top:2px;">18:00</div>
+<div style="background:#fdeee0; border-radius:4px; padding:6px 4px; font-size:10px; color:#ef7d05; font-weight:600; min-height:36px;">Opening drinks</div>
+<div style="border-radius:4px; padding:6px 4px; font-size:10px; color:#999; min-height:36px;">&nbsp;</div>
+<div style="background:#fdeee0; border-radius:4px; padding:6px 4px; font-size:10px; color:#ef7d05; font-weight:600; min-height:36px;">Wednesday reception</div>
+<div style="border-radius:4px; padding:6px 4px; font-size:10px; color:#999; min-height:36px;">&nbsp;</div>
+<div style="background:#fdeee0; border-radius:4px; padding:6px 4px; font-size:10px; color:#ef7d05; font-weight:600; min-height:36px;">Friday reception</div>
+</div>
+<p class="note">Tuesday 9am shows the packed-morning case: three parallel sessions share the column as equal-width slices, rather than stacking or overlapping.</p>
+</div>
+
+<script>
+function showView(view) {
+  document.getElementById('view-list').style.display = view === 'list' ? 'block' : 'none';
+  document.getElementById('view-day').style.display = view === 'day' ? 'block' : 'none';
+  document.getElementById('view-week').style.display = view === 'week' ? 'block' : 'none';
+  ['list','day','week'].forEach(function(v) {
+    var btn = document.getElementById('tab-' + v);
+    if (v === view) { btn.style.background = '#292459'; btn.style.color = '#fff'; }
+    else { btn.style.background = '#fff'; btn.style.color = '#292459'; }
+  });
+}
+</script>
+</body>
+</html>

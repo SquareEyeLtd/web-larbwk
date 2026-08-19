@@ -39,6 +39,15 @@ add_action( 'wp_enqueue_scripts', function () {
 		filemtime( get_theme_file_path( '/assets/css/gravity-kit.css' ) )
 	);
 
+	if ( law_calendar_is_calendar_page() ) {
+		wp_enqueue_style(
+			'law-calendar',
+			get_theme_file_uri( '/assets/css/calendar.css' ),
+			array( 'law-wp' ),
+			filemtime( get_theme_file_path( '/assets/css/calendar.css' ) )
+		);
+	}
+
 	// Typekit (Poppins)
 	wp_enqueue_style( 'law-typekit-1', 'https://use.typekit.net/vum0moo.css', array(), null );
 	wp_enqueue_style( 'law-typekit-2', 'https://use.typekit.net/dje5apx.css', array(), null );
