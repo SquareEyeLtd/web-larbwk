@@ -16,6 +16,27 @@
 <?php wp_body_open(); ?>
 
   <nav class="nav" id="new-nav-v2">
+    <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
+    <div class="header-top mobile-top-nav hide-for-large">
+      <div class="header-top__group">
+      <?php law_render_header_member_status(); ?>
+      <?php
+      if ( has_nav_menu( 'top-menu' ) ) {
+      wp_nav_menu(
+          array(
+              'theme_location' => 'top-menu',
+              'container'      => false,
+              'menu_class'     => 'top-nav menu',
+              'menu_id'        => 'top-menu-mobile',
+              'fallback_cb'    => false,
+              'depth'          => 1,
+          )
+      );
+      }
+      ?>
+      </div>
+    </div>
+    <?php endif; ?>
     <div class="grid-container">
       <div class="grid-x">
         <div class="large-3 medium-4 small-6 cell">
@@ -73,29 +94,6 @@
       </div>
     </div>
     <div class="hide-for-large">
-      <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
-      <div class="header-top mobile-top-nav">
-        <div class="header-top__group">
-        <?php law_render_header_member_status(); ?>
-        <?php
-        if ( has_nav_menu( 'top-menu' ) ) {
-        wp_nav_menu(
-            array(
-                'theme_location' => 'top-menu',
-                'container'      => false,
-                'menu_class'     => 'top-nav vertical menu accordion-menu',
-                'menu_id'        => 'top-menu-mobile',
-                'fallback_cb'    => false,
-                'depth'          => 0,
-                'law_menu_mode'  => 'accordion',
-                'items_wrap'     => '<ul id="%1$s" class="%2$s" data-accordion-menu data-multi-open="false">%3$s</ul>',
-            )
-        );
-        }
-        ?>
-        </div>
-      </div>
-      <?php endif; ?>
       <div id="mainListDiv" class="main_list">
         <?php
         wp_nav_menu(
