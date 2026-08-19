@@ -28,7 +28,7 @@ function law_calendar_slot_starts() {
  * Statuses shown on the public programme.
  */
 function law_calendar_public_statuses() {
-	return array( 'Approved' );
+	return array( 'Confirmed' );
 }
 
 function law_calendar_is_committee() {
@@ -293,7 +293,7 @@ function law_calendar_excerpt( $html, $words = 18 ) {
 }
 
 /**
- * Form 2 entries for the public programme: GravityView search + Approved filter.
+ * Form 2 entries for the public programme: GravityView search + Confirmed filter.
  * Falls back to a direct GFAPI query if the View is missing.
  *
  * @return array<int, array>
@@ -676,7 +676,7 @@ function law_calendar_install_programme_view() {
 }
 
 /**
- * Advanced Filter for the public Programme View: Approved only.
+ * Advanced Filter for the public Programme View: Confirmed only.
  */
 function law_calendar_public_view_filters() {
 	return array(
@@ -689,10 +689,10 @@ function law_calendar_public_view_filters() {
 				'mode'       => 'or',
 				'conditions' => array(
 					array(
-						'_id'      => 'lawCalAprv',
+						'_id'      => 'lawCalConf',
 						'form_id'  => 2,
 						'key'      => '95',
-						'value'    => 'Approved',
+						'value'    => 'Confirmed',
 						'operator' => 'is',
 					),
 				),

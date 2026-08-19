@@ -553,6 +553,7 @@
 .law-cal__empty {
 	color: #666;
 	font-size: 0.9rem;
+	margin-top: 24px;
 }
 
 .law-cal-search {

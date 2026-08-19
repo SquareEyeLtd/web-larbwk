@@ -60,3 +60,39 @@ add_action(
 	},
 	1
 );
+
+/**
+ * GravityView Advanced Filter 4.7 calls crypto.randomUUID(), which browsers
+ * only expose in a secure context (HTTPS or localhost). Live is HTTPS;
+ * Local is http://larbwk.local, so the query builder never mounts.
+ */
+add_action(
+	'admin_head',
+	function () {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || 'gravityview' !== $screen->post_type ) {
+			return;
+		}
+		?>
+<script>
+(function () {
+	var c = window.crypto;
+	if ( ! c || typeof c.randomUUID === 'function' ) {
+		return;
+	}
+	c.randomUUID = function () {
+		var bytes = new Uint8Array( 16 );
+		c.getRandomValues( bytes );
+		bytes[6] = ( bytes[6] & 0x0f ) | 0x40;
+		bytes[8] = ( bytes[8] & 0x3f ) | 0x80;
+		var hex = Array.prototype.map.call( bytes, function ( b ) {
+			return ( '0' + b.toString( 16 ) ).slice( -2 );
+		} ).join( '' );
+		return hex.slice( 0, 8 ) + '-' + hex.slice( 8, 12 ) + '-' + hex.slice( 12, 16 ) + '-' + hex.slice( 16, 20 ) + '-' + hex.slice( 20 );
+	};
+})();
+</script>
+		<?php
+	},
+	1
+);
