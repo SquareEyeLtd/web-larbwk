@@ -82,6 +82,9 @@ const LAW_GF_PREFERRED_SLOTS_FIELD_ID = 77;
 
 const LAW_GF_RETIRED_PREFERRED_SLOTS = array(
 	'Tue 1st Dec: 08:30-10:00',
+	'Tue 1st Dec: 16:30-18:00',
+	'Tue 1st Dec: 18:30 onwards',
+	'Thu 3rd Dec: 18:30 onwards',
 );
 
 /**
