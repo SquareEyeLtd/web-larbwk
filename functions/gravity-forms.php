@@ -66,6 +66,208 @@ function law_prepopulate_orgid( $value ) {
 }
 
 
+/* Retire preferred-slot choices without wiping existing entries __________________________________________ */
+
+/**
+ * Preferred slots (form 2, field 77).
+ *
+ * Do not delete a choice in the form editor — Gravity Forms only saves values
+ * that still exist as choices, so editing an entry that had the retired slot
+ * selected would empty or rewrite the field.
+ *
+ * Keep the choice in the field settings (values unchanged). List the exact
+ * choice value here (the text, unless "show values" is enabled and they differ).
+ */
+const LAW_GF_PREFERRED_SLOTS_FIELD_ID = 77;
+
+const LAW_GF_RETIRED_PREFERRED_SLOTS = array(
+	'Tue 1st Dec: 08:30-10:00',
+);
+
+/**
+ * Whether a choice text/value is in the retired list.
+ *
+ * @param string $text  Choice label.
+ * @param string $value Choice value.
+ * @return bool
+ */
+function law_gf_is_retired_preferred_slot( $text, $value = '' ) {
+	$retired = LAW_GF_RETIRED_PREFERRED_SLOTS;
+	if ( empty( $retired ) ) {
+		return false;
+	}
+
+	$text  = (string) $text;
+	$value = (string) $value;
+
+	return in_array( $text, $retired, true ) || ( '' !== $value && in_array( $value, $retired, true ) );
+}
+
+/**
+ * Entry currently being edited (GravityView, Gravity Flow, wp-admin), if any.
+ *
+ * @param int $form_id Form ID.
+ * @return array|null Entry array or null for a new submission.
+ */
+function law_gf_get_current_edit_entry( $form_id ) {
+	$form_id = (int) $form_id;
+
+	if ( function_exists( 'gravityview' ) && gravityview()->request ) {
+		$gv_entry = gravityview()->request->is_edit_entry( $form_id );
+		if ( $gv_entry && is_object( $gv_entry ) && method_exists( $gv_entry, 'as_entry' ) ) {
+			$entry = $gv_entry->as_entry();
+			if ( is_array( $entry ) && (int) rgar( $entry, 'form_id' ) === $form_id ) {
+				return $entry;
+			}
+		}
+	}
+
+	$lid = absint( rgget( 'lid' ) );
+	if ( ! $lid ) {
+		$lid = absint( rgpost( 'lid' ) );
+	}
+
+	if ( ! $lid && class_exists( 'GFFormsModel' ) ) {
+		$lead = GFFormsModel::get_current_lead();
+		if ( is_array( $lead ) && ! empty( $lead['id'] ) ) {
+			$lid = absint( $lead['id'] );
+		}
+	}
+
+	if ( ! $lid ) {
+		return null;
+	}
+
+	$entry = GFAPI::get_entry( $lid );
+	if ( is_wp_error( $entry ) || (int) rgar( $entry, 'form_id' ) !== $form_id ) {
+		return null;
+	}
+
+	return $entry;
+}
+
+/**
+ * Selected values for the preferred-slots field on an entry.
+ *
+ * @param array         $entry Entry.
+ * @param GF_Field|null $field Field 77.
+ * @return string[]
+ */
+function law_gf_preferred_slot_values_from_entry( $entry, $field ) {
+	$raw = rgar( $entry, (string) LAW_GF_PREFERRED_SLOTS_FIELD_ID );
+	if ( $field && method_exists( $field, 'to_array' ) ) {
+		return $field->to_array( $raw );
+	}
+
+	if ( is_array( $raw ) ) {
+		return $raw;
+	}
+
+	$raw = (string) $raw;
+	if ( '' === $raw ) {
+		return array();
+	}
+
+	if ( '[' === $raw[0] ) {
+		$decoded = json_decode( $raw, true );
+		return is_array( $decoded ) ? $decoded : array();
+	}
+
+	return array_map( 'trim', explode( ',', $raw ) );
+}
+
+/**
+ * Hide retired preferred slots on new submissions.
+ *
+ * If the entry being edited already has a retired slot selected, keep that
+ * choice so a save does not wipe it. Otherwise hide it so it cannot be newly selected.
+ *
+ * @param array $form Form object.
+ * @return array
+ */
+function law_gf_hide_retired_preferred_slots( $form ) {
+	if ( empty( LAW_GF_RETIRED_PREFERRED_SLOTS ) || (int) rgar( $form, 'id' ) !== 2 ) {
+		return $form;
+	}
+
+	// Never alter choices in the form editor — saving the form would persist the reduced list.
+	if ( class_exists( 'GFCommon' ) && method_exists( 'GFCommon', 'is_form_editor' ) && GFCommon::is_form_editor() ) {
+		return $form;
+	}
+
+	$entry     = law_gf_get_current_edit_entry( 2 );
+	$selected  = array();
+	$slot_field = null;
+
+	foreach ( $form['fields'] as $field ) {
+		if ( (int) $field->id === LAW_GF_PREFERRED_SLOTS_FIELD_ID ) {
+			$slot_field = $field;
+			break;
+		}
+	}
+
+	if ( $entry && $slot_field ) {
+		$selected = law_gf_preferred_slot_values_from_entry( $entry, $slot_field );
+	}
+
+	foreach ( $form['fields'] as &$field ) {
+		if ( (int) $field->id !== LAW_GF_PREFERRED_SLOTS_FIELD_ID || empty( $field->choices ) || ! is_array( $field->choices ) ) {
+			continue;
+		}
+
+		$kept = array();
+		foreach ( $field->choices as $choice ) {
+			$text  = (string) rgar( $choice, 'text' );
+			$value = $field->get_choice_option_value( $choice );
+
+			if ( ! law_gf_is_retired_preferred_slot( $text, $value ) ) {
+				$kept[] = $choice;
+				continue;
+			}
+
+			// Already on this entry: keep so the value is still a valid choice on save.
+			if ( in_array( $value, $selected, true ) || in_array( $text, $selected, true ) ) {
+				$choice['text'] = $text . ' (fully booked)';
+				$kept[]         = $choice;
+			}
+		}
+
+		$field->choices = array_values( $kept );
+	}
+
+	return $form;
+}
+
+add_filter( 'gform_pre_render_2', 'law_gf_hide_retired_preferred_slots' );
+add_filter( 'gform_pre_validation_2', 'law_gf_hide_retired_preferred_slots' );
+
+/**
+ * Strip retired slots from brand-new submissions (tampered POST).
+ * Skip when updating an existing entry.
+ *
+ * @param array $form Form object.
+ */
+add_action( 'gform_pre_submission_2', function ( $form ) {
+	if ( empty( LAW_GF_RETIRED_PREFERRED_SLOTS ) || law_gf_get_current_edit_entry( 2 ) ) {
+		return;
+	}
+
+	$input = 'input_' . LAW_GF_PREFERRED_SLOTS_FIELD_ID;
+	if ( empty( $_POST[ $input ] ) || ! is_array( $_POST[ $input ] ) ) {
+		return;
+	}
+
+	$_POST[ $input ] = array_values(
+		array_filter(
+			$_POST[ $input ],
+			function ( $value ) {
+				return ! law_gf_is_retired_preferred_slot( $value, $value );
+			}
+		)
+	);
+} );
+
+
 /* Allow drag and drop on Advanced Select fields  ________________________________________________________ */
 
 add_action( 'gform_enqueue_scripts', function() {
