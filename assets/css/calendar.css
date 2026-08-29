@@ -597,6 +597,10 @@
 	line-height: 1.35;
 }
 
+.law-cal-speakers li:last-child {
+	margin-bottom: 0;
+}
+
 .law-cal-speakers a {
 	color: #ef7d05;
 	font-weight: 600;
@@ -617,9 +621,7 @@
 .law-cal-acc {
 	max-width: 65ch;
 	margin-top: 0.5rem;
-	border: none;
-	border-bottom: 1px solid #ef7d05;
-	padding: 0 0 1.25rem;
+	padding: 0;
 }
 
 .law-cal-acc__heading {
