@@ -72,16 +72,36 @@
 	flex-shrink: 0;
 }
 
+.law-cal-filters[open] {
+	background: #ece9f5;
+	border: 1px solid #292459;
+	border-radius: 4px;
+}
+
+.law-cal-filters[open]::details-content {
+	background: #ece9f5;
+}
+
 .law-cal-filters[open] .law-cal-filters__summary::after {
 	transform: translateY(0.15rem) rotate(-135deg);
 }
 
 .law-cal-filters[open] .law-cal-filters__summary {
-	margin-bottom: 0.85rem;
+	margin-bottom: 0;
+	background: #fff;
+	border: 0;
+	border-bottom: 1px solid #d8d4e4;
+	border-radius: 4px 4px 0 0;
 }
 
 .law-cal-filters__panel {
 	min-width: 0;
+}
+
+.law-cal-filters[open] .law-cal-filters__panel {
+	padding: 1rem 1rem 1.15rem 2rem;
+	background: #ece9f5;
+	box-sizing: border-box;
 }
 
 .law-cal-layout__main {
@@ -110,8 +130,25 @@
 		content-visibility: visible;
 	}
 
+	.law-cal-filters[open] {
+		background: transparent;
+		border: 0;
+		border-radius: 0;
+	}
+
+	.law-cal-filters[open]::details-content {
+		background: transparent;
+	}
+
 	.law-cal-filters[open] .law-cal-filters__summary {
 		margin-bottom: 0;
+		border: 1px solid #292459;
+		border-radius: 4px;
+	}
+
+	.law-cal-filters[open] .law-cal-filters__panel {
+		padding: 0;
+		background: transparent;
 	}
 }
 
