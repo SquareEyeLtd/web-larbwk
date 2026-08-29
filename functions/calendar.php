@@ -429,12 +429,18 @@ function law_calendar_map_entry( $entry, $allowed = null ) {
 
 	$type = (string) rgar( $entry, '63' );
 
+	$tickets_raw = trim( (string) rgar( $entry, '54' ) );
+	$tickets     = ( is_numeric( $tickets_raw ) && (float) $tickets_raw > 0 )
+		? (int) $tickets_raw
+		: 0;
+
 	return array(
 		'id'          => (int) rgar( $entry, 'id' ),
 		'title'       => $title,
 		'status'      => $status,
 		'host'        => trim( (string) rgar( $entry, '105' ) ),
 		'venue'       => trim( (string) rgar( $entry, '21' ) ),
+		'tickets'     => $tickets,
 		'type'        => $type,
 		'sectors'     => law_calendar_sectors( $entry ),
 		'speakers'    => law_calendar_speakers( rgar( $entry, '48' ) ),

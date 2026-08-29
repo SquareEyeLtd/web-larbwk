@@ -487,6 +487,11 @@
 	font-size: 0.9rem;
 	line-height: 1.4;
 	color: #292459;
+	padding: 1.15rem 1.2rem 1.25rem;
+	background: #ece9f5;
+	border: 1px solid #292459;
+	border-radius: 6px;
+	box-sizing: border-box;
 }
 
 .law-cal-detail__main {
@@ -510,6 +515,10 @@
 
 .law-cal-detail__fact {
 	margin: 0 0 1rem;
+}
+
+.law-cal-detail__fact:last-child {
+	margin-bottom: 0;
 }
 
 .law-cal-detail__fact h3 {

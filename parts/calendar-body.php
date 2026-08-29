@@ -96,7 +96,7 @@ if ( ! $calendar_blocked ) {
 
 				<article class="law-cal-detail law-cal-card">
 					<div class="law-cal-detail__layout">
-						<aside class="law-cal-detail__aside">
+						<aside class="law-cal-detail__aside" aria-label="<?php esc_attr_e( 'Event details', 'law' ); ?>">
 							<?php if ( $law_cal_show_status ) : ?>
 								<?php law_calendar_status_badge( $event ); ?>
 							<?php endif; ?>
@@ -128,6 +128,12 @@ if ( ! $calendar_blocked ) {
 										target="_blank"
 										rel="noopener noreferrer"
 									>Map</a>
+								</div>
+							<?php endif; ?>
+							<?php if ( ! empty( $event['tickets'] ) ) : ?>
+								<div class="law-cal-detail__fact">
+									<h3>Tickets available</h3>
+									<p><?php echo esc_html( number_format_i18n( $event['tickets'] ) ); ?></p>
 								</div>
 							<?php endif; ?>
 							<?php if ( $event['type'] ) : ?>
