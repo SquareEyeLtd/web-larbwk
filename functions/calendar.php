@@ -948,3 +948,44 @@ function law_calendar_pre_document_title( $title ) {
 function law_calendar_maps_url( $venue ) {
 	return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode( $venue );
 }
+
+/**
+ * Dashboard entry URL. Administrators and editors only; others get an empty string.
+ *
+ * @param int $entry_id Gravity Forms entry ID.
+ */
+function law_calendar_entry_admin_url( $entry_id ) {
+	$entry_id = (int) $entry_id;
+	if ( $entry_id < 1 ) {
+		return '';
+	}
+	if ( ! function_exists( 'law_user_may_use_wp_admin' ) || ! law_user_may_use_wp_admin() ) {
+		return '';
+	}
+	return admin_url(
+		sprintf(
+			'admin.php?page=gf_entries&view=entry&id=%d&lid=%d',
+			LAW_CALENDAR_FORM_ID,
+			$entry_id
+		)
+	);
+}
+
+/**
+ * Discreet “Edit” link to the Form 2 entry in wp-admin.
+ *
+ * @param array|int $event Mapped calendar event or entry ID.
+ */
+function law_calendar_edit_link( $event ) {
+	$id  = is_array( $event ) ? (int) ( $event['id'] ?? 0 ) : (int) $event;
+	$url = law_calendar_entry_admin_url( $id );
+	if ( ! $url ) {
+		return;
+	}
+	printf(
+		'<a class="law-cal-edit" href="%s" aria-label="%s">%s</a>',
+		esc_url( $url ),
+		esc_attr__( 'Edit this event in the dashboard', 'law' ),
+		esc_html__( 'Edit', 'law' )
+	);
+}

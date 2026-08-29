@@ -211,6 +211,32 @@
 	color: #ef7d05;
 }
 
+.law-cal a.law-cal-edit,
+.law-cal-card__title a.law-cal-edit,
+.law-cal-day__item-title a.law-cal-edit,
+.law-cal-detail__title a.law-cal-edit {
+	display: inline-block;
+	margin-left: 0.45em;
+	font-size: 0.7rem;
+	font-weight: 500;
+	line-height: 1;
+	color: #888;
+	white-space: nowrap;
+	vertical-align: middle;
+}
+
+.law-cal a.law-cal-edit:hover,
+.law-cal a.law-cal-edit:focus,
+.law-cal-card__title a.law-cal-edit:hover,
+.law-cal-card__title a.law-cal-edit:focus,
+.law-cal-day__item-title a.law-cal-edit:hover,
+.law-cal-day__item-title a.law-cal-edit:focus,
+.law-cal-detail__title a.law-cal-edit:hover,
+.law-cal-detail__title a.law-cal-edit:focus {
+	color: #292459;
+	text-decoration: underline;
+}
+
 .law-cal-card__meta,
 .law-cal-card__host,
 .law-cal-card__desc {

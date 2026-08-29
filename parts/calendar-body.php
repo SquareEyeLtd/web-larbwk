@@ -149,7 +149,10 @@ if ( ! $calendar_blocked ) {
 						</aside>
 
 						<div class="law-cal-detail__main">
-							<h1 class="law-cal-detail__title"><?php echo esc_html( $event['title'] ); ?></h1>
+							<h1 class="law-cal-detail__title">
+								<?php echo esc_html( $event['title'] ); ?>
+								<?php law_calendar_edit_link( $event ); ?>
+							</h1>
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
@@ -235,6 +238,7 @@ if ( ! $calendar_blocked ) {
 								<?php endif; ?>
 								<h3 class="law-cal-card__title">
 									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
+									<?php law_calendar_edit_link( $item ); ?>
 								</h3>
 								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
 								<?php
@@ -259,6 +263,7 @@ if ( ! $calendar_blocked ) {
 								<?php endif; ?>
 								<h3 class="law-cal-card__title">
 									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
+									<?php law_calendar_edit_link( $item ); ?>
 								</h3>
 								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
 								<?php
@@ -338,6 +343,7 @@ if ( ! $calendar_blocked ) {
 											<?php endif; ?>
 											<p class="law-cal-day__item-title">
 												<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
+												<?php law_calendar_edit_link( $item ); ?>
 											</p>
 											<p class="law-cal-day__item-meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
 											<?php
