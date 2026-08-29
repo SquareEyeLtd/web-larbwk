@@ -172,6 +172,19 @@ function law_calendar_search_form_action( $url, $view_id = 0 ) {
 	return $page_id ? get_permalink( $page_id ) : $url;
 }
 
+add_filter( 'gravityview_search_field_label', 'law_calendar_search_submit_label', 10, 3 );
+function law_calendar_search_submit_label( $label, $form_field, $field ) {
+	if ( ! law_calendar_is_calendar_page() ) {
+		return $label;
+	}
+	$input = isset( $field['input'] ) ? $field['input'] : '';
+	$key   = isset( $field['field'] ) ? $field['field'] : '';
+	if ( 'submit' !== $input && 'submit' !== $key ) {
+		return $label;
+	}
+	return 'Filter';
+}
+
 function law_calendar_current_view() {
 	$view = sanitize_key( wp_unslash( $_GET['view'] ?? 'list' ) );
 	return in_array( $view, array( 'list', 'day' ), true ) ? $view : 'list';
@@ -630,7 +643,7 @@ function law_calendar_install_programme_view() {
 					),
 					$uid()         => array(
 						'search_clear' => '1',
-						'custom_label' => 'Go',
+						'custom_label' => 'Filter',
 						'input_type'   => 'submit',
 						'tag'          => 'input',
 						'custom_class' => '',
