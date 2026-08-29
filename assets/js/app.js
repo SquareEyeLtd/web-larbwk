@@ -90,8 +90,28 @@ var x = setInterval(function () {
     updateCalendarStickyOffset();
   }
 
+  function syncCalendarFilterDisclosure() {
+    var details = document.querySelector('.law-cal-filters');
+    if (!details) {
+      return;
+    }
+    var desktop = window.matchMedia('(min-width: 64em)');
+    function apply() {
+      if (desktop.matches || details.classList.contains('is-searching')) {
+        details.setAttribute('open', '');
+      }
+    }
+    apply();
+    if (typeof desktop.addEventListener === 'function') {
+      desktop.addEventListener('change', apply);
+    } else if (typeof desktop.addListener === 'function') {
+      desktop.addListener(apply);
+    }
+  }
+
   // Set state on page load.
   updateNavAffix();
+  syncCalendarFilterDisclosure();
   $(window).on('resize', updateCalendarStickyOffset);
   $('.nav').on('transitionend', function (e) {
     if (!e.originalEvent || e.originalEvent.propertyName === 'padding-top') {

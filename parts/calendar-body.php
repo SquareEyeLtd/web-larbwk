@@ -185,8 +185,13 @@ if ( ! $calendar_blocked ) {
 			<?php else : ?>
 
 				<div class="law-cal-layout">
-					<aside class="law-cal-layout__filters">
-						<?php law_calendar_render_search(); ?>
+					<aside class="law-cal-layout__filters" aria-label="<?php esc_attr_e( 'Programme filters', 'law' ); ?>">
+						<details class="law-cal-filters<?php echo law_calendar_is_searching() ? ' is-searching' : ''; ?>"<?php echo law_calendar_is_searching() ? ' open' : ''; ?>>
+							<summary class="law-cal-filters__summary">Filter</summary>
+							<div class="law-cal-filters__panel">
+								<?php law_calendar_render_search(); ?>
+							</div>
+						</details>
 					</aside>
 					<div class="law-cal-layout__main">
 
