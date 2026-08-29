@@ -231,15 +231,25 @@ if ( ! $calendar_blocked ) {
 					<?php foreach ( $days as $date => $heading ) : ?>
 						<?php if ( empty( $by_date[ $date ] ) ) { continue; } ?>
 						<h2 class="law-cal__day-heading" id="day-<?php echo esc_attr( $date ); ?>"><?php echo esc_html( $heading ); ?></h2>
-						<?php foreach ( $by_date[ $date ] as $item ) : ?>
+						<?php
+						$last_slot = null;
+						foreach ( $by_date[ $date ] as $item ) :
+							$slot = (string) ( $item['time_label'] ?? '' );
+							if ( $slot !== $last_slot ) :
+								?>
+								<h3 class="law-cal__slot-heading"><?php echo esc_html( str_replace( '-', '–', $slot ) ); ?></h3>
+								<?php
+								$last_slot = $slot;
+							endif;
+							?>
 							<article class="law-cal-card">
 								<?php if ( $law_cal_show_status ) : ?>
 									<?php law_calendar_status_badge( $item ); ?>
 								<?php endif; ?>
-								<h3 class="law-cal-card__title">
+								<h4 class="law-cal-card__title">
 									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
 									<?php law_calendar_edit_link( $item ); ?>
-								</h3>
+								</h4>
 								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
 								<?php
 								$hosted = law_calendar_hosted_by( $item );
@@ -261,10 +271,10 @@ if ( ! $calendar_blocked ) {
 								<?php if ( $law_cal_show_status ) : ?>
 									<?php law_calendar_status_badge( $item ); ?>
 								<?php endif; ?>
-								<h3 class="law-cal-card__title">
+								<h4 class="law-cal-card__title">
 									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
 									<?php law_calendar_edit_link( $item ); ?>
-								</h3>
+								</h4>
 								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
 								<?php
 								$hosted = law_calendar_hosted_by( $item );

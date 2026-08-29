@@ -147,6 +147,24 @@
 	scroll-margin-top: var(--law-cal-scroll-margin, calc(var(--law-cal-sticky-top, 9.5rem) + 5rem));
 }
 
+.law-cal__slot-heading {
+	font-size: 0.95rem;
+	font-weight: 600;
+	line-height: 1.3;
+	color: #292459;
+	margin: 1.35rem 0 0.65rem;
+}
+
+.law-cal__day-heading + .law-cal__slot-heading {
+	margin-top: 0.15rem;
+}
+
+.law-cal-card + .law-cal__slot-heading {
+	border-top: 1px solid #e3e0ec;
+	padding-top: 1rem;
+	margin-top: 0.35rem;
+}
+
 .law-cal-card {
 	position: relative;
 	border: 1px solid #e3e0ec;
