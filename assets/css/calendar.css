@@ -144,7 +144,7 @@
 	color: #ef7d05;
 	text-transform: uppercase;
 	margin: 24px 0 10px;
-	scroll-margin-top: 56px;
+	scroll-margin-top: var(--law-cal-scroll-margin, calc(var(--law-cal-sticky-top, 9.5rem) + 5rem));
 }
 
 .law-cal-card {

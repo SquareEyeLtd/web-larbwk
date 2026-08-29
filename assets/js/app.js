@@ -60,11 +60,25 @@ var x = setInterval(function () {
   // Navigation
   function updateCalendarStickyOffset() {
     var nav = document.querySelector('.nav');
-    if (!nav || !document.querySelector('.law-cal-layout__filters')) {
+    var cal = document.querySelector('.law-cal');
+    if (!nav || !cal) {
       return;
     }
-    var top = Math.round(nav.getBoundingClientRect().bottom);
-    document.documentElement.style.setProperty('--law-cal-sticky-top', Math.max(top, 0) + 'px');
+    var top = Math.max(Math.round(nav.getBoundingClientRect().bottom), 0);
+    document.documentElement.style.setProperty('--law-cal-sticky-top', top + 'px');
+
+    var chips = cal.querySelector('.law-cal__chips');
+    var chipH = 0;
+    var chipBleed = 0;
+    if (chips) {
+      chipH = Math.round(chips.getBoundingClientRect().height);
+      // .law-cal__chips::before sits above the bar (1.25rem).
+      chipBleed = 20;
+    }
+    document.documentElement.style.setProperty(
+      '--law-cal-scroll-margin',
+      (top + chipH + chipBleed + 8) + 'px'
+    );
   }
 
   function updateNavAffix() {
