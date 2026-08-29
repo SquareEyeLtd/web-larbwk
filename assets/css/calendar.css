@@ -287,110 +287,12 @@
 	line-height: 1.4;
 }
 
-.law-cal-week {
-	overflow-x: auto;
-}
-
-.law-cal-week__grid {
-	display: grid;
-	grid-template-columns: 44px repeat(5, minmax(5.5rem, 1fr));
-	gap: 4px;
-	font-size: 11px;
-	min-width: 36rem;
-}
-
-.law-cal-week__head {
-	text-align: center;
-	font-weight: 600;
-	color: #292459;
-	padding-bottom: 6px;
-}
-
-.law-cal-week__time {
-	color: #666;
-	padding-top: 2px;
-}
-
-.law-cal-week__cell {
-	background: #f4f2fa;
-	border-radius: 4px;
-	padding: 6px 4px;
-	color: #292459;
-	min-height: 44px;
-	display: flex;
-	flex-direction: column;
-	gap: 4px;
-}
-
-.law-cal-week__cell.is-empty {
-	background: transparent;
-}
-
-.law-cal-week__cell.is-evening {
-	background: #fdeee0;
-	color: #ef7d05;
-	font-weight: 600;
-}
-
-.law-cal-day__item .law-cal-card__badge,
-.law-cal-week__event .law-cal-card__badge {
+.law-cal-day__item .law-cal-card__badge {
 	position: static;
 	display: inline-block;
 	margin: 0 0 4px;
 	font-size: 8px;
 	padding: 2px 6px;
-}
-
-.law-cal-week__event {
-	font-size: 10px;
-	line-height: 1.25;
-	padding: 4px 3px;
-	border-radius: 4px;
-	background: #f4f2fa;
-	color: #292459;
-}
-
-.law-cal-week__event--approved {
-	border-left: 3px solid #ef7d05;
-}
-
-.law-cal-week__event--confirmed {
-	border-left: 3px solid #292459;
-}
-
-.law-cal-week__event--proposed {
-	border-left: 3px solid #9b96b3;
-}
-
-.law-cal-week__event--sent-back {
-	border-left: 3px solid #ef7d05;
-}
-
-.law-cal-week__event--rejected {
-	border-left: 3px solid #999;
-}
-
-.law-cal-week__cell.is-evening .law-cal-week__event {
-	background: transparent;
-	color: #ef7d05;
-	padding: 0;
-}
-
-.law-cal-week__event:hover,
-.law-cal-week__event:focus {
-	color: #ef7d05;
-}
-
-.law-cal-week__more {
-	font-size: 10px;
-	font-weight: 600;
-	color: #ef7d05;
-	padding: 2px 3px;
-}
-
-.law-cal-week__more:hover,
-.law-cal-week__more:focus {
-	color: #292459;
 }
 
 .law-cal-detail__back {

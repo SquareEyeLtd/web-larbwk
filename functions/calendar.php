@@ -8,7 +8,7 @@ const LAW_CALENDAR_FORM_ID = 2;
 const LAW_CALENDAR_YEAR    = 2026;
 
 /**
- * Programme week, Monday–Friday. Empty days stay visible in week view.
+ * Programme week, Monday–Friday. Empty days stay visible in list and day views.
  */
 function law_calendar_week_days() {
 	return array(
@@ -18,10 +18,6 @@ function law_calendar_week_days() {
 		'2026-12-03' => 'Thursday 3 December',
 		'2026-12-04' => 'Friday 4 December',
 	);
-}
-
-function law_calendar_slot_starts() {
-	return array( '08:30', '10:30', '12:30', '14:30', '16:30', '18:30' );
 }
 
 /**
@@ -178,7 +174,7 @@ function law_calendar_search_form_action( $url, $view_id = 0 ) {
 
 function law_calendar_current_view() {
 	$view = sanitize_key( wp_unslash( $_GET['view'] ?? 'list' ) );
-	return in_array( $view, array( 'list', 'day', 'week' ), true ) ? $view : 'list';
+	return in_array( $view, array( 'list', 'day' ), true ) ? $view : 'list';
 }
 
 function law_calendar_requested_day() {

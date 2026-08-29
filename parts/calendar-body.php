@@ -1,6 +1,6 @@
 <?php
 /**
- * Shared List / Day / Week markup for public and committee calendars.
+ * Shared Full list / Day markup for public and committee calendars.
  *
  * Set $law_cal_show_status before including.
  */
@@ -28,7 +28,6 @@ $unscheduled = array();
 $today       = '';
 $day_key     = '';
 $chip_labels = array();
-$week_heads  = array();
 $has_dated   = false;
 $has_events  = false;
 
@@ -45,13 +44,6 @@ if ( ! $calendar_blocked ) {
 		'2026-12-02' => 'Wed 2',
 		'2026-12-03' => 'Thu 3',
 		'2026-12-04' => 'Fri 4',
-	);
-	$week_heads = array(
-		'2026-11-30' => 'Mon',
-		'2026-12-01' => 'Tue',
-		'2026-12-02' => 'Wed',
-		'2026-12-03' => 'Thu',
-		'2026-12-04' => 'Fri',
 	);
 
 	foreach ( array_keys( $days ) as $date ) {
@@ -196,7 +188,7 @@ if ( ! $calendar_blocked ) {
 					<div class="law-cal-layout__main">
 
 				<nav class="law-cal__tabs" aria-label="<?php esc_attr_e( 'Programme views', 'law' ); ?>">
-					<?php foreach ( array( 'list' => 'List', 'day' => 'Day', 'week' => 'Week' ) as $key => $label ) : ?>
+					<?php foreach ( array( 'list' => 'Full list', 'day' => 'Day' ) as $key => $label ) : ?>
 						<a
 							class="law-cal__tab<?php echo $view === $key ? ' is-active' : ''; ?>"
 							href="<?php echo esc_url( law_calendar_url( array( 'view' => $key, 'cal_day' => ( 'day' === $key ? $day_key : '' ) ) ) ); ?>"
@@ -360,85 +352,6 @@ if ( ! $calendar_blocked ) {
 							</div>
 						<?php endforeach; ?>
 					<?php endif; ?>
-
-				<?php else : ?>
-
-					<?php if ( ! $has_events ) : ?>
-						<p class="law-cal__empty"><?php echo esc_html( law_calendar_empty_message() ); ?></p>
-					<?php endif; ?>
-
-					<?php if ( ! empty( $unscheduled ) ) : ?>
-						<p class="law-cal__note">
-							<a href="<?php echo esc_url( law_calendar_url( array( 'view' => 'list' ) ) ); ?>#day-unscheduled">
-								<?php echo esc_html( sprintf( _n( '%d event has no confirmed slot.', '%d events have no confirmed slot.', count( $unscheduled ), 'law' ), count( $unscheduled ) ) ); ?>
-							</a>
-						</p>
-					<?php endif; ?>
-
-					<?php
-					$starts = law_calendar_slot_starts();
-					foreach ( law_calendar_events() as $item ) {
-						if ( empty( $item['start'] ) || in_array( $item['start'], $starts, true ) ) {
-							continue;
-						}
-						$starts[] = $item['start'];
-					}
-					sort( $starts );
-					$week = array();
-					foreach ( array_keys( $days ) as $date ) {
-						foreach ( $starts as $start ) {
-							$week[ $start ][ $date ] = array();
-						}
-					}
-					foreach ( law_calendar_events() as $item ) {
-						if ( empty( $item['start'] ) || empty( $item['date'] ) || ! isset( $week[ $item['start'] ][ $item['date'] ] ) ) {
-							continue;
-						}
-						$week[ $item['start'] ][ $item['date'] ][] = $item;
-					}
-					?>
-
-					<div class="law-cal-week">
-						<div class="law-cal-week__grid">
-							<div></div>
-							<?php foreach ( $week_heads as $label ) : ?>
-								<div class="law-cal-week__head"><?php echo esc_html( $label ); ?></div>
-							<?php endforeach; ?>
-
-							<?php foreach ( $starts as $start ) : ?>
-								<div class="law-cal-week__time"><?php echo esc_html( $start ); ?></div>
-								<?php foreach ( array_keys( $days ) as $date ) : ?>
-									<?php
-									$cell     = $week[ $start ][ $date ];
-									$evening  = ! empty( $cell ) && ! empty( $cell[0]['is_evening'] );
-									$classes  = 'law-cal-week__cell';
-									if ( empty( $cell ) ) {
-										$classes .= ' is-empty';
-									} elseif ( $evening ) {
-										$classes .= ' is-evening';
-									}
-									$shown = array_slice( $cell, 0, 3 );
-									$extra = count( $cell ) - count( $shown );
-									?>
-									<div class="<?php echo esc_attr( $classes ); ?>">
-										<?php foreach ( $shown as $item ) : ?>
-											<a class="law-cal-week__event law-cal-week__event--<?php echo esc_attr( law_calendar_status_slug( $item['status'] ) ); ?>" href="<?php echo esc_url( $item['url'] ); ?>">
-												<?php if ( $law_cal_show_status ) : ?>
-													<?php law_calendar_status_badge( $item ); ?>
-												<?php endif; ?>
-												<?php echo esc_html( wp_trim_words( $item['title'], 8, '…' ) ); ?>
-											</a>
-										<?php endforeach; ?>
-										<?php if ( $extra > 0 ) : ?>
-											<a class="law-cal-week__more" href="<?php echo esc_url( law_calendar_url( array( 'view' => 'day', 'cal_day' => $date ) ) ); ?>">
-												+<?php echo (int) $extra; ?> more
-											</a>
-										<?php endif; ?>
-									</div>
-								<?php endforeach; ?>
-							<?php endforeach; ?>
-						</div>
-					</div>
 
 				<?php endif; ?>
 
