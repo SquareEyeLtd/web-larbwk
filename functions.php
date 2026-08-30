@@ -17,6 +17,7 @@ require_once(get_theme_file_path('/functions/shortcodes.php'));
 
 require_once(get_theme_file_path('/functions/gravity-forms.php'));
 require_once(get_theme_file_path('/functions/gravity-flow.php'));
+require_once(get_theme_file_path('/functions/hubspot.php'));
 require_once(get_theme_file_path('/functions/event-workflow.php'));
 require_once(get_theme_file_path('/functions/users.php'));
 require_once(get_theme_file_path('/functions/calendar.php'));
