@@ -72,6 +72,18 @@
 	gap: 0.5rem;
 }
 
+/*
+ * Bottom-align the Search/Clear buttons with the input.
+ * GravityView's Vantage theme forces `align-self: start` on the submit box in a
+ * stacked search area, which lifts the buttons level with the field label:
+ * `.gv-themed .gv-widget-search .gv-search-widget-area:not(.gv-search-horizontal) > .gv-search-box-submit`.
+ * That selector carries five classes, so this override needs six to win.
+ */
+.gv-themed .gv-widget-search .gv-widget-search-general-search
+	.gv-search-widget-area:not(.gv-search-horizontal) > .gv-search-box-submit {
+	align-self: end;
+}
+
 .gv-widget-search .gv-search-widget-area .gv-search-button,
 .gv-widget-search .gv-search-widget-area .gv-search-clear {
 	width: auto !important;

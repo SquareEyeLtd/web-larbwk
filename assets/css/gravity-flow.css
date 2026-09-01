@@ -62,3 +62,38 @@ body.role-event_host #gravityflow-status-box-container .gravityflow-action-butto
 	padding: 0 !important;
 	margin: 0 !important;
 }
+
+/*
+ * Entry detail header: keep "show empty fields" on one line.
+ *
+ * Gravity Flow hard-codes `style="width:140px; font-size:10px"` on that header cell
+ * (includes/pages/class-entry-detail.php, the `<th>` above the checkbox) and its own
+ * frontend CSS sets `table-layout: fixed`. Foundation gives `label` an explicit 14px,
+ * so the label no longer fits the 140px the plugin sized the cell for and wraps.
+ *
+ * Every body cell in this table is `colspan="2"`, so only this header row defines the
+ * columns: dropping to auto layout and shrink-to-fit is safe. `width` needs
+ * `!important` to beat the inline style.
+ */
+.gravityflow_workflow_wrap table.entry-detail-view {
+	table-layout: auto !important;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view thead th:last-child {
+	width: 1% !important;
+	white-space: nowrap;
+}
+
+/* Foundation gives checkboxes a 1rem bottom margin and the label a 1rem right
+ * margin, which knocks the pair off the baseline in a right-aligned cell. */
+.gravityflow_workflow_wrap table.entry-detail-view thead th:last-child input[type="checkbox"] {
+	margin: 0;
+	vertical-align: middle;
+}
+
+.gravityflow_workflow_wrap table.entry-detail-view thead th:last-child label {
+	display: inline-block;
+	margin-right: 0;
+	white-space: nowrap;
+	vertical-align: middle;
+}
