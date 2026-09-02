@@ -118,18 +118,6 @@ if ( ! $calendar_blocked ) {
 									</ul>
 								</div>
 							<?php endif; ?>
-							<?php if ( $event['venue'] ) : ?>
-								<div class="law-cal-detail__fact">
-									<h3>Venue</h3>
-									<p><?php echo esc_html( $event['venue'] ); ?></p>
-									<a
-										class="button law-cal-map"
-										href="<?php echo esc_url( law_calendar_maps_url( $event['venue'] ) ); ?>"
-										target="_blank"
-										rel="noopener noreferrer"
-									>Map</a>
-								</div>
-							<?php endif; ?>
 							<?php if ( ! empty( $event['tickets'] ) ) : ?>
 								<div class="law-cal-detail__fact">
 									<h3>Tickets available</h3>
@@ -162,6 +150,33 @@ if ( ! $calendar_blocked ) {
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
+							<?php if ( $event['venue'] ) : ?>
+								<section class="law-cal-venue" aria-labelledby="law-cal-venue-heading">
+									<h2 id="law-cal-venue-heading" class="law-cal-acc__heading">Venue</h2>
+									<p class="law-cal-venue__address"><?php echo esc_html( $event['venue'] ); ?></p>
+									<?php
+									$maps_url  = law_calendar_maps_url( $event['venue'] );
+									$embed_url = law_calendar_maps_embed_url( $event['venue'] );
+									$show_map  = law_calendar_venue_is_mappable( $event['venue'] ) && $embed_url;
+									?>
+									<?php if ( $show_map ) : ?>
+										<div class="law-cal-venue__map">
+											<iframe
+												title="<?php echo esc_attr( sprintf( __( 'Map of %s', 'law' ), $event['venue'] ) ); ?>"
+												src="<?php echo esc_url( $embed_url ); ?>"
+												loading="lazy"
+												referrerpolicy="no-referrer-when-downgrade"
+												allowfullscreen
+											></iframe>
+										</div>
+										<?php if ( $maps_url ) : ?>
+											<p class="law-cal-venue__open">
+												<a href="<?php echo esc_url( $maps_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Open in Google Maps', 'law' ); ?></a>
+											</p>
+										<?php endif; ?>
+									<?php endif; ?>
+								</section>
+							<?php endif; ?>
 							<?php if ( ! empty( $event['speakers'] ) ) : ?>
 								<section class="law-cal-acc">
 									<h2 class="law-cal-acc__heading">Speakers</h2>

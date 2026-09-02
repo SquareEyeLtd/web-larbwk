@@ -8,7 +8,7 @@
 > When you change something listed in "Known defects", move it out of that section
 > rather than leaving both descriptions in place.
 
-Last verified against the database and codebase: 1 September 2026.
+Last verified against the database and codebase: 2 September 2026.
 
 ---
 
@@ -90,6 +90,7 @@ The parent is recorded in the child's `gpnf_entry_parent` entry meta.
 | 3 | name | Submitter name |
 | 7 | email | Submitter email |
 | 17 | text | Event title |
+| 21 | text | Venue (free text: name, address, or both). Used on the programme listing and as the Google Maps query. |
 | 53 | product (radio) | Event fee tier: `UK office` £1200, `International` £600, `Sponsor` £0 |
 | 68 | select | Confirmed slot |
 | 70 | uid | Unique ID (LAW reference) |
@@ -398,6 +399,12 @@ lines) with `templates/calendar.php` and `templates/calendar-committee.php`.
 There is an `event` custom post type registered via Pods, and a deactivated
 Advanced Post Creation feed that would populate it, but neither is in use. See
 "Known defects", item 3.
+
+Individual listings (`?event=<entry_id>`) show venue from field 21 in the main
+column, below the intro, with a Google Maps iframe embed. The embed is a search
+on that text (London is appended when the string does not already mention it).
+Placeholder values such as `TBC` skip the map. No coordinates are stored; an
+address field is not required.
 
 ---
 

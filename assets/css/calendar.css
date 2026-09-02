@@ -533,7 +533,7 @@
 
 @media (min-width: 48em) {
 	.law-cal-detail__layout {
-		grid-template-columns: 15.5rem minmax(0, 65ch);
+		grid-template-columns: 15.5rem minmax(0, 1fr);
 		grid-template-areas: "aside main";
 		align-items: start;
 		gap: 2rem 2.5rem;
@@ -579,28 +579,49 @@
 	margin: 0 0 0.2rem;
 }
 
-.law-cal-map {
-	display: inline-block;
-	width: auto;
-	margin-top: 0.6rem;
-	padding: 0.45em 1.1em;
-	border-radius: 9999px;
-	border: 1px solid #ef7d05;
-	background: #ef7d05;
-	color: #fff;
-	font-family: poppins, sans-serif;
-	font-size: 0.75rem;
-	font-weight: 600;
-	line-height: 1.2;
-	text-transform: uppercase;
-	text-decoration: none;
+.law-cal-venue {
+	max-width: 48rem;
+	margin-top: 0.25rem;
 }
 
-.law-cal-map:hover,
-.law-cal-map:focus {
-	background: #292459;
-	border-color: #292459;
-	color: #fff;
+.law-cal-venue__address {
+	margin: 0 0 0.85rem;
+	color: #292459;
+	font-size: 1rem;
+	line-height: 1.45;
+}
+
+.law-cal-venue__map {
+	position: relative;
+	width: 100%;
+	aspect-ratio: 16 / 9;
+	overflow: hidden;
+	border: 1px solid #292459;
+	border-radius: 6px;
+	background: #ece9f5;
+}
+
+.law-cal-venue__map iframe {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	border: 0;
+}
+
+.law-cal-venue__open {
+	margin: 0.55rem 0 0;
+	font-size: 0.8rem;
+}
+
+.law-cal-venue__open a {
+	color: #ef7d05;
+	font-weight: 600;
+}
+
+.law-cal-venue__open a:hover,
+.law-cal-venue__open a:focus {
+	color: #292459;
 }
 
 .law-cal-detail__title {

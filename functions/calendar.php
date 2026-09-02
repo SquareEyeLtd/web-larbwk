@@ -1255,8 +1255,58 @@ function law_calendar_pre_document_title( $title ) {
 	return $event['title'] . ' – ' . get_bloginfo( 'name' );
 }
 
+/**
+ * Search query for Google Maps. Appends London when the venue string does not
+ * already mention it, so firm names like "IDRC" resolve to the local office.
+ *
+ * @param string $venue Field 21 value.
+ */
+function law_calendar_maps_query( $venue ) {
+	$venue = trim( (string) $venue );
+	if ( '' === $venue ) {
+		return '';
+	}
+	if ( ! preg_match( '/\blondon\b/i', $venue ) ) {
+		$venue .= ', London, UK';
+	}
+	return $venue;
+}
+
+/**
+ * True when the venue string is worth sending to Maps (not TBC / empty).
+ *
+ * @param string $venue Field 21 value.
+ */
+function law_calendar_venue_is_mappable( $venue ) {
+	$venue = trim( (string) $venue );
+	if ( '' === $venue ) {
+		return false;
+	}
+	$normalized = strtolower( (string) preg_replace( '/[^a-z0-9]+/i', '', $venue ) );
+	$skip       = array( 'tbc', 'tbd', 'tba', 'tobeconfirmed', 'tobedecided', 'tobeannounced', 'unknown', 'na', 'n/a', 'none' );
+	return ! in_array( $normalized, $skip, true );
+}
+
 function law_calendar_maps_url( $venue ) {
-	return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode( $venue );
+	$query = law_calendar_maps_query( $venue );
+	if ( '' === $query ) {
+		return '';
+	}
+	return 'https://www.google.com/maps/search/?api=1&query=' . rawurlencode( $query );
+}
+
+/**
+ * Google Maps embed URL for an iframe. Uses the keyless Maps embed endpoint
+ * (origin=mfe) with the same search query as law_calendar_maps_url().
+ *
+ * @param string $venue Field 21 value.
+ */
+function law_calendar_maps_embed_url( $venue ) {
+	$query = law_calendar_maps_query( $venue );
+	if ( '' === $query ) {
+		return '';
+	}
+	return 'https://www.google.com/maps/embed?origin=mfe&pb=!1m2!2m1!1s' . rawurlencode( $query );
 }
 
 /**
