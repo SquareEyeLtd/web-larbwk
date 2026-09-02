@@ -39,7 +39,8 @@
 }
 
 /*
- * Loop card: fixed-size photo on the left, text on the right.
+ * Loop card: fixed-size photo on the left (160px, 120px medium, 100px small),
+ * text on the right.
  *
  * Kept stable against long content: the photo never shrinks (fixed flex
  * basis); the text column may wrap (min-width: 0, overflow-wrap) but never
@@ -51,7 +52,7 @@
 .law-speakers__card {
 	display: flex;
 	height: 100%;
-	min-height: 140px;
+	min-height: 160px;
 	background: #e8e7ed;
 	border-radius: 4px;
 	overflow: hidden;
@@ -59,11 +60,10 @@
 
 .law-speakers__photo {
 	display: flex;
-	flex: 0 0 140px;
+	flex: 0 0 160px;
 	align-items: center;
 	justify-content: center;
-	width: 140px;
-	height: 140px;
+	width: 160px;
 	background: rgba(38, 30, 91, 0.15);
 }
 
@@ -78,7 +78,7 @@
 	color: rgba(41, 36, 89, 0.5);
 	font-family: poppins, sans-serif;
 	font-weight: 600;
-	font-size: 2rem;
+	font-size: 2.2rem;
 	letter-spacing: 0.05em;
 }
 
@@ -162,19 +162,33 @@
 	font-size: 0.9rem;
 }
 
-@media screen and (max-width: 39.9375em) {
+@media screen and (min-width: 40em) and (max-width: 63.9375em) {
 	.law-speakers__card {
-		min-height: 70px;
+		min-height: 120px;
 	}
 
 	.law-speakers__photo {
-		flex-basis: 70px;
-		width: 70px;
-		height: 70px;
+		flex-basis: 120px;
+		width: 120px;
 	}
 
 	.law-speakers__initials {
-		font-size: 1.1rem;
+		font-size: 1.7rem;
+	}
+}
+
+@media screen and (max-width: 39.9375em) {
+	.law-speakers__card {
+		min-height: 100px;
+	}
+
+	.law-speakers__photo {
+		flex-basis: 100px;
+		width: 100px;
+	}
+
+	.law-speakers__initials {
+		font-size: 1.4rem;
 	}
 
 	.law-speakers__details {
