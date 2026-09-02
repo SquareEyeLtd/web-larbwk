@@ -168,36 +168,59 @@ if ( ! $calendar_blocked ) {
 								<section class="law-cal-sessions" aria-labelledby="law-cal-sessions-heading">
 									<h2 id="law-cal-sessions-heading" class="law-cal-acc__heading">Sessions</h2>
 									<?php foreach ( $event['sessions'] as $session ) : ?>
-										<article class="law-cal-session">
-											<?php if ( $session['title'] ) : ?>
-												<h3 class="law-cal-session__title"><?php echo esc_html( $session['title'] ); ?></h3>
-											<?php endif; ?>
-											<?php if ( $session['time_label'] ) : ?>
-												<p class="law-cal-session__time"><?php echo esc_html( $session['time_label'] ); ?></p>
-											<?php endif; ?>
-											<?php if ( $session['description'] ) : ?>
-												<div class="law-cal-session__body">
-													<?php echo wp_kses_post( wpautop( $session['description'] ) ); ?>
-												</div>
-											<?php endif; ?>
-											<?php if ( ! empty( $session['speakers'] ) ) : ?>
-												<ul class="law-cal-session__speakers">
-													<?php foreach ( $session['speakers'] as $session_speaker ) : ?>
-														<li>
-															<?php if ( ! empty( $session_speaker['url'] ) ) : ?>
-																<a href="<?php echo esc_url( $session_speaker['url'] ); ?>"><?php echo esc_html( $session_speaker['name'] ); ?></a>
-															<?php else : ?>
-																<?php echo esc_html( $session_speaker['name'] ); ?>
-															<?php endif; ?>
-														</li>
-													<?php endforeach; ?>
-												</ul>
-											<?php endif; ?>
-										</article>
+										<?php
+										$session_label = trim( $session['title'] );
+										if ( '' === $session_label ) {
+											$session_label = $session['time_label'] ? $session['time_label'] : __( 'Session', 'law' );
+										}
+										?>
+										<details class="law-cal-session" name="law-cal-sessions">
+											<summary class="law-cal-session__summary">
+												<span class="law-cal-session__heading">
+													<span class="law-cal-session__title"><?php echo esc_html( $session_label ); ?></span>
+													<?php if ( $session['time_label'] && $session['time_label'] !== $session_label ) : ?>
+														<span class="law-cal-session__time"><?php echo esc_html( $session['time_label'] ); ?></span>
+													<?php endif; ?>
+												</span>
+											</summary>
+											<div class="law-cal-session__panel">
+												<?php if ( $session['description'] ) : ?>
+													<div class="law-cal-session__body">
+														<?php echo wp_kses_post( wpautop( $session['description'] ) ); ?>
+													</div>
+												<?php endif; ?>
+												<?php if ( ! empty( $session['speakers'] ) ) : ?>
+													<ul class="law-cal-session__speakers">
+														<?php foreach ( $session['speakers'] as $session_speaker ) : ?>
+															<li>
+																<span class="law-cal-session__photo">
+																	<?php if ( ! empty( $session_speaker['photo'] ) ) : ?>
+																		<img src="<?php echo esc_url( $session_speaker['photo'] ); ?>" alt="<?php echo esc_attr( $session_speaker['name'] ); ?>" width="32" height="32">
+																	<?php endif; ?>
+																</span>
+																<span class="law-cal-session__speaker-body">
+																	<?php if ( ! empty( $session_speaker['url'] ) ) : ?>
+																		<a href="<?php echo esc_url( $session_speaker['url'] ); ?>"><?php echo esc_html( $session_speaker['name'] ); ?></a>
+																	<?php else : ?>
+																		<?php echo esc_html( $session_speaker['name'] ); ?>
+																	<?php endif; ?>
+																	<?php
+																	$role = array_filter( array( $session_speaker['job_title'], $session_speaker['organisation'] ) );
+																	if ( $role ) {
+																		echo '<span class="law-cal-session__role">' . esc_html( implode( ', ', $role ) ) . '</span>';
+																	}
+																	?>
+																</span>
+															</li>
+														<?php endforeach; ?>
+													</ul>
+												<?php endif; ?>
+											</div>
+										</details>
 									<?php endforeach; ?>
 								</section>
 							<?php endif; ?>
-							<?php if ( ! empty( $event['speakers'] ) ) : ?>
+							<?php if ( empty( $event['sessions'] ) && ! empty( $event['speakers'] ) ) : ?>
 								<section class="law-cal-acc">
 									<h2 class="law-cal-acc__heading">Speakers</h2>
 									<ul class="law-cal-speakers">

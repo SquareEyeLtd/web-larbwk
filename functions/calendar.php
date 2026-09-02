@@ -1392,7 +1392,7 @@ function law_calendar_entry_ids_from_value( $raw ) {
  * Speakers referenced by form 8 entry IDs (Sessions field 6).
  *
  * @param mixed $raw Multiselect value.
- * @return array<int,array{id:int,name:string,url:string}>
+ * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string}>
  */
 function law_calendar_speakers_from_ids( $raw ) {
 	if ( ! class_exists( 'GFAPI' ) ) {
@@ -1410,9 +1410,12 @@ function law_calendar_speakers_from_ids( $raw ) {
 			continue;
 		}
 		$speakers[] = array(
-			'id'   => $entry_id,
-			'name' => $name,
-			'url'  => law_calendar_speaker_profile_url( $entry_id ),
+			'id'           => $entry_id,
+			'name'         => $name,
+			'organisation' => trim( (string) rgar( $entry, '3' ) ),
+			'job_title'    => trim( (string) rgar( $entry, '4' ) ),
+			'url'          => law_calendar_speaker_profile_url( $entry_id ),
+			'photo'        => law_calendar_speaker_photo_url( rgar( $entry, '6' ) ),
 		);
 	}
 

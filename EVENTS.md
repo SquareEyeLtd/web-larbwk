@@ -424,11 +424,12 @@ Placeholder values such as `TBC` skip the map. No coordinates are stored; an
 address field is not required.
 
 If the Sessions nested field (115 → form 9) has child entries, they appear
-under the venue as a **Sessions** heading, then each child: title, start–end
-time, description, and speaker names from field 6. Speaker names on both the
-Sessions list and the event-level Speakers section link to
-`/speakers/<form 8 entry ID>/` via `law_speaker_url()`, which always resolves
-from the Speakers page (not the queried programme URL).
+under the venue as a **Sessions** heading, then a native `<details>` accordion
+per child. The summary shows title and start–end time; the panel holds the
+description and speakers from field 6 (name linking to
+`/speakers/<form 8 entry ID>/`, job title, organisation, and a 32px thumbnail
+or grey placeholder). The event-level Speakers section is omitted when any
+sessions exist; it still appears for events with no sessions.
 
 ### The speakers archive
 
