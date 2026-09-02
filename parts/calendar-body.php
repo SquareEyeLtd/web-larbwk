@@ -164,6 +164,39 @@ if ( ! $calendar_blocked ) {
 									<?php endif; ?>
 								</section>
 							<?php endif; ?>
+							<?php if ( ! empty( $event['sessions'] ) ) : ?>
+								<section class="law-cal-sessions" aria-labelledby="law-cal-sessions-heading">
+									<h2 id="law-cal-sessions-heading" class="law-cal-acc__heading">Sessions</h2>
+									<?php foreach ( $event['sessions'] as $session ) : ?>
+										<article class="law-cal-session">
+											<?php if ( $session['title'] ) : ?>
+												<h3 class="law-cal-session__title"><?php echo esc_html( $session['title'] ); ?></h3>
+											<?php endif; ?>
+											<?php if ( $session['time_label'] ) : ?>
+												<p class="law-cal-session__time"><?php echo esc_html( $session['time_label'] ); ?></p>
+											<?php endif; ?>
+											<?php if ( $session['description'] ) : ?>
+												<div class="law-cal-session__body">
+													<?php echo wp_kses_post( wpautop( $session['description'] ) ); ?>
+												</div>
+											<?php endif; ?>
+											<?php if ( ! empty( $session['speakers'] ) ) : ?>
+												<ul class="law-cal-session__speakers">
+													<?php foreach ( $session['speakers'] as $session_speaker ) : ?>
+														<li>
+															<?php if ( ! empty( $session_speaker['url'] ) ) : ?>
+																<a href="<?php echo esc_url( $session_speaker['url'] ); ?>"><?php echo esc_html( $session_speaker['name'] ); ?></a>
+															<?php else : ?>
+																<?php echo esc_html( $session_speaker['name'] ); ?>
+															<?php endif; ?>
+														</li>
+													<?php endforeach; ?>
+												</ul>
+											<?php endif; ?>
+										</article>
+									<?php endforeach; ?>
+								</section>
+							<?php endif; ?>
 							<?php if ( ! empty( $event['speakers'] ) ) : ?>
 								<section class="law-cal-acc">
 									<h2 class="law-cal-acc__heading">Speakers</h2>

@@ -220,13 +220,22 @@ function law_speaker_initials( $speaker ) {
 }
 
 /**
- * Single speaker URL, <speakers page>/<child entry ID>/. The single speaker
- * template does not exist yet, so these 404 until it is built.
+ * Single speaker URL, /speakers/<form 8 entry ID>/.
+ *
+ * Always resolves from the Speakers page, not the queried object — event
+ * listings live on /programme/ and must not produce /programme/<id>/.
  */
 function law_speaker_url( $entry_id ) {
-	$base = get_permalink( get_queried_object_id() );
-	if ( ! $base ) {
-		$base = home_url( '/speakers/' );
+	static $base = null;
+	if ( null === $base ) {
+		$pages = get_pages(
+			array(
+				'meta_key'   => '_wp_page_template',
+				'meta_value' => 'templates/speakers.php',
+				'number'     => 1,
+			)
+		);
+		$base = $pages ? get_permalink( $pages[0] ) : home_url( '/speakers/' );
 	}
 	return trailingslashit( $base ) . (int) $entry_id . '/';
 }

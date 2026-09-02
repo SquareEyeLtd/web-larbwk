@@ -736,6 +736,81 @@
 	padding-top: 0.25rem;
 }
 
+.law-cal-sessions {
+	max-width: 65ch;
+	margin-top: 0.5rem;
+}
+
+.law-cal-session {
+	margin: 0 0 1.35rem;
+	padding: 0 0 1.15rem;
+	border-bottom: 1px solid #ece9f5;
+}
+
+.law-cal-session:last-child {
+	margin-bottom: 0;
+	padding-bottom: 0;
+	border-bottom: 0;
+}
+
+.law-cal-session__title {
+	margin: 0 0 0.25rem;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-size: 1.05rem;
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+.law-cal-session__time {
+	margin: 0 0 0.65rem;
+	color: #666;
+	font-size: 0.85rem;
+	font-weight: 500;
+}
+
+.law-cal-session__body {
+	font-size: 1rem;
+	line-height: 1.5;
+	color: #292459;
+}
+
+.law-cal-session__body p,
+.law-cal-session__body li {
+	margin: 0 0 0.75rem;
+	line-height: 1.5;
+}
+
+.law-cal-session__body p:last-child {
+	margin-bottom: 0;
+}
+
+.law-cal-session__speakers {
+	list-style: none;
+	padding: 0.5rem 0 0;
+	margin: 0;
+}
+
+.law-cal-session__speakers li {
+	margin: 0 0 0.3rem;
+	font-size: 0.9rem;
+	line-height: 1.35;
+}
+
+.law-cal-session__speakers li:last-child {
+	margin-bottom: 0;
+}
+
+.law-cal-session__speakers a {
+	color: #ef7d05;
+	font-weight: 600;
+}
+
+.law-cal-session__speakers a:hover,
+.law-cal-session__speakers a:focus {
+	color: #292459;
+}
+
 #pages .hero .law-cal-banner-title {
 	margin: 0;
 	color: #ffffff;

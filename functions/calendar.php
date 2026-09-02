@@ -734,6 +734,7 @@ function law_calendar_map_entry( $entry, $allowed = null ) {
 		'type'        => $type,
 		'sectors'     => law_calendar_sectors( $entry ),
 		'speakers'    => array(), // Hydrated on the event listing only.
+		'sessions'    => array(), // Hydrated on the event listing only.
 		'excerpt'     => law_calendar_excerpt( rgar( $entry, '23' ) ),
 		'description' => (string) rgar( $entry, '23' ),
 		'url'         => law_calendar_url( array( 'event' => rgar( $entry, 'id' ) ), false ),
@@ -786,9 +787,13 @@ function law_calendar_event_by_id( $entry_id ) {
 		if ( ! is_array( $entry ) && class_exists( 'GFAPI' ) ) {
 			$entry = GFAPI::get_entry( $entry_id );
 		}
-		$event['speakers'] = ( is_array( $entry ) && ! is_wp_error( $entry ) )
-			? law_calendar_speakers( $entry )
-			: array();
+		if ( is_array( $entry ) && ! is_wp_error( $entry ) ) {
+			$event['speakers'] = law_calendar_speakers( $entry );
+			$event['sessions'] = law_calendar_sessions( $entry );
+		} else {
+			$event['speakers'] = array();
+			$event['sessions'] = array();
+		}
 	}
 
 	$cache[ $entry_id ] = $event;
@@ -1252,6 +1257,228 @@ function law_calendar_speakers_nested_field_id() {
 }
 
 /**
+ * Sessions Nested Form field on Form 2 (115 locally).
+ *
+ * @return int
+ */
+function law_calendar_sessions_nested_field_id() {
+	static $field_id = null;
+	if ( null !== $field_id ) {
+		return $field_id;
+	}
+
+	$field_id = 0;
+	if ( ! class_exists( 'GFAPI' ) ) {
+		return 0;
+	}
+
+	$form = GFAPI::get_form( LAW_CALENDAR_FORM_ID );
+	if ( ! $form || empty( $form['fields'] ) ) {
+		return 0;
+	}
+
+	foreach ( $form['fields'] as $field ) {
+		if ( 'form' !== $field->type ) {
+			continue;
+		}
+		$label = (string) $field->label;
+		if ( false !== stripos( $label, 'session' ) ) {
+			$field_id = (int) $field->id;
+			return $field_id;
+		}
+		$child_id = (int) $field->gpnfForm;
+		$child    = $child_id ? GFAPI::get_form( $child_id ) : null;
+		if ( $child && false !== stripos( (string) $child['title'], 'session' ) ) {
+			$field_id = (int) $field->id;
+			return $field_id;
+		}
+	}
+
+	return $field_id;
+}
+
+/**
+ * Child entries for a Nested Form field, in the order stored on the parent.
+ *
+ * @param array $entry    Parent form 2 entry.
+ * @param int   $field_id Nested Form field ID.
+ * @return array<int,array>
+ */
+function law_calendar_nested_children( $entry, $field_id ) {
+	$field_id = (int) $field_id;
+	if ( ! $field_id || ! is_array( $entry ) ) {
+		return array();
+	}
+
+	$ids = rgar( $entry, (string) $field_id );
+	if ( '' === $ids || null === $ids ) {
+		return array();
+	}
+
+	if ( function_exists( 'gp_nested_forms' ) ) {
+		$children = gp_nested_forms()->get_entries( $ids );
+		return is_array( $children ) ? $children : array();
+	}
+
+	if ( ! class_exists( 'GFAPI' ) ) {
+		return array();
+	}
+
+	$children = array();
+	foreach ( array_filter( array_map( 'absint', explode( ',', (string) $ids ) ) ) as $child_id ) {
+		$child = GFAPI::get_entry( $child_id );
+		if ( ! is_wp_error( $child ) ) {
+			$children[] = $child;
+		}
+	}
+	return $children;
+}
+
+/**
+ * Display name from a form 8 speaker entry.
+ *
+ * @param array $entry Form 8 entry.
+ * @return string
+ */
+function law_calendar_speaker_display_name( $entry ) {
+	$name = trim( rgar( $entry, '1.3' ) . ' ' . rgar( $entry, '1.6' ) );
+	if ( '' === $name ) {
+		$name = trim( (string) rgar( $entry, '1' ) );
+	}
+	return $name;
+}
+
+/**
+ * Profile URL for a form 8 speaker entry, or empty when speakers.php is not loaded.
+ *
+ * @param int $entry_id Form 8 entry ID.
+ * @return string
+ */
+function law_calendar_speaker_profile_url( $entry_id ) {
+	$entry_id = (int) $entry_id;
+	if ( $entry_id < 1 || ! function_exists( 'law_speaker_url' ) ) {
+		return '';
+	}
+	return law_speaker_url( $entry_id );
+}
+
+/**
+ * Form 8 entry IDs from a GP Populate Anything multiselect (JSON array, CSV, or array).
+ *
+ * @param mixed $raw Field value.
+ * @return array<int,int>
+ */
+function law_calendar_entry_ids_from_value( $raw ) {
+	if ( is_array( $raw ) ) {
+		return array_values( array_filter( array_map( 'absint', $raw ) ) );
+	}
+
+	$raw = trim( (string) $raw );
+	if ( '' === $raw ) {
+		return array();
+	}
+
+	if ( '[' === $raw[0] ) {
+		$decoded = json_decode( $raw, true );
+		if ( is_array( $decoded ) ) {
+			return array_values( array_filter( array_map( 'absint', $decoded ) ) );
+		}
+	}
+
+	return array_values( array_filter( array_map( 'absint', explode( ',', $raw ) ) ) );
+}
+
+/**
+ * Speakers referenced by form 8 entry IDs (Sessions field 6).
+ *
+ * @param mixed $raw Multiselect value.
+ * @return array<int,array{id:int,name:string,url:string}>
+ */
+function law_calendar_speakers_from_ids( $raw ) {
+	if ( ! class_exists( 'GFAPI' ) ) {
+		return array();
+	}
+
+	$speakers = array();
+	foreach ( law_calendar_entry_ids_from_value( $raw ) as $entry_id ) {
+		$entry = GFAPI::get_entry( $entry_id );
+		if ( is_wp_error( $entry ) ) {
+			continue;
+		}
+		$name = law_calendar_speaker_display_name( $entry );
+		if ( '' === $name ) {
+			continue;
+		}
+		$speakers[] = array(
+			'id'   => $entry_id,
+			'name' => $name,
+			'url'  => law_calendar_speaker_profile_url( $entry_id ),
+		);
+	}
+
+	return $speakers;
+}
+
+/**
+ * Sessions for an event listing, from nested child entries (form 9).
+ *
+ * Child fields: Start time 1, End time 3, Title 4, Description 5,
+ * Speakers 6 (multiselect of form 8 entry IDs).
+ *
+ * @param array $entry Form 2 entry.
+ * @return array<int,array{title:string,start:string,end:string,time_label:string,description:string,speakers:array}>
+ */
+function law_calendar_sessions( $entry ) {
+	if ( ! is_array( $entry ) ) {
+		return array();
+	}
+
+	$children = law_calendar_nested_children( $entry, law_calendar_sessions_nested_field_id() );
+	if ( empty( $children ) ) {
+		return array();
+	}
+
+	$sessions = array();
+	foreach ( $children as $child ) {
+		$title       = trim( (string) rgar( $child, '4' ) );
+		$start       = trim( (string) rgar( $child, '1' ) );
+		$end         = trim( (string) rgar( $child, '3' ) );
+		$description = trim( (string) rgar( $child, '5' ) );
+		$speakers    = law_calendar_speakers_from_ids( rgar( $child, '6' ) );
+		$time_label  = law_calendar_session_time_label( $start, $end );
+
+		if ( '' === $title && '' === $time_label && '' === $description && empty( $speakers ) ) {
+			continue;
+		}
+
+		$sessions[] = array(
+			'title'       => $title,
+			'start'       => $start,
+			'end'         => $end,
+			'time_label'  => $time_label,
+			'description' => $description,
+			'speakers'    => $speakers,
+		);
+	}
+
+	return $sessions;
+}
+
+/**
+ * @param string $start Field 1 value, e.g. "09:00".
+ * @param string $end   Field 3 value.
+ * @return string
+ */
+function law_calendar_session_time_label( $start, $end ) {
+	$start = trim( (string) $start );
+	$end   = trim( (string) $end );
+	if ( $start && $end ) {
+		return $start . '–' . $end;
+	}
+	return $start;
+}
+
+/**
  * First image URL from a Gravity Forms file-upload value.
  *
  * @param mixed $raw JSON array of URLs, a single URL, or a pipe-separated string.
@@ -1319,49 +1546,27 @@ function law_calendar_speakers( $entry ) {
 
 /**
  * @param array $entry Form 2 entry.
- * @return array<int,array{name:string,organisation:string,job_title:string,url:string,photo:string}>
+ * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string}>
  */
 function law_calendar_speakers_from_nested( $entry ) {
-	$field_id = law_calendar_speakers_nested_field_id();
-	if ( ! $field_id ) {
-		return array();
-	}
-
-	$ids = rgar( $entry, (string) $field_id );
-	if ( '' === $ids || null === $ids ) {
-		return array();
-	}
-
-	$children = array();
-	if ( function_exists( 'gp_nested_forms' ) ) {
-		$children = gp_nested_forms()->get_entries( $ids );
-	} elseif ( class_exists( 'GFAPI' ) ) {
-		foreach ( array_filter( array_map( 'absint', explode( ',', (string) $ids ) ) ) as $child_id ) {
-			$child = GFAPI::get_entry( $child_id );
-			if ( ! is_wp_error( $child ) ) {
-				$children[] = $child;
-			}
-		}
-	}
-
+	$children = law_calendar_nested_children( $entry, law_calendar_speakers_nested_field_id() );
 	if ( empty( $children ) ) {
 		return array();
 	}
 
 	$speakers = array();
 	foreach ( $children as $child ) {
-		$name = trim( rgar( $child, '1.3' ) . ' ' . rgar( $child, '1.6' ) );
-		if ( '' === $name ) {
-			$name = trim( (string) rgar( $child, '1' ) );
-		}
+		$name = law_calendar_speaker_display_name( $child );
 		if ( '' === $name ) {
 			continue;
 		}
+		$entry_id   = (int) rgar( $child, 'id' );
 		$speakers[] = array(
+			'id'           => $entry_id,
 			'name'         => $name,
 			'organisation' => trim( (string) rgar( $child, '3' ) ),
 			'job_title'    => trim( (string) rgar( $child, '4' ) ),
-			'url'          => esc_url_raw( (string) rgar( $child, '5' ) ),
+			'url'          => law_calendar_speaker_profile_url( $entry_id ),
 			'photo'        => law_calendar_speaker_photo_url( rgar( $child, '6' ) ),
 		);
 	}

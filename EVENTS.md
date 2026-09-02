@@ -78,6 +78,7 @@ into Make expressions. This is the reason the build is stable and debuggable.
 | 5 | Comments | GPNF child of field 99, the committee/host thread |
 | 6 | Events > add co-owner | GPNF child of field 106 |
 | 8 | Events > speaker | GPNF child of field 110 locally, field 112 on live |
+| 9 | Event > session | GPNF child of field 115 |
 
 Child form entries live in the same `wp_gf_entry` table and draw from the same
 global auto-increment. GPNF creates a child entry the moment the row is added in
@@ -117,7 +118,18 @@ are higher than the parent because they were created afterwards.
 | 99 | form (GPNF → 5) | Comments thread |
 | 106 | form (GPNF → 6) | Additional event owners, repeatable |
 | 110 / 112 | form (GPNF → 8) | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6), Biography (7), Email (8). Field **110** on local, **112** on live. The migrator auto-detects. |
+| 115 | form (GPNF → 9) | Sessions, repeatable. Shown on the individual event listing when child rows exist. |
 | 67 | textarea | Reason for rejection |
+
+### Form 9 key fields (Event > session)
+
+| ID | Type | Label / purpose |
+|---|---|---|
+| 1 | time | Start time |
+| 3 | time | End time |
+| 4 | text | Session title |
+| 5 | textarea | Description |
+| 6 | multiselect (GPPA → form 8) | Speakers. Value is the form 8 child entry ID; label is the speaker name. Multiple IDs allowed. |
 
 Fields 84, 85, 87, 81, 88, 95, 96 and others are set to **administrative**
 visibility: they appear in the admin entry detail and in GravityView, but not on
@@ -411,15 +423,24 @@ on that text (London is appended when the string does not already mention it).
 Placeholder values such as `TBC` skip the map. No coordinates are stored; an
 address field is not required.
 
+If the Sessions nested field (115 → form 9) has child entries, they appear
+under the venue as a **Sessions** heading, then each child: title, start–end
+time, description, and speaker names from field 6. Speaker names on both the
+Sessions list and the event-level Speakers section link to
+`/speakers/<form 8 entry ID>/` via `law_speaker_url()`, which always resolves
+from the Speakers page (not the queried programme URL).
+
 ### The speakers archive
 
 `templates/speakers.php` (page template "Speakers") lists every speaker across
 the public programme, from the form 8 child entries.
 
 The Speakers section on that listing reads Nested Form child entries (field 110
-locally, 112 on live): name, job title, organisation, website, and a square
-thumbnail from Photo (child field 6). A light grey square is shown when no photo
-is uploaded. If the nested field is empty, List field 48 is used as a fallback.
+locally, 112 on live): name, job title, organisation, and a square thumbnail
+from Photo (child field 6). Names link to the speaker profile
+(`/speakers/<child entry ID>/`), not the website field. A light grey square is
+shown when no photo is uploaded. If the nested field is empty, List field 48 is
+used as a fallback (those rows have no profile URL).
 
 `functions/speakers.php`:
 
