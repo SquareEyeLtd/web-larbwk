@@ -94,7 +94,7 @@ are higher than the parent because they were created afterwards.
 | 7 | email | Submitter email |
 | 17 | text | Event title |
 | 21 | text | Venue (free text: name, address, or both). Used on the programme listing and as the Google Maps query. |
-| 48 | list | Speakers (legacy). Four columns: Name, Organisation, Job title, URL. Being replaced by the Speakers nested field (110 locally, 112 on live). The programme calendar still reads this field. |
+| 48 | list | Speakers (legacy). Four columns: Name, Organisation, Job title, URL. Replaced by the Speakers nested field (110 locally, 112 on live). Kept as a fallback on the programme listing until live is migrated. |
 | 53 | product (radio) | Event fee tier: `UK office` £1200, `International` £600, `Sponsor` £0 |
 | 68 | select | Confirmed slot |
 | 70 | uid | Unique ID (LAW reference) |
@@ -414,7 +414,14 @@ address field is not required.
 ### The speakers archive
 
 `templates/speakers.php` (page template "Speakers") lists every speaker across
-the public programme, from the form 8 child entries. `functions/speakers.php`:
+the public programme, from the form 8 child entries.
+
+The Speakers section on that listing reads Nested Form child entries (field 110
+locally, 112 on live): name, job title, organisation, website, and a square
+thumbnail from Photo (child field 6). A light grey square is shown when no photo
+is uploaded. If the nested field is empty, List field 48 is used as a fallback.
+
+`functions/speakers.php`:
 
 - Includes a child entry only when its `gpnf_entry_parent` is a form 2 entry
   whose status (field 95) is Confirmed. This is deliberate and hardcoded:
@@ -454,7 +461,6 @@ enqueued only on this template along with `assets/css/speakers.css`.
 The hero banner shared by this template, the calendars and other pages lives in
 `parts/layout/hero-title.php` (get_template_part args: `title`, `is_event`,
 `image`, `classes`, `content`).
-
 ---
 
 ## 9. Front-end pages and access
@@ -723,9 +729,9 @@ wp law migrate-speakers --parent=190
 wp law migrate-speakers --commit
 ```
 
-Also at LAW → Migrate speakers. After this has been run on live and field 48
-is retired, switch `law_calendar_speakers()` in `functions/calendar.php` from
-field 48 to the nested Speakers field (it currently still reads the list).
+Also at LAW → Migrate speakers. The programme listing already reads the nested
+Speakers field (with field 48 as a fallback for unmigrated entries). Once live
+has been migrated, field 48 can be retired from the form.
 
 ### Rules of thumb
 

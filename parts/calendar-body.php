@@ -170,17 +170,24 @@ if ( ! $calendar_blocked ) {
 									<ul class="law-cal-speakers">
 										<?php foreach ( $event['speakers'] as $speaker ) : ?>
 											<li>
-												<?php if ( $speaker['url'] ) : ?>
-													<a href="<?php echo esc_url( $speaker['url'] ); ?>"><?php echo esc_html( $speaker['name'] ); ?></a>
-												<?php else : ?>
-													<?php echo esc_html( $speaker['name'] ); ?>
-												<?php endif; ?>
-												<?php
-												$role = array_filter( array( $speaker['job_title'], $speaker['organisation'] ) );
-												if ( $role ) {
-													echo '<span class="law-cal-speakers__role">' . esc_html( implode( ', ', $role ) ) . '</span>';
-												}
-												?>
+												<span class="law-cal-speakers__photo">
+													<?php if ( ! empty( $speaker['photo'] ) ) : ?>
+														<img src="<?php echo esc_url( $speaker['photo'] ); ?>" alt="<?php echo esc_attr( $speaker['name'] ); ?>" width="48" height="48">
+													<?php endif; ?>
+												</span>
+												<span class="law-cal-speakers__body">
+													<?php if ( $speaker['url'] ) : ?>
+														<a href="<?php echo esc_url( $speaker['url'] ); ?>"><?php echo esc_html( $speaker['name'] ); ?></a>
+													<?php else : ?>
+														<?php echo esc_html( $speaker['name'] ); ?>
+													<?php endif; ?>
+													<?php
+													$role = array_filter( array( $speaker['job_title'], $speaker['organisation'] ) );
+													if ( $role ) {
+														echo '<span class="law-cal-speakers__role">' . esc_html( implode( ', ', $role ) ) . '</span>';
+													}
+													?>
+												</span>
 											</li>
 										<?php endforeach; ?>
 									</ul>

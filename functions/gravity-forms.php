@@ -66,6 +66,53 @@ function law_prepopulate_orgid( $value ) {
 }
 
 
+/* Populate field 113 from ?ec= ________________________________________________________ */
+
+/**
+ * Field 113 (dynamic population parameter `ec`) takes the `ec` query string.
+ *
+ * Sets the field default on render so the value is in the HTML (needed for
+ * AJAX submits, which do not keep the original page query string). Also fills
+ * $_POST when the field is administrative and not in the front-end markup.
+ */
+add_filter( 'gform_field_value_ec', 'law_prepopulate_ec' );
+add_filter( 'gform_pre_render', 'law_populate_ec_field' );
+add_filter( 'gform_pre_validation', 'law_populate_ec_field' );
+add_filter( 'gform_pre_submission_filter', 'law_populate_ec_field' );
+
+function law_request_ec() {
+	$ec = function_exists( 'rgget' ) ? rgget( 'ec' ) : ( isset( $_GET['ec'] ) ? wp_unslash( $_GET['ec'] ) : '' );
+	return sanitize_text_field( (string) $ec );
+}
+
+function law_prepopulate_ec( $value ) {
+	$ec = law_request_ec();
+	return '' !== $ec ? $ec : $value;
+}
+
+function law_populate_ec_field( $form ) {
+	$ec = law_request_ec();
+	if ( '' === $ec ) {
+		return $form;
+	}
+
+	foreach ( $form['fields'] as $field ) {
+		if ( (int) $field->id !== 113 ) {
+			continue;
+		}
+		$field->allowsPrepopulate = true;
+		$field->inputName        = 'ec';
+		$field->defaultValue     = $ec;
+		if ( empty( $_POST[ 'input_' . $field->id ] ) ) {
+			$_POST[ 'input_' . $field->id ] = $ec;
+		}
+		break;
+	}
+
+	return $form;
+}
+
+
 /* Retire preferred-slot choices without wiping existing entries __________________________________________ */
 
 /**
