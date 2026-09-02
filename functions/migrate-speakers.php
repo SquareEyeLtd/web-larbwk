@@ -5,8 +5,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * One-off: copy Form 2 List field 48 (Speakers) into Nested Form field 110
- * (child form 8, Events > speaker).
+ * One-off: copy Form 2 List field 48 (Speakers) into the Speakers Nested
+ * Form field (110 on local, 112 on live) and its child form (Events > speaker).
  *
  * Does not delete or change the List field values. Safe to dry-run first.
  *
@@ -20,10 +20,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class LAW_Speaker_List_Migrator {
 
-	const PARENT_FORM  = 2;
-	const LIST_FIELD   = 48;
-	const NESTED_FIELD = 110;
-	const CHILD_FORM  = 8;
+	const PARENT_FORM = 2;
+	const LIST_FIELD  = 48;
 
 	const CHILD_FIRST = '1.3';
 	const CHILD_LAST  = '1.6';
@@ -65,6 +63,15 @@ class LAW_Speaker_List_Migrator {
 	/** @var int|null */
 	private $limit;
 
+	/** @var int|null */
+	private $nested_field_override;
+
+	/** @var int */
+	private $nested_field = 0;
+
+	/** @var int */
+	private $child_form = 0;
+
 	/** @var callable */
 	private $logger;
 
@@ -72,9 +79,10 @@ class LAW_Speaker_List_Migrator {
 	private $summary;
 
 	public function __construct( $args = array() ) {
-		$this->commit    = ! empty( $args['commit'] );
-		$this->parent_id = isset( $args['parent'] ) ? (int) $args['parent'] : null;
-		$this->limit     = isset( $args['limit'] ) ? (int) $args['limit'] : null;
+		$this->commit                = ! empty( $args['commit'] );
+		$this->parent_id             = isset( $args['parent'] ) ? (int) $args['parent'] : null;
+		$this->limit                 = isset( $args['limit'] ) ? (int) $args['limit'] : null;
+		$this->nested_field_override = isset( $args['nested_field'] ) ? (int) $args['nested_field'] : null;
 		$this->logger    = isset( $args['logger'] ) && is_callable( $args['logger'] )
 			? $args['logger']
 			: function ( $line ) {
@@ -99,6 +107,11 @@ class LAW_Speaker_List_Migrator {
 			return new WP_Error( 'no_gpnf', 'Gravity Perks Nested Forms is not active.' );
 		}
 
+		$resolved = $this->resolve_targets();
+		if ( is_wp_error( $resolved ) ) {
+			return $resolved;
+		}
+
 		$mode = $this->commit ? 'COMMIT' : 'DRY RUN';
 		$this->log( sprintf( '=== Speakers list → nested form (%s) ===', $mode ) );
 		$this->log(
@@ -106,8 +119,8 @@ class LAW_Speaker_List_Migrator {
 				'Parent form %d, list field %d → nested field %d (child form %d).',
 				self::PARENT_FORM,
 				self::LIST_FIELD,
-				self::NESTED_FIELD,
-				self::CHILD_FORM
+				$this->nested_field,
+				$this->child_form
 			)
 		);
 
@@ -141,6 +154,96 @@ class LAW_Speaker_List_Migrator {
 
 	public function get_summary() {
 		return $this->summary;
+	}
+
+	/**
+	 * Find the Speakers Nested Form field on the event form.
+	 *
+	 * Local is field 110 → form 8. Live is field 112; the child form ID may
+	 * also differ. Detect from the field that nests a form titled with
+	 * "speaker", or from an explicit field ID.
+	 *
+	 * @param int|null $override Nested field ID.
+	 * @return array{nested_field:int,child_form:int,label:string,child_title:string}|WP_Error
+	 */
+	public static function detect_targets( $override = null ) {
+		$form = GFAPI::get_form( self::PARENT_FORM );
+		if ( ! $form ) {
+			return new WP_Error( 'no_parent_form', 'Could not load event form ' . self::PARENT_FORM . '.' );
+		}
+
+		$candidates = array();
+		foreach ( $form['fields'] as $field ) {
+			if ( 'form' !== $field->type ) {
+				continue;
+			}
+			$child_id = (int) $field->gpnfForm;
+			$child    = $child_id ? GFAPI::get_form( $child_id ) : null;
+			$title    = $child ? (string) $child['title'] : '';
+			$label    = (string) $field->label;
+			$is_speaker = ( false !== stripos( $title, 'speaker' ) )
+				|| ( false !== stripos( $label, 'speaker' ) && false === stripos( $label, 'list' ) );
+			$candidates[] = array(
+				'nested_field' => (int) $field->id,
+				'child_form'  => $child_id,
+				'label'        => $label,
+				'child_title'  => $title,
+				'is_speaker'   => $is_speaker,
+			);
+		}
+
+		if ( $override ) {
+			foreach ( $candidates as $candidate ) {
+				if ( $candidate['nested_field'] === (int) $override ) {
+					return $candidate;
+				}
+			}
+			return new WP_Error(
+				'bad_nested',
+				sprintf( 'Form %d has no Nested Form field %d.', self::PARENT_FORM, $override )
+			);
+		}
+
+		$speakers = array_values(
+			array_filter(
+				$candidates,
+				function ( $candidate ) {
+					return $candidate['is_speaker'];
+				}
+			)
+		);
+
+		if ( 1 === count( $speakers ) ) {
+			return $speakers[0];
+		}
+
+		if ( count( $speakers ) > 1 ) {
+			$ids = array_map(
+				function ( $candidate ) {
+					return $candidate['nested_field'];
+				},
+				$speakers
+			);
+			return new WP_Error(
+				'ambiguous_nested',
+				'Several Speakers nested fields found (' . implode( ', ', $ids ) . '). Pass --nested-field.'
+			);
+		}
+
+		return new WP_Error(
+			'no_nested',
+			'Could not find a Speakers Nested Form field on form ' . self::PARENT_FORM . '.'
+		);
+	}
+
+	private function resolve_targets() {
+		$detected = self::detect_targets( $this->nested_field_override );
+		if ( is_wp_error( $detected ) ) {
+			return $detected;
+		}
+		$this->nested_field = (int) $detected['nested_field'];
+		$this->child_form  = (int) $detected['child_form'];
+		return true;
 	}
 
 	private function get_parents() {
@@ -180,14 +283,14 @@ class LAW_Speaker_List_Migrator {
 		$parent_id = (int) $parent['id'];
 		$this->summary['parents_scanned']++;
 
-		$existing_nested = trim( (string) rgar( $parent, (string) self::NESTED_FIELD ) );
+		$existing_nested = trim( (string) rgar( $parent, (string) $this->nested_field ) );
 		if ( $existing_nested !== '' ) {
 			$this->summary['parents_skipped']++;
 			$this->log(
 				sprintf(
 					'Parent #%d: skipped, nested field %d already has %s.',
 					$parent_id,
-					self::NESTED_FIELD,
+					$this->nested_field,
 					$existing_nested
 				)
 			);
@@ -257,13 +360,13 @@ class LAW_Speaker_List_Migrator {
 
 		if ( $this->commit ) {
 			$joined = implode( ',', $child_ids );
-			$result = GFAPI::update_entry_field( $parent_id, self::NESTED_FIELD, $joined );
+			$result = GFAPI::update_entry_field( $parent_id, $this->nested_field, $joined );
 			if ( is_wp_error( $result ) ) {
 				$this->summary['errors']++;
 				$this->log( '  ERROR attaching children to parent: ' . $result->get_error_message() );
 				return;
 			}
-			$this->log( sprintf( '  Attached to field %d: %s.', self::NESTED_FIELD, $joined ) );
+			$this->log( sprintf( '  Attached to field %d: %s.', $this->nested_field, $joined ) );
 		}
 
 		$this->summary['parents_migrated']++;
@@ -392,7 +495,7 @@ class LAW_Speaker_List_Migrator {
 
 	private function create_child( $parent, $mapped ) {
 		$child = array(
-			'form_id'                               => self::CHILD_FORM,
+			'form_id'                               => $this->child_form,
 			'created_by'                            => rgar( $parent, 'created_by' ),
 			'date_created'                           => rgar( $parent, 'date_created' ),
 			'ip'                                    => rgar( $parent, 'ip' ),
@@ -405,7 +508,7 @@ class LAW_Speaker_List_Migrator {
 			self::CHILD_URL                         => $mapped['url'],
 			GPNF_Entry::ENTRY_PARENT_KEY            => $parent['id'],
 			GPNF_Entry::ENTRY_PARENT_FORM_KEY       => self::PARENT_FORM,
-			GPNF_Entry::ENTRY_NESTED_FORM_FIELD_KEY => self::NESTED_FIELD,
+			GPNF_Entry::ENTRY_NESTED_FORM_FIELD_KEY => $this->nested_field,
 		);
 
 		$child_id = GFAPI::add_entry( $child );
@@ -429,7 +532,10 @@ class LAW_Speaker_List_Migrator {
 if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 	/**
-	 * Copy List field 48 speaker rows into Nested Form field 110.
+	 * Copy List field 48 speaker rows into the Speakers Nested Form field.
+	 *
+	 * The nested field is detected (110 locally, 112 on live). Override with
+	 * --nested-field if needed.
 	 *
 	 * ## OPTIONS
 	 *
@@ -438,6 +544,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	 *
 	 * [--parent=<id>]
 	 * : Limit to one parent entry ID.
+	 *
+	 * [--nested-field=<id>]
+	 * : Nested Form field ID on form 2. Auto-detected if omitted.
 	 *
 	 * [--limit=<n>]
 	 * : Stop after this many parents have been migrated (not skipped).
@@ -454,10 +563,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		function ( $args, $assoc_args ) {
 			$migrator = new LAW_Speaker_List_Migrator(
 				array(
-					'commit' => (bool) WP_CLI\Utils\get_flag_value( $assoc_args, 'commit', false ),
-					'parent' => isset( $assoc_args['parent'] ) ? (int) $assoc_args['parent'] : null,
-					'limit'  => isset( $assoc_args['limit'] ) ? (int) $assoc_args['limit'] : null,
-					'logger' => function ( $line ) {
+					'commit'       => (bool) WP_CLI\Utils\get_flag_value( $assoc_args, 'commit', false ),
+					'parent'       => isset( $assoc_args['parent'] ) ? (int) $assoc_args['parent'] : null,
+					'nested_field' => isset( $assoc_args['nested-field'] ) ? (int) $assoc_args['nested-field'] : null,
+					'limit'        => isset( $assoc_args['limit'] ) ? (int) $assoc_args['limit'] : null,
+					'logger'       => function ( $line ) {
 						WP_CLI::log( $line );
 					},
 				)
@@ -582,6 +692,7 @@ function law_migrate_speakers_admin_page() {
 	$ran     = false;
 	$commit  = false;
 	$parent  = '';
+	$detected = class_exists( 'GFAPI' ) ? LAW_Speaker_List_Migrator::detect_targets() : null;
 
 	if ( isset( $_POST['law_migrate_speakers'] ) ) {
 		check_admin_referer( 'law_migrate_speakers' );
@@ -612,7 +723,11 @@ function law_migrate_speakers_admin_page() {
 
 	echo '<div class="wrap">';
 	echo '<h1>Migrate speakers</h1>';
-	echo '<p>Copies existing <strong>List field 48</strong> rows on the event form into nested child entries on <strong>field 110</strong> (form 8). The list values are left in place. Entries that already have field 110 populated are skipped.</p>';
+	if ( is_wp_error( $detected ) ) {
+		echo '<div class="notice notice-error"><p>' . esc_html( $detected->get_error_message() ) . '</p></div>';
+	} elseif ( is_array( $detected ) ) {
+		echo '<p>Copies existing <strong>List field ' . esc_html( (string) LAW_Speaker_List_Migrator::LIST_FIELD ) . '</strong> rows into nested field <strong>' . esc_html( (string) $detected['nested_field'] ) . '</strong> (' . esc_html( $detected['label'] ) . ' → child form ' . esc_html( (string) $detected['child_form'] ) . ', ' . esc_html( $detected['child_title'] ) . '). The list values are left in place. Entries that already have the nested field populated are skipped.</p>';
+	}
 	echo '<p>Name is split into first / last on the last word, keeping titles (Professor, Dr.) in first name and suffixes (KC, QC, PhD) on last name. Photo is left empty.</p>';
 
 	echo '<form method="post">';
