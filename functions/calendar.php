@@ -387,6 +387,279 @@ function law_calendar_raw_entries() {
 }
 
 /**
+ * Organisation category slugs that count as a sponsor organisation.
+ *
+ * @return string[]
+ */
+function law_calendar_sponsor_category_slugs() {
+	return array( 'sponsors', 'bronze', 'silver', 'gold', 'platinum' );
+}
+
+/**
+ * Published organisation post IDs in a sponsor category. Cached per request.
+ *
+ * @return int[]
+ */
+function law_calendar_sponsor_organisation_ids() {
+	static $ids = null;
+	if ( null !== $ids ) {
+		return $ids;
+	}
+
+	$ids = get_posts(
+		array(
+			'post_type'      => 'organisation',
+			'post_status'    => array( 'publish', 'private' ),
+			'posts_per_page' => -1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+			'tax_query'      => array(
+				array(
+					'taxonomy' => 'organisation_category',
+					'field'    => 'slug',
+					'terms'    => law_calendar_sponsor_category_slugs(),
+				),
+			),
+		)
+	);
+
+	$ids = array_values( array_filter( array_map( 'intval', (array) $ids ) ) );
+	return $ids;
+}
+
+/**
+ * Organisation post IDs stored on Form 2 field 109 (hidden multi-select, JSON).
+ *
+ * @param array $entry Gravity Forms entry.
+ * @return int[]
+ */
+function law_calendar_entry_organisation_ids( $entry ) {
+	$ids = array();
+	$raw = rgar( $entry, '109' );
+
+	if ( is_array( $raw ) ) {
+		$ids = $raw;
+	} else {
+		$raw = trim( (string) $raw );
+		if ( '' !== $raw ) {
+			if ( '[' === $raw[0] ) {
+				$decoded = json_decode( $raw, true );
+				$ids     = is_array( $decoded ) ? $decoded : array();
+			} else {
+				$un = maybe_unserialize( $raw );
+				$ids = is_array( $un ) ? $un : preg_split( '/[,;]/', $raw );
+			}
+		}
+	}
+
+	foreach ( $entry as $key => $value ) {
+		if ( '' === $value || null === $value ) {
+			continue;
+		}
+		if ( strpos( (string) $key, '109.' ) === 0 ) {
+			$ids[] = $value;
+		}
+	}
+
+	return array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+}
+
+/**
+ * True when field 53 is the Sponsor choice, or its stored price is 0.
+ *
+ * Product radios are saved as "value|price", e.g. "Sponsor|0".
+ *
+ * @param array $entry Gravity Forms entry.
+ * @return bool
+ */
+function law_calendar_fee_is_sponsor( $entry ) {
+	$raw = rgar( $entry, '53' );
+	if ( is_array( $raw ) ) {
+		$name = trim( (string) ( $raw['value'] ?? $raw['name'] ?? '' ) );
+		if ( 0 === strcasecmp( $name, 'Sponsor' ) ) {
+			return true;
+		}
+		$price_raw = $raw['price'] ?? null;
+		if ( null === $price_raw || '' === $price_raw ) {
+			return false;
+		}
+		return 0.0 === law_calendar_fee_price_number( $price_raw );
+	}
+
+	$raw = html_entity_decode( trim( (string) $raw ), ENT_QUOTES, 'UTF-8' );
+	if ( '' === $raw ) {
+		return false;
+	}
+
+	$parts = explode( '|', $raw );
+	if ( 0 === strcasecmp( trim( $parts[0] ), 'Sponsor' ) ) {
+		return true;
+	}
+
+	if ( ! isset( $parts[1] ) || '' === $parts[1] ) {
+		return false;
+	}
+
+	return 0.0 === law_calendar_fee_price_number( $parts[1] );
+}
+
+/**
+ * @param mixed $price Raw price from a product field.
+ * @return float
+ */
+function law_calendar_fee_price_number( $price ) {
+	if ( class_exists( 'GFCommon' ) ) {
+		return (float) GFCommon::to_number( (string) $price );
+	}
+	return (float) preg_replace( '/[^0-9.\-]/', '', (string) $price );
+}
+
+/**
+ * True when field 109 includes at least one sponsor-category organisation.
+ *
+ * @param array $entry Gravity Forms entry.
+ * @return bool
+ */
+function law_calendar_entry_has_sponsor_organisation( $entry ) {
+	$org_ids = law_calendar_entry_organisation_ids( $entry );
+	if ( ! $org_ids ) {
+		return false;
+	}
+	$sponsor_ids = law_calendar_sponsor_organisation_ids();
+	if ( ! $sponsor_ids ) {
+		return false;
+	}
+	return (bool) array_intersect( $org_ids, $sponsor_ids );
+}
+
+/**
+ * Approved / Confirmed Form 2 entries per submitter in the programme year.
+ *
+ * "Approved" here means committee-accepted: field 95 is Approved or Confirmed.
+ * Cached per request.
+ *
+ * @return array<int, int> User ID => count.
+ */
+function law_calendar_approved_event_counts_by_user() {
+	static $counts = null;
+	if ( null !== $counts ) {
+		return $counts;
+	}
+
+	$counts = array();
+	if ( ! class_exists( 'GFAPI' ) ) {
+		return $counts;
+	}
+
+	$year      = (int) LAW_CALENDAR_YEAR;
+	$page_size = 200;
+	$offset    = 0;
+	$search    = array(
+		'status'        => 'active',
+		'start_date'    => $year . '-01-01 00:00:00',
+		'end_date'      => $year . '-12-31 23:59:59',
+		'field_filters' => array(
+			array(
+				'key'      => '95',
+				'operator' => 'in',
+				'value'    => array( 'Approved', 'Confirmed' ),
+			),
+		),
+	);
+
+	do {
+		$entries = GFAPI::get_entries(
+			LAW_CALENDAR_FORM_ID,
+			$search,
+			null,
+			array(
+				'offset'    => $offset,
+				'page_size' => $page_size,
+			)
+		);
+		if ( is_wp_error( $entries ) || ! is_array( $entries ) ) {
+			break;
+		}
+
+		foreach ( $entries as $entry ) {
+			$uid = (int) rgar( $entry, 'created_by' );
+			if ( $uid < 1 ) {
+				continue;
+			}
+			if ( ! isset( $counts[ $uid ] ) ) {
+				$counts[ $uid ] = 0;
+			}
+			++$counts[ $uid ];
+		}
+
+		$fetched = count( $entries );
+		$offset += $page_size;
+	} while ( $fetched === $page_size );
+
+	return $counts;
+}
+
+/**
+ * Sponsor-event highlight on programme listings.
+ *
+ * True if any of these hold:
+ * - Field 53 is "Sponsor" (or stored price is 0).
+ * - Field 109 includes an organisation in a sponsor category.
+ * - The submitter has more than one Approved/Confirmed event this programme year.
+ *
+ * @param array $entry Gravity Forms entry.
+ * @return bool
+ */
+function law_calendar_is_sponsored_event( $entry ) {
+	if ( ! is_array( $entry ) ) {
+		return false;
+	}
+	if ( law_calendar_fee_is_sponsor( $entry ) ) {
+		return true;
+	}
+	if ( law_calendar_entry_has_sponsor_organisation( $entry ) ) {
+		return true;
+	}
+
+	$uid = (int) rgar( $entry, 'created_by' );
+	if ( $uid < 1 ) {
+		return false;
+	}
+
+	$counts = law_calendar_approved_event_counts_by_user();
+	return ( $counts[ $uid ] ?? 0 ) > 1;
+}
+
+/**
+ * Listing card classes, including the sponsored modifier.
+ *
+ * @param array  $event Mapped calendar event.
+ * @param string $base  Base class (law-cal-card or law-cal-day__item).
+ */
+function law_calendar_card_classes( $event, $base = 'law-cal-card' ) {
+	$classes = array( $base );
+	if ( ! empty( $event['is_sponsored'] ) ) {
+		$classes[] = $base . '--sponsored';
+	}
+	return implode( ' ', $classes );
+}
+
+/**
+ * "Sponsored" tag for listing cards. Public and committee.
+ *
+ * @param array $event Mapped calendar event.
+ */
+function law_calendar_sponsored_label( $event ) {
+	if ( empty( $event['is_sponsored'] ) ) {
+		return;
+	}
+	printf(
+		'<span class="law-cal-card__sponsored">%s</span>',
+		esc_html__( 'Sponsored', 'law' )
+	);
+}
+
+/**
  * Map a Form 2 entry to a calendar event, or null if it should not appear.
  *
  * @param array      $entry   Gravity Forms entry.
@@ -451,9 +724,10 @@ function law_calendar_map_entry( $entry, $allowed = null ) {
 		'date'        => $slot['date'],
 		'start'       => $slot['start'],
 		'end'         => $slot['end'],
-		'time_label'  => $slot['time_label'],
-		'unscheduled' => '' === $slot['date'],
-		'sort'        => ( $slot['date'] ? $slot['date'] : '9999-99-99' ) . ' ' . ( $slot['start'] ? $slot['start'] : '99:99' ) . ' ' . strtolower( $title ),
+		'time_label'   => $slot['time_label'],
+		'unscheduled'  => '' === $slot['date'],
+		'is_sponsored' => law_calendar_is_sponsored_event( $entry ),
+		'sort'         => ( $slot['date'] ? $slot['date'] : '9999-99-99' ) . ' ' . ( $slot['start'] ? $slot['start'] : '99:99' ) . ' ' . strtolower( $title ),
 	);
 }
 

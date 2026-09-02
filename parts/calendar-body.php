@@ -253,7 +253,7 @@ if ( ! $calendar_blocked ) {
 								$last_slot = $slot;
 							endif;
 							?>
-							<article class="law-cal-card">
+							<article class="<?php echo esc_attr( law_calendar_card_classes( $item ) ); ?>">
 								<?php if ( $law_cal_show_status ) : ?>
 									<?php law_calendar_status_badge( $item ); ?>
 								<?php endif; ?>
@@ -271,6 +271,7 @@ if ( ! $calendar_blocked ) {
 								<?php if ( $item['excerpt'] ) : ?>
 									<p class="law-cal-card__desc"><?php echo esc_html( $item['excerpt'] ); ?></p>
 								<?php endif; ?>
+								<?php law_calendar_sponsored_label( $item ); ?>
 							</article>
 						<?php endforeach; ?>
 					<?php endforeach; ?>
@@ -278,7 +279,7 @@ if ( ! $calendar_blocked ) {
 					<?php if ( ! empty( $unscheduled ) ) : ?>
 						<h2 class="law-cal__day-heading" id="day-unscheduled">No confirmed slot</h2>
 						<?php foreach ( $unscheduled as $item ) : ?>
-							<article class="law-cal-card">
+							<article class="<?php echo esc_attr( law_calendar_card_classes( $item ) ); ?>">
 								<?php if ( $law_cal_show_status ) : ?>
 									<?php law_calendar_status_badge( $item ); ?>
 								<?php endif; ?>
@@ -296,6 +297,7 @@ if ( ! $calendar_blocked ) {
 								<?php if ( $item['excerpt'] ) : ?>
 									<p class="law-cal-card__desc"><?php echo esc_html( $item['excerpt'] ); ?></p>
 								<?php endif; ?>
+								<?php law_calendar_sponsored_label( $item ); ?>
 							</article>
 						<?php endforeach; ?>
 					<?php endif; ?>
@@ -358,7 +360,7 @@ if ( ! $calendar_blocked ) {
 								<div class="law-cal-day__time"><?php echo esc_html( $start ); ?></div>
 								<div class="law-cal-day__items">
 									<?php foreach ( $items as $item ) : ?>
-										<div class="law-cal-day__item">
+										<div class="<?php echo esc_attr( law_calendar_card_classes( $item, 'law-cal-day__item' ) ); ?>">
 											<?php if ( $law_cal_show_status ) : ?>
 												<?php law_calendar_status_badge( $item ); ?>
 											<?php endif; ?>
@@ -373,6 +375,7 @@ if ( ! $calendar_blocked ) {
 												?>
 												<p class="law-cal-day__item-host"><?php echo esc_html( $hosted ); ?></p>
 											<?php endif; ?>
+											<?php law_calendar_sponsored_label( $item ); ?>
 										</div>
 									<?php endforeach; ?>
 								</div>

@@ -294,6 +294,30 @@
 	background: #fff;
 }
 
+.law-cal-card--sponsored,
+.law-cal-day__item--sponsored {
+	background: #fff8d4;
+}
+
+.law-cal-card:has(> .law-cal-card__sponsored) {
+	padding-bottom: 1.85rem;
+}
+
+.law-cal-card__sponsored {
+	position: absolute;
+	right: 12px;
+	bottom: 10px;
+	font-family: poppins, sans-serif;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	padding: 3px 8px;
+	border-radius: 10px;
+	background: #292459;
+	color: #fff;
+}
+
 .law-cal-card__badge {
 	position: absolute;
 	top: 12px;
@@ -419,10 +443,19 @@
 }
 
 .law-cal-day__item {
+	position: relative;
 	background: #f4f2fa;
 	border-radius: 6px;
 	padding: 8px 10px;
 	margin-bottom: 1rem;
+}
+
+.law-cal-day__item.law-cal-day__item--sponsored {
+	background: #fff8d4;
+}
+
+.law-cal-day__item:has(> .law-cal-card__sponsored) {
+	padding-bottom: 1.7rem;
 }
 
 .law-cal-day__item:last-child {
