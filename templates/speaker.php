@@ -42,11 +42,11 @@ get_header();
 
 				<div class="large-8 cell">
 					<div class="law-speaker__details">
+						<h2 class="law-speaker__name"><?php echo esc_html( $law_speaker['name'] ); ?></h2>
+
 						<?php if ( $law_speaker['job_title'] ) : ?>
 							<p class="law-speakers__role"><?php echo esc_html( $law_speaker['job_title'] ); ?></p>
 						<?php endif; ?>
-
-						<h2 class="law-speaker__name"><?php echo esc_html( $law_speaker['name'] ); ?></h2>
 
 						<?php if ( $law_speaker['organisation'] ) : ?>
 							<p class="law-speaker__company"><?php echo esc_html( $law_speaker['organisation'] ); ?></p>
@@ -55,7 +55,7 @@ get_header();
 						<?php if ( $law_speaker['url'] ) : ?>
 							<p>
 								<a class="normal-link law-speaker__website" href="<?php echo esc_url( $law_speaker['url'] ); ?>" target="_blank" rel="noopener">
-									Visit website<svg class="law-speaker__ext-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 13.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5.5"/><path d="M14 3h7v7"/><path d="M10 14 21 3"/></svg><span class="show-for-sr">(opens in a new tab)</span>
+									View profile<svg class="law-speaker__ext-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 13.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5.5"/><path d="M14 3h7v7"/><path d="M10 14 21 3"/></svg><span class="show-for-sr">(opens in a new tab)</span>
 								</a>
 							</p>
 						<?php endif; ?>

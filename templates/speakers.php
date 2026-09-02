@@ -38,28 +38,7 @@ $law_speakers = law_speakers();
 
 						<div class="grid-x grid-padding-x grid-padding-y law-speakers__grid wow fadeIn">
 							<?php foreach ( $law_speakers as $law_speaker ) : ?>
-								<div class="large-3 medium-6 cell" data-speaker-card>
-									<?php $law_speaker_url = law_speaker_url( $law_speaker['id'] ); ?>
-									<div class="law-speakers__card">
-										<a class="law-speakers__photo" href="<?php echo esc_url( $law_speaker_url ); ?>" aria-hidden="true" tabindex="-1">
-											<?php if ( $law_speaker['photo'] ) : ?>
-												<img src="<?php echo esc_url( $law_speaker['photo'] ); ?>" alt="" loading="lazy">
-											<?php else : ?>
-												<span class="law-speakers__initials"><?php echo esc_html( law_speaker_initials( $law_speaker ) ); ?></span>
-											<?php endif; ?>
-										</a>
-										<div class="people-details small law-speakers__details">
-											<?php if ( $law_speaker['job_title'] ) : ?>
-												<p class="law-speakers__role" data-speaker-field><?php echo esc_html( $law_speaker['job_title'] ); ?></p>
-											<?php endif; ?>
-											<h3><a href="<?php echo esc_url( $law_speaker_url ); ?>" data-speaker-field><?php echo esc_html( $law_speaker['name'] ); ?></a></h3>
-											<?php if ( $law_speaker['organisation'] ) : ?>
-												<p class="company" data-speaker-field><?php echo esc_html( $law_speaker['organisation'] ); ?></p>
-											<?php endif; ?>
-											<a class="normal-link" href="<?php echo esc_url( $law_speaker_url ); ?>">VIEW SPEAKER</a>
-										</div>
-									</div>
-								</div>
+								<?php get_template_part( 'parts/loop/speaker', null, array( 'speaker' => $law_speaker ) ); ?>
 							<?php endforeach; ?>
 						</div>
 

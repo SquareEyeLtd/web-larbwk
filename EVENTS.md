@@ -538,6 +538,8 @@ templates/
   sponsors.php  _blank.php
 parts/layout/
   hero-title.php             shared page hero (title, is_event, image args)
+parts/loop/
+  speaker.php                speakers archive card (takes a speaker profile)
 ```
 
 ### Terminology in the UI
