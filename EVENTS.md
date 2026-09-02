@@ -77,11 +77,14 @@ into Make expressions. This is the reason the build is stable and debuggable.
 | 4 | Events > add host contact | GPNF child of field 94 |
 | 5 | Comments | GPNF child of field 99, the committee/host thread |
 | 6 | Events > add co-owner | GPNF child of field 106 |
+| 8 | Events > speaker | GPNF child of field 110 locally, field 112 on live |
 
 Child form entries live in the same `wp_gf_entry` table and draw from the same
 global auto-increment. GPNF creates a child entry the moment the row is added in
 the repeater modal, so **a child always has a lower entry ID than its parent**.
-The parent is recorded in the child's `gpnf_entry_parent` entry meta.
+The parent is recorded in the child's `gpnf_entry_parent` entry meta. Speakers
+migrated from List field 48 (see section 13) are the exception: those child IDs
+are higher than the parent because they were created afterwards.
 
 ### Form 2 key fields
 
@@ -91,6 +94,7 @@ The parent is recorded in the child's `gpnf_entry_parent` entry meta.
 | 7 | email | Submitter email |
 | 17 | text | Event title |
 | 21 | text | Venue (free text: name, address, or both). Used on the programme listing and as the Google Maps query. |
+| 48 | list | Speakers (legacy). Four columns: Name, Organisation, Job title, URL. Being replaced by the Speakers nested field (110 locally, 112 on live). The programme calendar still reads this field. |
 | 53 | product (radio) | Event fee tier: `UK office` £1200, `International` £600, `Sponsor` £0 |
 | 68 | select | Confirmed slot |
 | 70 | uid | Unique ID (LAW reference) |
@@ -112,6 +116,7 @@ The parent is recorded in the child's `gpnf_entry_parent` entry meta.
 | 98 | radio | Action on Proceed: `Approve this event` / `Send it back` |
 | 99 | form (GPNF → 5) | Comments thread |
 | 106 | form (GPNF → 6) | Additional event owners, repeatable |
+| 110 / 112 | form (GPNF → 8) | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6). Field **110** on local, **112** on live. The migrator auto-detects. |
 | 67 | textarea | Reason for rejection |
 
 Fields 84, 85, 87, 81, 88, 95, 96 and others are set to **administrative**
@@ -650,6 +655,25 @@ Leaving it as it is misleads whoever opens the step next.
 
 Entries can be filtered by tier, for example:
 `admin.php?page=gf_entries&id=2&field_id=53&operator=contains&s=International`
+
+### Migrate List field 48 → Nested Form Speakers field
+
+One-off copy of existing speaker rows into the Speakers child form. Does not
+delete the list data. Entries that already have the nested field populated are
+skipped. Dry-run by default.
+
+The nested field is auto-detected (110 on local, **112 on live**). Override with
+`--nested-field` if needed.
+
+```
+wp law migrate-speakers
+wp law migrate-speakers --parent=190
+wp law migrate-speakers --commit
+```
+
+Also at LAW → Migrate speakers. After this has been run on live and field 48
+is retired, switch `law_calendar_speakers()` in `functions/calendar.php` from
+field 48 to the nested Speakers field (it currently still reads the list).
 
 ### Rules of thumb
 
