@@ -37,7 +37,7 @@
             <p>
               <?php esc_html_e( 'Design by', 'law' ); ?>
               <a href="https://searsdavies.com" target="_blank" rel="nofollow noopener noreferrer"><?php esc_html_e( 'Sears Davies', 'law' ); ?></a>.
-             <?php esc_html_e( 'Functionality by', 'law' ); ?>
+             <br /><?php esc_html_e( 'Functionality by', 'law' ); ?>
               <a href="https://squareeye.com" target="_blank" rel="nofollow noopener noreferrer"><?php esc_html_e( 'Square Eye', 'law' ); ?></a>.
             </p>
           </div>
