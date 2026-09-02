@@ -185,6 +185,23 @@ function law_calendar_search_submit_label( $label, $form_field, $field ) {
 	return 'Filter';
 }
 
+/**
+ * GravityView's search bar labels the companion button "Clear" after a search,
+ * then swaps it to "Reset" in JS once the form differs from the page-load state.
+ * Keep the label as Reset in both places.
+ */
+add_filter( 'gk/gravityview/widget/search/clear-button/params', 'law_calendar_search_clear_button_params' );
+function law_calendar_search_clear_button_params( $params ) {
+	$params['text'] = 'Reset';
+	return $params;
+}
+
+add_filter( 'gravityview_js_localization', 'law_calendar_search_clear_js_label' );
+function law_calendar_search_clear_js_label( $js ) {
+	$js['clear'] = 'Reset';
+	return $js;
+}
+
 function law_calendar_current_view() {
 	$view = sanitize_key( wp_unslash( $_GET['view'] ?? 'list' ) );
 	return in_array( $view, array( 'list', 'day' ), true ) ? $view : 'list';
