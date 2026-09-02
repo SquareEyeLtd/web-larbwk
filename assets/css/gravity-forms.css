@@ -1,3 +1,12 @@
+/*
+ * Site body text is white (app.css body rule); GF leaves the required-fields
+ * legend to inherit, so it disappears on light form backgrounds. Match the
+ * form's own label colour instead.
+ */
+.gform_wrapper .gform_required_legend {
+	color: var(--gf-ctrl-label-color-primary, #292459);
+}
+
 /* Host workflow page (279): comments log append-only — hide Edit/Delete, keep Add Comment */
 .page-id-279 #field_2_99 .gpnf-row-actions {
 	display: none;

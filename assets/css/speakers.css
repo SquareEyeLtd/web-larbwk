@@ -1,0 +1,182 @@
+/* Speakers archive — templates/speakers.php */
+
+.law-speakers {
+	color: #292459;
+}
+
+.law-speakers__search {
+	max-width: 34rem;
+	margin: 0 0 0.75rem;
+}
+
+.law-speakers__search input[type="search"] {
+	margin: 0;
+	height: auto;
+	padding: 0.7rem 1rem;
+	border: 1px solid #292459;
+	border-radius: 4px;
+	background: #fff;
+	box-shadow: none;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-size: 1rem;
+}
+
+.law-speakers__search input[type="search"]:focus {
+	border-color: #ef7d05;
+	box-shadow: none;
+}
+
+.law-speakers__count {
+	min-height: 1.3em;
+	margin-bottom: 0.75rem;
+	color: rgba(41, 36, 89, 0.7);
+	font-size: 0.85rem;
+}
+
+.law-speakers__grid [data-speaker-card][hidden] {
+	display: none !important;
+}
+
+.law-speakers__card {
+	height: 100%;
+}
+
+.law-speakers__photo {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	aspect-ratio: 1 / 1;
+	margin-bottom: 1rem;
+	border-radius: 4px;
+	overflow: hidden;
+	background: rgba(38, 30, 91, 0.1);
+}
+
+.law-speakers__photo img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	object-position: center top;
+}
+
+.law-speakers__initials {
+	color: rgba(41, 36, 89, 0.45);
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 2.4rem;
+	letter-spacing: 0.05em;
+}
+
+.page-section .law-speakers__details .law-speakers__role {
+	margin-bottom: 0.25rem;
+	color: #ef7d05;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 0.75rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.page-section .law-speakers__details h3 {
+	margin-bottom: 0;
+}
+
+.page-section .law-speakers__details .normal-link {
+	display: inline-block;
+	margin-top: 0.5rem;
+	font-weight: 600;
+	font-size: 0.8rem;
+}
+
+.law-speakers mark.law-speakers__hit {
+	padding: 0 0.05em;
+	border-radius: 2px;
+	background: #ffdfb8;
+	color: inherit;
+}
+
+.law-speakers__empty {
+	margin-top: 1rem;
+	color: #666;
+	font-size: 0.9rem;
+}
+
+.page-section .law-speakers__details h3 a {
+	color: inherit;
+	font-weight: inherit;
+	text-decoration: none;
+}
+
+.page-section .law-speakers__details h3 a:hover,
+.page-section .law-speakers__details h3 a:focus {
+	color: #ef7d05;
+}
+
+/* Single speaker profile — templates/speaker.php */
+
+.law-speaker {
+	color: #292459;
+	max-width: 75rem;
+}
+
+.law-speaker__photo {
+	margin-bottom: 0;
+}
+
+.law-speaker__photo .law-speakers__initials {
+	font-size: 4rem;
+}
+
+.page-section .law-speaker__details .law-speakers__role {
+	margin-bottom: 0.35rem;
+	color: #ef7d05;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 0.85rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.page-section .law-speaker__details h2.law-speaker__name {
+	margin-bottom: 0.25rem;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-weight: 700;
+	font-style: normal;
+	font-size: 2.2rem;
+	line-height: 1.2;
+}
+
+.law-speaker__company {
+	margin-bottom: 1rem;
+	color: rgba(0, 0, 0, 0.7);
+	font-size: 1.1rem;
+}
+
+.law-speaker__details .normal-link {
+	color: #ef7d05;
+	font-weight: 600;
+	font-size: 0.8rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.law-speaker__ext-icon {
+	width: 0.85em;
+	height: 0.85em;
+	margin-left: 0.4em;
+	vertical-align: -0.05em;
+}
+
+.law-speaker__bio {
+	margin-top: 1.5rem;
+}
+
+.law-speaker__events {
+	margin-top: 2.5rem;
+}
+
+.law-speaker__events .law-cal-card {
+	margin-bottom: 1rem;
+}

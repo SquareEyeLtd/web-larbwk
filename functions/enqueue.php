@@ -39,12 +39,22 @@ add_action( 'wp_enqueue_scripts', function () {
 		filemtime( get_theme_file_path( '/assets/css/gravity-kit.css' ) )
 	);
 
-	if ( law_calendar_is_calendar_page() ) {
+	// Speaker profiles reuse the calendar's banner title and event cards.
+	if ( law_calendar_is_calendar_page() || law_speakers_is_single() ) {
 		wp_enqueue_style(
 			'law-calendar',
 			get_theme_file_uri( '/assets/css/calendar.css' ),
 			array( 'law-wp', 'gravity-kit' ),
 			filemtime( get_theme_file_path( '/assets/css/calendar.css' ) )
+		);
+	}
+
+	if ( law_speakers_is_template() ) {
+		wp_enqueue_style(
+			'law-speakers',
+			get_theme_file_uri( '/assets/css/speakers.css' ),
+			array( 'law-wp' ),
+			filemtime( get_theme_file_path( '/assets/css/speakers.css' ) )
 		);
 	}
 
@@ -58,4 +68,8 @@ add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_script( 'law-wow', $uri . '/assets/js/vendor/wow.min.js', array(), $v( '/assets/js/vendor/wow.min.js' ), true );
 	wp_enqueue_script( 'law-matchheight', 'https://cdnjs.cloudflare.com/ajax/libs/jquery.matchHeight/0.7.2/jquery.matchHeight-min.js', array( 'jquery' ), '0.7.2', true );
 	wp_enqueue_script( 'law-app', $uri . '/assets/js/app.js', array( 'jquery', 'law-foundation', 'law-wow', 'law-matchheight' ), $v( '/assets/js/app.js' ), true );
+
+	if ( law_speakers_is_template() && ! law_speakers_is_single() ) {
+		wp_enqueue_script( 'law-speaker-search', $uri . '/assets/js/speaker-search.js', array(), $v( '/assets/js/speaker-search.js' ), true );
+	}
 }, 20 );

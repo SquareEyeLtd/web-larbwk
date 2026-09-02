@@ -57,20 +57,7 @@ if ( ! $calendar_blocked ) {
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
-<section class="hero" style="background-image: url('<?php echo esc_url( law_asset( 'assets/images/patrons-and-committee-bg.jpg' ) ); ?>');">
-	<div class="overlay"></div>
-	<div class="grid-container">
-		<div class="grid-x grid-padding-x">
-			<div class="large-12 cell">
-				<?php if ( $event ) : ?>
-					<p class="law-cal-banner-title"><?php the_title(); ?></p>
-				<?php else : ?>
-					<h1><?php the_title(); ?></h1>
-				<?php endif; ?>
-			</div>
-		</div>
-	</div>
-</section>
+<?php get_template_part( 'parts/layout/hero-title', null, array( 'is_event' => (bool) $event ) ); ?>
 
 <section class="page-section">
 	<div class="grid-container">

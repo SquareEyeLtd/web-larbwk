@@ -116,7 +116,7 @@ are higher than the parent because they were created afterwards.
 | 98 | radio | Action on Proceed: `Approve this event` / `Send it back` |
 | 99 | form (GPNF → 5) | Comments thread |
 | 106 | form (GPNF → 6) | Additional event owners, repeatable |
-| 110 / 112 | form (GPNF → 8) | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6). Field **110** on local, **112** on live. The migrator auto-detects. |
+| 110 / 112 | form (GPNF → 8) | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6), Biography (7), Email (8). Field **110** on local, **112** on live. The migrator auto-detects. |
 | 67 | textarea | Reason for rejection |
 
 Fields 84, 85, 87, 81, 88, 95, 96 and others are set to **administrative**
@@ -411,6 +411,50 @@ on that text (London is appended when the string does not already mention it).
 Placeholder values such as `TBC` skip the map. No coordinates are stored; an
 address field is not required.
 
+### The speakers archive
+
+`templates/speakers.php` (page template "Speakers") lists every speaker across
+the public programme, from the form 8 child entries. `functions/speakers.php`:
+
+- Includes a child entry only when its `gpnf_entry_parent` is a form 2 entry
+  whose status (field 95) is Confirmed. This is deliberate and hardcoded:
+  speakers from Proposed, Sent back or Rejected events must never appear.
+- Deduplicates by email address first (field 8; same email = same person even
+  if the name was typed differently), falling back to first + last name (case-
+  and whitespace-insensitive). The oldest child entry wins; any field it is
+  missing (photo, biography, organisation, job title, URL, email) is filled
+  from the next duplicate that has it. Cards sort by surname, then first name.
+- Cards show the photo (field 6, first file; initials placeholder when absent),
+  job title, name and organisation, and link to `/speakers/<child entry ID>/`.
+
+### The single speaker profile
+
+`/speakers/<child entry ID>/` renders `templates/speaker.php` (no Template Name
+header: it is not a wp-admin page template). A rewrite rule maps the URL onto
+the Speakers page (`pagename=speakers` + `law_speaker` query var, flushed once
+via the `law_speakers_rewrite_version` option) and a `template_include` filter
+swaps the template in. Unknown or non-public IDs 404; any entry ID of a merged
+person resolves to the same profile, whose canonical URL is the kept entry's.
+
+- Layout: photo (or initials) in a 1/3 column, details in 2/3; role above an
+  `<h2>` name, organisation, website link, then the biography.
+- Related events come from the profile's `event_ids`, mapped by
+  `law_calendar_event_by_id()` and rendered like programme list cards, linking
+  to the programme page's `?event=` view (`law_speaker_event_link()`, because
+  `law_calendar_url()` would build off the Speakers page).
+- SEO: `document_title`/SEOPress title, description and canonical are filtered
+  per speaker (name-based title; description from the bio, or a generated
+  "<name>, <role> at <org>, is speaking at..." line). Open Graph tags inherit
+  these.
+
+The search box filters cards in the browser (name, role, organisation) and
+highlights matches: `assets/js/speaker-search.js`, dependency-free,
+enqueued only on this template along with `assets/css/speakers.css`.
+
+The hero banner shared by this template, the calendars and other pages lives in
+`parts/layout/hero-title.php` (get_template_part args: `title`, `is_event`,
+`image`, `classes`, `content`).
+
 ---
 
 ## 9. Front-end pages and access
@@ -431,6 +475,8 @@ Members plugin (`_members_access_role` post meta), not in code.
 | `/inbox/` | 279 | `[gravityflow page="inbox" form="2"]` | committee, host, editor, admin |
 | `/programme/` | 622 | `templates/calendar.php` | **committee, editor, admin only** |
 | `/committee/programme/` | 624 | `templates/calendar-committee.php` | committee, editor, admin |
+| `/speakers/` | 658 (local) | `templates/speakers.php` | everyone |
+| `/speakers/<entry ID>/` | rewrite onto 658 | `templates/speaker.php` | everyone |
 
 ### GravityView views
 
@@ -483,11 +529,15 @@ functions/
   hubspot.php                HubSpot contact type on registration
   menus.php                  Foundation 6 submenu markup
   shortcodes.php             [user-content role="..."] and others
+  speakers.php               speakers archive from form 8 child entries
   users.php                  role assignment, [law_login] shortcode
   wordpress.php
 templates/
   account.php  calendar.php  calendar-committee.php  contact.php
-  full-width.php  patrons.php  privacy.php  sponsors.php  _blank.php
+  full-width.php  patrons.php  privacy.php  speaker.php  speakers.php
+  sponsors.php  _blank.php
+parts/layout/
+  hero-title.php             shared page hero (title, is_event, image args)
 ```
 
 ### Terminology in the UI

@@ -500,6 +500,18 @@
 	text-transform: uppercase;
 }
 
+.law-cal-detail__back::before {
+	content: "";
+	display: inline-block;
+	width: 0.45em;
+	height: 0.45em;
+	margin-right: 0.5em;
+	border-left: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	transform: rotate(45deg);
+	vertical-align: 0.08em;
+}
+
 .law-cal-detail__back:hover,
 .law-cal-detail__back:focus {
 	color: #292459;
