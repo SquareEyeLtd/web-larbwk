@@ -23,9 +23,26 @@ get_header();
 
 $days = $calendar_blocked ? array() : law_calendar_week_days();
 
-$hero_args = array( 'is_event' => (bool) $event );
-if ( ! empty( $law_cal_hero_title ) ) {
-	$hero_args['title'] = (string) $law_cal_hero_title;
+if ( $event ) {
+	$host_list = $event['host'] ? array_filter( array_map( 'trim', preg_split( '/;/', $event['host'] ) ) ) : array();
+	$hero_args = array(
+		'title'   => $event['title'],
+		'classes' => 'law-event-hero',
+		'meta'    => array(
+			array( 'label' => 'Date', 'value' => $event['date'] ? law_calendar_day_heading( $event['date'] ) : 'Slot not confirmed' ),
+			array( 'label' => 'Time', 'value' => $event['start'] ? law_calendar_event_time_label( $event ) : '' ),
+			array( 'label' => 'Location', 'value' => $event['venue'] ),
+			array( 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
+			array( 'label' => 'Type', 'value' => $event['type'] ),
+			array( 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
+			array( 'label' => 'Available tickets', 'value' => $event['tickets'] ? number_format_i18n( $event['tickets'] ) : '' ),
+		),
+	);
+} else {
+	$hero_args = array();
+	if ( ! empty( $law_cal_hero_title ) ) {
+		$hero_args['title'] = (string) $law_cal_hero_title;
+	}
 }
 ?>
 
@@ -49,64 +66,17 @@ if ( ! empty( $law_cal_hero_title ) ) {
 
 				<a class="law-cal-detail__back" href="<?php echo esc_url( law_calendar_url() ); ?>">Back to programme</a>
 
-				<?php
-				$event_date_label = $event['date'] ? ( $days[ $event['date'] ] ?? $event['date'] ) : 'Slot not confirmed';
-				$host_list        = $event['host'] ? array_filter( array_map( 'trim', preg_split( '/;/', $event['host'] ) ) ) : array();
-				?>
-
-				<article class="law-cal-detail law-cal-card">
-					<div class="law-cal-detail__layout">
-						<aside class="law-cal-detail__aside" aria-label="<?php esc_attr_e( 'Event details', 'law' ); ?>">
-							<?php if ( $law_cal_show_status ) : ?>
-								<?php law_calendar_status_badge( $event ); ?>
+				<article class="law-cal-detail">
+					<div class="grid-x grid-padding-x">
+						<div class="large-8 cell">
+							<?php if ( $law_cal_show_status || law_calendar_entry_admin_url( $event['id'] ) ) : ?>
+								<p class="law-cal-detail__admin">
+									<?php if ( $law_cal_show_status ) : ?>
+										<?php law_calendar_status_badge( $event ); ?>
+									<?php endif; ?>
+									<?php law_calendar_edit_link( $event ); ?>
+								</p>
 							<?php endif; ?>
-							<div class="law-cal-detail__fact">
-								<h3>Date</h3>
-								<p><?php echo esc_html( $event_date_label ); ?></p>
-							</div>
-							<div class="law-cal-detail__fact">
-								<h3>Time</h3>
-								<p><?php echo esc_html( $event['time_label'] ); ?></p>
-							</div>
-							<?php if ( $host_list ) : ?>
-								<div class="law-cal-detail__fact">
-									<h3>Host organisations</h3>
-									<ul>
-										<?php foreach ( $host_list as $host ) : ?>
-											<li><?php echo esc_html( $host ); ?></li>
-										<?php endforeach; ?>
-									</ul>
-								</div>
-							<?php endif; ?>
-							<?php if ( ! empty( $event['tickets'] ) ) : ?>
-								<div class="law-cal-detail__fact">
-									<h3>Tickets available</h3>
-									<p><?php echo esc_html( number_format_i18n( $event['tickets'] ) ); ?></p>
-								</div>
-							<?php endif; ?>
-							<?php if ( $event['type'] ) : ?>
-								<div class="law-cal-detail__fact">
-									<h3>Type</h3>
-									<p><?php echo esc_html( $event['type'] ); ?></p>
-								</div>
-							<?php endif; ?>
-							<?php if ( ! empty( $event['sectors'] ) ) : ?>
-								<div class="law-cal-detail__fact">
-									<h3>Sector</h3>
-									<ul>
-										<?php foreach ( $event['sectors'] as $sector ) : ?>
-											<li><?php echo esc_html( $sector ); ?></li>
-										<?php endforeach; ?>
-									</ul>
-								</div>
-							<?php endif; ?>
-						</aside>
-
-						<div class="law-cal-detail__main">
-							<h1 class="law-cal-detail__title">
-								<?php echo esc_html( $event['title'] ); ?>
-								<?php law_calendar_edit_link( $event ); ?>
-							</h1>
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
@@ -169,6 +139,8 @@ if ( ! empty( $law_cal_hero_title ) ) {
 																<span class="law-cal-session__photo">
 																	<?php if ( ! empty( $session_speaker['photo'] ) ) : ?>
 																		<img src="<?php echo esc_url( $session_speaker['photo'] ); ?>" alt="<?php echo esc_attr( $session_speaker['name'] ); ?>" width="32" height="32">
+																	<?php else : ?>
+																		<span class="law-cal-session__initials" aria-hidden="true"><?php echo esc_html( law_calendar_name_initials( $session_speaker['name'] ) ); ?></span>
 																	<?php endif; ?>
 																</span>
 																<span class="law-cal-session__speaker-body">
@@ -196,12 +168,14 @@ if ( ! empty( $law_cal_hero_title ) ) {
 							<?php if ( empty( $event['sessions'] ) && ! empty( $event['speakers'] ) ) : ?>
 								<section class="law-cal-acc">
 									<h2 class="law-cal-acc__heading">Speakers</h2>
-									<ul class="law-cal-speakers">
+									<ul class="law-cal-speakers law-cal-speakers--large">
 										<?php foreach ( $event['speakers'] as $speaker ) : ?>
 											<li>
 												<span class="law-cal-speakers__photo">
 													<?php if ( ! empty( $speaker['photo'] ) ) : ?>
-														<img src="<?php echo esc_url( $speaker['photo'] ); ?>" alt="<?php echo esc_attr( $speaker['name'] ); ?>" width="48" height="48">
+														<img src="<?php echo esc_url( $speaker['photo'] ); ?>" alt="<?php echo esc_attr( $speaker['name'] ); ?>" loading="lazy">
+													<?php else : ?>
+														<span class="law-cal-speakers__initials" aria-hidden="true"><?php echo esc_html( law_calendar_name_initials( $speaker['name'] ) ); ?></span>
 													<?php endif; ?>
 												</span>
 												<span class="law-cal-speakers__body">
@@ -222,6 +196,14 @@ if ( ! empty( $law_cal_hero_title ) ) {
 									</ul>
 								</section>
 							<?php endif; ?>
+							<div class="law-cal-detail__actions">
+								<?php /* Registration is not wired up yet; the button is a placeholder. */ ?>
+								<a class="button orange law-event-card__button--register" href="#" aria-disabled="true">
+									<?php esc_html_e( 'Register', 'law' ); ?>
+									<svg class="law-event-card__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3h7v7"/><path d="M10 14 21 3"/></svg>
+								</a>
+								<a class="button" href="<?php echo esc_url( law_calendar_url() ); ?>"><?php esc_html_e( 'Back to events calendar', 'law' ); ?></a>
+							</div>
 						</div>
 					</div>
 				</article>

@@ -837,6 +837,25 @@ function law_calendar_day_heading( $date ) {
 }
 
 /**
+ * Initials from a full name, for the speaker photo placeholder ("Ali Malek
+ * KC" → "AM"). Mirrors law_speaker_initials(), which needs split name parts.
+ *
+ * @param string $name Full name.
+ */
+function law_calendar_name_initials( $name ) {
+	$parts = preg_split( '/\s+/u', trim( (string) $name ) );
+	$parts = array_values( array_filter( (array) $parts ) );
+	if ( ! $parts ) {
+		return '';
+	}
+	$initials = mb_strtoupper( mb_substr( $parts[0], 0, 1 ) );
+	if ( count( $parts ) > 1 ) {
+		$initials .= mb_strtoupper( mb_substr( $parts[1], 0, 1 ) );
+	}
+	return $initials;
+}
+
+/**
  * Day navigation label, e.g. "Monday, 30".
  *
  * @param string $date Y-m-d key from law_calendar_week_days().

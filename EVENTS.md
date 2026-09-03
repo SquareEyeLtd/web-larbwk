@@ -461,19 +461,27 @@ There is an `event` custom post type registered via Pods, and a deactivated
 Advanced Post Creation feed that would populate it, but neither is in use. See
 "Known defects", item 3.
 
-Individual listings (`?event=<entry_id>`) show venue from field 21 in the main
-column, below the intro, with a Google Maps iframe embed. The embed is a search
-on that text (London is appended when the string does not already mention it).
-Placeholder values such as `TBC` skip the map. No coordinates are stored; an
-address field is not required.
+Individual listings (`?event=<entry_id>`) put the event title and its facts in
+the hero (`parts/layout/hero-title.php` `meta` arg): Date, Time, Location
+(field 21, Venue), Hosted by (field 105, Host organisation(s)), Type (field
+63, Event type), Sector (field 60) and Available tickets (field 54, Tickets
+available). The description renders in a 2/3 column, followed by a Venue
+section (heading, the venue text as subtitle, then a Google Maps iframe). The
+embed is a search on that text (London is appended when the string does not
+already mention it). Placeholder values such as `TBC` skip the map. No
+coordinates are stored; an address field is not required. The page ends with a
+placeholder Register button and a "Back to events calendar" link. On the
+committee variant, the status badge and admin Edit link sit above the
+description.
 
 If the Sessions nested field (115 → form 9) has child entries, they appear
 under the venue as a **Sessions** heading, then a native `<details>` accordion
 per child. The summary shows title and start–end time; the panel holds the
 description and speakers from field 6 (name linking to
 `/speakers/<form 8 entry ID>/`, job title, organisation, and a 32px thumbnail
-or grey placeholder). The event-level Speakers section is omitted when any
-sessions exist; it still appears for events with no sessions.
+or initials placeholder). The event-level Speakers section is omitted when any
+sessions exist; it still appears for events with no sessions, as a list with
+photos (initials placeholder when there is none, like the speaker pages).
 
 ### The speakers archive
 
