@@ -391,6 +391,19 @@
 	margin-top: 0.5rem;
 }
 
+/* --- Host events dashboard (templates/account-events.php) ----------------- */
+
+.law-account-events__toolbar {
+	display: flex;
+	justify-content: flex-end;
+	margin: 0 0 1.5rem;
+}
+
+.law-account-events__toolbar .button {
+	width: auto;
+	margin: 0;
+}
+
 /* --- Loading skeleton ----------------------------------------------------- */
 
 .law-cal-events.is-loading {

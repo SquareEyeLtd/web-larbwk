@@ -39,8 +39,9 @@ add_action( 'wp_enqueue_scripts', function () {
 		filemtime( get_theme_file_path( '/assets/css/gravity-kit.css' ) )
 	);
 
-	// Speaker profiles reuse the calendar's banner title and event cards.
-	if ( law_calendar_is_calendar_page() || law_speakers_is_single() ) {
+	// Speaker profiles and the host events dashboard reuse the calendar's
+	// banner title and event cards.
+	if ( law_calendar_is_calendar_page() || law_speakers_is_single() || law_account_events_is_template() ) {
 		wp_enqueue_style(
 			'law-calendar',
 			get_theme_file_uri( '/assets/css/calendar.css' ),
