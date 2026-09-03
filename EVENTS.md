@@ -488,6 +488,18 @@ photos (initials placeholder when there is none, like the speaker pages).
 `templates/speakers.php` (page template "Speakers") lists every speaker across
 the public programme, from the form 8 child entries.
 
+**Access**: the Speakers page (658 locally) is restricted by Members to
+committee, editor and administrator, pre-launch, like `/programme/`. Because
+Members only filters the page *content*, the speaker data is gated separately:
+`law_speakers_user_can_view()` checks `members_can_current_user_view_post()`
+against the Speakers page, `law_speakers()` returns nothing when it fails, and
+the archive template renders the Members permission message in the body (the
+same pattern as `parts/calendar-body.php`). A blocked visitor on
+`/speakers/<id>/` gets the same permission message, not the profile, and the
+per-speaker SEO title/description filters fall back to the page defaults, so
+no speaker name leaks. Removing the Members restriction from the page makes
+everything public again with no code change.
+
 The Speakers section on that listing reads Nested Form child entries (field 110
 locally, 112 on live): name, job title, organisation, and a square thumbnail
 from Photo (child field 6). Names link to the speaker profile
@@ -544,25 +556,96 @@ Members plugin (`_members_access_role` post meta), not in code.
 
 | URL | Page ID | View / shortcode | Roles |
 |---|---|---|---|
-| `/login/` | 396 | `[law_login]` | everyone |
-| `/register/` | 286 | form 1 | everyone |
-| `/account/` | 290 | landing | all logged-in |
-| `/account/profile/` | 439 | form 3 | all logged-in |
-| `/account/events/` | 292 | GravityView 386 "Events (hosts)" | hosts and above |
-| `/account/events/submit/` | 294 | form 2 | hosts and above |
-| `/account/events/submit/done/` | 372 | confirmation | hosts and above |
+| `/login/` | 396 | `templates/login.php` | everyone |
+| `/register/` | 286 | `templates/register.php` + form 1 block | everyone |
+| `/account/` | 290 | `templates/account.php` landing | all logged-in |
+| `/account/profile/` | 439 | `templates/account.php` + form 3 block | all logged-in |
+| `/account/events/` | 292 | `templates/account-events.php` (GravityView 386 for editing only) | hosts and above |
+| `/account/events/submit/` | 294 | `templates/account.php` + form 2 block | hosts and above |
+| `/account/events/submit/done/` | 372 | `templates/account.php` confirmation | hosts and above |
 | `/account/dashboard/` | 414 | GravityView 419 "Events (committee - all)" | committee, editor, admin |
 | `/inbox/` | 279 | `[gravityflow page="inbox" form="2"]` | committee, host, editor, admin |
 | `/programme/` | 622 | `templates/calendar.php` | **committee, editor, admin only** |
 | `/committee/programme/` | 624 | `templates/calendar-committee.php` | committee, editor, admin |
-| `/speakers/` | 658 (local) | `templates/speakers.php` | everyone |
-| `/speakers/<entry ID>/` | rewrite onto 658 | `templates/speaker.php` | everyone |
+| `/speakers/` | 658 (local) | `templates/speakers.php` | **committee, editor, admin only** (pre-launch) |
+| `/speakers/<entry ID>/` | rewrite onto 658 | `templates/speaker.php` | **committee, editor, admin only** (pre-launch) |
+
+### Account pages (login, forgot/reset password, register)
+
+Rebuilt September 2026 to the account-pages design: the whole page renders
+inside the full-height purple hero (`.hero.auth-hero`), yellow `#ffcc02`
+labels, square white inputs, square orange buttons. All logic is in
+`functions/auth.php`; styling in `assets/css/auth.css` (enqueued only on the
+two templates).
+
+- **`/login/`** (page 396, Login; `templates/login.php`) serves three states
+  via `?action=`: the sign-in form (default), `forgot` (email form calling core
+  `retrieve_password()`) and `reset` (new-password form from the emailed link,
+  validated with `check_password_reset_key()` / `reset_password()`). The
+  sign-in form still posts to `wp-login.php`, so core `wp_signon()` handles
+  authentication; a `wp_login_failed` hook returns failures to
+  `/login/?login=failed` instead of the WP screen. Status messages come from
+  fixed query keys only (`login`, `forgot`, `reset`, `password-reset`,
+  `loggedout`); no request text is reflected. Default post-login redirect is
+  `/account/events/`, with `redirect_to` preserved when present.
+- **`/register/`** (page 286, Register for an Account;
+  `templates/register.php`) still embeds form 1 (User registration) as a
+  Gravity Forms block in the page content; the restyle is CSS only (GF Orbital
+  CSS variables plus overrides scoped to `.auth-hero`). Field 4 (Email) is the
+  username, per the "Event host registration" feed.
+- **`/account/`** (page 290, Account; `templates/account.php`) renders the
+  page content in the same hero. The `[action-message]` shortcode in the
+  content shows a status panel for `?action=` states (e.g.
+  `/account/?action=registered`, where form 1's confirmation redirects with
+  auto-login enabled); the callout styling lives in `auth.css`. Members strips
+  the content for logged-out visitors, who see the permission message instead.
+- **`/account/profile/`** (page 439, Profile),
+  **`/account/events/submit/`** (page 294, Submit an event) and
+  **`/account/events/submit/done/`** (page 372, Event submitted) use the same
+  `templates/account.php`, so form 3 (User profile) and form 2 (Event >
+  submit an event) render inside the hero too. Because the submission form is
+  very tall, the hero background is `background-attachment: fixed` on
+  desktop; on touch devices (where iOS ignores fixed backgrounds) the image
+  is replaced with a flat brand colour, and below the 64em breakpoint the
+  overlay goes fully opaque so all account pages sit on solid navy on mobile.
+- **`/account/events/`** (page 292, My events; `templates/account-events.php`)
+  is the theme-owned host dashboard: the current user's form 2 entries queried
+  with GFAPI (`created_by`, all statuses; `functions/account-events.php`),
+  rendered as `parts/loop/event.php` cards with a status badge, date/time,
+  venue, hosts, a payment status line when field 96 (Payment status) is set,
+  and actions: Edit (a GravityView Edit Entry link), Comments (the Gravity
+  Flow inbox detail on `/inbox/`), Pay invoice (field 83, Stripe invoice URL,
+  while status is Approved) and View listing (Confirmed only). There is no
+  search or filter UI. GravityView 386 stays as the **edit engine only**: the
+  page content keeps its `[gravityview]` shortcode, which the template
+  renders only in GravityView's entry/edit context, so the edit field
+  whitelist, entry locking and Entry Revisions (and the committee "event
+  updated" notification) keep working. The view ID is parsed from that
+  shortcode, falling back to 386.
+- **Production setup**: after deploying the theme, visit
+  `/wp-admin/?setup-account-pages` once as an administrator
+  (`functions/setup-account-pages.php`). It is idempotent, finds the pages by
+  path, assigns the templates (including `templates/account-events.php` on
+  `/account/events/`), strips the `[law_login]` block from the Login page
+  content and prints a report. It deliberately leaves the `[gravityview]`
+  shortcode in the My events page content, because the template needs it for
+  the edit context.
+- **wp-login.php GET screens are redirected** to the branded pages
+  (`login_init`): default → `/login/`, `lostpassword` → `/login/?action=forgot`,
+  `rp`/`resetpass` → `/login/?action=reset&key&login`, `register` →
+  `/register/`. POST requests, `logout`, `postpass`, `confirm_action` and
+  `interim-login` are untouched. `login_url`, `lostpassword_url` and
+  `register_url` are filtered to the branded URLs, and
+  `retrieve_password_message` rewrites the reset email link to
+  `/login/?action=reset`.
+- The `[law_login]` shortcode still exists for backwards compatibility but the
+  login page no longer uses it (the template renders the forms directly).
 
 ### GravityView views
 
 | ID | Title | Filter |
 |---|---|---|
-| 386 | Events (hosts) | field 89 = `{user:ID}` **OR** `created_by` = current user |
+| 386 | Events (hosts) | field 89 = `{user:ID}` **OR** `created_by` = current user. Since the dashboard rework it powers **editing only**; the listing is theme code |
 | 419 | Events (committee - all) | none, shows every entry, inline edit on |
 | 443 | Events (committee - proposed) | field 95 = Proposed. **Embedded nowhere, orphaned** |
 | 626 | Programme | field 95 = Confirmed. **Orphaned** since the calendar filter rework (section 8), deletable |
@@ -597,6 +680,8 @@ an "Events dashboard" link that will deny them.
 ```
 functions/
   _init.php                  (empty, loader lives in functions.php)
+  account-events.php         host events dashboard: GFAPI query, GV edit links,
+                             Gravity Flow comments links, card actions
   banner-account-status.php  account status banner
   calendar.php               the whole programme calendar: entry fetch/map,
                              filters, AJAX partial endpoint, display helpers
@@ -611,12 +696,14 @@ functions/
   menus.php                  Foundation 6 submenu markup
   shortcodes.php             [user-content role="..."] and others
   speakers.php               speakers archive from form 8 child entries
-  users.php                  role assignment, [law_login] shortcode
+  users.php                  role assignment
+  auth.php                   login/forgot/reset password forms, wp-login.php
+                             redirects, [law_login] shortcode
   wordpress.php
 templates/
-  account.php  calendar.php  calendar-committee.php  contact.php
-  full-width.php  patrons.php  privacy.php  speaker.php  speakers.php
-  sponsors.php  _blank.php
+  account.php  account-events.php  calendar.php  calendar-committee.php
+  contact.php  full-width.php  login.php  patrons.php  privacy.php
+  register.php  speaker.php  speakers.php  sponsors.php  _blank.php
 parts/
   calendar-body.php          shared calendar page body (listing + single event)
   calendar-events.php        day sections + slot bars + cards; also the AJAX partial
@@ -764,8 +851,10 @@ Leaving it as it is misleads whoever opens the step next.
 
 ### 6. Minor
 
-- The public programme at `/programme/` is still restricted to committee, editor
-  and administrator. Presumably deliberate pre-launch; confirm before announcing.
+- The public programme at `/programme/` and the speakers pages at `/speakers/`
+  are still restricted to committee, editor and administrator. Deliberate
+  pre-launch (confirmed for speakers, September 2026); remove the Members
+  restriction on each page when announcing.
 - The Inbox menu item (post 595) is a draft, so the committee has no navigation
   link to `/inbox/`.
 - The Account submenu shows "Events dashboard" to all logged-in users; hosts get

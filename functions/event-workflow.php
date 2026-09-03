@@ -26,4 +26,14 @@ add_action( 'gravityflow_step_complete', function( $step_id, $entry, $form, $nex
     // Write today in Y-m-d format — reliable for PHP date arithmetic
     GFAPI::update_entry_field( $entry['id'], 78, date( 'Y-m-d' ) );
 
+    // Baseline payment status: Free for £0 events, Unpaid otherwise.
+    // Step 20 (Waiting for payment) overwrites it with Paid when Stripe's
+    // invoice.paid webhook releases the entry via Make. The empty-check
+    // stops a re-approval after the send-back loop from clobbering a
+    // status that is already set.
+    if ( '' === rgar( $entry, '96' ) ) {
+        $fee_pence = (float) rgar( $entry, '84' );
+        GFAPI::update_entry_field( $entry['id'], 96, $fee_pence > 0 ? 'Unpaid' : 'Free' );
+    }
+
 }, 10, 4 );

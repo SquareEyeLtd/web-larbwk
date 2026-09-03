@@ -50,6 +50,17 @@ add_action( 'wp_enqueue_scripts', function () {
 		);
 	}
 
+	// Account pages: login/forgot/reset, register and the account landing,
+	// all rendered inside the hero.
+	if ( is_page_template( array( 'templates/login.php', 'templates/register.php', 'templates/account.php' ) ) ) {
+		wp_enqueue_style(
+			'law-auth',
+			get_theme_file_uri( '/assets/css/auth.css' ),
+			array( 'law-wp', 'gravity-forms' ),
+			filemtime( get_theme_file_path( '/assets/css/auth.css' ) )
+		);
+	}
+
 	if ( law_speakers_is_template() ) {
 		wp_enqueue_style(
 			'law-speakers',

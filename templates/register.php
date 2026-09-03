@@ -1,11 +1,10 @@
 <?php
 /**
- * Template Name: Account
+ * Template Name: Register
  *
- * The account landing page, styled like the other account pages (login,
- * register): the page content renders inside the full-height purple hero.
- * The [action-message] shortcode in the content shows a status panel for
- * states such as /account/?action=registered.
+ * The branded registration page. The page content, including the Gravity
+ * Forms block for form 1 (User registration), renders inside the full-height
+ * hero, per the account-pages design.
  *
  * @package LAW
  */
@@ -21,8 +20,11 @@ get_header();
 			<div class="large-12 cell">
 				<h1><?php the_title(); ?></h1>
 			</div>
-			<div class="large-9 cell auth-intro wow fadeIn">
+			<div class="large-9 cell auth-intro auth-register-content wow fadeIn">
 				<?php the_content(); ?>
+				<?php if ( ! is_user_logged_in() ) : ?>
+					<p class="law-auth-alt">Already have an account? <a href="<?php echo esc_url( home_url( '/login/' ) ); ?>">Sign in</a></p>
+				<?php endif; ?>
 			</div>
 		</div>
 	</div>

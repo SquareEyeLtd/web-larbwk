@@ -5,16 +5,10 @@
 get_header();
 ?>
 
-<section class="hero register-page" style="background-image: url('<?php echo law_asset( 'assets/images/patrons-and-committee-bg.jpg' ); ?>');">
-    <div class="overlay"></div>
-    <div class="grid-container">
-          <div class="grid-x grid-padding-x">
-            <div class="large-12 cell">
-                 <h1>Privacy Policy</h1>
-            </div>
-          </div>
-        </div>
-</section>
+<?php get_template_part( 'parts/layout/hero-title', null, array(
+    'title'   => 'Privacy Policy',
+    'classes' => 'register-page',
+) ); ?>
 
 <section class="page-section text-page">
     <div class="grid-container">

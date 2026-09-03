@@ -12,19 +12,7 @@ get_header();
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
-<section class="hero register-page" style="background-image: url('<?php echo law_asset( 'assets/images/patrons-and-committee-bg.jpg' ); ?>');">
-    <div class="overlay"></div>
-    <div class="grid-container">
-          <div class="grid-x grid-padding-x">
-            <div class="large-12 cell">
-                 <h1><?php the_title(); ?></h1>
-            </div>
-            <div class="large-9 cell wow fadeIn">
-              <?php the_content(); ?>
-            </div>
-          </div>
-        </div>
-</section>
+<?php get_template_part( 'parts/layout/hero-title', null, array( 'classes' => 'register-page', 'content' => true ) ); ?>
 <?php endwhile; endif; wp_reset_postdata(); ?>
 
 

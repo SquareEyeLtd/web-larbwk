@@ -28,6 +28,40 @@ function law_speakers_is_template() {
 }
 
 /**
+ * The Speakers page (the one assigned templates/speakers.php).
+ */
+function law_speakers_page_id() {
+	static $id = null;
+	if ( null === $id ) {
+		$pages = get_pages(
+			array(
+				'meta_key'   => '_wp_page_template',
+				'meta_value' => 'templates/speakers.php',
+				'number'     => 1,
+			)
+		);
+		$id = $pages ? (int) $pages[0]->ID : 0;
+	}
+	return $id;
+}
+
+/**
+ * Whether the current visitor may see speaker data at all.
+ *
+ * The Speakers page is role-restricted by the Members plugin pre-launch.
+ * Members only filters the page *content*, so everything that reads the
+ * Gravity Forms speaker data directly (the archive, the single profile,
+ * the SEO filters) must apply the same restriction itself.
+ */
+function law_speakers_user_can_view() {
+	if ( ! function_exists( 'members_can_current_user_view_post' ) ) {
+		return true;
+	}
+	$page_id = law_speakers_page_id();
+	return ! $page_id || members_can_current_user_view_post( $page_id );
+}
+
+/**
  * Parent event entry IDs whose speakers may be shown: Confirmed events only.
  *
  * @return array<int, true> Keyed by entry ID.
@@ -71,7 +105,7 @@ function law_speakers() {
 	}
 	$speakers = array();
 
-	if ( ! class_exists( 'GFAPI' ) ) {
+	if ( ! class_exists( 'GFAPI' ) || ! law_speakers_user_can_view() ) {
 		return $speakers;
 	}
 
@@ -228,14 +262,8 @@ function law_speaker_initials( $speaker ) {
 function law_speaker_url( $entry_id ) {
 	static $base = null;
 	if ( null === $base ) {
-		$pages = get_pages(
-			array(
-				'meta_key'   => '_wp_page_template',
-				'meta_value' => 'templates/speakers.php',
-				'number'     => 1,
-			)
-		);
-		$base = $pages ? get_permalink( $pages[0] ) : home_url( '/speakers/' );
+		$page_id = law_speakers_page_id();
+		$base    = $page_id ? get_permalink( $page_id ) : home_url( '/speakers/' );
 	}
 	return trailingslashit( $base ) . (int) $entry_id . '/';
 }
@@ -311,6 +339,11 @@ add_filter(
 	'template_include',
 	function ( $template ) {
 		if ( ! law_speakers_is_single() ) {
+			return $template;
+		}
+		if ( ! law_speakers_user_can_view() ) {
+			// Fall through to the Speakers page template, which renders the
+			// Members permission message instead of any speaker data.
 			return $template;
 		}
 		if ( ! law_speaker_current_profile() ) {

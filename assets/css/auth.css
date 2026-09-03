@@ -1,0 +1,567 @@
+/*
+ * Account pages: login (templates/login.php) and register (templates/register.php).
+ * The whole page lives inside the full-height purple hero, per the account-pages
+ * design: yellow labels, square white inputs, square orange buttons, white text.
+ *
+ * Palette: yellow #ffcc02, orange #ef7d05, navy #292459, overlay rgba(38,30,91,.8).
+ */
+
+/* Hero ______________________________________________________________________ */
+
+/*
+ * Short pages (e.g. the submission confirmation) would otherwise leave the
+ * browser's white canvas visible below the footer. The account templates lay
+ * the page out as a full-height flex column: the hero stretches, the footer
+ * sits at the bottom edge. The nav is position: fixed, so the flex items are
+ * just the hero and the footer. Navy background as a fallback.
+ */
+body.page-template-templateslogin-php,
+body.page-template-templatesregister-php,
+body.page-template-templatesaccount-php {
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
+	background-color: #292459;
+}
+
+.hero.auth-hero {
+	flex: 1 0 auto;
+	min-height: 700px;
+	height: auto;
+	/*
+	 * Long pages (the event submission form) would otherwise stretch the
+	 * cover image to the full section height. Fixing it to the viewport
+	 * keeps the photo sharp however tall the page gets.
+	 */
+	background-attachment: fixed;
+}
+
+/*
+ * Touch devices: iOS ignores background-attachment: fixed and would fall
+ * back to the stretched cover image, so use a flat brand colour instead
+ * (the overlay still sits on top).
+ */
+@media (hover: none) and (pointer: coarse) {
+	.hero.auth-hero {
+		background-image: none !important;
+		background-color: #55499b;
+	}
+}
+
+
+/* #pages prefix: must beat the masked multiply overlay from #pages .hero .overlay. */
+.hero.auth-hero .overlay,
+#pages .hero.auth-hero .overlay {
+	background: rgba(38, 30, 91, 0.8);
+	mix-blend-mode: unset;
+	-webkit-mask-image: none;
+	mask-image: none;
+}
+
+/*
+ * Small screens: the overlay goes fully opaque, so the account pages render
+ * on solid navy with no photo showing through behind the forms.
+ */
+@media (max-width: 63.9375em) {
+	.hero.auth-hero {
+		background-image: none !important;
+		background-color: rgb(38, 30, 91);
+	}
+
+	.hero.auth-hero .overlay,
+	#pages .hero.auth-hero .overlay {
+		background: rgb(38, 30, 91);
+	}
+}
+
+#pages .hero.auth-hero .grid-container {
+	padding-top: 200px;
+	padding-bottom: 110px;
+}
+
+#pages .hero.auth-hero h1 {
+	color: #ffcc02;
+	text-shadow: none;
+	margin-bottom: 0.5em;
+}
+
+/* Intro text ________________________________________________________________ */
+
+.auth-hero .auth-intro {
+	position: relative;
+	z-index: 4;
+}
+
+.auth-hero .auth-intro p {
+	color: #ffffff;
+	font-size: 1.15rem;
+	line-height: 1.5;
+}
+
+.auth-hero .auth-intro a:not(.button) {
+	color: #ef7d05;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.auth-hero .auth-intro a:not(.button):hover,
+.auth-hero .auth-intro a:not(.button):focus {
+	color: #ffcc02;
+}
+
+/* Custom auth forms (sign in / forgot / reset) ______________________________ */
+
+.auth-hero .auth-form-cell {
+	position: relative;
+	z-index: 4;
+	margin-top: 1.5rem;
+}
+
+.law-auth-form .law-auth-field {
+	margin-bottom: 1.25rem;
+}
+
+.law-auth-form .law-auth-field label {
+	display: block;
+	margin-bottom: 0.4rem;
+	color: #ffcc02;
+	font-family: poppins, sans-serif;
+	font-weight: 500;
+	font-size: 1.05rem;
+	line-height: 1.3;
+}
+
+.law-auth-form input[type="text"],
+.law-auth-form input[type="email"],
+.law-auth-form input[type="password"] {
+	display: block;
+	width: 100%;
+	height: 2.75rem;
+	margin: 0;
+	padding: 0 0.75rem;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+	background-color: #ffffff;
+	color: #292459;
+	font-size: 1rem;
+	line-height: 1.4;
+}
+
+.law-auth-form input[type="text"]:focus,
+.law-auth-form input[type="email"]:focus,
+.law-auth-form input[type="password"]:focus {
+	outline: 2px solid #ef7d05;
+	outline-offset: 1px;
+	border: none;
+	box-shadow: none;
+	background-color: #ffffff;
+}
+
+.law-auth-form .law-auth-remember {
+	margin-bottom: 1.25rem;
+}
+
+.law-auth-form .law-auth-remember label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: #ffffff;
+	font-size: 0.95rem;
+}
+
+.law-auth-form .law-auth-remember input[type="checkbox"] {
+	margin: 0;
+	width: 1.1rem;
+	height: 1.1rem;
+	accent-color: #ef7d05;
+}
+
+.law-auth-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	flex-wrap: wrap;
+}
+
+.law-auth-actions .law-auth-forgot {
+	color: #ffffff;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 0.95rem;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.law-auth-actions .law-auth-forgot:hover,
+.law-auth-actions .law-auth-forgot:focus {
+	color: #ffcc02;
+}
+
+.law-auth-button {
+	display: inline-block;
+	margin: 0;
+	padding: 0.8em 2.25em;
+	border: 1px solid #ef7d05;
+	border-radius: 0;
+	background-color: #ef7d05;
+	color: #ffffff;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 0.85rem;
+	line-height: 1.2;
+	text-align: center;
+	text-transform: uppercase;
+	cursor: pointer;
+	transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+.law-auth-button:hover,
+.law-auth-button:focus {
+	background-color: #292459;
+	border-color: #292459;
+	color: #ffffff;
+}
+
+/* Cross-links and signed-in state ___________________________________________ */
+
+.auth-hero .law-auth-alt {
+	margin-top: 1.75rem;
+	color: #ffffff;
+	font-size: 1rem;
+}
+
+.auth-hero .law-auth-alt a,
+.auth-hero .law-auth-signed-in a {
+	color: #ef7d05;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.auth-hero .law-auth-alt a:hover,
+.auth-hero .law-auth-alt a:focus,
+.auth-hero .law-auth-signed-in a:hover,
+.auth-hero .law-auth-signed-in a:focus {
+	color: #ffcc02;
+}
+
+.auth-hero .law-auth-signed-in p {
+	color: #ffffff;
+	font-size: 1.15rem;
+	line-height: 1.6;
+}
+
+/* Notices ___________________________________________________________________ */
+
+.law-auth-notice {
+	margin-bottom: 1.5rem;
+	padding: 0.85rem 1rem;
+	background-color: rgba(255, 255, 255, 0.95);
+	border-left: 4px solid #292459;
+}
+
+.law-auth-notice p {
+	margin: 0;
+	color: #292459;
+	font-size: 0.95rem;
+	line-height: 1.45;
+}
+
+.law-auth-notice--error {
+	border-left-color: #c02b0a;
+}
+
+.law-auth-notice--error p {
+	color: #a12408;
+}
+
+.law-auth-notice--success {
+	border-left-color: #2e7d32;
+}
+
+/*
+ * [action-message] callouts (e.g. /account/?action=registered): match the
+ * auth notices instead of Foundation's pastel callout boxes.
+ */
+.auth-hero .callout {
+	margin-bottom: 1.5rem;
+	padding: 0.85rem 1rem;
+	background-color: rgba(255, 255, 255, 0.95);
+	border: none;
+	border-left: 4px solid #292459;
+}
+
+.auth-hero .callout h2 {
+	margin: 0 0 0.35rem;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-size: 1.05rem;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.auth-hero .callout p {
+	margin: 0;
+	color: #292459;
+	font-size: 0.95rem;
+	line-height: 1.45;
+}
+
+.auth-hero .callout.success {
+	border-left-color: #2e7d32;
+}
+
+.auth-hero .callout.info {
+	border-left-color: #292459;
+}
+
+.auth-hero .callout.warning {
+	border-left-color: #ef7d05;
+}
+
+.auth-hero .callout.alert,
+.auth-hero .callout.error {
+	border-left-color: #c02b0a;
+}
+
+/* Gravity Forms form 1 (User registration) inside the hero __________________ */
+
+.auth-hero .auth-register-content {
+	margin-top: 0.5rem;
+}
+
+/*
+ * The GF block prints its palette inline as #gform_wrapper_N[data-form-index].gform-theme
+ * (specificity 1,2,0), so the #pages variant here (1,4,0) is what actually wins.
+ */
+.auth-hero .gform-theme.gform-theme--framework,
+#pages .auth-hero .gform-theme.gform-theme--framework {
+	--gf-color-primary: #ef7d05;
+	--gf-color-primary-rgb: 239, 125, 5;
+	--gf-color-primary-contrast: #ffffff;
+	--gf-color-primary-contrast-rgb: 255, 255, 255;
+	--gf-color-primary-darker: #c96703;
+	--gf-color-primary-lighter: #ff9d3f;
+	--gf-ctrl-label-color-primary: #ffcc02;
+	--gf-ctrl-label-color-secondary: #ffffff;
+	--gf-ctrl-label-color-tertiary: #ffffff;
+	--gf-ctrl-label-color-quaternary: #ffffff;
+	--gf-ctrl-label-color-req: #ffcc02;
+	--gf-ctrl-desc-color: #ffffff;
+	--gf-ctrl-color: #292459;
+	--gf-ctrl-bg-color: #ffffff;
+	--gf-ctrl-border-color: #ffffff;
+	--gf-ctrl-radius: 0px;
+	--gf-ctrl-btn-radius: 0px;
+	--gf-radius: 0px;
+	--gf-ctrl-btn-bg-color-primary: #ef7d05;
+	--gf-ctrl-btn-border-color-primary: #ef7d05;
+	--gf-ctrl-btn-color-primary: #ffffff;
+	--gf-ctrl-btn-bg-color-hover-primary: #292459;
+	--gf-ctrl-btn-border-color-hover-primary: #292459;
+	--gf-ctrl-btn-color-hover-primary: #ffffff;
+	--gf-ctrl-btn-bg-color-focus-primary: #292459;
+	--gf-ctrl-btn-border-color-focus-primary: #292459;
+	--gf-ctrl-choice-check-color: #292459;
+}
+
+/* Field labels (legend/label) and the required legend. */
+.auth-hero .gform_wrapper .gform-field-label {
+	color: #ffcc02;
+	font-family: poppins, sans-serif;
+	font-weight: 500;
+}
+
+/* Inline choice labels (checkboxes) and sublabels (First / Last / Confirm). */
+.auth-hero .gform_wrapper .gform-field-label--type-inline,
+.auth-hero .gform_wrapper .gform-field-label--type-sub {
+	color: #ffffff;
+	font-weight: 400;
+}
+
+.auth-hero .gform_wrapper .gform_required_legend,
+.auth-hero .gform_wrapper .gfield_description,
+.auth-hero .gform_wrapper .gsection_description {
+	color: #ffffff;
+}
+
+.auth-hero .gform_wrapper .gfield_required {
+	color: #ffcc02;
+}
+
+/* Section breaks: white headings above a translucent rule. */
+.auth-hero .gform_wrapper .gsection {
+	border-bottom-color: rgba(255, 255, 255, 0.4);
+}
+
+.auth-hero .gform_wrapper .gsection_title {
+	color: #ffffff;
+}
+
+/* Inputs and selects: square and white. */
+.auth-hero .gform_wrapper input[type="text"],
+.auth-hero .gform_wrapper input[type="email"],
+.auth-hero .gform_wrapper input[type="password"],
+.auth-hero .gform_wrapper select,
+.auth-hero .gform_wrapper textarea {
+	border-radius: 0;
+	background-color: #ffffff;
+	color: #292459;
+}
+
+/*
+ * Password strength indicator: keep GF's own layout (meter bar left, label
+ * beside it, transparent box) and only recolour it for the dark background.
+ * The bar fill inherits the per-state text colours automatically.
+ */
+.auth-hero .gform-theme.gform-theme--framework,
+#pages .auth-hero .gform-theme.gform-theme--framework {
+	--gf-field-pwd-str-color: #ffffff;
+	--gf-field-pwd-str-ind-bg-color: rgba(255, 255, 255, 0.35);
+	--gf-field-pwd-str-color-short: #ff8a70;
+	--gf-field-pwd-str-color-mismatch: #ff8a70;
+	--gf-field-pwd-str-color-bad: #ff9d4d;
+	--gf-field-pwd-str-color-good: #ffcc02;
+	--gf-field-pwd-str-color-strong: #5fd06a;
+}
+
+/* Validation messages need to stay legible on the purple overlay. */
+.auth-hero .gform_wrapper .gfield_validation_message,
+.auth-hero .gform_wrapper .validation_message {
+	background-color: rgba(255, 255, 255, 0.95);
+	border: none;
+	border-left: 4px solid #c02b0a;
+	color: #a12408;
+}
+
+.auth-hero .gform_wrapper .gform_validation_errors {
+	background-color: rgba(255, 255, 255, 0.95);
+	margin-bottom: 1.5rem;
+}
+
+/*
+ * GF scrolls to its anchor after a failed submit; the fixed nav would cover
+ * the validation summary. Padding + negative margin moves the scroll target
+ * up without affecting layout (GF scrolls via JS, so scroll-margin-top alone
+ * doesn't work).
+ */
+.auth-hero .gform_anchor {
+	display: block;
+	padding-top: 150px;
+	margin-top: -150px;
+}
+
+/*
+ * Submit button: square orange, uppercase, navy on hover (site convention).
+ * !important: the site-wide pill rules in gravity-forms.css use it too, and
+ * these must win on the account pages.
+ */
+.auth-hero .gform_wrapper .gform_footer input[type="submit"],
+.auth-hero .gform_wrapper .gform_footer button.gform_button,
+.auth-hero .gform_wrapper input.gform_button,
+.auth-hero .gform_wrapper button.gform_button {
+	display: inline-block;
+	box-sizing: border-box;
+	width: auto !important;
+	max-width: 100%;
+	margin: 0 !important;
+	padding: 0.8em 2.25em !important;
+	border: 1px solid #ef7d05 !important;
+	border-radius: 0 !important;
+	background-color: #ef7d05 !important;
+	background-image: none !important;
+	color: #ffffff !important;
+	font-family: poppins, sans-serif !important;
+	font-weight: 600 !important;
+	font-size: 0.85rem !important;
+	line-height: 1.2 !important;
+	text-align: center;
+	text-transform: uppercase !important;
+	cursor: pointer;
+	-webkit-appearance: none;
+	appearance: none;
+	transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+.auth-hero .gform_wrapper .gform_footer input[type="submit"]:hover,
+.auth-hero .gform_wrapper .gform_footer input[type="submit"]:focus,
+.auth-hero .gform_wrapper .gform_footer button.gform_button:hover,
+.auth-hero .gform_wrapper .gform_footer button.gform_button:focus,
+.auth-hero .gform_wrapper input.gform_button:hover,
+.auth-hero .gform_wrapper input.gform_button:focus,
+.auth-hero .gform_wrapper button.gform_button:hover,
+.auth-hero .gform_wrapper button.gform_button:focus {
+	background-color: #292459 !important;
+	border-color: #292459 !important;
+	color: #ffffff !important;
+}
+
+/*
+ * Rich text (TinyMCE) fields, e.g. the event Description: the wp-editor
+ * container draws a 1px border (white via our --gf-ctrl-border-color) around
+ * a transparent box that also wraps the word counter, which reads as a stray
+ * white outline on the dark hero. The editor panel itself is already white.
+ */
+.auth-hero .gform_wrapper .wp-editor-container {
+	border: none;
+	background: transparent;
+}
+
+/* Gravity Perks word count label: solid white strip joined to the editor. */
+.auth-hero .gform_wrapper .gp-word-count-label {
+	display: block;
+	margin: 0;
+	padding: 0.35em 0.75em;
+	border: none;
+	background-color: #ffffff;
+	color: #292459;
+	font-size: 0.85rem;
+}
+
+/*
+ * Nested Forms (GPNF) entry tables: Speakers, Additional event owners, Event
+ * contacts, Comments. The rows are white, but cell text inherits the site's
+ * white body colour, so added entries were invisible.
+ */
+.auth-hero .gform_wrapper .gpnf-nested-entries td,
+.auth-hero .gform_wrapper .gpnf-nested-entries th,
+.auth-hero .gform_wrapper .gpnf-nested-entries .gpnf-no-entries {
+	color: #292459;
+}
+
+/* GF confirmation message (e.g. after registration) on the dark hero. */
+.auth-hero .gform_confirmation_message {
+	color: #ffffff;
+	font-size: 1.15rem;
+	line-height: 1.5;
+}
+
+.auth-hero .gform_confirmation_message a {
+	color: #ef7d05;
+	font-weight: 600;
+}
+
+/* Small screens _____________________________________________________________ */
+
+@media (max-width: 63.9375em) {
+	#pages .hero.auth-hero .grid-container {
+		padding-top: 150px;
+		padding-bottom: 80px;
+	}
+}
+
+@media (max-width: 39.9375em) {
+	.law-auth-actions {
+		flex-direction: column-reverse;
+		align-items: stretch;
+	}
+
+	.law-auth-actions .law-auth-button {
+		width: 100%;
+	}
+
+	.law-auth-actions .law-auth-forgot {
+		text-align: center;
+	}
+}

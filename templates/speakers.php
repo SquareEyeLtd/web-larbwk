@@ -8,11 +8,12 @@
 
 get_header();
 
-$law_speakers = law_speakers();
+$law_speakers_blocked = ! law_speakers_user_can_view();
+$law_speakers         = $law_speakers_blocked ? array() : law_speakers();
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
-	<?php get_template_part( 'parts/layout/hero-title', null, array( 'classes' => 'register-page', 'content' => true ) ); ?>
+	<?php get_template_part( 'parts/layout/hero-title', null, array( 'classes' => 'register-page', 'content' => ! $law_speakers_blocked ) ); ?>
 <?php endwhile; endif; wp_reset_postdata(); ?>
 
 <section class="page-section">
@@ -21,7 +22,11 @@ $law_speakers = law_speakers();
 			<div class="large-12 cell">
 				<div class="law-speakers" data-speaker-search>
 
-					<?php if ( $law_speakers ) : ?>
+					<?php if ( $law_speakers_blocked ) : ?>
+
+						<?php echo wp_kses_post( members_get_post_error_message( get_queried_object_id() ) ); ?>
+
+					<?php elseif ( $law_speakers ) : ?>
 
 						<form class="law-speakers__search" role="search" onsubmit="return false;">
 							<label class="show-for-sr" for="law-speakers-search"><?php esc_html_e( 'Search speakers', 'law' ); ?></label>

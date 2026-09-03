@@ -131,25 +131,4 @@ add_action( 'gform_user_updated', function( $user_id, $feed, $entry ) {
 
 
 
-/* Custom login form ________________________________________________________ */
-
-add_shortcode( 'law_login', function () {
-	if ( is_user_logged_in() ) {
-		$inbox = home_url( '/inbox/' );
-		return '<p>You are signed in. <a href="' . esc_url( $inbox ) . '">Go to your inbox</a> · '
-			. '<a href="' . esc_url( wp_logout_url( home_url( '/login/' ) ) ) . '">Log out</a></p>';
-	}
-
-	$form = wp_login_form( array(
-		'echo'           => false,
-		'redirect'       => home_url( '/account/events/' ), // where hosts land after login
-		'label_username' => 'Email or username',
-		'remember'       => true,
-	) );
-
-	$form = str_replace( 'Remember Me', 'Remember me', $form );
-
-	$lost = '<p class="law-lost-password"><a href="' . esc_url( wp_lostpassword_url( home_url( '/login/' ) ) ) . '">Lost your password?</a></p>';
-
-	return '<div class="law-login-form">' . $form . $lost . '</div>';
-} );
+/* The [law_login] shortcode and all login/password handling live in auth.php. */
