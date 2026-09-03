@@ -856,7 +856,7 @@ function law_calendar_name_initials( $name ) {
 }
 
 /**
- * Day navigation label, e.g. "Monday, 30".
+ * Day navigation label, e.g. "Monday, 30 Nov" (uppercased by CSS).
  *
  * @param string $date Y-m-d key from law_calendar_week_days().
  */
@@ -865,7 +865,7 @@ function law_calendar_day_nav_label( $date ) {
 	if ( ! $ts ) {
 		return (string) $date;
 	}
-	return date_i18n( 'l, j', $ts );
+	return date_i18n( 'l, j M', $ts );
 }
 
 function law_calendar_events_by_date() {
