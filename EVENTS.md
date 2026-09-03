@@ -8,7 +8,7 @@
 > When you change something listed in "Known defects", move it out of that section
 > rather than leaving both descriptions in place.
 
-Last verified against the database and codebase: 2 September 2026.
+Last verified against the database and codebase: 3 September 2026.
 
 ---
 
@@ -398,8 +398,9 @@ assignee.
 ## 8. The programme calendar
 
 The public programme is **not** built from WordPress posts. It is rendered by the
-theme directly from form 2 entries, in `functions/calendar.php` (around 1000
-lines) with `templates/calendar.php` and `templates/calendar-committee.php`.
+theme directly from form 2 entries, in `functions/calendar.php` with
+`templates/calendar.php` and `templates/calendar-committee.php`, both of which
+include `parts/calendar-body.php`.
 
 - `law_calendar_public_statuses()` returns `array( 'Confirmed' )`. The public
   calendar shows Confirmed entries only.
@@ -408,10 +409,53 @@ lines) with `templates/calendar.php` and `templates/calendar-committee.php`.
   colour-coded status badge per card.
 - Programme week dates are hardcoded in `law_calendar_week_days()`, currently
   Monday 30 November to Friday 4 December 2026. `LAW_CALENDAR_YEAR` is 2026.
-- Search and filtering are driven by GravityView views resolved by slug:
-  `programme` (view 626) for the public calendar, `programme-committee` (view
-  627) for the committee one. IDs are cached in the options
-  `law_calendar_view_id` and `law_calendar_committee_view_id`.
+- The public page's hero title is hardcoded to "Calendar of Events" in
+  `templates/calendar.php` (`$law_cal_hero_title`), independent of the WP page
+  title.
+
+### Listing layout
+
+The listing is a single page: a row of day jump links ("Monday, 30" …
+"Friday, 4", greyed out when the day has no events), the filters, then one
+section per day (`#day-<Y-m-d>`) with a navy day bar ("Tuesday, 1 December
+2026"), an orange bar per time slot ("8:30am - 10:00am"), and an event card per
+entry. Cards show title, time, venue (field 21, Venue), host organisations
+(field 105, Host organisation(s)), the Sponsored tag, plus Event details and
+Register buttons. Register is a placeholder and links nowhere yet. The card is
+`parts/loop/event.php` and is also used for "Speaking at" on the single speaker
+profile (`templates/speaker.php`). The day sections are
+`parts/calendar-events.php`, the day links and filters
+`parts/calendar-filters.php`.
+
+### Filtering (theme-owned, no GravityView)
+
+Filtering is custom and entirely in the theme; GravityView is no longer
+involved in the programme pages at all. Entries come from
+`GFAPI::get_entries()` and are filtered in PHP
+(`law_calendar_event_matches_filters()`), driven by GET parameters:
+
+- `law_kw` — keyword, matched against title, host, venue, type, sectors and
+  description.
+- `law_sector` — one choice of field 60 (Sector).
+- `law_type` — one choice of field 63 (Event type).
+
+The dropdown choices are read live from the form via
+`law_calendar_field_choices()`.
+
+`assets/js/calendar-filters.js` applies filters over AJAX: the same page URL
+with `&law_partial=1` returns only the events markup (a `template_redirect`
+handler renders `parts/calendar-events.php` and exits; Members page
+restrictions are enforced, so anonymous requests to the restricted page get a
+403). The keyword input is debounced (400 ms), selects apply instantly on
+desktop, a skeleton state shows while loading, day links smooth-scroll to
+their section, and the URL query string is kept in sync via
+`history.replaceState`. On mobile the day links wrap to two columns and the
+filters sit behind a "Filters" button that opens a modal with an Apply button.
+Without JavaScript the form falls back to a plain GET submit.
+
+GravityView views 626 (Programme) and 627 (Programme (committee)) and the
+options `law_calendar_view_id` / `law_calendar_committee_view_id` are
+**orphaned** by this rework and can be deleted.
 
 There is an `event` custom post type registered via Pods, and a deactivated
 Advanced Post Creation feed that would populate it, but neither is in use. See
@@ -513,8 +557,8 @@ Members plugin (`_members_access_role` post meta), not in code.
 | 386 | Events (hosts) | field 89 = `{user:ID}` **OR** `created_by` = current user |
 | 419 | Events (committee - all) | none, shows every entry, inline edit on |
 | 443 | Events (committee - proposed) | field 95 = Proposed. **Embedded nowhere, orphaned** |
-| 626 | Programme | field 95 = Confirmed |
-| 627 | Programme (committee) | all statuses |
+| 626 | Programme | field 95 = Confirmed. **Orphaned** since the calendar filter rework (section 8), deletable |
+| 627 | Programme (committee) | all statuses. **Orphaned**, deletable |
 
 View 386's first filter condition references field 89, which no longer exists on
 form 2. In practice only the `created_by` branch matches, so a host sees only the
@@ -546,7 +590,8 @@ an "Events dashboard" link that will deny them.
 functions/
   _init.php                  (empty, loader lives in functions.php)
   banner-account-status.php  account status banner
-  calendar.php               the whole programme calendar, ~1000 lines
+  calendar.php               the whole programme calendar: entry fetch/map,
+                             filters, AJAX partial endpoint, display helpers
   editor.php                 block editor tweaks
   enqueue.php                assets
   event-workflow.php         writes field 78 (Approval date) on approval
@@ -564,10 +609,17 @@ templates/
   account.php  calendar.php  calendar-committee.php  contact.php
   full-width.php  patrons.php  privacy.php  speaker.php  speakers.php
   sponsors.php  _blank.php
+parts/
+  calendar-body.php          shared calendar page body (listing + single event)
+  calendar-events.php        day sections + slot bars + cards; also the AJAX partial
+  calendar-filters.php       day jump links, keyword/sector/type filters, mobile modal
 parts/layout/
   hero-title.php             shared page hero (title, is_event, image args)
 parts/loop/
+  event.php                  programme event card (calendar listings, speaker profile)
   speaker.php                speakers archive card (takes a speaker profile)
+assets/js/
+  calendar-filters.js        AJAX filtering, keyword debounce, skeleton, filter modal
 ```
 
 ### Terminology in the UI

@@ -1,155 +1,7 @@
-/* Programme calendar — layout from design/calendar-view-mockup.html */
+/* Programme calendar */
 
 .law-cal {
 	color: #292459;
-	max-width: 75rem;
-}
-
-.law-cal-layout {
-	display: flex;
-	flex-direction: column;
-	gap: 1.25rem;
-}
-
-.law-cal-layout__filters {
-	min-width: 0;
-}
-
-.law-cal-filters {
-	margin: 0;
-}
-
-.law-cal-filters__summary {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	width: 100%;
-	padding: 0.7rem 1rem;
-	border: 1px solid #292459;
-	background: #fff;
-	color: #292459;
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 12px;
-	line-height: 1.2;
-	letter-spacing: 0.02em;
-	text-transform: uppercase;
-	text-align: left;
-	cursor: pointer;
-	list-style: none;
-	border-radius: 4px;
-	box-sizing: border-box;
-}
-
-.law-cal-filters__summary::-webkit-details-marker,
-.law-cal-filters__summary::marker {
-	display: none;
-	content: none;
-}
-
-.law-cal-filters__summary:hover,
-.law-cal-filters__summary:focus {
-	background: #ef7d05;
-	border-color: #ef7d05;
-	color: #fff;
-	outline: none;
-}
-
-.law-cal-filters__summary:focus-visible {
-	outline: 2px solid #292459;
-	outline-offset: 2px;
-}
-
-.law-cal-filters__summary::after {
-	content: '';
-	width: 0.45rem;
-	height: 0.45rem;
-	margin-left: 0.75rem;
-	border-right: 2px solid currentColor;
-	border-bottom: 2px solid currentColor;
-	transform: rotate(45deg);
-	transition: transform 0.2s ease;
-	flex-shrink: 0;
-}
-
-.law-cal-filters[open] {
-	background: #ece9f5;
-	border: 1px solid #292459;
-	border-radius: 4px;
-}
-
-.law-cal-filters[open]::details-content {
-	background: #ece9f5;
-}
-
-.law-cal-filters[open] .law-cal-filters__summary::after {
-	transform: translateY(0.15rem) rotate(-135deg);
-}
-
-.law-cal-filters[open] .law-cal-filters__summary {
-	margin-bottom: 0;
-	background: #fff;
-	border: 0;
-	border-bottom: 1px solid #d8d4e4;
-	border-radius: 4px 4px 0 0;
-}
-
-.law-cal-filters__panel {
-	min-width: 0;
-}
-
-.law-cal-filters[open] .law-cal-filters__panel {
-	padding: 1rem 1rem 1.15rem 2rem;
-	background: #ece9f5;
-	box-sizing: border-box;
-}
-
-.law-cal-layout__main {
-	min-width: 0;
-}
-
-@media (min-width: 64em) {
-	.law-cal-layout {
-		display: grid;
-		grid-template-columns: 16.5rem minmax(0, 1fr);
-		gap: 2rem 2.25rem;
-		align-items: start;
-	}
-
-	.law-cal-layout__filters {
-		position: sticky;
-		top: calc(var(--law-cal-sticky-top, 9.5rem) + 0.75rem);
-	}
-
-	.law-cal-filters > summary {
-		display: none;
-	}
-
-	.law-cal-filters::details-content {
-		display: block;
-		content-visibility: visible;
-	}
-
-	.law-cal-filters[open] {
-		background: transparent;
-		border: 0;
-		border-radius: 0;
-	}
-
-	.law-cal-filters[open]::details-content {
-		background: transparent;
-	}
-
-	.law-cal-filters[open] .law-cal-filters__summary {
-		margin-bottom: 0;
-		border: 1px solid #292459;
-		border-radius: 4px;
-	}
-
-	.law-cal-filters[open] .law-cal-filters__panel {
-		padding: 0;
-		background: transparent;
-	}
 }
 
 .law-cal a {
@@ -163,145 +15,452 @@
 	margin: 0 0 1.25rem;
 }
 
-.law-cal__tabs {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	margin: 0 0 0.85rem;
+.law-cal__empty {
+	color: #666;
+	font-size: 0.9rem;
+	margin-top: 24px;
 }
 
-.law-cal__tab {
-	flex: 0 0 auto;
-	display: inline-block;
-	padding: 8px 1.1rem;
-	border: 1px solid #292459;
+/* --- Day jump links ------------------------------------------------------ */
+
+.law-cal-daynav {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.6rem;
+	margin: 0 0 1rem;
+}
+
+@media (min-width: 48em) {
+	.law-cal-daynav {
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+	}
+}
+
+.law-cal-daynav__link {
+	display: block;
+	padding: 0.7rem 0.5rem 0.55rem;
+	border: 1px solid #ef7d05;
 	background: #fff;
 	color: #292459;
 	font-family: poppins, sans-serif;
 	font-weight: 600;
-	font-size: 12px;
+	font-size: 0.75rem;
 	line-height: 1.2;
+	letter-spacing: 0.03em;
 	text-align: center;
 	text-transform: uppercase;
-	border-radius: 4px;
-	width: auto;
+	transition: background 0.3s ease, color 0.3s ease;
 }
 
-.law-cal__tab:hover,
-.law-cal__tab:focus {
+.law-cal-daynav__link:hover,
+.law-cal-daynav__link:focus {
 	background: #ef7d05;
-	border-color: #ef7d05;
 	color: #fff;
 }
 
-.law-cal__tab.is-active {
-	background: #292459;
-	color: #fff;
-}
-
-.law-cal__chips {
-	position: sticky;
-	top: var(--law-cal-sticky-top, 0px);
-	z-index: 10;
-	display: flex;
-	gap: 6px;
-	padding: 10px 0;
-	background: #fff;
-	border-bottom: 1px solid #e3e0ec;
-}
-
-.law-cal__chips::before {
-	content: "";
-	position: absolute;
-	left: 0;
-	right: 0;
-	bottom: 100%;
-	height: 1.25rem;
-	background: #fff;
-}
-
-.law-cal__chip {
-	flex: 0 0 auto;
-	width: auto;
-	text-align: center;
-	padding: 7px 0.7rem;
-	font-size: 11px;
-	font-weight: 600;
-	text-transform: uppercase;
-	border: 1px solid #292459;
-	color: #292459;
-	border-radius: 4px;
-}
-
-.law-cal__chip:hover,
-.law-cal__chip:focus {
-	background: #ef7d05;
-	border-color: #ef7d05;
-	color: #fff;
-}
-
-.law-cal__chip.is-today {
-	background: #292459;
-	color: #fff;
-}
-
-.law-cal__chip.is-selected {
-	background: #292459;
-	color: #fff;
-}
-
-.law-cal__chip.is-empty {
+.law-cal-daynav__link.is-empty {
 	border-color: #d5d2de;
 	color: #b3b0bd;
+	cursor: default;
 	pointer-events: none;
 }
 
-.law-cal__day-heading {
+/* --- Filters ------------------------------------------------------------- */
+
+.law-cal-filterbar {
+	margin: 0 0 1.75rem;
+}
+
+.law-cal-filterbar__toggle {
+	width: 100%;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.55rem;
+}
+
+.law-cal-filterbar__burger {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 3px;
+	width: 14px;
+}
+
+.law-cal-filterbar__burger span {
+	display: block;
+	height: 2px;
+	background: currentColor;
+	border-radius: 1px;
+}
+
+.law-cal-filterbar__head {
+	display: none;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 1rem;
+}
+
+.law-cal-filterbar__title {
+	margin: 0;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 1rem;
+	text-transform: uppercase;
+	color: #292459;
+}
+
+.law-cal-filterbar__close {
+	border: 0;
+	background: none;
+	color: #292459;
 	font-size: 1.6rem;
+	line-height: 1;
+	cursor: pointer;
+	padding: 0 0.25rem;
+}
+
+.law-cal-filter-form {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.law-cal-filter-form__field {
+	margin: 0;
+	min-width: 0;
+}
+
+.law-cal-filter-form input[type="search"],
+.law-cal-filter-form select {
+	width: 100%;
+	margin: 0;
+	min-height: 2.5rem;
+	border: 1px solid #ef7d05;
+	border-radius: 0;
+	padding: 0.35rem 0.65rem;
+	box-shadow: none;
+	font-family: poppins, sans-serif;
+	font-size: 0.8rem;
+	font-weight: 600;
+	color: #292459;
+	background-color: #fff;
+	box-sizing: border-box;
+}
+
+.law-cal-filter-form input[type="search"]::placeholder {
+	color: #8f8ba6;
+	font-weight: 500;
+}
+
+.law-cal-filter-form select {
+	-webkit-appearance: none;
+	appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23292459' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: right 0.75rem center;
+	background-size: 0.65rem auto;
+	padding-right: 2.1rem;
+}
+
+.law-cal-filter-form__actions {
+	display: flex;
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.law-cal-filter-form__actions .button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: auto;
+	min-height: 2.5rem;
+	margin: 0;
+	padding-top: 0;
+	padding-bottom: 0;
+	box-sizing: border-box;
+}
+
+/* Desktop: one row, applied instantly (Apply hidden once JS is running). */
+@media (min-width: 64em) {
+	.law-cal-filterbar__toggle {
+		display: none;
+	}
+
+	.law-cal-filter-form {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.law-cal-filter-form__field {
+		flex: 1 1 0;
+	}
+
+	.law-cal-filter-form__field--keyword {
+		flex: 1.6 1 0;
+	}
+
+	.law-cal-filter-form__actions {
+		flex: 0 0 auto;
+	}
+
+	.is-enhanced .law-cal-filter-form__apply {
+		display: none;
+	}
+}
+
+/* Mobile with JS: the panel becomes a modal behind the Filters button. */
+@media (max-width: 63.9375em) {
+	.is-enhanced .law-cal-filterbar__panel {
+		display: none;
+	}
+
+	.is-enhanced.is-modal-open .law-cal-filterbar__panel {
+		display: flex;
+		flex-direction: column;
+		justify-content: flex-end;
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+		background: rgba(41, 36, 89, 0.55);
+	}
+
+	.is-enhanced.is-modal-open .law-cal-filterbar__head {
+		display: flex;
+		background: #fff;
+		border-radius: 8px 8px 0 0;
+		margin: 0;
+		padding: 1.1rem 1.25rem 0.75rem;
+	}
+
+	.is-enhanced.is-modal-open .law-cal-filter-form {
+		background: #fff;
+		padding: 0 1.25rem 1.5rem;
+		max-height: 75vh;
+		overflow-y: auto;
+	}
+
+	.law-cal-modal-open,
+	.law-cal-modal-open body {
+		overflow: hidden;
+	}
+
+	.law-cal-filter-form__actions {
+		margin-top: 0.35rem;
+	}
+
+	.law-cal-filter-form__actions .button {
+		flex: 1 1 0;
+	}
+}
+
+/* --- Day sections -------------------------------------------------------- */
+
+.law-cal-day-section {
+	scroll-margin-top: calc(var(--law-cal-sticky-top, 0px) + 1rem);
+}
+
+.law-cal-day-bar {
+	margin: 2.25rem 0 1rem;
+	padding: 1rem 1.5rem;
+	background: #292459;
+	color: #fff;
+	font-family: poppins, sans-serif;
+	font-size: 1.4rem;
 	font-weight: 600;
 	line-height: 1.2;
-	color: #ef7d05;
-	text-transform: uppercase;
-	margin: 24px 0 10px;
-	scroll-margin-top: var(--law-cal-scroll-margin, calc(var(--law-cal-sticky-top, 9.5rem) + 5rem));
 }
 
-.law-cal__slot-heading {
-	font-size: 0.95rem;
+.law-cal-day-section:first-of-type .law-cal-day-bar {
+	margin-top: 0.5rem;
+}
+
+.law-cal-slot-bar {
+	margin: 1.5rem 0 1rem;
+	padding: 0.6rem 1.5rem;
+	background: #ef7d05;
+	color: #fff;
+	font-family: poppins, sans-serif;
+	font-size: 1rem;
 	font-weight: 600;
 	line-height: 1.3;
-	color: #292459;
-	margin: 1.35rem 0 0.65rem;
 }
 
-.law-cal__day-heading + .law-cal__slot-heading {
-	margin-top: 0.15rem;
-}
+/* --- Event card (parts/loop/event.php) ----------------------------------- */
 
-.law-cal-card + .law-cal__slot-heading {
-	border-top: 1px solid #e3e0ec;
-	padding-top: 1rem;
-	margin-top: 0.35rem;
-}
-
-.law-cal-card {
+.law-event-card {
 	position: relative;
-	border: 1px solid #e3e0ec;
-	border-bottom: 2px solid #ef7d05;
-	border-radius: 6px;
-	padding: 10px 12px;
-	margin-bottom: 1.5rem;
-	background: #fff;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	padding: 1.25rem 1.5rem;
+	margin: 0 0 1rem;
+	background: #ececf1;
 }
 
-.law-cal-card--sponsored,
-.law-cal-day__item--sponsored {
+@media (min-width: 48em) {
+	.law-event-card {
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1.5rem;
+	}
+}
+
+.law-event-card--sponsored {
 	background: #fff8d4;
 }
 
-.law-cal-card:has(> .law-cal-card__sponsored) {
-	padding-bottom: 1.85rem;
+.law-event-card__body {
+	min-width: 0;
+	flex: 1 1 auto;
 }
+
+.law-event-card__title {
+	margin: 0 0 0.35rem;
+	font-family: poppins, sans-serif;
+	font-size: 1.05rem;
+	font-weight: 600;
+	line-height: 1.3;
+	color: #292459;
+}
+
+.law-event-card__title a:hover,
+.law-event-card__title a:focus {
+	color: #ef7d05;
+}
+
+.law-event-card__time {
+	margin: 0 0 0.25rem;
+	color: #ef7d05;
+	font-family: poppins, sans-serif;
+	font-size: 0.9rem;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.law-event-card__meta {
+	margin: 0 0 0.15rem;
+	color: #555;
+	font-size: 0.85rem;
+	line-height: 1.4;
+}
+
+.law-event-card__actions {
+	display: flex;
+	flex: 0 0 auto;
+	gap: 0.6rem;
+	align-items: center;
+}
+
+.law-event-card__actions .button {
+	width: auto;
+	margin: 0;
+	white-space: nowrap;
+}
+
+.law-event-card__button--register {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+}
+
+.law-event-card__arrow {
+	width: 0.7em;
+	height: 0.7em;
+}
+
+@media (max-width: 47.9375em) {
+	.law-event-card__actions .button {
+		flex: 1 1 0;
+	}
+}
+
+.law-event-card .law-cal-card__badge {
+	position: static;
+	display: inline-block;
+	margin: 0 0 0.4rem;
+}
+
+.law-event-card .law-cal-card__sponsored {
+	position: static;
+	display: inline-block;
+	margin-top: 0.5rem;
+}
+
+/* --- Loading skeleton ----------------------------------------------------- */
+
+.law-cal-events.is-loading {
+	pointer-events: none;
+}
+
+.law-cal-skeleton__bar,
+.law-cal-skeleton__card,
+.law-cal-skeleton__line {
+	position: relative;
+	overflow: hidden;
+	background: #ececf1;
+}
+
+.law-cal-skeleton__bar--day {
+	height: 3.5rem;
+	margin: 2.25rem 0 1rem;
+	background: #d8d5e6;
+}
+
+.law-cal-skeleton__bar:first-child {
+	margin-top: 0.5rem;
+}
+
+.law-cal-skeleton__bar--slot {
+	height: 2.5rem;
+	margin: 1.5rem 0 1rem;
+	background: #f3ddc6;
+}
+
+.law-cal-skeleton__card {
+	padding: 1.25rem 1.5rem;
+	margin: 0 0 1rem;
+}
+
+.law-cal-skeleton__line {
+	height: 0.9rem;
+	background: #d8d5e6;
+	border-radius: 3px;
+}
+
+.law-cal-skeleton__line--title {
+	width: 55%;
+	margin-bottom: 0.6rem;
+}
+
+.law-cal-skeleton__line--meta {
+	width: 30%;
+}
+
+.law-cal-skeleton__bar::after,
+.law-cal-skeleton__card::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	transform: translateX(-100%);
+	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+	animation: law-cal-shimmer 1.2s infinite;
+}
+
+@keyframes law-cal-shimmer {
+	100% {
+		transform: translateX(100%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.law-cal-skeleton__bar::after,
+	.law-cal-skeleton__card::after {
+		animation: none;
+	}
+}
+
+/* --- Status badges (committee) and sponsored tag -------------------------- */
 
 .law-cal-card__sponsored {
 	position: absolute;
@@ -343,6 +502,7 @@
 .law-cal-card__badge--proposed {
 	background: #f4f2fa;
 	color: #292459;
+	border: 1px solid #c9c5d6;
 }
 
 .law-cal-card__badge--sent-back {
@@ -355,26 +515,10 @@
 	color: #666;
 }
 
-.law-cal-card__title {
-	font-weight: 600;
-	color: #292459;
-	margin: 0 0 4px;
-	font-size: 1rem;
-	line-height: 1.25;
-}
-
-.law-cal-card:has(> .law-cal-card__badge) .law-cal-card__title {
-	padding-right: 80px;
-}
-
-.law-cal-card__title a:hover,
-.law-cal-card__title a:focus {
-	color: #ef7d05;
-}
+/* --- Edit link (admins/editors) ------------------------------------------ */
 
 .law-cal a.law-cal-edit,
-.law-cal-card__title a.law-cal-edit,
-.law-cal-day__item-title a.law-cal-edit,
+.law-event-card__title a.law-cal-edit,
 .law-cal-detail__title a.law-cal-edit {
 	display: inline-block;
 	margin-left: 0.45em;
@@ -388,107 +532,28 @@
 
 .law-cal a.law-cal-edit:hover,
 .law-cal a.law-cal-edit:focus,
-.law-cal-card__title a.law-cal-edit:hover,
-.law-cal-card__title a.law-cal-edit:focus,
-.law-cal-day__item-title a.law-cal-edit:hover,
-.law-cal-day__item-title a.law-cal-edit:focus,
+.law-event-card__title a.law-cal-edit:hover,
+.law-event-card__title a.law-cal-edit:focus,
 .law-cal-detail__title a.law-cal-edit:hover,
 .law-cal-detail__title a.law-cal-edit:focus {
 	color: #292459;
 	text-decoration: underline;
 }
 
-.law-cal-card__meta,
-.law-cal-card__host,
-.law-cal-card__desc {
-	font-size: 0.875rem;
-	margin: 0 0 6px;
-	line-height: 1.4;
-}
+/* --- Single event view ---------------------------------------------------- */
 
-.law-cal-card__meta,
-.law-cal-card__host {
-	color: #555;
-}
-
-.law-cal-card__desc {
-	color: #292459;
-	margin-bottom: 0;
-}
-
-.law-cal-day__heading {
-	font-size: 1.6rem;
-	font-weight: 600;
-	line-height: 1.2;
-	color: #ef7d05;
-	text-transform: uppercase;
-	margin: 1.5rem 0 12px;
-}
-
-.law-cal-day__slot {
-	display: grid;
-	grid-template-columns: 3.25rem 1fr;
-	gap: 0 0;
-}
-
-.law-cal-day__time {
-	font-size: 0.8125rem;
-	color: #555;
-	padding-top: 4px;
-}
-
-.law-cal-day__items {
-	border-left: 2px solid #ef7d05;
-	padding: 0 0 20px 12px;
-}
-
-.law-cal-day__item {
+.law-cal-card {
 	position: relative;
-	background: #f4f2fa;
+	border: 1px solid #e3e0ec;
+	border-bottom: 2px solid #ef7d05;
 	border-radius: 6px;
-	padding: 8px 10px;
-	margin-bottom: 1rem;
+	padding: 10px 12px;
+	margin-bottom: 1.5rem;
+	background: #fff;
 }
 
-.law-cal-day__item.law-cal-day__item--sponsored {
+.law-cal-card--sponsored {
 	background: #fff8d4;
-}
-
-.law-cal-day__item:has(> .law-cal-card__sponsored) {
-	padding-bottom: 1.7rem;
-}
-
-.law-cal-day__item:last-child {
-	margin-bottom: 0;
-}
-
-.law-cal-day__item-title {
-	font-weight: 600;
-	color: #292459;
-	font-size: 1rem;
-	margin: 0;
-	line-height: 1.3;
-}
-
-.law-cal-day__item-title a:hover,
-.law-cal-day__item-title a:focus {
-	color: #ef7d05;
-}
-
-.law-cal-day__item-meta,
-.law-cal-day__item-host {
-	font-size: 0.875rem;
-	color: #555;
-	margin: 4px 0 0;
-	line-height: 1.4;
-}
-
-.law-cal-day__item .law-cal-card__badge {
-	position: static;
-	display: inline-block;
-	margin: 0 0 4px;
-	font-size: 8px;
-	padding: 2px 6px;
 }
 
 .law-cal-detail__back {
@@ -902,102 +967,6 @@
 	font-weight: 500;
 	font-style: normal;
 	font-size: 2.8rem;
-}
-
-.law-cal__empty {
-	color: #666;
-	font-size: 0.9rem;
-	margin-top: 24px;
-}
-
-.law-cal-search {
-	margin: 0;
-	height: auto;
-	min-height: 0;
-}
-
-.law-cal-search .gv-widget-search {
-	display: block;
-	margin: 0;
-	height: auto;
-	min-height: 0;
-	flex: none;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area {
-	display: flex !important;
-	flex-direction: column !important;
-	flex-wrap: nowrap !important;
-	align-items: stretch;
-	align-content: flex-start;
-	justify-content: flex-start;
-	gap: 0.75rem;
-	height: auto;
-	min-height: 0;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search-box {
-	float: none !important;
-	clear: none !important;
-	flex: 0 0 auto !important;
-	align-self: stretch;
-	width: 100% !important;
-	max-width: none !important;
-	min-width: 0;
-	height: auto !important;
-	margin: 0 !important;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search-box-submit {
-	width: auto !important;
-	display: flex !important;
-	flex-direction: row !important;
-	flex-wrap: wrap;
-	align-items: center;
-	align-self: flex-start;
-	gap: 0.45rem;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search p {
-	margin: 0 !important;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search-box > label,
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search label {
-	display: block;
-	margin-bottom: 0.35rem;
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	color: #292459;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area select,
-.law-cal-search .gv-widget-search .gv-search-widget-area input[type="text"],
-.law-cal-search .gv-widget-search .gv-search-widget-area input[type="search"] {
-	width: 100% !important;
-	max-width: none !important;
-	min-width: 0;
-	min-height: 2.25rem;
-	border: 1px solid #c9c5d6;
-	border-radius: 4px;
-	padding: 0.35rem 0.55rem;
-	font-size: 0.875rem;
-	color: #292459;
-	background: #fff;
-	box-sizing: border-box;
-}
-
-.law-cal-search .gv-widget-search .gv-search-widget-area .button,
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search-button,
-.law-cal-search .gv-widget-search .gv-search-widget-area .gv-search-clear,
-.law-cal-search .gv-widget-search .gv-search-widget-area input[type="submit"] {
-	width: auto !important;
-	max-width: none;
-	flex: 0 0 auto;
-}
-
-.law-cal-search .gv-grid-row {
-	row-gap: 0.65rem;
 }
 
 .law-cal .button {

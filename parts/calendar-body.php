@@ -21,43 +21,16 @@ $event    = $event_id ? law_calendar_event_by_id( $event_id ) : null;
 
 get_header();
 
-$view        = array();
-$days        = array();
-$by_date     = array();
-$unscheduled = array();
-$today       = '';
-$day_key     = '';
-$chip_labels = array();
-$has_dated   = false;
-$has_events  = false;
+$days = $calendar_blocked ? array() : law_calendar_week_days();
 
-if ( ! $calendar_blocked ) {
-	$view        = law_calendar_current_view();
-	$days        = law_calendar_week_days();
-	$by_date     = law_calendar_events_by_date();
-	$unscheduled = $by_date['_unscheduled'] ?? array();
-	$today       = law_calendar_today_key();
-	$day_key     = law_calendar_requested_day();
-	$chip_labels = array(
-		'2026-11-30' => 'Mon 30',
-		'2026-12-01' => 'Tue 1',
-		'2026-12-02' => 'Wed 2',
-		'2026-12-03' => 'Thu 3',
-		'2026-12-04' => 'Fri 4',
-	);
-
-	foreach ( array_keys( $days ) as $date ) {
-		if ( ! empty( $by_date[ $date ] ) ) {
-			$has_dated = true;
-			break;
-		}
-	}
-	$has_events = $has_dated || ! empty( $unscheduled );
+$hero_args = array( 'is_event' => (bool) $event );
+if ( ! empty( $law_cal_hero_title ) ) {
+	$hero_args['title'] = (string) $law_cal_hero_title;
 }
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
-<?php get_template_part( 'parts/layout/hero-title', null, array( 'is_event' => (bool) $event ) ); ?>
+<?php get_template_part( 'parts/layout/hero-title', null, $hero_args ); ?>
 
 <section class="page-section">
 	<div class="grid-container">
@@ -74,7 +47,7 @@ if ( ! $calendar_blocked ) {
 
 			<?php if ( $event ) : ?>
 
-				<a class="law-cal-detail__back" href="<?php echo esc_url( law_calendar_url( array( 'view' => $view, 'cal_day' => ( 'day' === $view ? $event['date'] : '' ) ) ) ); ?>">Back to programme</a>
+				<a class="law-cal-detail__back" href="<?php echo esc_url( law_calendar_url() ); ?>">Back to programme</a>
 
 				<?php
 				$event_date_label = $event['date'] ? ( $days[ $event['date'] ] ?? $event['date'] ) : 'Slot not confirmed';
@@ -255,202 +228,10 @@ if ( ! $calendar_blocked ) {
 
 			<?php else : ?>
 
-				<div class="law-cal-layout">
-					<aside class="law-cal-layout__filters" aria-label="<?php esc_attr_e( 'Programme filters', 'law' ); ?>">
-						<details class="law-cal-filters<?php echo law_calendar_is_searching() ? ' is-searching' : ''; ?>"<?php echo law_calendar_is_searching() ? ' open' : ''; ?>>
-							<summary class="law-cal-filters__summary">Filter</summary>
-							<div class="law-cal-filters__panel">
-								<?php law_calendar_render_search(); ?>
-							</div>
-						</details>
-					</aside>
-					<div class="law-cal-layout__main">
+				<?php get_template_part( 'parts/calendar-filters' ); ?>
 
-				<nav class="law-cal__tabs" aria-label="<?php esc_attr_e( 'Programme views', 'law' ); ?>">
-					<?php foreach ( array( 'list' => 'Full list', 'day' => 'Day' ) as $key => $label ) : ?>
-						<a
-							class="law-cal__tab<?php echo $view === $key ? ' is-active' : ''; ?>"
-							href="<?php echo esc_url( law_calendar_url( array( 'view' => $key, 'cal_day' => ( 'day' === $key ? $day_key : '' ) ) ) ); ?>"
-							<?php echo $view === $key ? ' aria-current="page"' : ''; ?>
-						><?php echo esc_html( $label ); ?></a>
-					<?php endforeach; ?>
-				</nav>
-
-				<?php if ( 'list' === $view ) : ?>
-
-					<nav class="law-cal__chips" aria-label="<?php esc_attr_e( 'Jump to day', 'law' ); ?>">
-						<?php foreach ( $days as $date => $heading ) : ?>
-							<?php
-							$empty = empty( $by_date[ $date ] );
-							$classes = 'law-cal__chip';
-							if ( $today === $date ) {
-								$classes .= ' is-today';
-							}
-							if ( $empty ) {
-								$classes .= ' is-empty';
-							}
-							?>
-							<?php if ( $empty ) : ?>
-								<span class="<?php echo esc_attr( $classes ); ?>" aria-disabled="true"><?php echo esc_html( $chip_labels[ $date ] ); ?></span>
-							<?php else : ?>
-								<a class="<?php echo esc_attr( $classes ); ?>" href="#day-<?php echo esc_attr( $date ); ?>"<?php echo $today === $date ? ' aria-current="date"' : ''; ?>>
-									<?php echo esc_html( $chip_labels[ $date ] ); ?>
-								</a>
-							<?php endif; ?>
-						<?php endforeach; ?>
-					</nav>
-
-					<?php if ( ! $has_events ) : ?>
-						<p class="law-cal__empty"><?php echo esc_html( law_calendar_empty_message() ); ?></p>
-					<?php endif; ?>
-
-					<?php foreach ( $days as $date => $heading ) : ?>
-						<?php if ( empty( $by_date[ $date ] ) ) { continue; } ?>
-						<h2 class="law-cal__day-heading" id="day-<?php echo esc_attr( $date ); ?>"><?php echo esc_html( $heading ); ?></h2>
-						<?php
-						$last_slot = null;
-						foreach ( $by_date[ $date ] as $item ) :
-							$slot = (string) ( $item['time_label'] ?? '' );
-							if ( $slot !== $last_slot ) :
-								?>
-								<h3 class="law-cal__slot-heading"><?php echo esc_html( str_replace( '-', '–', $slot ) ); ?></h3>
-								<?php
-								$last_slot = $slot;
-							endif;
-							?>
-							<article class="<?php echo esc_attr( law_calendar_card_classes( $item ) ); ?>">
-								<?php if ( $law_cal_show_status ) : ?>
-									<?php law_calendar_status_badge( $item ); ?>
-								<?php endif; ?>
-								<h4 class="law-cal-card__title">
-									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
-									<?php law_calendar_edit_link( $item ); ?>
-								</h4>
-								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
-								<?php
-								$hosted = law_calendar_hosted_by( $item );
-								if ( $hosted ) :
-									?>
-									<p class="law-cal-card__host"><?php echo esc_html( $hosted ); ?></p>
-								<?php endif; ?>
-								<?php if ( $item['excerpt'] ) : ?>
-									<p class="law-cal-card__desc"><?php echo esc_html( $item['excerpt'] ); ?></p>
-								<?php endif; ?>
-								<?php law_calendar_sponsored_label( $item ); ?>
-							</article>
-						<?php endforeach; ?>
-					<?php endforeach; ?>
-
-					<?php if ( ! empty( $unscheduled ) ) : ?>
-						<h2 class="law-cal__day-heading" id="day-unscheduled">No confirmed slot</h2>
-						<?php foreach ( $unscheduled as $item ) : ?>
-							<article class="<?php echo esc_attr( law_calendar_card_classes( $item ) ); ?>">
-								<?php if ( $law_cal_show_status ) : ?>
-									<?php law_calendar_status_badge( $item ); ?>
-								<?php endif; ?>
-								<h4 class="law-cal-card__title">
-									<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
-									<?php law_calendar_edit_link( $item ); ?>
-								</h4>
-								<p class="law-cal-card__meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
-								<?php
-								$hosted = law_calendar_hosted_by( $item );
-								if ( $hosted ) :
-									?>
-									<p class="law-cal-card__host"><?php echo esc_html( $hosted ); ?></p>
-								<?php endif; ?>
-								<?php if ( $item['excerpt'] ) : ?>
-									<p class="law-cal-card__desc"><?php echo esc_html( $item['excerpt'] ); ?></p>
-								<?php endif; ?>
-								<?php law_calendar_sponsored_label( $item ); ?>
-							</article>
-						<?php endforeach; ?>
-					<?php endif; ?>
-
-				<?php elseif ( 'day' === $view ) : ?>
-
-					<nav class="law-cal__chips" aria-label="<?php esc_attr_e( 'Choose day', 'law' ); ?>">
-						<?php foreach ( $days as $date => $heading ) : ?>
-							<?php
-							$empty   = empty( $by_date[ $date ] );
-							$classes = 'law-cal__chip';
-							if ( $day_key === $date ) {
-								$classes .= ' is-selected';
-							}
-							if ( $today === $date ) {
-								$classes .= ' is-today';
-							}
-							if ( $empty && law_calendar_is_searching() ) {
-								$classes .= ' is-empty';
-							}
-							$chip_url = law_calendar_url( array( 'view' => 'day', 'cal_day' => $date ) );
-							?>
-							<?php if ( $empty && law_calendar_is_searching() ) : ?>
-								<span class="<?php echo esc_attr( $classes ); ?>" aria-disabled="true"><?php echo esc_html( $chip_labels[ $date ] ); ?></span>
-							<?php else : ?>
-								<a
-									class="<?php echo esc_attr( $classes ); ?>"
-									href="<?php echo esc_url( $chip_url ); ?>"
-									<?php echo $day_key === $date ? ' aria-current="date"' : ''; ?>
-								>
-									<?php echo esc_html( $chip_labels[ $date ] ); ?>
-								</a>
-							<?php endif; ?>
-						<?php endforeach; ?>
-					</nav>
-
-					<?php if ( ! empty( $unscheduled ) ) : ?>
-						<p class="law-cal__note">
-							<a href="<?php echo esc_url( law_calendar_url( array( 'view' => 'list' ) ) ); ?>#day-unscheduled">
-								<?php echo esc_html( sprintf( _n( '%d event has no confirmed slot.', '%d events have no confirmed slot.', count( $unscheduled ), 'law' ), count( $unscheduled ) ) ); ?>
-							</a>
-						</p>
-					<?php endif; ?>
-
-					<p class="law-cal-day__heading"><?php echo esc_html( $days[ $day_key ] ); ?></p>
-
-					<?php
-					$day_events = $by_date[ $day_key ] ?? array();
-					$slots      = array();
-					foreach ( $day_events as $item ) {
-						$slots[ $item['start'] ][] = $item;
-					}
-					?>
-
-					<?php if ( empty( $slots ) ) : ?>
-						<p class="law-cal__empty"><?php echo esc_html( law_calendar_is_searching() ? law_calendar_empty_message() : 'No events on this date.' ); ?></p>
-					<?php else : ?>
-						<?php foreach ( $slots as $start => $items ) : ?>
-							<div class="law-cal-day__slot">
-								<div class="law-cal-day__time"><?php echo esc_html( $start ); ?></div>
-								<div class="law-cal-day__items">
-									<?php foreach ( $items as $item ) : ?>
-										<div class="<?php echo esc_attr( law_calendar_card_classes( $item, 'law-cal-day__item' ) ); ?>">
-											<?php if ( $law_cal_show_status ) : ?>
-												<?php law_calendar_status_badge( $item ); ?>
-											<?php endif; ?>
-											<p class="law-cal-day__item-title">
-												<a href="<?php echo esc_url( $item['url'] ); ?>"><?php echo esc_html( $item['title'] ); ?></a>
-												<?php law_calendar_edit_link( $item ); ?>
-											</p>
-											<p class="law-cal-day__item-meta"><?php echo esc_html( law_calendar_meta_line( $item ) ); ?></p>
-											<?php
-											$hosted = law_calendar_hosted_by( $item );
-											if ( $hosted ) :
-												?>
-												<p class="law-cal-day__item-host"><?php echo esc_html( $hosted ); ?></p>
-											<?php endif; ?>
-											<?php law_calendar_sponsored_label( $item ); ?>
-										</div>
-									<?php endforeach; ?>
-								</div>
-							</div>
-						<?php endforeach; ?>
-					<?php endif; ?>
-
-				<?php endif; ?>
-
-					</div>
+				<div class="law-cal-events" id="law-cal-events" aria-live="polite">
+					<?php get_template_part( 'parts/calendar-events', null, array( 'show_status' => $law_cal_show_status ) ); ?>
 				</div>
 
 			<?php endif; ?>

@@ -72,4 +72,9 @@ add_action( 'wp_enqueue_scripts', function () {
 	if ( law_speakers_is_template() && ! law_speakers_is_single() ) {
 		wp_enqueue_script( 'law-speaker-search', $uri . '/assets/js/speaker-search.js', array(), $v( '/assets/js/speaker-search.js' ), true );
 	}
+
+	// Programme filters: AJAX filtering, keyword debounce, mobile filter modal.
+	if ( law_calendar_is_calendar_page() ) {
+		wp_enqueue_script( 'law-calendar-filters', $uri . '/assets/js/calendar-filters.js', array(), $v( '/assets/js/calendar-filters.js' ), true );
+	}
 }, 20 );

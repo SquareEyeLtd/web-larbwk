@@ -9,7 +9,6 @@
 
 $law_speaker = law_speaker_current_profile();
 $law_events  = $law_speaker ? law_speaker_events( $law_speaker ) : array();
-$law_days    = law_calendar_week_days();
 
 get_header();
 ?>
@@ -71,27 +70,17 @@ get_header();
 						<div class="law-speaker__events law-cal">
 							<h3 class="law-cal-acc__heading">Speaking at</h3>
 							<?php foreach ( $law_events as $law_event ) : ?>
-								<article class="<?php echo esc_attr( law_calendar_card_classes( $law_event ) ); ?>">
-									<h4 class="law-cal-card__title">
-										<a href="<?php echo esc_url( law_speaker_event_link( $law_event['id'] ) ); ?>"><?php echo esc_html( $law_event['title'] ); ?></a>
-									</h4>
-									<p class="law-cal-card__meta">
-										<?php
-										$law_date_label = $law_event['date'] ? ( $law_days[ $law_event['date'] ] ?? $law_event['date'] ) : 'Slot not confirmed';
-										echo esc_html( $law_date_label . ' · ' . law_calendar_meta_line( $law_event ) );
-										?>
-									</p>
-									<?php
-									$law_hosted = law_calendar_hosted_by( $law_event );
-									if ( $law_hosted ) :
-										?>
-										<p class="law-cal-card__host"><?php echo esc_html( $law_hosted ); ?></p>
-									<?php endif; ?>
-									<?php if ( $law_event['excerpt'] ) : ?>
-										<p class="law-cal-card__desc"><?php echo esc_html( $law_event['excerpt'] ); ?></p>
-									<?php endif; ?>
-									<?php law_calendar_sponsored_label( $law_event ); ?>
-								</article>
+								<?php
+								get_template_part(
+									'parts/loop/event',
+									null,
+									array(
+										'event'     => $law_event,
+										'url'       => law_speaker_event_link( $law_event['id'] ),
+										'show_date' => true,
+									)
+								);
+								?>
 							<?php endforeach; ?>
 						</div>
 					<?php endif; ?>

@@ -63,95 +63,137 @@ function law_calendar_status_badge( $event ) {
 }
 
 /**
- * GravityView that drives programme search. Created once from Events (committee - all).
+ * Programme filters from the query string. Fully theme-owned: the calendar
+ * queries entries with GFAPI and filters mapped events in PHP, with no
+ * GravityView involvement.
+ *
+ * @return array{kw:string,sector:string,type:string}
  */
-function law_calendar_view_id( $context = null ) {
-	if ( null === $context ) {
-		$context = law_calendar_context();
+function law_calendar_filters() {
+	static $filters = null;
+	if ( null !== $filters ) {
+		return $filters;
 	}
 
-	$option = ( 'committee' === $context ) ? 'law_calendar_committee_view_id' : 'law_calendar_view_id';
-	$slug   = ( 'committee' === $context ) ? 'programme-committee' : 'programme';
-
-	$id = absint( get_option( $option ) );
-	if ( $id && 'gravityview' === get_post_type( $id ) ) {
-		return $id;
+	$filters = array();
+	foreach ( array( 'kw' => 'law_kw', 'sector' => 'law_sector', 'type' => 'law_type' ) as $key => $param ) {
+		$filters[ $key ] = isset( $_GET[ $param ] )
+			? trim( sanitize_text_field( wp_unslash( $_GET[ $param ] ) ) )
+			: '';
 	}
 
-	$by_slug = get_page_by_path( $slug, OBJECT, 'gravityview' );
-	if ( $by_slug ) {
-		update_option( $option, (int) $by_slug->ID, false );
-		return (int) $by_slug->ID;
-	}
-
-	return 0;
-}
-
-function law_calendar_view( $context = null ) {
-	$id = law_calendar_view_id( $context );
-	if ( ! $id || ! class_exists( '\GV\View' ) ) {
-		return null;
-	}
-	$view = \GV\View::by_id( $id );
-	return $view ?: null;
+	return $filters;
 }
 
 /**
- * Register the Programme View with GravityView so search CSS/JS load on /calendar/.
- */
-add_action( 'wp', 'law_calendar_register_gravityview', 12 );
-function law_calendar_register_gravityview() {
-	if ( ! law_calendar_is_calendar_page() ) {
-		return;
-	}
-	$view_id = law_calendar_view_id();
-	if ( ! $view_id || ! class_exists( 'GravityView_View_Data' ) || ! class_exists( 'GravityView_frontend' ) ) {
-		return;
-	}
-
-	$data = GravityView_View_Data::getInstance();
-	$data->add_view( $view_id );
-	GravityView_frontend::getInstance()->setGvOutputData( $data );
-	GravityView_frontend::getInstance()->setPostId( get_queried_object_id() );
-
-	if ( class_exists( 'GravityView_View' ) ) {
-		GravityView_View::getInstance()->setViewId( $view_id );
-		GravityView_View::getInstance()->setPostId( get_queried_object_id() );
-	}
-}
-
-/**
- * GET args that belong to the GravityView search, so List/Day/Week tabs keep the filter.
+ * Active filters as query args, so links (e.g. back from an event) keep them.
  */
 function law_calendar_search_query_args() {
-	$out  = array();
-	$skip = array( 'view', 'cal_day', 'day', 'event', 'pagenum', 'page_id' );
-	$get  = isset( $_GET ) && is_array( $_GET ) ? wp_unslash( $_GET ) : array();
-
-	foreach ( $get as $key => $value ) {
-		if ( in_array( $key, $skip, true ) || '' === $value || null === $value ) {
-			continue;
+	$args = array();
+	$map  = array( 'kw' => 'law_kw', 'sector' => 'law_sector', 'type' => 'law_type' );
+	foreach ( law_calendar_filters() as $key => $value ) {
+		if ( '' !== $value ) {
+			$args[ $map[ $key ] ] = $value;
 		}
-		$is_search = (
-			0 === strpos( $key, 'filter_' )
-			|| 0 === strpos( $key, 'gv_' )
-			|| 'mode' === $key
-		);
-		if ( ! $is_search ) {
-			continue;
-		}
-		if ( is_array( $value ) ) {
-			$out[ $key ] = array_map( 'sanitize_text_field', $value );
-			continue;
-		}
-		$out[ $key ] = sanitize_text_field( $value );
 	}
-
-	return $out;
+	return $args;
 }
 
 function law_calendar_is_searching() {
 	return ! empty( law_calendar_search_query_args() );
+}
+
+/**
+ * Case-insensitive, entity-insensitive comparison key for choice values.
+ * Form choices store "&amp;" while typed filters arrive as "&".
+ */
+function law_calendar_normalise_choice( $value ) {
+	$value = html_entity_decode( (string) $value, ENT_QUOTES, 'UTF-8' );
+	$value = preg_replace( '/\s+/u', ' ', $value );
+	return function_exists( 'mb_strtolower' ) ? mb_strtolower( trim( $value ) ) : strtolower( trim( $value ) );
+}
+
+/**
+ * True when a mapped event passes the active keyword / sector / type filters.
+ *
+ * @param array $event   Mapped calendar event.
+ * @param array $filters law_calendar_filters() result.
+ */
+function law_calendar_event_matches_filters( $event, $filters ) {
+	if ( '' !== $filters['type'] && law_calendar_normalise_choice( $event['type'] ) !== law_calendar_normalise_choice( $filters['type'] ) ) {
+		return false;
+	}
+
+	if ( '' !== $filters['sector'] ) {
+		$wanted = law_calendar_normalise_choice( $filters['sector'] );
+		$found  = false;
+		foreach ( (array) $event['sectors'] as $sector ) {
+			if ( law_calendar_normalise_choice( $sector ) === $wanted ) {
+				$found = true;
+				break;
+			}
+		}
+		if ( ! $found ) {
+			return false;
+		}
+	}
+
+	if ( '' !== $filters['kw'] ) {
+		$haystack = law_calendar_normalise_choice(
+			implode(
+				' ',
+				array(
+					$event['title'],
+					$event['host'],
+					$event['venue'],
+					$event['type'],
+					implode( ' ', (array) $event['sectors'] ),
+					wp_strip_all_tags( (string) $event['description'] ),
+				)
+			)
+		);
+		$needle   = law_calendar_normalise_choice( $filters['kw'] );
+		if ( '' !== $needle && false === strpos( $haystack, $needle ) ) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Choice labels for a Form 2 field, for the filter dropdowns.
+ *
+ * @param int $field_id Field ID (60 Sector, 63 Event type).
+ * @return string[]
+ */
+function law_calendar_field_choices( $field_id ) {
+	static $cache = array();
+	$field_id     = (int) $field_id;
+	if ( isset( $cache[ $field_id ] ) ) {
+		return $cache[ $field_id ];
+	}
+
+	$cache[ $field_id ] = array();
+	if ( ! class_exists( 'GFAPI' ) || ! class_exists( 'GFFormsModel' ) ) {
+		return $cache[ $field_id ];
+	}
+
+	$form  = GFAPI::get_form( LAW_CALENDAR_FORM_ID );
+	$field = $form ? GFFormsModel::get_field( $form, $field_id ) : null;
+	if ( ! $field || empty( $field->choices ) || ! is_array( $field->choices ) ) {
+		return $cache[ $field_id ];
+	}
+
+	foreach ( $field->choices as $choice ) {
+		$label = html_entity_decode( (string) ( $choice['text'] ?? '' ), ENT_QUOTES, 'UTF-8' );
+		$label = trim( $label );
+		if ( '' !== $label ) {
+			$cache[ $field_id ][] = $label;
+		}
+	}
+
+	return $cache[ $field_id ];
 }
 
 function law_calendar_empty_message() {
@@ -163,66 +205,28 @@ function law_calendar_empty_message() {
 		: 'No events in the programme yet.';
 }
 
-add_filter( 'gravityview/widget/search/form/action', 'law_calendar_search_form_action', 10, 2 );
-function law_calendar_search_form_action( $url, $view_id = 0 ) {
-	if ( ! law_calendar_is_calendar_page() ) {
-		return $url;
-	}
-	$page_id = get_queried_object_id();
-	return $page_id ? get_permalink( $page_id ) : $url;
-}
-
-add_filter( 'gravityview_search_field_label', 'law_calendar_search_submit_label', 10, 3 );
-function law_calendar_search_submit_label( $label, $form_field, $field ) {
-	if ( ! law_calendar_is_calendar_page() ) {
-		return $label;
-	}
-	$input = isset( $field['input'] ) ? $field['input'] : '';
-	$key   = isset( $field['field'] ) ? $field['field'] : '';
-	if ( 'submit' !== $input && 'submit' !== $key ) {
-		return $label;
-	}
-	return 'Filter';
-}
-
 /**
- * GravityView's search bar labels the companion button "Clear" after a search,
- * then swaps it to "Reset" in JS once the form differs from the page-load state.
- * Keep the label as Reset in both places.
+ * AJAX partial: same page URL with &law_partial=1 returns only the events
+ * markup (parts/calendar-events.php), so the filter UI can swap it in place.
+ * Members page restrictions apply exactly as they do to the full page.
  */
-add_filter( 'gk/gravityview/widget/search/clear-button/params', 'law_calendar_search_clear_button_params' );
-function law_calendar_search_clear_button_params( $params ) {
-	$params['text'] = 'Reset';
-	return $params;
-}
-
-add_filter( 'gravityview_js_localization', 'law_calendar_search_clear_js_label' );
-function law_calendar_search_clear_js_label( $js ) {
-	$js['clear'] = 'Reset';
-	return $js;
-}
-
-function law_calendar_current_view() {
-	$view = sanitize_key( wp_unslash( $_GET['view'] ?? 'list' ) );
-	return in_array( $view, array( 'list', 'day' ), true ) ? $view : 'list';
-}
-
-function law_calendar_requested_day() {
-	$raw = '';
-	if ( isset( $_GET['cal_day'] ) ) {
-		$raw = sanitize_text_field( wp_unslash( $_GET['cal_day'] ) );
-	} elseif ( isset( $_GET['day'] ) ) {
-		$raw = sanitize_text_field( wp_unslash( $_GET['day'] ) );
+add_action( 'template_redirect', 'law_calendar_maybe_render_partial' );
+function law_calendar_maybe_render_partial() {
+	if ( empty( $_GET['law_partial'] ) || ! law_calendar_is_calendar_page() ) {
+		return;
 	}
-	$days = law_calendar_week_days();
-	if ( $raw && isset( $days[ $raw ] ) ) {
-		return $raw;
+
+	$page_id = get_queried_object_id();
+	if ( function_exists( 'members_can_current_user_view_post' ) && $page_id && ! members_can_current_user_view_post( $page_id ) ) {
+		status_header( 403 );
+		exit;
 	}
-	$today = law_calendar_today_key();
-	if ( $today ) {
-		return $today;
-	}
-	return '2026-12-01';
+
+	status_header( 200 );
+	header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
+	nocache_headers();
+	get_template_part( 'parts/calendar-events', null, array( 'show_status' => law_calendar_is_committee() ) );
+	exit;
 }
 
 /**
@@ -319,11 +323,10 @@ function law_calendar_excerpt( $html, $words = 18 ) {
 }
 
 /**
- * Form 2 entries for the programme calendars.
+ * Form 2 entries for the programme calendars, filtered and sorted.
  *
- * Status is owned by the GravityView Advanced Filter (Programme = Confirmed,
- * committee View = all). PHP only re-applies a status filter on the GFAPI
- * fallback, when that View is missing.
+ * Public calendar: Confirmed only. Committee calendar: all statuses. The
+ * keyword / sector / type filters from the query string are applied here.
  *
  * @return array<int, array>
  */
@@ -334,14 +337,12 @@ function law_calendar_events() {
 		return $cache[ $key ];
 	}
 
-	$from_view = law_calendar_view() && function_exists( 'gravityview' );
-	$allowed   = ( $from_view || law_calendar_is_committee() )
-		? array()
-		: law_calendar_public_statuses();
-	$events    = array();
+	$allowed = law_calendar_is_committee() ? array() : law_calendar_public_statuses();
+	$filters = law_calendar_filters();
+	$events  = array();
 	foreach ( law_calendar_raw_entries() as $entry ) {
 		$mapped = law_calendar_map_entry( $entry, $allowed );
-		if ( $mapped ) {
+		if ( $mapped && law_calendar_event_matches_filters( $mapped, $filters ) ) {
 			$events[] = $mapped;
 		}
 	}
@@ -361,19 +362,6 @@ function law_calendar_events() {
  * @return array<int, array> Raw Gravity Forms entries.
  */
 function law_calendar_raw_entries() {
-	$view = law_calendar_view();
-	if ( $view && function_exists( 'gravityview' ) ) {
-		$collection = $view->get_entries( gravityview()->request );
-		$entries    = array();
-		foreach ( $collection->all() as $gv_entry ) {
-			$as = $gv_entry->as_entry();
-			if ( is_array( $as ) ) {
-				$entries[] = $as;
-			}
-		}
-		return $entries;
-	}
-
 	if ( ! class_exists( 'GFAPI' ) ) {
 		return array();
 	}
@@ -801,351 +789,64 @@ function law_calendar_event_by_id( $entry_id ) {
 }
 
 /**
- * Output the Programme View search bar. Does not render the GravityView table.
- */
-function law_calendar_render_search() {
-	$view = law_calendar_view();
-	if ( ! $view ) {
-		return;
-	}
-
-	$widgets = $view->widgets->by_id( 'search_bar' )->all();
-	if ( empty( $widgets ) ) {
-		return;
-	}
-
-	$widget = $widgets[0];
-	$args   = $widget->configuration->all();
-	$args['view_id'] = $view->ID;
-
-	echo '<div class="law-cal-search gv-container">';
-	$widget->render_frontend( $args, '', '' );
-	echo '</div>';
-}
-
-/**
- * One-off installer: clone View 419 into a public Programme View.
+ * "08:30" → "8:30am". Anything unparsable is returned unchanged.
  *
- * @return int New or existing View ID.
+ * @param string $time 24-hour HH:MM.
  */
-function law_calendar_install_programme_view() {
-	$existing = law_calendar_view_id();
-	if ( $existing ) {
-		return $existing;
+function law_calendar_time_12h( $time ) {
+	if ( ! preg_match( '/^(\d{1,2}):(\d{2})$/', trim( (string) $time ), $m ) ) {
+		return (string) $time;
 	}
-
-	$source_id = 419;
-	$source    = get_post( $source_id );
-	if ( ! $source || 'gravityview' !== $source->post_type ) {
-		return 0;
+	$hour   = (int) $m[1];
+	$suffix = $hour >= 12 ? 'pm' : 'am';
+	$hour   = $hour % 12;
+	if ( 0 === $hour ) {
+		$hour = 12;
 	}
-
-	$new_id = wp_insert_post(
-		array(
-			'post_type'    => 'gravityview',
-			'post_status'  => 'publish',
-			'post_title'   => 'Programme',
-			'post_name'    => 'programme',
-			'post_content' => $source->post_content,
-			'post_author'  => $source->post_author,
-		),
-		true
-	);
-	if ( is_wp_error( $new_id ) ) {
-		return 0;
-	}
-	$new_id = (int) $new_id;
-
-	$meta_keys = array(
-		'_gravityview_form_id',
-		'_gravityview_directory_template',
-		'_gravityview_single_template',
-		'_gravityview_template_settings',
-		'_gravityview_directory_fields',
-		'_gravityview_directory_widgets',
-		'_gravityview_datatables_settings',
-		'_gravityview_row_settings',
-	);
-	foreach ( $meta_keys as $key ) {
-		$value = get_post_meta( $source_id, $key, true );
-		if ( '' !== $value && null !== $value && array() !== $value ) {
-			update_post_meta( $new_id, $key, $value );
-		}
-	}
-
-	$settings = get_post_meta( $new_id, '_gravityview_template_settings', true );
-	if ( ! is_array( $settings ) ) {
-		$settings = array();
-	}
-	$settings['page_size']              = '500';
-	$settings['embed_only']             = '1';
-	$settings['is_secure']              = '0';
-	$settings['inline_edit']            = '0';
-	$settings['lightbox']               = '0';
-	$settings['hide_until_searched']    = '0';
-	$settings['admin_show_all_statuses'] = '1';
-	$settings['user_edit']              = '0';
-	$settings['user_delete']            = '0';
-	update_post_meta( $new_id, '_gravityview_template_settings', $settings );
-
-	$widgets = get_post_meta( $new_id, '_gravityview_directory_widgets', true );
-	if ( is_array( $widgets ) ) {
-		$uid = static function () {
-			return substr( str_replace( '.', '', uniqid( '', true ) ), -13 );
-		};
-		$search_widget = array(
-			'search_fields_section' => array(
-				'search-general_top::100::0ce5cfe5374bf' => array(
-					$uid()         => array(
-						'show_label'        => '1',
-						'custom_label'      => 'Search',
-						'input_type'        => 'input_text',
-						'placeholder'       => 'Search programme',
-						'only_loggedin'     => '0',
-						'only_loggedin_cap' => 'read',
-						'custom_class'      => '',
-						'id'                => 'search_all',
-						'label'             => 'Search Everything',
-						'form_id'           => '2',
-					),
-					$uid()         => array(
-						'show_label'   => '1',
-						'custom_label' => '',
-						'input_type'   => 'hidden',
-						'mode'         => 'all',
-						'custom_class' => '',
-						'id'           => 'search_mode',
-						'label'        => 'Search Mode',
-						'form_id'      => '2',
-					),
-					$uid()         => array(
-						'show_label'        => '1',
-						'custom_label'      => 'Time',
-						'input_type'        => 'select',
-						'sieve_choices'     => '1',
-						'only_loggedin'     => '0',
-						'only_loggedin_cap' => 'read',
-						'custom_class'      => '',
-						'id'                => '2::68',
-						'label'             => 'Confirmed slot',
-						'form_id'           => '2',
-					),
-					$uid()         => array(
-						'show_label'        => '1',
-						'custom_label'      => 'Host organisation',
-						'input_type'        => 'input_text',
-						'placeholder'       => 'Host organisation',
-						'only_loggedin'     => '0',
-						'only_loggedin_cap' => 'read',
-						'custom_class'      => '',
-						'id'                => '2::105',
-						'label'             => 'Host organisation(s)',
-						'form_id'           => '2',
-					),
-					$uid()         => array(
-						'show_label'        => '1',
-						'custom_label'      => 'Sector',
-						'input_type'        => 'select',
-						'sieve_choices'     => '1',
-						'only_loggedin'     => '0',
-						'only_loggedin_cap' => 'read',
-						'custom_class'      => '',
-						'id'                => '2::60',
-						'label'             => 'Sector',
-						'form_id'           => '2',
-					),
-					$uid()         => array(
-						'show_label'        => '1',
-						'custom_label'      => 'Type',
-						'input_type'        => 'select',
-						'sieve_choices'     => '1',
-						'only_loggedin'     => '0',
-						'only_loggedin_cap' => 'read',
-						'custom_class'      => '',
-						'id'                => '2::63',
-						'label'             => 'Event type',
-						'form_id'           => '2',
-					),
-					$uid()         => array(
-						'search_clear' => '1',
-						'custom_label' => 'Filter',
-						'input_type'   => 'submit',
-						'tag'          => 'input',
-						'custom_class' => '',
-						'show_label'   => '1',
-						'id'           => 'submit',
-						'label'        => 'Submit Button',
-						'form_id'      => '2',
-					),
-					'area_settings' => array(
-						'layout'         => 'column',
-						'search_columns' => '0',
-						'id'             => 'area_settings',
-						'label'          => 'Column',
-					),
-				),
-			),
-			'id'                    => 'search_bar',
-			'label'                 => 'Search Bar',
-			'form_id'               => '2',
-		);
-
-		$header_key = null;
-		foreach ( array_keys( $widgets ) as $zone ) {
-			if ( 0 === strpos( $zone, 'header_top::' ) ) {
-				$header_key = $zone;
-				break;
-			}
-		}
-		if ( ! $header_key ) {
-			$header_key = 'header_top::100::' . $uid();
-		}
-
-		$widgets = array(
-			$header_key => array(
-				$uid() => $search_widget,
-			),
-		);
-		update_post_meta( $new_id, '_gravityview_directory_widgets', $widgets );
-	}
-
-	update_post_meta( $new_id, '_gravityview_filters', law_calendar_public_view_filters() );
-
-	update_option( 'law_calendar_view_id', $new_id, false );
-	return $new_id;
+	return $hour . ':' . $m[2] . $suffix;
 }
 
 /**
- * Advanced Filter for the public Programme View: Confirmed only.
- */
-function law_calendar_public_view_filters() {
-	return array(
-		'_id'        => 'lawCalStat',
-		'version'    => 2,
-		'mode'       => 'or',
-		'conditions' => array(
-			array(
-				'_id'        => 'lawCalGrp1',
-				'mode'       => 'or',
-				'conditions' => array(
-					array(
-						'_id'      => 'lawCalConf',
-						'form_id'  => 2,
-						'key'      => '95',
-						'value'    => 'Confirmed',
-						'operator' => 'is',
-					),
-				),
-			),
-		),
-	);
-}
-
-function law_calendar_sync_public_view_filter() {
-	$view_id = law_calendar_view_id( 'public' );
-	if ( ! $view_id ) {
-		return false;
-	}
-	return (bool) update_post_meta( $view_id, '_gravityview_filters', law_calendar_public_view_filters() );
-}
-
-/**
- * Clone the public Programme View into a committee View: all statuses, plus a status search field.
+ * Display time for a mapped event, e.g. "8:30am - 10:00am" or "6:30pm onwards".
  *
- * @return int New or existing View ID.
+ * @param array $event Mapped calendar event.
  */
-function law_calendar_install_committee_view() {
-	$existing = law_calendar_view_id( 'committee' );
-	if ( $existing ) {
-		return $existing;
+function law_calendar_event_time_label( $event ) {
+	$start = (string) ( $event['start'] ?? '' );
+	if ( '' === $start ) {
+		return (string) ( $event['time_label'] ?? '' );
 	}
-
-	$source_id = law_calendar_view_id( 'public' );
-	if ( ! $source_id ) {
-		$source_id = 623;
+	$end = (string) ( $event['end'] ?? '' );
+	if ( '' !== $end ) {
+		return law_calendar_time_12h( $start ) . ' - ' . law_calendar_time_12h( $end );
 	}
-	$source = get_post( $source_id );
-	if ( ! $source || 'gravityview' !== $source->post_type ) {
-		return 0;
+	return law_calendar_time_12h( $start ) . ' onwards';
+}
+
+/**
+ * Section heading for a programme day, e.g. "Monday, 30 November 2026".
+ *
+ * @param string $date Y-m-d key from law_calendar_week_days().
+ */
+function law_calendar_day_heading( $date ) {
+	$ts = strtotime( (string) $date );
+	if ( ! $ts ) {
+		return (string) $date;
 	}
+	return date_i18n( 'l, j F Y', $ts );
+}
 
-	$new_id = wp_insert_post(
-		array(
-			'post_type'    => 'gravityview',
-			'post_status'  => 'publish',
-			'post_title'   => 'Programme (committee)',
-			'post_name'    => 'programme-committee',
-			'post_content' => $source->post_content,
-			'post_author'  => $source->post_author,
-		),
-		true
-	);
-	if ( is_wp_error( $new_id ) ) {
-		return 0;
+/**
+ * Day navigation label, e.g. "Monday, 30".
+ *
+ * @param string $date Y-m-d key from law_calendar_week_days().
+ */
+function law_calendar_day_nav_label( $date ) {
+	$ts = strtotime( (string) $date );
+	if ( ! $ts ) {
+		return (string) $date;
 	}
-	$new_id = (int) $new_id;
-
-	$meta_keys = array(
-		'_gravityview_form_id',
-		'_gravityview_directory_template',
-		'_gravityview_single_template',
-		'_gravityview_template_settings',
-		'_gravityview_directory_fields',
-		'_gravityview_directory_widgets',
-		'_gravityview_datatables_settings',
-		'_gravityview_row_settings',
-	);
-	foreach ( $meta_keys as $key ) {
-		$value = get_post_meta( $source_id, $key, true );
-		if ( '' !== $value && null !== $value && array() !== $value ) {
-			update_post_meta( $new_id, $key, $value );
-		}
-	}
-
-	$widgets = get_post_meta( $new_id, '_gravityview_directory_widgets', true );
-	if ( is_array( $widgets ) ) {
-		$status_field = array(
-			'show_label'        => '1',
-			'custom_label'      => 'Status',
-			'input_type'        => 'select',
-			'sieve_choices'     => '1',
-			'only_loggedin'     => '0',
-			'only_loggedin_cap' => 'read',
-			'custom_class'      => '',
-			'id'                => '2::95',
-			'label'             => 'Event status',
-			'form_id'           => '2',
-		);
-		$uid = substr( str_replace( '.', '', uniqid( '', true ) ), -13 );
-
-		foreach ( $widgets as $zone => $zone_widgets ) {
-			foreach ( $zone_widgets as $wid => $widget ) {
-				if ( ( $widget['id'] ?? '' ) !== 'search_bar' ) {
-					continue;
-				}
-				foreach ( $widget['search_fields_section'] ?? array() as $area_key => $area ) {
-					$rebuilt = array();
-					$inserted = false;
-					foreach ( $area as $fid => $field ) {
-						$rebuilt[ $fid ] = $field;
-						if ( ! $inserted && is_array( $field ) && 'search_mode' === ( $field['id'] ?? '' ) ) {
-							$rebuilt[ $uid ] = $status_field;
-							$inserted        = true;
-						}
-					}
-					if ( ! $inserted ) {
-						$rebuilt[ $uid ] = $status_field;
-					}
-					$widgets[ $zone ][ $wid ]['search_fields_section'][ $area_key ] = $rebuilt;
-				}
-			}
-		}
-		update_post_meta( $new_id, '_gravityview_directory_widgets', $widgets );
-	}
-
-	delete_post_meta( $new_id, '_gravityview_filters' );
-	update_option( 'law_calendar_committee_view_id', $new_id, false );
-	return $new_id;
+	return date_i18n( 'l, j', $ts );
 }
 
 function law_calendar_events_by_date() {
