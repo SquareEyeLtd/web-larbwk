@@ -975,3 +975,11 @@
 .law-cal .button {
 	width: auto;
 }
+
+/* Plain .button falls back to Foundation's blue hover; match the day links. */
+.law-cal .button:hover,
+.law-cal .button:focus {
+	background: #ef7d05;
+	border-color: #ef7d05;
+	color: #fff;
+}
