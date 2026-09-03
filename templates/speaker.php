@@ -21,11 +21,16 @@ get_header();
 	<div class="grid-container">
 		<div class="law-speaker">
 
-			<div class="grid-x grid-padding-x">
-				<div class="large-12 cell">
-					<a class="law-cal-detail__back" href="<?php echo esc_url( get_permalink( get_queried_object_id() ) ); ?>">Back to speakers</a>
-				</div>
-			</div>
+			<?php
+			get_template_part(
+				'parts/layout/back-link',
+				null,
+				array(
+					'url'   => get_permalink( get_queried_object_id() ),
+					'label' => __( 'Back to speakers', 'law' ),
+				)
+			);
+			?>
 
 			<div class="grid-x grid-padding-x grid-padding-y">
 

@@ -64,7 +64,16 @@ if ( $event ) {
 
 			<?php if ( $event ) : ?>
 
-				<a class="law-cal-detail__back" href="<?php echo esc_url( law_calendar_url() ); ?>">Back to programme</a>
+				<?php
+				get_template_part(
+					'parts/layout/back-link',
+					null,
+					array(
+						'url'   => law_calendar_url(),
+						'label' => __( 'Back to programme', 'law' ),
+					)
+				);
+				?>
 
 				<article class="law-cal-detail">
 					<div class="grid-x grid-padding-x">

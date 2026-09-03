@@ -569,16 +569,22 @@
 	padding-bottom: 80px;
 }
 
-.law-cal-detail__back {
+/* Back link (parts/layout/back-link.php), shared with the speaker profile.
+   The .law-cal selectors outweigh ".law-cal a { color: inherit }". */
+.law-back-link,
+.law-cal .law-back-link {
 	display: inline-block;
 	margin-bottom: 1rem;
-	font-size: 12px;
+	font-family: poppins, sans-serif;
+	font-size: 0.9rem;
 	font-weight: 600;
+	line-height: 1.2;
 	color: #ef7d05;
 	text-transform: uppercase;
+	text-decoration: none;
 }
 
-.law-cal-detail__back::before {
+.law-back-link::before {
 	content: "";
 	display: inline-block;
 	width: 0.45em;
@@ -590,8 +596,10 @@
 	vertical-align: 0.08em;
 }
 
-.law-cal-detail__back:hover,
-.law-cal-detail__back:focus {
+.law-back-link:hover,
+.law-back-link:focus,
+.law-cal .law-back-link:hover,
+.law-cal .law-back-link:focus {
 	color: #292459;
 }
 
