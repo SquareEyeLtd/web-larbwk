@@ -10,6 +10,13 @@
 
 Last verified against the database and codebase: 3 September 2026.
 
+> **Rebuild in progress (September 2026).** The custom replacement for this
+> whole stack is built on the `events-4.1-rebuild-custom` branch and has been
+> migrated and flipped live on the LOCAL copy (`law_events_source` = `cpt`).
+> This file still describes the Gravity Forms system, which remains accurate
+> for PRODUCTION until cutover. See EVENTS_4.1_REBUILD.md, especially its
+> section 10 implementation notes. This file gets rewritten at phase D.
+
 ---
 
 ## 1. What the module does
