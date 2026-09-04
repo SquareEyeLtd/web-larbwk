@@ -66,10 +66,10 @@ function law_prepopulate_orgid( $value ) {
 }
 
 
-/* Populate field 113 from ?ec= ________________________________________________________ */
+/* Populate field 116 from ?ec= ________________________________________________________ */
 
 /**
- * Field 113 (dynamic population parameter `ec`) takes the `ec` query string.
+ * Field 116 (dynamic population parameter `ec`) takes the `ec` query string.
  *
  * Sets the field default on render so the value is in the HTML (needed for
  * AJAX submits, which do not keep the original page query string). Also fills
@@ -97,7 +97,7 @@ function law_populate_ec_field( $form ) {
 	}
 
 	foreach ( $form['fields'] as $field ) {
-		if ( (int) $field->id !== 113 ) {
+		if ( (int) $field->id !== 116 ) {
 			continue;
 		}
 		$field->allowsPrepopulate = true;
@@ -131,6 +131,7 @@ const LAW_GF_RETIRED_PREFERRED_SLOTS = array(
 	'Tue 1st Dec: 08:30-10:00',
 	'Tue 1st Dec: 16:30-18:00',
 	'Tue 1st Dec: 18:30 onwards',
+	'Thu 3rd Dec: 10:30-12:00',
 	'Thu 3rd Dec: 18:30 onwards',
 );
 
