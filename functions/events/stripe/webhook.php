@@ -91,9 +91,7 @@ function law_stripe_webhook_dispatch( array $event ) {
 				// Recorded and alerted; the event is NOT auto-unpublished
 				// (a human decision, EVENTS_4.1_REBUILD.md §3.7).
 				law_event_set_payment_status( $event_id, 'refunded', 'stripe_webhook', 0 );
-				law_events_send( 'committee_payment_received', $event_id, array(
-					'placeholders' => array( 'fee' => 'REFUND recorded — please review' ),
-				) );
+				law_events_send( 'committee_refund', $event_id );
 			}
 			return true;
 	}

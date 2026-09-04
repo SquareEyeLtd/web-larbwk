@@ -188,7 +188,7 @@ function law_events_settings_page() {
 					<td><input name="rendering_template_id" id="law-template" type="text" class="regular-text code" value="<?php echo esc_attr( $s['rendering_template_id'] ); ?>" placeholder="inrtem_…"></td></tr>
 				<tr><th scope="row">Host edits to published events</th>
 					<td><label><input type="radio" name="host_edit_review" value="immediate" <?php checked( $s['host_edit_review'], 'immediate' ); ?>> Publish immediately</label><br>
-					<label><input type="radio" name="host_edit_review" value="review" <?php checked( $s['host_edit_review'], 'review' ); ?>> Route to LAW for review</label></td></tr>
+					<label><input type="radio" name="host_edit_review" value="review" disabled> Route to LAW for review <em>(arrives with phase 4.2; 4.1 publishes immediately and emails the committee)</em></label></td></tr>
 			</table>
 			<?php submit_button( 'Save settings' ); ?>
 		</form>

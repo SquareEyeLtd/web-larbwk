@@ -122,12 +122,36 @@ $law_can    = law_user_is_committee();
 							<?php endforeach; ?>
 						</select></p>
 
+					<div class="law-form-field">
+						<span class="law-form-label" style="font-weight:600">Event category</span>
+						<?php
+						$law_current_cats = law_events_post_term_names( $law_id, 'law_event_category' );
+						$law_cat_terms    = get_terms( array( 'taxonomy' => 'law_event_category', 'hide_empty' => false ) );
+						foreach ( is_wp_error( $law_cat_terms ) ? array() : $law_cat_terms as $law_term ) :
+							?>
+							<label style="display:block"><input type="checkbox" name="law_event_category[]" value="<?php echo esc_attr( $law_term->name ); ?>" <?php checked( in_array( $law_term->name, $law_current_cats, true ) ); ?>> <?php echo esc_html( $law_term->name ); ?></label>
+						<?php endforeach; ?>
+					</div>
+
+					<p class="law-form-field"><label for="law-dash-orgs">Linked organisations (sponsor highlighting)</label>
+						<select id="law-dash-orgs" name="law_organisation_ids[]" multiple size="5">
+							<?php
+							$law_linked_orgs = array_map( 'intval', law_event_meta( $law_id, '_law_organisation_ids' ) );
+							foreach ( get_posts( array( 'post_type' => 'organisation', 'post_status' => 'publish', 'posts_per_page' => 200, 'orderby' => 'title', 'order' => 'ASC' ) ) as $law_org ) :
+								?>
+								<option value="<?php echo esc_attr( (string) $law_org->ID ); ?>" <?php selected( in_array( $law_org->ID, $law_linked_orgs, true ) ); ?>><?php echo esc_html( $law_org->post_title ); ?></option>
+							<?php endforeach; ?>
+						</select></p>
+
 					<p class="law-form-field"><label><input type="checkbox" name="law_fee_override" value="1" <?php checked( (bool) law_event_meta( $law_id, '_law_fee_override' ) ); ?>> Override fee</label></p>
 					<p class="law-form-field"><label for="law-dash-amount">Override amount (£)</label>
 						<input type="number" id="law-dash-amount" name="law_fee_override_amount" step="0.01" min="0" value="<?php echo esc_attr( (string) law_event_meta( $law_id, '_law_fee_override_amount' ) ); ?>"></p>
 
 					<p class="law-form-field"><label for="law-dash-note">Comment / reason<br><small>(required for Send back and Reject; the host sees it)</small></label>
 						<textarea id="law-dash-note" name="law_note" rows="3"></textarea></p>
+
+					<p class="law-form-field"><label for="law-dash-private-note">Private note<br><small>(committee only, saved to the activity log)</small></label>
+						<textarea id="law-dash-private-note" name="law_private_note" rows="2"></textarea></p>
 
 					<p class="law-dashboard__buttons">
 						<button type="submit" name="law_action" value="" class="button">Save changes</button>

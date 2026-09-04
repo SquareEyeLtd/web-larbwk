@@ -81,6 +81,17 @@ add_action( 'restrict_manage_posts', function ( $post_type ) {
 		);
 	}
 	echo '</select>';
+
+	wp_dropdown_categories(
+		array(
+			'taxonomy'        => 'law_year',
+			'name'            => 'law_year',
+			'value_field'     => 'slug',
+			'selected'        => sanitize_key( $_GET['law_year'] ?? '' ),
+			'show_option_all' => 'All programme years',
+			'hide_empty'      => false,
+		)
+	);
 } );
 
 add_action( 'pre_get_posts', function ( $query ) {
@@ -91,6 +102,10 @@ add_action( 'pre_get_posts', function ( $query ) {
 	if ( $tier ) {
 		$query->set( 'meta_key', '_law_fee_tier' );
 		$query->set( 'meta_value', $tier );
+	}
+	$year = sanitize_key( $_GET['law_year'] ?? '' );
+	if ( $year && '0' !== $year ) {
+		$query->set( 'tax_query', array( array( 'taxonomy' => 'law_year', 'field' => 'slug', 'terms' => $year ) ) );
 	}
 } );
 

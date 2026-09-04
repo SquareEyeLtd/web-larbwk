@@ -10,15 +10,30 @@ abstract class LAW_Test_Case extends TestCase {
 
 	protected array $posts = array();
 	protected array $users = array();
+	protected $settings_before = null;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$GLOBALS['law_test_stripe_queue'] = array();
 		$GLOBALS['law_test_stripe_calls'] = array();
 		wp_set_current_user( 0 );
+		// The invoice flow refuses VAT-liable invoices without a tax rate ID,
+		// so tests run with explicit Stripe config (restored in tearDown).
+		$this->settings_before = get_option( LAW_EVENTS_SETTINGS_OPTION, null );
+		law_events_update_settings(
+			array(
+				'tax_rate_id'           => 'txr_test_unit',
+				'rendering_template_id' => 'inrtem_test_unit',
+			)
+		);
 	}
 
 	protected function tearDown(): void {
+		if ( null === $this->settings_before ) {
+			delete_option( LAW_EVENTS_SETTINGS_OPTION );
+		} else {
+			update_option( LAW_EVENTS_SETTINGS_OPTION, $this->settings_before, false );
+		}
 		foreach ( $this->posts as $post_id ) {
 			$comments = get_comments( array( 'post_id' => $post_id ) );
 			foreach ( $comments as $comment ) {

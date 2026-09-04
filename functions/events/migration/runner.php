@@ -304,6 +304,15 @@ function law_migration_preflight() {
 		// The GP Unique ID sequence for the reference counter seed.
 		$sequence = $wpdb->get_var( $wpdb->prepare( "SELECT current FROM {$wpdb->prefix}gpui_sequence WHERE form_id = 2 AND field_id = 70", ) );
 		$check( 'Reference sequence readable', null !== $sequence, 'wp_gpui_sequence current = ' . var_export( $sequence, true ) );
+
+		// Trashed entries: reported so nothing disappears unnoticed (§2.1).
+		$trashed = (int) GFAPI::count_entries( 2, array( 'status' => 'trash' ) );
+		$check( 'Trashed form 2 entries', true, $trashed . ' trashed entries stay in the GF archive and are NOT migrated (settled decision)', true );
+
+		// Stripe invoice config: without a tax rate ID a VAT-liable approval
+		// would raise a net-only invoice.
+		$check( 'Stripe tax rate ID configured', '' !== (string) law_events_setting( 'tax_rate_id', '' ), (string) law_events_setting( 'tax_rate_id', '(empty — set it in LAW → Events settings before approving paid events)' ), true );
+		$check( 'Stripe rendering template configured', '' !== (string) law_events_setting( 'rendering_template_id', '' ), (string) law_events_setting( 'rendering_template_id', '(empty — invoices will use Stripe\'s default look)' ), true );
 	}
 
 	$pass = ! in_array( 'fail', wp_list_pluck( $checks, 'status' ), true );
@@ -628,13 +637,13 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 		law_event_update_meta( $post_id, '_law_terms_consent', array( 'accepted' => 1, 'at' => (string) rgar( $entry, 'date_created' ) ) );
 	}
 
-	// Assignee: the field 90 display value is a name ("Marie").
-	$assignee_raw = trim( (string) rgar( $entry, '90' ) );
-	if ( '' !== $assignee_raw ) {
-		$assignee = is_numeric( $assignee_raw ) ? get_user_by( 'id', (int) $assignee_raw ) : ( get_user_by( 'login', strtolower( $assignee_raw ) ) ?: law_migration_user_by_display_name( $assignee_raw ) );
-		if ( $assignee ) {
-			law_event_update_meta( $post_id, '_law_assignee', $assignee->ID );
-		}
+	// Assignee: field 90 (Committee assignee) stores EMAIL ADDRESSES on the
+	// live data (73 of 75 entries), with names/IDs as older variants.
+	$assignee = law_migration_resolve_assignee( rgar( $entry, '90' ) );
+	if ( $assignee ) {
+		law_event_update_meta( $post_id, '_law_assignee', $assignee->ID );
+	} elseif ( '' !== trim( (string) rgar( $entry, '90' ) ) ) {
+		law_migration_log( 'events', 'warning', 'form 2 entry ' . $entry_id, sprintf( 'Assignee value "%s" matched no user.', rgar( $entry, '90' ) ) );
 	}
 
 	// Organisation links (field 109: multiselect of organisation post IDs).
@@ -711,6 +720,33 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 		}
 	}
 	law_event_update_meta( $post_id, '_law_speakers', $relationships );
+}
+
+/**
+ * Resolve a field 90 (Committee assignee) value to a user: email first (the
+ * live data), then numeric ID, login, display name.
+ *
+ * @param mixed $raw Stored field value.
+ * @return WP_User|null
+ */
+function law_migration_resolve_assignee( $raw ) {
+	$raw = trim( (string) $raw );
+	if ( '' === $raw ) {
+		return null;
+	}
+	if ( is_email( $raw ) ) {
+		$user = get_user_by( 'email', $raw );
+		if ( $user ) {
+			return $user;
+		}
+	}
+	if ( is_numeric( $raw ) ) {
+		$user = get_user_by( 'id', (int) $raw );
+		if ( $user ) {
+			return $user;
+		}
+	}
+	return get_user_by( 'login', strtolower( $raw ) ) ?: law_migration_user_by_display_name( $raw );
 }
 
 function law_migration_user_by_display_name( $name ) {
@@ -1080,6 +1116,7 @@ function law_migration_notification_slug_map() {
 		'Email to user (sponsor) > event confirmed'         => 'user_confirmed_free',
 		'Email to user (non-sponsor) > event confirmed'     => 'user_confirmed_paid',
 		'Email to committee > event updated'                => 'committee_event_updated',
+		'Email to Square Eye > event updated'               => 'squareeye_event_updated',
 	);
 }
 
@@ -1156,11 +1193,15 @@ function law_migration_run_notifications( $dry ) {
 	// Inline Gravity Flow step notifications (steps 5, 8, 14).
 	global $wpdb;
 	$inline_map = array(
-		5  => array( 'key' => 'rejection_notification', 'slug' => 'user_rejected', 'enabled_key' => 'rejection_notification_enabled' ),
-		8  => array( 'key' => 'assignee_notification', 'slug' => 'user_sent_back', 'enabled_key' => 'assignee_notification_enabled' ),
-		14 => array( 'key' => 'workflow_notification', 'slug' => 'committee_payment_received', 'enabled_key' => 'workflow_notification_enabled' ),
+		'5'  => array( 'key' => 'rejection_notification', 'slug' => 'user_rejected', 'enabled_key' => 'rejection_notification_enabled' ),
+		'8'  => array( 'key' => 'assignee_notification', 'slug' => 'user_sent_back', 'enabled_key' => 'assignee_notification_enabled' ),
+		// Step 8 (Clarification needed)'s COMPLETION notification: the email
+		// back to the committee when the host replies.
+		'8c' => array( 'step' => 8, 'key' => 'complete_notification', 'slug' => 'committee_resubmitted', 'enabled_key' => 'complete_notification_enabled' ),
+		'14' => array( 'key' => 'workflow_notification', 'slug' => 'committee_payment_received', 'enabled_key' => 'workflow_notification_enabled' ),
 	);
-	foreach ( $inline_map as $step_id => $config ) {
+	foreach ( $inline_map as $step_key => $config ) {
+		$step_id = (int) ( $config['step'] ?? $step_key );
 		$meta = json_decode( (string) $wpdb->get_var( $wpdb->prepare( "SELECT meta FROM {$wpdb->prefix}gf_addon_feed WHERE id = %d", $step_id ) ), true );
 		if ( ! is_array( $meta ) ) {
 			continue;
@@ -1251,15 +1292,69 @@ function law_migration_run_step( $step, $dry ) {
 
 /** Post-run count comparison (EVENTS_4.1_REBUILD.md §5.2). */
 function law_migration_verification() {
-	$map    = law_migration_map();
-	$counts = array(
+	global $wpdb;
+	$map = law_migration_map();
+
+	// Contacts: form 4 children on active parents vs migrated contact rows.
+	$contact_rows = 0;
+	$event_ids    = get_posts( array( 'post_type' => LAW_EVENT_CPT, 'post_status' => law_event_all_status_keys(), 'fields' => 'ids', 'posts_per_page' => 1000 ) );
+	foreach ( $event_ids as $event_id ) {
+		$contact_rows += count( law_event_meta( $event_id, '_law_contacts' ) );
+	}
+
+	$orphans = (int) $wpdb->get_var(
+		"SELECT COUNT(*) FROM {$wpdb->prefix}gf_entry e
+		 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id AND em.meta_key = 'gpnf_entry_parent'
+		 LEFT JOIN {$wpdb->prefix}gf_entry p ON p.id = em.meta_value
+		 WHERE e.form_id IN (4,5,6,8,9) AND e.status = 'active' AND (p.id IS NULL OR p.status != 'active')"
+	);
+
+	return array(
 		'form 2 active entries'  => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 2, array( 'status' => 'active' ) ) : 0,
-		'law_event posts'        => count( get_posts( array( 'post_type' => LAW_EVENT_CPT, 'post_status' => law_event_all_status_keys(), 'fields' => 'ids', 'posts_per_page' => 1000 ) ) ),
+		'law_event posts'        => count( $event_ids ),
 		'mapped events'          => count( $map['events'] ),
 		'law_speaker posts'      => count( get_posts( array( 'post_type' => LAW_SPEAKER_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => 2000 ) ) ),
 		'mapped speaker entries (more than posts = dedupe merges)' => count( $map['speakers'] ),
 		'law_session posts'      => count( get_posts( array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => 1000 ) ) ),
 		'migrated comments'      => (int) get_comments( array( 'type' => LAW_EVENT_COMMENT_TYPE, 'count' => true, 'meta_key' => '_law_gf_entry_id' ) ),
+		'form 4 contact children (active parents excluded from count when orphaned)' => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 4, array( 'status' => 'active' ) ) : 0,
+		'migrated contact rows'  => $contact_rows,
+		'orphaned children (skipped by design)' => $orphans,
+		'trashed form 2 entries (kept in the GF archive)' => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 2, array( 'status' => 'trash' ) ) : 0,
 	);
-	return $counts;
+}
+
+/**
+ * Spot-check pairs for the verification panel: old URL → new URL, side by
+ * side (§5.2).
+ *
+ * @return array<int,array{old:string,new:string,label:string}>
+ */
+function law_migration_spot_checks() {
+	$map    = law_migration_map();
+	$checks = array();
+	$programme = function_exists( 'law_events_programme_page_id' ) && law_events_programme_page_id()
+		? get_permalink( law_events_programme_page_id() )
+		: home_url( '/programme/' );
+
+	$events = array_slice( $map['events'], 0, 3, true );
+	foreach ( $events as $entry_id => $post_id ) {
+		if ( 'publish' !== get_post_status( $post_id ) ) {
+			continue;
+		}
+		$checks[] = array(
+			'label' => get_the_title( $post_id ),
+			'old'   => add_query_arg( 'event', $entry_id, $programme ),
+			'new'   => get_permalink( $post_id ),
+		);
+	}
+	$speakers = array_slice( $map['speakers'], 0, 2, true );
+	foreach ( $speakers as $entry_id => $post_id ) {
+		$checks[] = array(
+			'label' => get_the_title( $post_id ),
+			'old'   => home_url( '/speakers/' . $entry_id . '/' ),
+			'new'   => get_permalink( $post_id ),
+		);
+	}
+	return $checks;
 }

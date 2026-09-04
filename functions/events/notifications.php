@@ -141,6 +141,22 @@ function law_events_email_registry() {
 			'subject' => 'New host comment: {event_title} ({law_reference})',
 			'body'    => "The host has commented on {event_title} ({law_reference}):\n\n{latest_comment}\n\nView the thread: {committee_link}",
 		),
+		'committee_refund' => array(
+			'name'    => 'Email to committee > payment refunded',
+			'trigger' => 'Stripe refund',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'Payment refunded: {event_title} ({law_reference})',
+			'body'    => "Stripe has recorded a REFUND on {event_title} ({law_reference}).\n\nThe event stays published; unpublishing is a committee decision. Review the payment in Stripe and the event here: {committee_link}",
+		),
+		'squareeye_event_updated' => array(
+			'name'    => 'Email to Square Eye > event updated',
+			'trigger' => 'host edit of a published event',
+			'to'      => array( 'trevor@squareeye.com' ),
+			'active'  => false,
+			'subject' => 'LAW event updated: {event_title} ({law_reference})',
+			'body'    => "The host has updated the published event {event_title} ({law_reference}).",
+		),
 		'admin_stripe_error' => array(
 			'name'    => 'Email to admins > Stripe invoice failed',
 			'trigger' => 'invoice creation failure',
@@ -186,6 +202,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{slot}'             => (string) law_event_meta( $event_id, '_law_slot_label' ),
 		'{rejection_reason}' => (string) law_event_meta( $event_id, '_law_rejection_reason' ),
 		'{event_link}'       => $post && 'publish' === $post->post_status ? get_permalink( $post ) : '',
+		'{edit_link}'        => admin_url( 'post.php?post=' . (int) $event_id . '&action=edit' ),
 		'{dashboard_link}'   => $dashboard,
 		'{comments_link}'    => $dashboard . '?law_thread=' . (int) $event_id,
 		'{committee_link}'   => $committee,
@@ -275,7 +292,7 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 
 	law_event_log(
 		$event_id,
-		sprintf( 'Email sent: %s → %s.', $definition['name'], implode( ', ', $recipients ) ),
+		sprintf( '%s: %s → %s.', $sent ? 'Email sent' : 'Email send FAILED', $definition['name'], implode( ', ', $recipients ) ),
 		array(
 			'action'  => 'email',
 			'slug'    => $slug,

@@ -313,7 +313,7 @@ assumed behaviour:
   their behaviours are absorbed into the new module.
 - `mu-plugins/law-gf-country-iso.php`: logic moves into the invoice contact
   handling (country name to ISO stays, as a plain helper).
-- `mu-plugins/law-secondary-host-users.php`: already dead code, deleted.
+- `mu-plugins/law-secondary-host-users.php`: already dead code; removed at phase D with the rest of the decommission.
 - `mu-plugins/law-user-profile-update.php`: replaced by the custom profile form
   writing user meta directly.
 - GravityView views 386 (Events (hosts)), 419 (Events (committee - all)),
@@ -529,9 +529,11 @@ been all along.
 The single biggest rebuild item. A custom front-end form at
 `/account/events/submit/` replacing the form 2 (Event > submit an event) embed:
 
-- Server-rendered PHP form, one template part per section (Submitter details,
-  Event details, Speakers, Venue, Owners and contacts, Fees, Session agenda,
-  Additional information), POSTing to `admin-post.php` handlers with nonces.
+- Server-rendered PHP form, one section per fieldset (Event details,
+  Speakers, Venue, Owners and contacts, Fees, Session agenda, Finish),
+  POSTing to `admin-post.php` handlers with nonces. There is no Submitter
+  details section (`post_author` is the submitter, §3.1) and no Additional
+  information comments field (the thread replaces it).
   Progressive enhancement, no framework: this matches how the rest of the theme
   is built (the calendar filters set the pattern).
 - Repeaters (speakers, sessions, co-owners, contacts) are a small vanilla-JS
@@ -1058,9 +1060,10 @@ The migrator never relies on ID ordering, only on `gpnf_entry_parent`.)
 7. **Counters and settings seed.** The LAW reference generator is seeded
    from GP Unique ID's `wp_gpui_sequence` row (form 2, field 70, currently
    207) so numbering continues without collision; the settings screen is
-   seeded with the slot choices from field 68 (Confirmed slot), the programme
-   week dates, and the committee recipient list lifted from the current
-   notification configs.
+   seeded with the slot choices from field 68 (Confirmed slot) and the
+   committee recipient list lifted from the current notification configs (the
+   programme week dates ship as settings defaults with the correct 2026
+   values).
 8. **Redirects.** Persist the entry-ID → post map (an option or small table)
    powering 301s for `?event=<entry ID>` and `/speakers/<entry ID>/`.
 9. **Notifications.** Migrate every form 2 (Event > submit an event)
@@ -1170,9 +1173,11 @@ active entries against the migration assumptions. Each has defined handling:
   use an en dash in the time range ("08:30–10:00"), field 77 (Preferred
   date & time slots) uses a hyphen ("08:30-10:00"). The slot parser accepts
   both.
-- **Field 90 (Committee assignee)** holds the display value "Marie"; the
-  migrator maps it to the real user (ID 3, `marie`, verified) and stores the
-  user ID in `_law_assignee`.
+- **Field 90 (Committee assignee)** holds committee members' EMAIL ADDRESSES
+  on 73 of the 75 active entries (the field's choice list shows "Marie", but
+  the stored values are emails). The migrator resolves email first, then
+  numeric ID, login and display name, and stores the user ID in
+  `_law_assignee`; unmatched values are warned in the report.
 - **Inline Gravity Flow notification texts confirmed extractable** from feed
   meta for migration step 9: step 5 (Committee review) carries
   `rejection_notification_*` (enabled) and assignee message keys, step 8
@@ -1320,8 +1325,9 @@ its reason:
    `parts/events/{thread,people-repeater}.php`.
 4. **Tests are integration-style PHPUnit** (theme dev dependency, `vendor/`
    gitignored), bootstrapping the local WordPress with Stripe fully mocked
-   through a `law_stripe_request_mock` filter and mail blocked. 27 tests /
-   101 assertions cover the §3.11 list. Run: `php -d memory_limit=512M
+   through a `law_stripe_request_mock` filter and mail blocked. The suite
+   covers the §3.11 list plus the review-round additions (retry/resume,
+   amount reconciliation, refund-by-charge). Run: `php -d memory_limit=512M
    vendor/bin/phpunit` from the theme directory.
 5. **One additive behaviour change found by the parity diff**: a speaker who
    appears only in a *session* of a Confirmed event now shows in the speakers
@@ -1347,3 +1353,44 @@ its reason:
    original active flags (1 warning: "Email to Square Eye > event updated"
    has no module slot, review on LAW → Emails), reference counter seeded at
    207, slots and committee recipients seeded, source flipped to CPT.
+
+### 10.1 Verification round 1 outcomes (4 September 2026)
+
+An independent plan-vs-implementation audit ran after the build; every finding
+was fixed or dispositioned:
+
+- **Assignees**: field 90 (Committee assignee) stores emails, not names; the
+  migrator resolves email-first and all 73 assigned events were backfilled
+  (zero unmatched).
+- **Stripe config guards**: an approval with VAT due now refuses loudly when
+  no tax rate ID is configured (never a silent net-only invoice); a missing
+  rendering template warns. Both IDs are preflight checks and are seeded
+  locally with the verified test-mode values.
+- **The real-Stripe E2E leg cannot run on this machine**: the local
+  environment's `mu-plugins/block-outbound.php` deliberately blocks
+  api.stripe.com, and Denis explicitly sanctioned manual state switching in
+  its place locally. The CLI-forwarded `invoice.paid` smoke (§3.7) is a
+  staging/cutover gate, not a local one. The webhook logic is covered by
+  signed synthetic events in the suite.
+- **Front-end edit locking** now uses `wp_check_post_lock`/`wp_set_post_lock`:
+  a second editor sees a banner and their save is refused while the lock
+  holds.
+- **The post-approval lock list** matches 4.2 §4.2 exactly: tickets are
+  EDITABLE (allocations within the approved band); sectors, host
+  organisations, venue capacity and venue-needed lock alongside title, type,
+  slots and fees.
+- The committee detail view gained the manual private note, event category
+  and linked-organisations controls; `?ec=` prepopulates the category on
+  first submission; step 8 (Clarification needed)'s completion notification
+  and "Email to Square Eye > event updated" now migrate (13 imports);
+  refunds send a dedicated committee email; trashed entries and the Stripe
+  config are reported by preflight; the verification panel gained contact
+  counts, the orphan count and old-vs-new spot-check links; comment replies
+  carry a honeypot; the events list has a programme-year filter; Send test
+  previews without saving.
+- Migration steps run whole-step per AJAX request rather than §5.2's
+  10-parent batches: a deliberate simplification at this dataset size (75
+  events), noted here so nobody hunts for the batching.
+- Local test residue is intentional: event post 1224 ("E2E Curl Host Event")
+  and its speaker exercise the full lifecycle, and migrated entry 1167 ("Best
+  Event Evar") was advanced Proposed → Confirmed by the browser tests.

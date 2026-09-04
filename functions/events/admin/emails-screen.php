@@ -127,17 +127,27 @@ function law_events_emails_handle_post( $slug ) {
 			'is_email'
 		);
 	}
+
+	// Send test renders the values AS TYPED without persisting anything, so
+	// admins can preview safely before deciding to save.
+	if ( isset( $_POST['send_test'] ) ) {
+		$sample       = get_posts( array( 'post_type' => LAW_EVENT_CPT, 'post_status' => law_event_all_status_keys(), 'posts_per_page' => 1, 'fields' => 'ids' ) );
+		$sample_id    = $sample ? (int) $sample[0] : 0;
+		$user         = wp_get_current_user();
+		$placeholders = law_events_email_placeholders( $sample_id );
+		$sent         = wp_mail(
+			array( $user->user_email ),
+			'[TEST] ' . strtr( $override['subject'], $placeholders ),
+			make_clickable( wpautop( esc_html( strtr( $override['body'], $placeholders ) ) ) ),
+			array( 'Content-Type: text/html; charset=UTF-8' )
+		);
+		echo $sent
+			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $user->user_email ) . ( $sample_id ? ' using event "' . esc_html( get_the_title( $sample_id ) ) . '"' : ' (no events exist yet, placeholders were blank)' ) . '. Nothing was saved: use Save email to keep these values.</p></div>'
+			: '<div class="notice notice-error"><p>Send failed.</p></div>';
+		return;
+	}
+
 	$overrides[ $slug ] = $override;
 	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
-
-	if ( isset( $_POST['send_test'] ) ) {
-		$sample = get_posts( array( 'post_type' => LAW_EVENT_CPT, 'post_status' => law_event_all_status_keys(), 'posts_per_page' => 1, 'fields' => 'ids' ) );
-		$user   = wp_get_current_user();
-		$sent   = law_events_send( $slug, $sample ? (int) $sample[0] : 0, array( 'to' => array( $user->user_email ) ) );
-		echo $sent
-			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $user->user_email ) . ( $sample ? ' using event "' . esc_html( get_the_title( $sample[0] ) ) . '".' : ' (no events exist yet, placeholders were blank).' ) . '</p></div>'
-			: '<div class="notice notice-error"><p>Send failed (is the notification active?).</p></div>';
-	} else {
-		echo '<div class="notice notice-success"><p>Email saved.</p></div>';
-	}
+	echo '<div class="notice notice-success"><p>Email saved.</p></div>';
 }

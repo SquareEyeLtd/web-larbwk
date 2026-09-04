@@ -28,15 +28,17 @@ function law_events_form_event_id() {
 }
 
 /**
- * Fields locked for hosts once the event is approved/published
- * (the 4.2 §4.2 lock list: title, slots and fees freeze; description,
- * speakers, venue and agenda stay editable).
+ * Fields locked for hosts once the event is approved/published, per the
+ * 4.2 §4.2 rules: title, date/slots, fees, the approved capacity band and
+ * programme-grid facts (type, sectors, host organisations) freeze;
+ * description, speakers, venue, agenda, TICKET ALLOCATIONS (within the
+ * approved band), contacts and co-owners stay editable.
  */
 function law_events_locked_fields( $post ) {
 	if ( ! $post || in_array( $post->post_status, array( 'law-draft', 'law-proposed', 'law-sent-back' ), true ) ) {
 		return array();
 	}
-	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'tickets' );
+	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed' );
 }
 
 /**
@@ -121,20 +123,39 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	if ( ! in_array( 'type', $locked, true ) ) {
 		law_events_set_terms_by_name( $event_id, 'law_event_type', array( (string) ( $input['event_type'] ?? '' ) ) );
 	}
-	law_events_set_terms_by_name( $event_id, 'law_sector', (array) ( $input['sectors'] ?? array() ) );
+	if ( ! in_array( 'sectors', $locked, true ) ) {
+		law_events_set_terms_by_name( $event_id, 'law_sector', (array) ( $input['sectors'] ?? array() ) );
+	}
 	wp_set_object_terms( $event_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
+
+	// ?ec= category prepopulation (the old dead field 113/116 mechanism,
+	// rebuilt): a matching law_event_category term carried in the hidden
+	// field is applied on first save only. Committee-managed thereafter.
+	$ec = sanitize_text_field( (string) ( $input['law_ec'] ?? '' ) );
+	if ( $is_new && '' !== $ec ) {
+		$term = get_term_by( 'name', $ec, 'law_event_category' ) ?: get_term_by( 'slug', $ec, 'law_event_category' );
+		if ( $term ) {
+			wp_set_object_terms( $event_id, array( (int) $term->term_id ), 'law_event_category', false );
+		}
+	}
 
 	// Plain meta.
 	$writes = array(
-		'_law_venue'               => $input['venue'] ?? '',
-		'_law_venue_needed'        => $input['venue_needed'] ?? '',
-		'_law_venue_capacity'      => $input['venue_capacity'] ?? '',
-		'_law_host_organisations'  => $input['host_organisations'] ?? '',
-		'_law_sector_jurisdiction' => $input['sector_jurisdiction'] ?? '',
-		'_law_sector_other'        => $input['sector_other'] ?? '',
+		'_law_venue'              => $input['venue'] ?? '',
+		'_law_tickets_available'  => $input['tickets_available'] ?? '',
 	);
-	if ( ! in_array( 'tickets', $locked, true ) ) {
-		$writes['_law_tickets_available'] = $input['tickets_available'] ?? '';
+	if ( ! in_array( 'venue_needed', $locked, true ) ) {
+		$writes['_law_venue_needed'] = $input['venue_needed'] ?? '';
+	}
+	if ( ! in_array( 'venue_capacity', $locked, true ) ) {
+		$writes['_law_venue_capacity'] = $input['venue_capacity'] ?? '';
+	}
+	if ( ! in_array( 'host_organisations', $locked, true ) ) {
+		$writes['_law_host_organisations'] = $input['host_organisations'] ?? '';
+	}
+	if ( ! in_array( 'sectors', $locked, true ) ) {
+		$writes['_law_sector_jurisdiction'] = $input['sector_jurisdiction'] ?? '';
+		$writes['_law_sector_other']        = $input['sector_other'] ?? '';
 	}
 	if ( ! in_array( 'preferred_slots', $locked, true ) ) {
 		$writes['_law_preferred_slots'] = (array) ( $input['preferred_slots'] ?? array() );
@@ -186,6 +207,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 			array( 'user_id' => $user_id )
 		);
 		law_events_send( 'committee_event_updated', $event_id );
+		law_events_send( 'squareeye_event_updated', $event_id );
 		// Newly added co-owners on an approved event get accounts straight away.
 		law_event_ensure_co_owner_users( $event_id, $user_id );
 	}
@@ -399,6 +421,21 @@ function law_events_form_handler() {
 		if ( ! $post || LAW_EVENT_CPT !== $post->post_type || ! law_user_can_manage_event( $user_id, $event_id ) ) {
 			wp_die( 'Sorry, you are not allowed to edit this event.' );
 		}
+		// Edit locking (replacing GravityView entry locking): refuse the save
+		// when someone else holds the lock, then take it.
+		require_once ABSPATH . 'wp-admin/includes/post.php';
+		$locked_by = wp_check_post_lock( $event_id );
+		if ( $locked_by ) {
+			$editor = get_user_by( 'id', (int) $locked_by );
+			set_transient(
+				'law_form_state_' . $user_id,
+				array( 'errors' => array( 'locked' => array( sprintf( 'This event is currently being edited by %s. Your changes were not saved; try again shortly.', $editor ? $editor->display_name : 'another user' ) ) ), 'input' => array() ),
+				10 * MINUTE_IN_SECONDS
+			);
+			wp_safe_redirect( add_query_arg( array( 'law_event' => $event_id, 'law_form_error' => 1 ), law_account_events_submit_url() ) );
+			exit;
+		}
+		wp_set_post_lock( $event_id );
 	}
 
 	$input  = wp_unslash( $_POST );

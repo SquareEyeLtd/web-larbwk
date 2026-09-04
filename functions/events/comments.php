@@ -102,6 +102,9 @@ function law_event_handle_comment_reply() {
 	if ( ! law_user_can_manage_event( $user_id, $event_id ) ) {
 		wp_die( 'Sorry, you are not allowed to comment on this event.' );
 	}
+	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
+		law_events_redirect_back( array( 'law_notice' => 'comment-added' ) ); // Honeypot: pretend success.
+	}
 	if ( '' === $text ) {
 		law_events_redirect_back( array( 'law_notice' => 'comment-empty' ) );
 	}

@@ -133,10 +133,23 @@ function law_migration_admin_page() {
 
 		<h2>Verification panel</h2>
 		<?php $verification = law_migration_verification(); ?>
-		<table class="widefat striped" style="max-width:520px">
+		<table class="widefat striped" style="max-width:640px">
 			<tbody>
 			<?php foreach ( $verification as $label => $count ) : ?>
 				<tr><td><?php echo esc_html( $label ); ?></td><td><strong><?php echo esc_html( (string) $count ); ?></strong></td></tr>
+			<?php endforeach; ?>
+			</tbody>
+		</table>
+
+		<h3>Spot checks: old URL → new URL</h3>
+		<table class="widefat striped" style="max-width:900px">
+			<tbody>
+			<?php foreach ( law_migration_spot_checks() as $check ) : ?>
+				<tr>
+					<td><?php echo esc_html( $check['label'] ); ?></td>
+					<td><a href="<?php echo esc_url( $check['old'] ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $check['old'] ); ?></a></td>
+					<td>→ <a href="<?php echo esc_url( $check['new'] ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $check['new'] ); ?></a></td>
+				</tr>
 			<?php endforeach; ?>
 			</tbody>
 		</table>

@@ -77,15 +77,35 @@ $law_sections = array(
 				<?php if ( 'draft-saved' === $law_notice ) : ?>
 					<div class="law-form-notice" role="status">Draft saved. Carry on below, or come back later from My events.</div>
 				<?php endif; ?>
-				<?php if ( $law_errors ) : ?>
+				<?php if ( isset( $law_errors['locked'][0] ) ) : ?>
+					<div class="law-form-notice is-error" role="alert"><?php echo esc_html( $law_errors['locked'][0] ); ?></div>
+				<?php elseif ( $law_errors ) : ?>
 					<div class="law-form-notice is-error" role="alert">Please fix the highlighted fields below.</div>
 				<?php endif; ?>
+				<?php
+				// Edit locking: warn when someone else is in this event, and
+				// take the lock while this form is open.
+				if ( $law_post ) {
+					require_once ABSPATH . 'wp-admin/includes/post.php';
+					$law_locked_by = wp_check_post_lock( $law_post->ID );
+					if ( $law_locked_by ) {
+						$law_lock_user = get_user_by( 'id', (int) $law_locked_by );
+						printf(
+							'<div class="law-form-notice is-error" role="alert">%s is editing this event right now. You can look, but saving will be refused until they finish.</div>',
+							esc_html( $law_lock_user ? $law_lock_user->display_name : 'Another user' )
+						);
+					} else {
+						wp_set_post_lock( $law_post->ID );
+					}
+				}
+				?>
 
 				<form class="law-event-form" method="post" enctype="multipart/form-data"
 					action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 					<input type="hidden" name="action" value="law_event_form">
 					<input type="hidden" name="law_event_id" value="<?php echo esc_attr( (string) $law_event_id ); ?>">
 					<?php wp_nonce_field( 'law_event_form' ); ?>
+					<input type="hidden" name="law_ec" value="<?php echo esc_attr( sanitize_text_field( wp_unslash( $_GET['ec'] ?? '' ) ) ); ?>">
 					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
 
 					<fieldset id="law-section-details">
@@ -109,9 +129,10 @@ $law_sections = array(
 							</select>
 						</p>
 
-						<p class="law-form-field">
+						<p class="law-form-field <?php echo in_array( 'host_organisations', $law_locked, true ) ? 'is-locked' : ''; ?>">
 							<label for="law-hosts">Host organisation(s)</label>
-							<input type="text" id="law-hosts" name="host_organisations" value="<?php echo esc_attr( $law_value( 'host_organisations' ) ); ?>">
+							<input type="text" id="law-hosts" name="host_organisations" value="<?php echo esc_attr( $law_value( 'host_organisations' ) ); ?>" <?php echo in_array( 'host_organisations', $law_locked, true ) ? 'readonly' : ''; ?>>
+							<?php if ( in_array( 'host_organisations', $law_locked, true ) ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
 						</p>
 
 						<div class="law-form-field <?php echo in_array( 'preferred_slots', $law_locked, true ) ? 'is-locked' : ''; ?>">
@@ -136,15 +157,17 @@ $law_sections = array(
 							<?php $law_error_message( 'description' ); ?>
 						</p>
 
-						<div class="law-form-field">
+						<div class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>">
 							<span class="law-form-label">Sector</span>
+							<?php if ( in_array( 'sectors', $law_locked, true ) ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
 							<div class="law-choices">
 								<?php
 								$law_chosen_sectors = (array) $law_value( 'sectors', array() );
 								foreach ( law_events_cpt_field_choices( '60' ) as $law_choice ) :
 									?>
 									<label><input type="checkbox" name="sectors[]" value="<?php echo esc_attr( $law_choice ); ?>"
-										<?php checked( in_array( $law_choice, $law_chosen_sectors, true ) ); ?>>
+										<?php checked( in_array( $law_choice, $law_chosen_sectors, true ) ); ?>
+										<?php disabled( in_array( 'sectors', $law_locked, true ) ); ?>>
 										<?php echo esc_html( $law_choice ); ?></label>
 								<?php endforeach; ?>
 							</div>
@@ -185,24 +208,23 @@ $law_sections = array(
 
 					<fieldset id="law-section-venue">
 						<legend>Venue</legend>
-						<div class="law-form-field">
+						<div class="law-form-field <?php echo in_array( 'venue_needed', $law_locked, true ) ? 'is-locked' : ''; ?>">
 							<span class="law-form-label">Venue needed?</span>
-							<label><input type="radio" name="venue_needed" value="Yes, please share our details with venue hosts" <?php checked( $law_value( 'venue_needed' ), 'Yes, please share our details with venue hosts' ); ?>> Yes, please share our details with venue hosts</label>
-							<label><input type="radio" name="venue_needed" value="No, we already have a venue planned" <?php checked( $law_value( 'venue_needed' ), 'No, we already have a venue planned' ); ?>> No, we already have a venue planned</label>
+							<label><input type="radio" name="venue_needed" value="Yes, please share our details with venue hosts" <?php checked( $law_value( 'venue_needed' ), 'Yes, please share our details with venue hosts' ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> Yes, please share our details with venue hosts</label>
+							<label><input type="radio" name="venue_needed" value="No, we already have a venue planned" <?php checked( $law_value( 'venue_needed' ), 'No, we already have a venue planned' ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> No, we already have a venue planned</label>
 						</div>
 						<p class="law-form-field"><label for="law-venue">Venue (name and/or address)</label>
 							<input type="text" id="law-venue" name="venue" value="<?php echo esc_attr( $law_value( 'venue' ) ); ?>"></p>
-						<p class="law-form-field"><label for="law-capacity">Venue capacity</label>
-							<select id="law-capacity" name="venue_capacity">
+						<p class="law-form-field <?php echo in_array( 'venue_capacity', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo in_array( 'venue_capacity', $law_locked, true ) ? ' (locked after approval)' : ''; ?></label>
+							<select id="law-capacity" name="venue_capacity" <?php disabled( in_array( 'venue_capacity', $law_locked, true ) ); ?>>
 								<option value="">Choose…</option>
 								<?php foreach ( array( 'Under 50', '51-100', '101-150', '151-250', '251+', 'TBC' ) as $law_choice ) : ?>
 									<option value="<?php echo esc_attr( $law_choice ); ?>" <?php selected( $law_value( 'venue_capacity' ), $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
 								<?php endforeach; ?>
 							</select></p>
-						<p class="law-form-field <?php echo in_array( 'tickets', $law_locked, true ) ? 'is-locked' : ''; ?>">
+						<p class="law-form-field">
 							<label for="law-tickets">Tickets available</label>
-							<input type="number" id="law-tickets" name="tickets_available" min="0" value="<?php echo esc_attr( $law_value( 'tickets_available' ) ); ?>" <?php echo in_array( 'tickets', $law_locked, true ) ? 'readonly' : ''; ?>>
-							<?php if ( in_array( 'tickets', $law_locked, true ) ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
+							<input type="number" id="law-tickets" name="tickets_available" min="0" value="<?php echo esc_attr( $law_value( 'tickets_available' ) ); ?>">
 						</p>
 					</fieldset>
 
