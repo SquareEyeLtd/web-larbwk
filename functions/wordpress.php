@@ -25,7 +25,12 @@ function law_user_may_use_wp_admin() {
 		return false;
 	}
 	$user = wp_get_current_user();
-	return (bool) array_intersect( array( 'administrator', 'editor' ), (array) $user->roles );
+	if ( array_intersect( array( 'administrator', 'editor' ), (array) $user->roles ) ) {
+		return true;
+	}
+	// The events committee works the module's wp-admin screens
+	// (EVENTS_4.1_REBUILD.md §3.4); their capability set is scoped to it.
+	return user_can( $user, 'edit_others_law_events' );
 }
 
 /**
@@ -49,6 +54,12 @@ add_action(
 			return;
 		}
 		if ( wp_doing_ajax() ) {
+			return;
+		}
+		// admin-post.php is the front end's form handler, not a wp-admin
+		// screen: hosts submit events and reply to comment threads through
+		// it. Each handler enforces its own nonce and capability checks.
+		if ( 'admin-post.php' === ( $GLOBALS['pagenow'] ?? '' ) ) {
 			return;
 		}
 		if ( law_user_may_use_wp_admin() ) {

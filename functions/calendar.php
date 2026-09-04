@@ -45,7 +45,13 @@ function law_calendar_is_committee() {
 }
 
 function law_calendar_is_calendar_page() {
-	return is_page_template( 'templates/calendar.php' ) || law_calendar_is_committee();
+	if ( is_page_template( 'templates/calendar.php' ) || law_calendar_is_committee() ) {
+		return true;
+	}
+	// CPT mode: single event permalinks render the same programme body.
+	return function_exists( 'law_events_source' )
+		&& 'cpt' === law_events_source()
+		&& is_singular( LAW_EVENT_CPT );
 }
 
 function law_calendar_context() {
@@ -278,6 +284,14 @@ function law_calendar_requested_event_id() {
 }
 
 function law_calendar_url( $args = array(), $include_search = true ) {
+	// On a single event permalink the queried object is the event itself, so
+	// links like "Back to programme" must base on the programme page instead.
+	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() && is_singular( LAW_EVENT_CPT ) ) {
+		$base = function_exists( 'law_events_programme_page_id' ) && law_events_programme_page_id()
+			? get_permalink( law_events_programme_page_id() )
+			: home_url( '/programme/' );
+		return add_query_arg( array_filter( $args, fn( $v ) => '' !== $v && null !== $v ), $base );
+	}
 	$page_id = get_queried_object_id();
 	$base    = $page_id ? get_permalink( $page_id ) : home_url( law_calendar_is_committee() ? '/calendar-committee/' : '/calendar/' );
 	if ( $include_search ) {
@@ -1475,6 +1489,12 @@ function law_calendar_entry_admin_url( $entry_id ) {
 	}
 	if ( ! function_exists( 'law_user_may_use_wp_admin' ) || ! law_user_may_use_wp_admin() ) {
 		return '';
+	}
+	// CPT mode: the id is a law_event post; edit it on the module's screen.
+	if ( 'cpt' === law_events_source() ) {
+		return get_post_type( $entry_id ) === LAW_EVENT_CPT
+			? admin_url( 'post.php?post=' . $entry_id . '&action=edit' )
+			: '';
 	}
 	return admin_url(
 		sprintf(

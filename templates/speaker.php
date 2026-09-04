@@ -26,7 +26,7 @@ get_header();
 				'parts/layout/back-link',
 				null,
 				array(
-					'url'   => get_permalink( get_queried_object_id() ),
+					'url'   => law_speakers_page_id() ? get_permalink( law_speakers_page_id() ) : home_url( '/speakers/' ),
 					'label' => __( 'Back to speakers', 'law' ),
 				)
 			);

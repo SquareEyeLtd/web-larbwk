@@ -24,7 +24,12 @@ const LAW_SPEAKER_FIELD_BIO   = '7';
 const LAW_SPEAKER_FIELD_EMAIL = '8';
 
 function law_speakers_is_template() {
-	return is_page_template( 'templates/speakers.php' );
+	if ( is_page_template( 'templates/speakers.php' ) ) {
+		return true;
+	}
+	// CPT mode: speaker permalinks render the same profile template, so the
+	// speakers assets must load there too.
+	return 'cpt' === law_events_source() && is_singular( LAW_SPEAKER_CPT );
 }
 
 /**

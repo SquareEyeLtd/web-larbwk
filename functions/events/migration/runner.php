@@ -1123,10 +1123,21 @@ function law_migration_run_notifications( $dry ) {
 			continue;
 		}
 
+		// Gravity Flow sent step-claimed notifications REGARDLESS of their
+		// form-level active flag (marking them inactive was a readability
+		// convention, EVENTS.md §4). In the new module the active flag is
+		// functional, so step-fired emails import as active.
+		$step_fired = array(
+			'user_payment_due',
+			'user_confirmed_free',
+			'user_confirmed_paid',
+			'committee_approved',
+			'committee_event_updated',
+		);
 		$override = array(
 			'subject' => sanitize_text_field( $subject ),
 			'body'    => sanitize_textarea_field( wp_strip_all_tags( $body ) ),
-			'active'  => ! empty( $notification['isActive'] ),
+			'active'  => in_array( $slug, $step_fired, true ) ? true : ! empty( $notification['isActive'] ),
 		);
 		$to = (string) ( $notification['to'] ?? '' );
 		if ( is_array( law_events_email_registry()[ $slug ]['to'] ) && str_contains( $to, '@' ) ) {
@@ -1246,7 +1257,7 @@ function law_migration_verification() {
 		'law_event posts'        => count( get_posts( array( 'post_type' => LAW_EVENT_CPT, 'post_status' => law_event_all_status_keys(), 'fields' => 'ids', 'posts_per_page' => 1000 ) ) ),
 		'mapped events'          => count( $map['events'] ),
 		'law_speaker posts'      => count( get_posts( array( 'post_type' => LAW_SPEAKER_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => 2000 ) ) ),
-		'mapped speaker entries' => count( $map['speakers'] ),
+		'mapped speaker entries (more than posts = dedupe merges)' => count( $map['speakers'] ),
 		'law_session posts'      => count( get_posts( array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => 1000 ) ) ),
 		'migrated comments'      => (int) get_comments( array( 'type' => LAW_EVENT_COMMENT_TYPE, 'count' => true, 'meta_key' => '_law_gf_entry_id' ) ),
 	);

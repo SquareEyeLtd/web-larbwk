@@ -19,6 +19,10 @@ function law_events_capability_args() {
 	return array(
 		'capability_type' => array( 'law_event', 'law_events' ),
 		'map_meta_cap'    => true,
+		// No public query var: ?law_event= is the edit form's plain GET
+		// parameter, and a registered query var would make WordPress treat
+		// it as a post lookup and 404 the form page.
+		'query_var'       => false,
 	);
 }
 
