@@ -348,6 +348,7 @@ listable. The moderation states are registered custom statuses:
 
 | Current field 95 (Event status) value | New post status |
 |---|---|
+| (no equivalent: unsubmitted) | `law-draft`, the save-and-continue state, visible only to its owner (section 3.5) |
 | Proposed | `law-proposed` |
 | Sent back | `law-sent-back` |
 | Approved | `law-approved` |
@@ -406,6 +407,7 @@ UI over the same keys, not ACF):
 | `_law_speakers` | 112 (Speakers, form 8 children) | Array of {speaker_id, role, organisation_override, sort}; role and override empty in 4.1, defined now for 4.2 §3.5 |
 | `_law_registration_state` | (new, 4.2) | `open` / `apply` / `free` / `external` / `invitation` / `closed`; unused in 4.1 but registered so nothing re-migrates |
 | `_law_gf_entry_id` | (migration) | The source form 2 entry ID; powers URL redirects and Stripe metadata continuity |
+| `_law_stripe_error` | (new) | Set when invoice creation fails: the error message and timestamp; cleared on successful retry. Drives the alert and the Retry button (section 3.7) |
 | `_law_rejection_reason` | 67 (Reason for rejection) | |
 | `_law_sector_jurisdiction` | 61 (Jurisdiction-specific: please specify) | Free-text qualifier for the Jurisdiction-specific sector choice |
 | `_law_sector_other` | 62 (Other/sector-neutral: please specify) | Free-text qualifier for the Other / sector-neutral choice |
@@ -634,9 +636,10 @@ handles dependencies; no runtime dependency on any middleware).
    migrated events).
 3. Finalise and send; store `_law_stripe_invoice_id` and the hosted URL; email
    the host the payment-due notification with the link.
-4. **On failure**: the event stays `law-approved` with an error flag meta, the
-   site admin and committee get an alert email, and the committee detail view
-   shows a "Retry invoice" button. No silent completion (fixing defect 4).
+4. **On failure**: the event stays `law-approved` with `_law_stripe_error`
+   set (message and timestamp), the site admin and committee get an alert
+   email, and the committee detail view shows a "Retry invoice" button that
+   clears the flag on success. No silent completion (fixing defect 4).
 
 **On payment** (replacing scenario B): a REST route
 `POST /wp-json/law/v1/stripe-webhook` receives `invoice.paid` (and
@@ -921,6 +924,14 @@ submenus of LAW, no new top-level menus. The screen:
   links (old URL → new URL side by side).
 
 ### 5.3 Migration steps, in dependency order
+
+Mechanics common to the child-entry steps: nested children (contacts,
+comments, co-owners, speakers, sessions) live in the same `wp_gf_entry` table
+as their parents, and each child records its parent form 2 entry ID in its
+`gpnf_entry_parent` entry meta. That meta key is how every step below resolves
+"which event does this row belong to". (Most children have lower entry IDs
+than their parent; speakers migrated from List field 48 are the exception.
+The migrator never relies on ID ordering, only on `gpnf_entry_parent`.)
 
 1. **Users for co-owners.** Walk the form 6 (Event > co-owner) children (54
    rows) whose parent event is **Approved or Confirmed** (per the on-approval
