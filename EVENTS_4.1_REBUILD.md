@@ -593,7 +593,11 @@ active); the rebuild replaces it with a custom equivalent, the same pattern as
 WooCommerce's Settings → Emails:
 
 - a **list screen**: one row per notification (name, trigger, recipients,
-  active toggle, a "customised" marker when the default has been overridden);
+  active toggle, a "customised" marker when the default has been overridden).
+  A trigger can carry **multiple notifications**, each independently
+  toggleable, mirroring how GF works today (e.g. the submit trigger currently
+  has user, committee and Square Eye notifications, the last one inactive), so
+  every existing notification, active or not, has a one-to-one home;
 - an **edit screen** per email: subject and body (subject a text input, body
   via `wp_editor`), a recipients field for the committee/admin-facing ones
   (host-facing recipients stay dynamic), an active toggle, and a sidebar
@@ -621,7 +625,8 @@ branded look of today's emails comes from the **Email Templates plugin
 (active)**, which filters every `wp_mail` at priority 100 and injects the
 message into a Customiser-designed wrapper. The module therefore sends clean
 body content only and rides that same site-wide wrapper, like every other
-email the site sends; wrapping our own markup as well would double-wrap. If
+email the site sends, so the new emails look identical to today's (confirmed
+by Denis, September 2026); wrapping our own markup as well would double-wrap. If
 that plugin is ever retired, `notifications.php` gains a module-owned wrapper
 behind a single toggle, and nothing else changes.
 
@@ -786,6 +791,20 @@ submenus of LAW, no new top-level menus. The screen:
    the migration itself and the derived statuses.
 7. **Redirects.** Persist the entry-ID → post map (an option or small table)
    powering 301s for `?event=<entry ID>` and `/speakers/<entry ID>/`.
+8. **Notifications.** Migrate every form 2 (Event > submit an event)
+   notification, **active and inactive**, plus the inline notifications stored
+   in Gravity Flow step settings (step 5 Committee review's rejection email,
+   step 8 Clarification needed's assignee and completion emails, step 14 Email
+   to committee > payment received), into the LAW → Emails store: name,
+   trigger mapping, recipients, subject, body and the **original
+   active/inactive state**, each landing as its own toggleable row. Bodies
+   pass through a GF-merge-tag → placeholder translation table (`{Email:7}` →
+   `{host_email}`, `{Event title:17}` → `{event_title}`, `{latest_comment}` →
+   `{latest_comment}` and so on); any tag with no mapping is left in place,
+   flagged in the migration report, and the affected email is listed for
+   manual review on the Emails screen rather than silently mangled. Form 1
+   (User registration) and form 3 (User profile) notifications migrate the
+   same way in phase D when those forms are rebuilt.
 
 ### 5.4 Cutover sequence
 
