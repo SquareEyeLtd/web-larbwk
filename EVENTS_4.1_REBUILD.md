@@ -458,6 +458,28 @@ The single biggest rebuild item. A custom front-end form at
 - The old GravityView entry locking is replaced with `wp_set_post_lock` /
   heartbeat, which is native.
 
+**Host UX is a required improvement, not just parity** (Denis, September
+2026: the current edit and comments experience is bad). The two worst surfaces
+today are GravityView's edit form (a raw field list with no structure) and the
+Gravity Flow inbox detail that "Comments" links to (a dense workflow screen
+with the thread buried in it, plus GPNF modal iframe workarounds). The
+replacements:
+
+- **Editing** happens in the branded account-pages design (the auth-hero
+  pattern from the September account rework): the form is sectioned with a
+  sticky in-page section nav, locked fields are shown greyed with a short
+  "locked after approval" note instead of silently missing, validation is
+  inline per field, and saving returns the host to their event card with a
+  confirmation, not to a generic entry screen.
+- **Comments** stop being a workflow page. Each event on `/account/events/`
+  gets its own thread view: chronological message bubbles with author name,
+  a host/committee role badge and timestamp, the event's status shown in
+  context, and an inline reply box (no modal, no iframe). Replying from a
+  Sent back state is what resubmits the event to the committee, stated
+  plainly next to the button. The same thread component renders in the
+  committee detail view and the wp-admin event screen, so everyone sees the
+  identical conversation.
+
 Registration (form 1, User registration) and profile (form 3, User profile)
 forms are smaller versions of the same pattern and land in phase D; the events
 flow does not wait for them. Form 7 (Contact) stays on Gravity Forms and is
@@ -529,6 +551,27 @@ with the facts, the comment thread, fee override controls and the
 Approve / Send back / Reject actions. `/inbox/` and Gravity Flow's inbox
 shortcode retire. This also pre-builds the muscle for 4.2 §5.2's flagship
 application review screens.
+
+**Committee functional parity** (Denis, September 2026: improve the design,
+leave the functionality). Every capability the committee has today, and where
+it lives in the rebuild:
+
+| Today | In the rebuild |
+|---|---|
+| Gravity Flow inbox (`/inbox/`): pending list, entry detail, set field 98 (Action on Proceed), Proceed / Reject | Committee dashboard: "Needs review" filter; detail view with explicit Approve / Send back / Reject buttons (field 98's two-step indirection goes away, the outcomes are identical) |
+| Send back with a comment; the clarification loop; `{latest_comment}` emails | Send back requires a comment on the thread; same emails, same loop |
+| Reject with field 67 (Reason for rejection); rejection email | Reject requires a reason; same email |
+| Fee override (fields 87 Override fee + 81 Discounted fee) at review | Fee override controls on the detail view, snapshot at approval unchanged |
+| GravityView 419 inline edit: field 68 (Confirmed slot), field 90 (Committee assignee), status and other fields | A committee-only controls panel on the detail view: confirmed slot picker, assignee (still triggers the assignee email), category, organisations; full field editing on the wp-admin event screen |
+| Committee programme (`/committee/programme/`): all statuses, badges, admin edit links | Unchanged template, CPT data source, edit links point at the event admin screen |
+| wp-admin entry detail, notes, filter by tier | wp-admin event screen (all meta boxes, thread, activity log); list-table filters by status, tier, year (`admin/columns.php`) |
+| Gravity Flow timeline on the entry | The activity log, which is a superset (payments, emails, edits, manual notes) |
+| Entry Revisions history of host edits | Post revisions plus one-line activity log entries per edit |
+| "Proceed" / "Send back" vocabulary | Carried over verbatim |
+
+Nothing the committee can do today is dropped; the only deliberate change is
+removing the set-field-98-then-click-Proceed indirection in favour of buttons
+that say what they do.
 
 ### 3.7 Stripe, direct (replacing Make)
 
@@ -880,6 +923,38 @@ the status derivation in step 3: Proposed/Sent back events simply appear in the
 new committee dashboard for action; Approved-unpaid events keep their live
 Stripe invoice (the URL and ID migrate; the webhook map covers payment arriving
 after cutover). Nothing needs to be re-invoiced.
+
+### 5.6 Client-visible continuity guarantees
+
+The requirement (Denis, September 2026): once the migration runs, hosts and
+committee notice **no loss**, only the improved screens. These are the
+invariants the verification panel asserts before the source flip, each
+checkable side by side because the flip is a single switch:
+
+1. The public and committee programmes list the **same events** with the same
+   titles, days, time slots, venues, host organisations, sectors, types,
+   descriptions, Sponsored tags and ticket numbers.
+2. Every event listing shows the same **speakers** (names, photos, roles,
+   organisations) and the same **sessions** accordion.
+3. The speakers archive shows the same deduplicated people, and every old
+   `/speakers/<entry ID>/` and `?event=<entry ID>` URL 301s to its new page.
+4. Each host's `/account/events/` shows the same events with the same status
+   badges and the same actions (Edit, Comments, Pay invoice with the same
+   Stripe URL, View listing), plus a payment status line that is now actually
+   populated (it was blank before, defect 1).
+5. Every comment thread is intact: same messages, same authors, same order,
+   same timestamps.
+6. The committee sees every event in every status, with the full historical
+   timeline (migrated from GF entry notes) attached to each.
+7. In-flight work is uninterrupted: an unpaid invoice can still be paid, a
+   Sent back event still shows the committee's question, a Proposed event
+   still awaits review.
+8. Emails keep the same wording (migrated notifications), the same wrapper,
+   the same sender.
+
+Where behaviour intentionally differs, it is only ever additive: payment
+status now populated, co-owners now get accounts (on approval), the activity
+log now exists, and the edit/comments screens look better.
 
 ---
 
