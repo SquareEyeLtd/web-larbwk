@@ -74,24 +74,30 @@
 	var confirmField = document.querySelector('[data-law-strength-confirm]');
 	var strengthOutput = document.querySelector('[data-law-strength-output]');
 	if (passField && strengthOutput && window.wp && wp.passwordStrength) {
+		// WP core's own score mapping: 0/1 short, 2 bad, 3 good, 4 strong,
+		// and 5 = the two fields DO NOT MATCH (returned by the meter when the
+		// confirm field is non-empty and different). Texts come from core's
+		// pwsL10n so the wording matches WordPress exactly.
+		var l10n = window.pwsL10n || {};
 		var labels = {
-			'-1': ['Mismatch', 'is-mismatch'],
-			0: ['Very weak', 'is-short'],
-			1: ['Very weak', 'is-short'],
-			2: ['Weak', 'is-bad'],
-			3: ['Medium', 'is-good'],
-			4: ['Strong', 'is-strong']
+			0: [l10n.short || 'Very weak', 'is-short'],
+			1: [l10n.short || 'Very weak', 'is-short'],
+			2: [l10n.bad || 'Weak', 'is-bad'],
+			3: [l10n.good || 'Medium', 'is-good'],
+			4: [l10n.strong || 'Strong', 'is-strong'],
+			5: [l10n.mismatch || 'Mismatch', 'is-mismatch']
 		};
 		var update = function () {
 			var pass = passField.value;
-			if (!pass) { strengthOutput.hidden = true; return; }
+			var confirm = confirmField ? confirmField.value : '';
+			if (!pass && !confirm) { strengthOutput.hidden = true; return; }
 			var disallowed = wp.passwordStrength.userInputDisallowedList
 				? wp.passwordStrength.userInputDisallowedList()
 				: [];
-			var score = wp.passwordStrength.meter(pass, disallowed, confirmField ? confirmField.value : '');
+			var score = wp.passwordStrength.meter(pass, disallowed, confirm);
 			var result = labels[score] || labels[0];
 			strengthOutput.hidden = false;
-			strengthOutput.textContent = 'Password strength: ' + result[0];
+			strengthOutput.textContent = result[0];
 			strengthOutput.className = 'law-pass-strength ' + result[1];
 		};
 		passField.addEventListener('input', update);

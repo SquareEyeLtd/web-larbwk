@@ -577,14 +577,14 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {
-		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '1.3' );
+		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '1.5' );
 		// Core's zxcvbn-based strength meter powers the WordPress-style
 		// password indicator on the register and profile forms.
 		$deps = array();
 		if ( is_page_template( 'templates/register.php' ) || is_page_template( 'templates/account-profile.php' ) ) {
 			$deps[] = 'password-strength-meter';
 		}
-		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, '1.1', true );
+		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, '1.2', true );
 	}
 } );
 

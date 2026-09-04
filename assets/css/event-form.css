@@ -33,14 +33,19 @@
    the password field is empty ([hidden] must win over the authored
    display, or an empty bar shows permanently). */
 .law-pass-strength[hidden] { display: none !important; }
-.auth-hero p.law-pass-strength, .law-event-form .law-pass-strength, .law-pass-strength {
+p.law-pass-strength {
 	display: block; text-align: center; border: 1px solid #ddd; background: #f0f0f1;
-	color: #1d2327; font-size: .85rem; font-weight: 600; padding: .35rem .5rem; margin: .4rem 0 0; opacity: 1;
+	/* !important: the hero's own paragraph sizing ties on specificity and can
+	   win on load order, inflating the bar text. */
+	font-size: .85rem !important; font-weight: 600; padding: .35rem .5rem; margin: .4rem 0 0;
+	/* !important: the theme paints hero paragraphs white at high specificity,
+	   and dark-on-pastel is non-negotiable here. */
+	color: #1d2327 !important;
 }
-.law-pass-strength.is-short, .law-pass-strength.is-mismatch { background: #ffabaf; border-color: #e65054; }
-.law-pass-strength.is-bad { background: #facfd2; border-color: #e65054; }
-.law-pass-strength.is-good { background: #f5e6ab; border-color: #f0c33c; }
-.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
+p.law-pass-strength.is-short, p.law-pass-strength.is-mismatch { background: #ffabaf; border-color: #e65054; }
+p.law-pass-strength.is-bad { background: #facfd2; border-color: #e65054; }
+p.law-pass-strength.is-good { background: #f5e6ab; border-color: #f0c33c; }
+p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-form-notice { background: rgba(255, 255, 255, .12); border-left: 4px solid #ffcc02; color: #fff; padding: .8rem 1rem; margin-bottom: 1.2rem; }
 .law-form-notice.is-error { border-left-color: #ff5c4d; }
 .law-form-status { color: #d7d7ea; }
