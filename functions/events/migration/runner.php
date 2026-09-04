@@ -862,6 +862,23 @@ function law_migration_run_history( $dry ) {
 	$map      = law_migration_map();
 	$migrated = 0;
 
+	// One pass over every revision entry, keyed by parent, instead of a
+	// grouped scan per event.
+	$all_revisions = $wpdb->get_results(
+		"SELECT e.id,
+			MAX(CASE WHEN em.meta_key = 'gv_revision_parent_id' THEN em.meta_value END) AS parent_id,
+			MAX(CASE WHEN em.meta_key = 'gv_revision_date' THEN em.meta_value END) AS revision_date,
+			MAX(CASE WHEN em.meta_key = 'gv_revision_user_id' THEN em.meta_value END) AS revision_user
+		 FROM {$wpdb->prefix}gf_entry e
+		 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id
+			AND em.meta_key IN ('gv_revision_parent_id','gv_revision_date','gv_revision_user_id')
+		 GROUP BY e.id"
+	);
+	$revisions_by_parent = array();
+	foreach ( (array) $all_revisions as $row ) {
+		$revisions_by_parent[ (int) $row->parent_id ][] = $row;
+	}
+
 	foreach ( $map['events'] as $entry_id => $post_id ) {
 		if ( ! get_post( $post_id ) ) {
 			continue;
@@ -879,19 +896,7 @@ function law_migration_run_history( $dry ) {
 				(int) $entry_id
 			)
 		);
-		$revisions = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT e.id,
-					MAX(CASE WHEN em.meta_key = 'gv_revision_date' THEN em.meta_value END) AS revision_date,
-					MAX(CASE WHEN em.meta_key = 'gv_revision_user_id' THEN em.meta_value END) AS revision_user
-				 FROM {$wpdb->prefix}gf_entry e
-				 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id
-				 WHERE em.meta_key IN ('gv_revision_parent_id','gv_revision_date','gv_revision_user_id')
-				 GROUP BY e.id
-				 HAVING MAX(CASE WHEN em.meta_key = 'gv_revision_parent_id' THEN em.meta_value END) = %s",
-				(string) $entry_id
-			)
-		);
+		$revisions = $revisions_by_parent[ (int) $entry_id ] ?? array();
 
 		if ( $dry ) {
 			law_migration_log( 'history', 'dry-run', $ref, sprintf( 'Would migrate %d timeline notes and %d edit revisions.', count( $notes ), count( $revisions ) ) );

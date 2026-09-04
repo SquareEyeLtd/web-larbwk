@@ -39,6 +39,14 @@ function law_setup_account_pages() {
 		'account/events/submit/done' => 'templates/account.php',
 	);
 
+	// The events module cutover (EVENTS_4.1_REBUILD.md): once the source is
+	// the CPT module, the submit page carries the custom form and the
+	// committee dashboard replaces the GravityView embed.
+	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
+		$setup['account/events/submit'] = 'templates/account-event-form.php';
+		$setup['account/dashboard']     = 'templates/account-dashboard.php';
+	}
+
 	$report = array();
 
 	foreach ( $setup as $path => $template ) {

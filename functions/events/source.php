@@ -326,10 +326,17 @@ add_action( 'template_redirect', function () {
 	}
 
 	// ?event=<legacy entry id> → permalink (public pages only; the committee
-	// programme keeps its query-string view for non-public statuses).
-	if ( isset( $_GET['event'] ) && ! law_calendar_is_committee() ) {
+	// programme keeps its query-string view, whose values are post IDs).
+	// Legacy intent wins here: entry IDs and post IDs overlap numerically, so
+	// a public ?event= URL is looked up in the migration map FIRST and only
+	// falls back to a direct post ID when the map has no row.
+	if ( isset( $_GET['event'] ) && ! law_calendar_is_committee() && ! is_singular( LAW_EVENT_CPT ) ) {
 		$requested = absint( $_GET['event'] );
-		$post_id   = law_events_resolve_event_post_id( $requested );
+		$map       = get_option( LAW_MIGRATION_MAP_OPTION, array() );
+		$post_id   = absint( $map['events'][ $requested ] ?? 0 );
+		if ( ! $post_id || get_post_type( $post_id ) !== LAW_EVENT_CPT ) {
+			$post_id = law_events_resolve_event_post_id( $requested );
+		}
 		if ( $post_id && 'publish' === get_post_status( $post_id ) ) {
 			wp_safe_redirect( get_permalink( $post_id ), 301 );
 			exit;
