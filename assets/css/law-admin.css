@@ -1,0 +1,22 @@
+/* Events module admin meta boxes. */
+.law-field { margin: 0 0 12px; }
+.law-repeater table { margin: 6px 0; }
+.law-rel-results { border: 1px solid #c3c4c7; background: #fff; margin: 0; max-width: 420px; }
+.law-rel-results li { margin: 0; }
+.law-rel-results .button-link { display: block; width: 100%; text-align: left; padding: 6px 10px; }
+.law-rel-results .button-link:hover { background: #f0f0f1; }
+.law-rel-chosen { margin: 8px 0 0; max-width: 640px; }
+.law-rel-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: #f6f7f7; border: 1px solid #dcdcde; margin-bottom: 4px; }
+.law-rel-item .law-rel-title { min-width: 160px; font-weight: 600; }
+.law-rel-item input[type="text"] { flex: 1; }
+.law-thread { max-height: 340px; overflow: auto; }
+.law-thread__item { padding: 8px 10px; border-left: 3px solid #dcdcde; margin-bottom: 8px; background: #f9f9f9; }
+.law-thread__item.is-committee { border-left-color: #2271b1; }
+.law-thread__badge { font-size: 11px; text-transform: uppercase; background: #dcdcde; padding: 1px 6px; border-radius: 2px; }
+.is-committee .law-thread__badge { background: #2271b1; color: #fff; }
+.law-log { max-height: 420px; overflow: auto; }
+.law-log__item { padding: 6px 10px; border-left: 3px solid #c3c4c7; margin-bottom: 6px; background: #fafafa; font-size: 12px; }
+.law-log__item.is-manual { border-left-color: #996800; background: #fcf9e8; }
+.law-log__date { color: #757575; margin-right: 6px; }
+.law-log__source { float: right; color: #757575; font-style: italic; }
+.law-badge { background: #f0f6fc; border: 1px solid #72aee6; color: #043959; font-size: 11px; padding: 1px 6px; border-radius: 2px; }

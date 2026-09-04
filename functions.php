@@ -27,4 +27,5 @@ require_once(get_theme_file_path('/functions/speakers.php'));
 require_once(get_theme_file_path('/functions/banner-account-status.php'));
 require_once(get_theme_file_path('/functions/migrate-speakers.php'));
 require_once(get_theme_file_path('/functions/setup-account-pages.php'));
+require_once(get_theme_file_path('/functions/events/_load.php'));
 
