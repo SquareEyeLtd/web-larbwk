@@ -106,7 +106,7 @@ function law_events_stripe_mode() {
 function law_events_register_settings_page() {
 	law_events_register_law_subpage( 'law-events-settings', 'Events settings', 'law_events_settings_page' );
 }
-add_action( 'admin_menu', 'law_events_register_settings_page', 21 );
+add_action( 'admin_menu', 'law_events_register_settings_page', 999 );
 
 /**
  * Register a page as a hidden options.php child so the admin_page_{slug} hook
@@ -119,6 +119,13 @@ add_action( 'admin_menu', 'law_events_register_settings_page', 21 );
  * @param string   $cap      Required capability.
  */
 function law_events_register_law_subpage( $slug, $title, $callback, $cap = 'manage_options' ) {
+	// The VISIBLE menu item, under the LAW parent.
+	add_submenu_page( 'law-settings', $title, $title, $cap, $slug, $callback );
+
+	// Access resilience: Admin Menu Editor rewrites the LAW parent file, so
+	// the page must also exist as a hidden options.php child and be seeded in
+	// $_registered_pages for every parent AME might use, or WordPress's
+	// access check refuses the URL (the migrate-speakers workaround).
 	add_submenu_page( 'options.php', $title, $title, $cap, $slug, $callback );
 
 	global $_registered_pages;

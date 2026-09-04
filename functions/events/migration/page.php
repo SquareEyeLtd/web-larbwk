@@ -11,7 +11,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 add_action( 'admin_menu', function () {
 	law_events_register_law_subpage( 'law-migration', 'Migration', 'law_migration_admin_page' );
-}, 23 );
+}, 999 );
 
 function law_migration_admin_page() {
 	if ( ! current_user_can( 'manage_options' ) ) {

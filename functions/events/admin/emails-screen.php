@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 add_action( 'admin_menu', function () {
 	law_events_register_law_subpage( 'law-events-emails', 'Emails', 'law_events_emails_page' );
-}, 22 );
+}, 999 );
 
 function law_events_emails_page() {
 	if ( ! current_user_can( 'manage_options' ) ) {
