@@ -247,6 +247,13 @@ function law_event_box_log( $post ) {
 
 add_action( 'save_post_' . LAW_EVENT_CPT, 'law_event_admin_save', 10, 2 );
 function law_event_admin_save( $post_id, $post ) {
+	// Reentrancy guard: a workflow transition inside this handler calls
+	// wp_update_post, which re-fires save_post with the same $_POST; without
+	// the guard, thread replies and notes would double up.
+	static $running = false;
+	if ( $running ) {
+		return;
+	}
 	if ( ! isset( $_POST['law_event_admin_nonce'] )
 		|| ! wp_verify_nonce( sanitize_key( $_POST['law_event_admin_nonce'] ), 'law_event_admin_save' )
 		|| defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE
@@ -255,6 +262,7 @@ function law_event_admin_save( $post_id, $post ) {
 	) {
 		return;
 	}
+	$running = true;
 
 	$actor = get_current_user_id();
 
@@ -354,6 +362,46 @@ function law_event_admin_save( $post_id, $post ) {
 			set_transient( 'law_event_notice_' . $actor, $result->get_error_message(), 60 );
 		}
 	}
+
+	$running = false;
+}
+
+/**
+ * The classic editor's submit box misleads on this CPT (core knows nothing
+ * of the custom statuses, and the status guard makes its status controls
+ * inert): relabel the button to "Update", show the real status, and hide the
+ * core status/visibility rows. The Workflow box is the way status moves.
+ */
+add_action( 'admin_footer-post.php', 'law_event_submitbox_script' );
+add_action( 'admin_footer-post-new.php', 'law_event_submitbox_script' );
+function law_event_submitbox_script() {
+	$screen = get_current_screen();
+	if ( ! $screen || LAW_EVENT_CPT !== $screen->post_type ) {
+		return;
+	}
+	$post   = get_post();
+	$status = $post ? law_event_status_label( $post ) : 'Draft';
+	?>
+	<style>
+		#misc-publishing-actions .misc-pub-post-status,
+		#misc-publishing-actions .misc-pub-visibility,
+		#minor-publishing-actions { display: none; }
+	</style>
+	<script>
+	(function () {
+		var publish = document.getElementById('publish');
+		if (publish) { publish.value = 'Update'; publish.name = 'save'; }
+		var actions = document.getElementById('misc-publishing-actions');
+		if (actions) {
+			var note = document.createElement('div');
+			note.className = 'misc-pub-section';
+			note.innerHTML = 'Status: <strong></strong> — changed via the Workflow box, never here.';
+			note.querySelector('strong').textContent = <?php echo wp_json_encode( $status ); ?>;
+			actions.prepend(note);
+		}
+	})();
+	</script>
+	<?php
 }
 
 /** Read a repeater's rows out of $_POST. */

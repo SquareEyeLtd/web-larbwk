@@ -331,6 +331,14 @@ function law_event_handle_retry_invoice() {
 
 	$event_id = absint( $_REQUEST['event_id'] ?? 0 );
 
+	// Only an Approved, still-unpaid event has an invoice worth retrying; a
+	// paid or confirmed event must not get a fresh "payment due" email.
+	$post = get_post( $event_id );
+	if ( ! $post || 'law-approved' !== $post->post_status
+		|| 'unpaid' !== (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
+		law_events_redirect_back( array( 'law_notice' => 'invoice-not-retryable' ) );
+	}
+
 	law_event_log(
 		$event_id,
 		'Invoice retry requested.',

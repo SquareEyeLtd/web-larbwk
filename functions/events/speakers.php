@@ -201,18 +201,28 @@ function law_speakers_confirmed_event_map() {
  * @return int[]
  */
 function law_event_session_ids( $event_id ) {
-	return get_posts(
+	// No meta_key in the query: an INNER JOIN would silently drop sessions
+	// without a start time. Sorted in PHP instead, empty times last.
+	$ids = get_posts(
 		array(
 			'post_type'      => LAW_SESSION_CPT,
 			'post_status'    => array( 'publish', 'draft', 'private' ),
 			'post_parent'    => (int) $event_id,
 			'fields'         => 'ids',
 			'posts_per_page' => 50,
-			'orderby'        => 'meta_value',
-			'meta_key'       => '_law_start_time',
+			'orderby'        => 'ID',
 			'order'          => 'ASC',
 		)
 	);
+	usort(
+		$ids,
+		function ( $a, $b ) {
+			$time_a = (string) law_event_meta( $a, '_law_start_time' );
+			$time_b = (string) law_event_meta( $b, '_law_start_time' );
+			return strcmp( $time_a ?: '99:99', $time_b ?: '99:99' ) ?: $a <=> $b;
+		}
+	);
+	return $ids;
 }
 
 /**

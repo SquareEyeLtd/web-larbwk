@@ -42,11 +42,14 @@ function law_events_emails_list_screen() {
 		$merged     = law_events_email( $slug );
 		$customised = isset( $overrides[ $slug ] );
 		$to         = is_array( $merged['to'] ) ? implode( ', ', $merged['to'] ) : ucfirst( str_replace( '_', ' ', $merged['to'] ) );
+		// Migrated GF merge tags the renderer cannot resolve need eyes.
+		$unmapped = preg_match( '/\{[^}]*:[0-9.]+[^}]*\}|\{all_fields\}|\{embed_url\}|\{entry_[a-z_]+\}/', $merged['subject'] . ' ' . $merged['body'] );
 		printf(
-			'<tr><td><strong><a href="%s">%s</a></strong>%s</td><td>%s</td><td>%s</td><td>%s</td><td><a class="button button-small" href="%1$s">Edit</a></td></tr>',
+			'<tr><td><strong><a href="%s">%s</a></strong>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td><a class="button button-small" href="%1$s">Edit</a></td></tr>',
 			esc_url( add_query_arg( array( 'page' => 'law-events-emails', 'email' => $slug ), admin_url( 'admin.php' ) ) ),
 			esc_html( $merged['name'] ),
 			$customised ? ' <span class="law-badge">customised</span>' : '',
+			$unmapped ? ' <span class="law-badge" style="border-color:#b32d2e;color:#b32d2e;background:#fcf0f1">review tags</span>' : '',
 			esc_html( $merged['trigger'] ),
 			esc_html( $to ),
 			$merged['active'] ? '<span style="color:#00a32a">Active</span>' : '<span style="color:#757575">Inactive</span>'

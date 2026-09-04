@@ -73,8 +73,26 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
 	}
 
 	$ids = array_values( array_unique( array_filter( $ids ) ) );
-	update_post_meta( $event_id, '_law_co_owner_ids', $ids );
+	law_event_set_co_owner_ids( $event_id, $ids );
 	return $ids;
+}
+
+/**
+ * The single write path for co-owner IDs: the array meta (what the module
+ * reads) plus one flat `_law_co_owner` row per user ID (what the dashboard
+ * query matches — a REGEXP against the serialized array would confuse array
+ * KEYS with user IDs).
+ *
+ * @param int   $event_id law_event post ID.
+ * @param int[] $ids      Co-owner user IDs.
+ */
+function law_event_set_co_owner_ids( $event_id, array $ids ) {
+	$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+	update_post_meta( $event_id, '_law_co_owner_ids', $ids );
+	delete_post_meta( $event_id, '_law_co_owner' );
+	foreach ( $ids as $id ) {
+		add_post_meta( $event_id, '_law_co_owner', $id );
+	}
 }
 
 /**
@@ -143,12 +161,11 @@ function law_events_owned_event_ids( $user_id ) {
 		$wpdb->prepare(
 			"SELECT pm.post_id FROM {$wpdb->postmeta} pm
 			 JOIN {$wpdb->posts} p ON p.ID = pm.post_id
-			 WHERE pm.meta_key = '_law_co_owner_ids'
+			 WHERE pm.meta_key = '_law_co_owner'
 			   AND p.post_type = %s
-			   AND pm.meta_value REGEXP %s",
+			   AND pm.meta_value = %d",
 			LAW_EVENT_CPT,
-			// Serialized int array containing this exact user ID.
-			'i:[0-9]+;i:' . $user_id . ';'
+			$user_id
 		)
 	);
 

@@ -87,7 +87,10 @@ function law_migration_admin_page() {
 				$summary = law_migration_step_summary( $step );
 				?>
 				<tr>
-					<td><strong><?php echo esc_html( $config['label'] ); ?></strong></td>
+					<td><strong><?php echo esc_html( $config['label'] ); ?></strong>
+						<?php if ( in_array( $step, array( 'counters', 'notifications' ), true ) ) : ?>
+							<br><span class="description">Re-running OVERWRITES admin edits made since (slots/recipients or email wording).</span>
+						<?php endif; ?></td>
 					<td class="law-mig-summary" data-step-summary="<?php echo esc_attr( $step ); ?>">
 						<?php
 						if ( $summary ) {

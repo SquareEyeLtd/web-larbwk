@@ -1394,3 +1394,42 @@ was fixed or dispositioned:
 - Local test residue is intentional: event post 1224 ("E2E Curl Host Event")
   and its speaker exercise the full lifecycle, and migrated entry 1167 ("Best
   Event Evar") was advanced Proposed → Confirmed by the browser tests.
+
+### 10.2 Verification round 2 outcomes (4 September 2026)
+
+A second independent audit traced complete flows rather than the checklist.
+Everything found was fixed:
+
+- **The status guard** (`wp_insert_post_data`): an existing event's status now
+  moves ONLY through the workflow engine. The classic editor's Publish/Save
+  Draft buttons (which know nothing of the custom statuses) previously
+  published unapproved events with no fee, invoice or log; they now save
+  fields without touching status, the submit box is relabelled "Update" with
+  the real status shown, and trash still works. A reentrancy guard stops the
+  admin save's workflow transition from re-running the handler (which
+  doubled thread replies and notes).
+- **Sessions without a start time** no longer vanish: the session query
+  dropped its meta INNER JOIN and sorts in PHP (empty times last).
+- **Co-owner dashboards**: the serialized-array REGEXP matched array KEYS as
+  user IDs (user 1 saw 13 foreign events listed). Co-owner IDs now also write
+  one flat `_law_co_owner` row each, the dashboard queries those, and the
+  migrated events were re-synced.
+- **Front-end repeaters** use a monotonic index counter, so remove-then-add
+  can no longer collide indexes and silently drop a row.
+- **Migrated email texts**: the tag translation table now covers
+  `{Confirmed slot:68}`, `{Venue:21}`, `{all_fields}` (rendered as the new
+  `{event_summary}` facts block), `{embed_url}`, `{entry_id}`,
+  `{entry_revision_diff}` and the rest found live; all 13 imported overrides
+  now carry zero unmapped tags, and the Emails list flags any future
+  "review tags" row in red.
+- The committee dashboard can now CLEAR categories/organisations (hidden
+  sentinel); real migration steps additionally require a passing preflight
+  from the last 24 hours; the sector qualifier inputs lock visibly with
+  sectors; `?ec=` survives a validation error; invoice retry refuses on
+  paid/confirmed events; `law_year` is set once at creation and the
+  sponsored multi-event rule scopes to the programme year; the migration
+  screen warns that re-running steps 7/9 overwrites admin edits; drafts
+  require a title; the fees docblock matches the code.
+- Suite grown to cover the new seams: the status guard (direct
+  publish/draft reverted, workflow still moves, trash allowed) and the
+  co-owner value-vs-key query.

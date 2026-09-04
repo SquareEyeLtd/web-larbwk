@@ -189,7 +189,28 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 	$dashboard = home_url( '/account/events/' );
 	$committee = home_url( '/account/dashboard/?event=' . (int) $event_id );
 
+	$summary = '';
+	if ( $post ) {
+		$summary_rows = array(
+			'Event'        => $post->post_title,
+			'Reference'    => (string) law_event_meta( $event_id, '_law_reference' ),
+			'Host'         => $author ? $author->display_name . ' (' . $author->user_email . ')' : '',
+			'Organisation' => (string) law_event_meta( $event_id, '_law_host_organisations' ),
+			'Slot'         => (string) law_event_meta( $event_id, '_law_slot_label' ),
+			'Venue'        => (string) law_event_meta( $event_id, '_law_venue' ),
+			'Fee tier'     => law_event_tier_label( (string) law_event_meta( $event_id, '_law_fee_tier' ) ),
+			'Status'       => law_event_status_label( $post ),
+		);
+		foreach ( $summary_rows as $summary_label => $summary_value ) {
+			if ( '' !== trim( (string) $summary_value ) ) {
+				$summary .= $summary_label . ': ' . $summary_value . "\n";
+			}
+		}
+		$summary .= "\n" . wp_trim_words( wp_strip_all_tags( $post->post_content ), 60, '…' );
+	}
+
 	$placeholders = array(
+		'{event_summary}'    => trim( $summary ),
 		'{event_title}'      => $post ? $post->post_title : '',
 		'{law_reference}'    => (string) law_event_meta( $event_id, '_law_reference' ),
 		'{host_name}'        => $author ? $author->display_name : '',

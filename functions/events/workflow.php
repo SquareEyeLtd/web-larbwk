@@ -27,6 +27,37 @@ function law_event_workflow_actions() {
 }
 
 /**
+ * The status guard: an EXISTING law_event's status can only change through
+ * law_event_workflow_transition(). This is what stops the classic editor's
+ * Publish / Save Draft buttons (which know nothing of the custom statuses)
+ * from silently confirming an unapproved event or parking it in a core
+ * status invisible to every dashboard. New inserts (submission form,
+ * migration, tests) pass through untouched.
+ */
+add_filter(
+	'wp_insert_post_data',
+	function ( $data, $postarr ) {
+		if ( LAW_EVENT_CPT !== ( $data['post_type'] ?? '' ) ) {
+			return $data;
+		}
+		$post_id = (int) ( $postarr['ID'] ?? 0 );
+		if ( ! $post_id ) {
+			return $data; // New insert: the caller's status stands.
+		}
+		if ( ! empty( $GLOBALS['law_workflow_transitioning'] ) ) {
+			return $data; // The workflow engine is moving the status.
+		}
+		$current = get_post_field( 'post_status', $post_id );
+		if ( $current && $current !== ( $data['post_status'] ?? '' ) && 'trash' !== ( $data['post_status'] ?? '' ) ) {
+			$data['post_status'] = $current;
+		}
+		return $data;
+	},
+	10,
+	2
+);
+
+/**
  * Run one workflow transition, with guards, side effects and logging.
  *
  * @param int    $event_id law_event post ID.
@@ -83,10 +114,15 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 	$old_status = $post->post_status;
 	$new_status = $config['to'];
 
+	// The status guard in law_events_guard_status() only lets a status
+	// change through while this flag is up: the workflow engine is the ONLY
+	// way an existing event's status moves.
+	$GLOBALS['law_workflow_transitioning'] = true;
 	$updated = wp_update_post(
 		array( 'ID' => $event_id, 'post_status' => $new_status ),
 		true
 	);
+	$GLOBALS['law_workflow_transitioning'] = false;
 	if ( is_wp_error( $updated ) ) {
 		return $updated;
 	}

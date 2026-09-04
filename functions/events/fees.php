@@ -3,10 +3,9 @@
  * Fee calculation: the replacement for the GPAC calculated fields 84
  * (Calculated fee (pence)) and 85 (VAT).
  *
- * The VAT flag is computed from fee > 0 (killing the old price-literal
- * fragility) and, like field 85, follows the host's ORIGINAL tier: a
- * committee discount or waiver does not remove VAT from a paid tier,
- * but the fee-is-zero case is always VAT 0.
+ * The VAT flag is computed purely from fee > 0 (killing the old
+ * price-literal fragility): any positive amount, tier or override, carries
+ * VAT; a zero fee never does.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

@@ -105,7 +105,7 @@ $law_sections = array(
 					<input type="hidden" name="action" value="law_event_form">
 					<input type="hidden" name="law_event_id" value="<?php echo esc_attr( (string) $law_event_id ); ?>">
 					<?php wp_nonce_field( 'law_event_form' ); ?>
-					<input type="hidden" name="law_ec" value="<?php echo esc_attr( sanitize_text_field( wp_unslash( $_GET['ec'] ?? '' ) ) ); ?>">
+					<input type="hidden" name="law_ec" value="<?php echo esc_attr( sanitize_text_field( (string) ( $law_state['input']['law_ec'] ?? wp_unslash( $_GET['ec'] ?? '' ) ) ) ); ?>">
 					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
 
 					<fieldset id="law-section-details">
@@ -173,10 +173,10 @@ $law_sections = array(
 							</div>
 						</div>
 
-						<p class="law-form-field"><label for="law-sector-j">Jurisdiction-specific: please specify</label>
-							<input type="text" id="law-sector-j" name="sector_jurisdiction" value="<?php echo esc_attr( $law_value( 'sector_jurisdiction' ) ); ?>"></p>
-						<p class="law-form-field"><label for="law-sector-o">Other / sector-neutral: please specify</label>
-							<input type="text" id="law-sector-o" name="sector_other" value="<?php echo esc_attr( $law_value( 'sector_other' ) ); ?>"></p>
+						<p class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-sector-j">Jurisdiction-specific: please specify</label>
+							<input type="text" id="law-sector-j" name="sector_jurisdiction" value="<?php echo esc_attr( $law_value( 'sector_jurisdiction' ) ); ?>" <?php echo in_array( 'sectors', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+						<p class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-sector-o">Other / sector-neutral: please specify</label>
+							<input type="text" id="law-sector-o" name="sector_other" value="<?php echo esc_attr( $law_value( 'sector_other' ) ); ?>" <?php echo in_array( 'sectors', $law_locked, true ) ? 'readonly' : ''; ?>></p>
 					</fieldset>
 
 					<fieldset id="law-section-speakers">

@@ -50,8 +50,12 @@ add_action( 'save_post_' . LAW_SESSION_CPT, function ( $post_id, $post ) {
 
 	$parent = absint( $_POST['law_session_parent'] ?? 0 );
 	if ( $parent && $parent !== (int) $post->post_parent && get_post_type( $parent ) === LAW_EVENT_CPT ) {
-		// Avoid save_post recursion.
-		remove_action( 'save_post_' . LAW_SESSION_CPT, __FUNCTION__ );
-		wp_update_post( array( 'ID' => $post_id, 'post_parent' => $parent ) );
+		// Recursion guard: wp_update_post re-fires this save handler.
+		static $reparenting = false;
+		if ( ! $reparenting ) {
+			$reparenting = true;
+			wp_update_post( array( 'ID' => $post_id, 'post_parent' => $parent ) );
+			$reparenting = false;
+		}
 	}
 }, 10, 2 );

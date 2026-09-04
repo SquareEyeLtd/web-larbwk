@@ -59,10 +59,12 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	$description = wp_kses_post( $input['description'] ?? '' );
 	$is_draft    = 'draft' === ( $input['law_form_action'] ?? '' );
 
+	// Even a draft needs a title: an untitled post would be invisible on the
+	// host dashboard (and core refuses fully empty posts with a raw error).
+	if ( '' === $title && ! in_array( 'title', $locked, true ) ) {
+		$errors->add( 'event_title', $is_draft ? 'Please give the event a title before saving a draft.' : 'Please give the event a title.' );
+	}
 	if ( ! $is_draft ) {
-		if ( '' === $title && ! in_array( 'title', $locked, true ) ) {
-			$errors->add( 'event_title', 'Please give the event a title.' );
-		}
 		if ( '' === trim( wp_strip_all_tags( $description ) ) ) {
 			$errors->add( 'description', 'Please describe the event.' );
 		}
@@ -126,7 +128,11 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	if ( ! in_array( 'sectors', $locked, true ) ) {
 		law_events_set_terms_by_name( $event_id, 'law_sector', (array) ( $input['sectors'] ?? array() ) );
 	}
-	wp_set_object_terms( $event_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
+	// Year-tagged once at creation: editing a 2026 event after the settings
+	// roll to 2027 must not re-file it into the new programme year.
+	if ( $is_new ) {
+		wp_set_object_terms( $event_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
+	}
 
 	// ?ec= category prepopulation (the old dead field 113/116 mechanism,
 	// rebuilt): a matching law_event_category term carried in the hidden

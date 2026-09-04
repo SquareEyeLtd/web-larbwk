@@ -697,7 +697,7 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 		}
 	}
 	law_event_update_meta( $post_id, '_law_co_owner_rows', $co_owners );
-	law_event_update_meta( $post_id, '_law_co_owner_ids', array_unique( $co_ids ) );
+	law_event_set_co_owner_ids( $post_id, $co_ids );
 
 	// Speakers relationship: nested children (form 8) in entry order, via the
 	// step 2 map. Legacy field 48 rows were already turned into posts there.
@@ -1090,13 +1090,23 @@ function law_migration_translate_tags( $text ) {
 	$translations = array(
 		'{Email:7}'                  => '{host_email}',
 		'{Name (First):3.3}'         => '{host_name}',
+		'{Name (Last):3.6}'          => '{host_name}',
 		'{Name:3}'                   => '{host_name}',
 		'{Event title:17}'           => '{event_title}',
 		'{Unique ID:70}'             => '{law_reference}',
 		'{Event status:95}'          => '{status}',
+		'{Confirmed slot:68}'        => '{slot}',
+		'{Venue:21}'                 => '{venue}',
 		'{Stripe invoice URL:83}'    => '{invoice_url}',
 		'{Reason for rejection:67}'  => '{rejection_reason}',
 		'{latest_comment}'           => '{latest_comment}',
+		// GF's submission table becomes the module's rendered facts block.
+		'{all_fields}'               => '{event_summary}',
+		'{embed_url}'                => '{committee_link}',
+		'{entry_id}'                 => '{law_reference}',
+		'{entry_url}'                => '{committee_link}',
+		'{entry_revision_diff}'      => '(see the event\'s activity log for the change history)',
+		'{ID:100}'                   => '',
 		'{admin_email}'              => get_option( 'admin_email' ),
 		'{site_title}'               => '{site_name}',
 	);
@@ -1249,6 +1259,13 @@ function law_migration_run_step( $step, $dry ) {
 	}
 	if ( ! $dry && ! law_migration_snapshot_ok() && 'snapshot' !== $step && 'preflight' !== $step ) {
 		return new WP_Error( 'law_no_snapshot', 'A database snapshot from the last hour is required before a real run (or tick the server-backup override).' );
+	}
+	// A real run also requires a PASSING preflight from the last 24 hours.
+	if ( ! $dry && ! in_array( $step, array( 'snapshot', 'preflight' ), true ) ) {
+		$preflight = get_option( 'law_migration_preflight' );
+		if ( ! is_array( $preflight ) || empty( $preflight['pass'] ) || ( time() - (int) $preflight['at'] ) > DAY_IN_SECONDS ) {
+			return new WP_Error( 'law_no_preflight', 'Run the preflight checks (and get a PASS) before a real migration step.' );
+		}
 	}
 
 	// Refresh the run marker on the first gated step of a real run.

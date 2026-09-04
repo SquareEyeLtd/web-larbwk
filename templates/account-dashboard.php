@@ -122,6 +122,7 @@ $law_can    = law_user_is_committee();
 							<?php endforeach; ?>
 						</select></p>
 
+					<input type="hidden" name="law_terms_present" value="1">
 					<div class="law-form-field">
 						<span class="law-form-label" style="font-weight:600">Event category</span>
 						<?php

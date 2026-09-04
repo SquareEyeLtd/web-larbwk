@@ -120,11 +120,11 @@ function law_committee_action_handler() {
 		}
 	}
 
-	if ( isset( $_POST['law_event_category'] ) ) {
-		law_events_set_terms_by_name( $event_id, 'law_event_category', array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['law_event_category'] ) ) );
-	}
-	if ( isset( $_POST['law_organisation_ids'] ) ) {
-		law_event_update_meta( $event_id, '_law_organisation_ids', array_map( 'absint', (array) $_POST['law_organisation_ids'] ) );
+	// The sentinel says the controls were on the form, so absent inputs mean
+	// "cleared" (unchecked boxes and empty multi-selects post nothing).
+	if ( ! empty( $_POST['law_terms_present'] ) ) {
+		law_events_set_terms_by_name( $event_id, 'law_event_category', array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['law_event_category'] ?? array() ) ) );
+		law_event_update_meta( $event_id, '_law_organisation_ids', array_map( 'absint', (array) ( $_POST['law_organisation_ids'] ?? array() ) ) );
 	}
 
 	// A private note goes straight to the activity log (§3.6 manual notes).

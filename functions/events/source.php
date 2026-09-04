@@ -186,6 +186,15 @@ function law_events_cpt_author_counts() {
 			'post_status'    => array( 'law-approved', 'publish' ),
 			'fields'         => 'ids',
 			'posts_per_page' => 500,
+			// Scoped to the programme year, like the GF version's
+			// law_calendar_approved_event_counts_by_user().
+			'tax_query'      => array(
+				array(
+					'taxonomy' => 'law_year',
+					'field'    => 'name',
+					'terms'    => (string) law_events_setting( 'year', 2026 ),
+				),
+			),
 		)
 	);
 	foreach ( $posts as $post_id ) {
