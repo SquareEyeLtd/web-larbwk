@@ -1,7 +1,8 @@
 # Events module 4.1 rebuild: from Gravity Forms and Make to a custom system
 
-Status: **draft for review**. Verified against the local database and codebase on
-4 September 2026. Branch: `events-4.1-rebuild-custom`.
+Status: **built and migrated locally** (4 September 2026); see section 10 for
+the implementation notes and deliberate deviations. Branch:
+`events-4.1-rebuild-custom`.
 
 This is the plan for rebuilding the 4.1 events platform (submission, moderation,
 invoicing, payment, publication) as custom, theme-owned code, replacing Gravity
@@ -1291,3 +1292,58 @@ Everything is settled (all decisions dated September 2026, from Denis):
 6. At cutover, Denis sets the **live-mode restricted key** (customers,
    invoices, webhook endpoints) in production wp-config himself; the live
    webhook endpoint and signing secret are created with it then.
+
+---
+
+## 10. Implementation notes (built 4 September 2026)
+
+The module is implemented on this branch and the migration has been executed
+on the local copy. Deliberate deviations from the plan text above, each with
+its reason:
+
+1. **No stripe-php SDK.** `stripe/client.php` is a thin wrapper over
+   `wp_remote_request` with form-encoded bodies, a pinned
+   `Stripe-Version: 2025-09-30.clover` (matching the retired Make scenarios)
+   and manual HMAC v1 webhook signature verification. Rationale: no vendor
+   tree in the theme repo, three API endpoints in total, and the signature
+   scheme is small and well specified. §3.7's "official stripe-php via
+   Composer" is superseded.
+2. **Plain prefixed functions, not a PHP namespace.** The module uses
+   `law_events_*` / `law_event_*` prefixes like every other file in this
+   theme; `LAW\Events` namespacing (§3) was dropped for consistency with the
+   existing codebase.
+3. **File layout deltas** against the §3 tree: `log.php` (the activity log),
+   `source.php` (the CPT data source and legacy URL redirects) and
+   `speakers.php` (dedupe/upsert and relationship helpers) are their own
+   files; the front-end templates are `templates/account-event-form.php`,
+   `templates/account-dashboard.php`, `templates/event-single.php` and
+   `parts/events/{thread,people-repeater}.php`.
+4. **Tests are integration-style PHPUnit** (theme dev dependency, `vendor/`
+   gitignored), bootstrapping the local WordPress with Stripe fully mocked
+   through a `law_stripe_request_mock` filter and mail blocked. 27 tests /
+   101 assertions cover the §3.11 list. Run: `php -d memory_limit=512M
+   vendor/bin/phpunit` from the theme directory.
+5. **One additive behaviour change found by the parity diff**: a speaker who
+   appears only in a *session* of a Confirmed event now shows in the speakers
+   archive. The old archive ignored session participation even though the
+   event page displayed it; the new rule is consistent (verified example:
+   form 8 entry 966, whose own parent is Proposed, speaking in a session of
+   a Confirmed event).
+6. **Legacy `?event=` resolution is map-first** on public pages: GF entry IDs
+   and post IDs overlap numerically, so public legacy URLs consult the
+   migration map before treating the value as a post ID. Internal committee
+   links use post IDs and resolve post-first.
+7. **Template assignment at cutover** is part of
+   `functions/setup-account-pages.php` (`/wp-admin/?setup-account-pages`):
+   when the source is CPT it assigns `templates/account-event-form.php` to
+   /account/events/submit/ and `templates/account-dashboard.php` to
+   /account/dashboard/.
+8. **Local migration results**: snapshot via mysqldump (61 tables), preflight
+   PASS (two expected warnings: 3 orphaned children, 6 photo files missing
+   from the unsynced local uploads), 75/75 events, 186 speaker entries → 181
+   posts (5 dedupe merges), 2 sessions (2 skipped correctly: they belonged to
+   a GravityView revision snapshot of their parent), 43/43 comments, 75
+   histories (1,321 activity log entries), 11 notifications imported with
+   original active flags (1 warning: "Email to Square Eye > event updated"
+   has no module slot, review on LAW → Emails), reference counter seeded at
+   207, slots and committee recipients seeded, source flipped to CPT.
