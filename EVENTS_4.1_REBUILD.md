@@ -65,7 +65,7 @@ Verified against the database on 4 September 2026.
 | 4 | Event > host contact | 51 | Becomes repeatable contact rows in event meta |
 | 5 | Comments | 43 (49 trashed) | Becomes WP comments on the event post |
 | 6 | Event > co-owner | 54 | Becomes real WP users linked to the event |
-| 7 | Contact | (site contact form) | Out of events scope, but must be replaced before GF can be uninstalled (phase D) |
+| 7 | Contact | (site contact form) | **Stays on Gravity Forms indefinitely** (Denis, September 2026). Its notifications remain GF-managed; it has no feeds |
 | 8 | Event > speaker | 186 | Becomes `law_speaker` posts |
 | 9 | Event > session | 4 | Becomes `law_session` posts |
 
@@ -186,14 +186,20 @@ they only release parked steps, but treat the screenshots as sensitive.
 
 ### 2.4 Plugins retired at the end of the rebuild
 
-Verified against the plugins directory on 4 September 2026. The whole
-GF-family stack goes: Gravity Forms, Gravity Flow, Gravity Flow Form
-Connector, Gravity Flow Incoming Webhook, Gravity Flow Stripe, the GF User
-Registration, Advanced Post Creation, HubSpot, Stripe, Survey and Webhooks
-add-ons, Gravity Perks Nested Forms, Advanced Calculations, Advanced Select,
-Inventory, Populate Anything and Unique ID, GW Auto Login, GW Word Count,
-Gravity PDF, GravityView + Advanced Filter + DataTables + Entry Revisions +
-Inline Edit, and wdt-gravity-integration.
+Scope decision (Denis, September 2026): **Gravity Forms core stays
+installed**, because form 7 (Contact) remains a GF form with GF-managed
+notifications. Only the events module goes custom. What retires, verified
+against the plugins directory on 4 September 2026, is the module's add-on
+stack: Gravity Flow, Gravity Flow Form Connector, Gravity Flow Incoming
+Webhook, Gravity Flow Stripe, the GF User Registration, Advanced Post
+Creation, HubSpot, Stripe, Survey and Webhooks add-ons, Gravity Perks Nested
+Forms, Advanced Calculations, Advanced Select, Inventory, Populate Anything
+and Unique ID, GW Auto Login, GW Word Count, Gravity PDF, GravityView +
+Advanced Filter + DataTables + Entry Revisions + Inline Edit, and
+wdt-gravity-integration. Forms 1 (User registration), 2 (Event > submit an
+event), 3 (User profile), 4, 5, 6, 8 and 9 (the nested children) are marked
+inactive after migration, leaving form 7 (Contact) as the only active GF
+form; the entry tables stay as the read-only archive either way.
 
 Three of those carry behaviour the rebuild must absorb, beyond the obvious:
 
@@ -590,7 +596,10 @@ defect (EVENTS.md section 12.6). Mailpit remains the local test target.
 **Admin-side email management: LAW → Emails.** Gravity Forms currently gives
 admins a notifications screen (edit subject and body with merge tags, toggle
 active); the rebuild replaces it with a custom equivalent, the same pattern as
-WooCommerce's Settings → Emails:
+WooCommerce's Settings → Emails. Scope (Denis, September 2026): this screen
+manages **events-module emails only**; form 7 (Contact) stays on Gravity
+Forms and its notifications are still edited in the GF notifications admin.
+The screen provides:
 
 - a **list screen**: one row per notification (name, trigger, recipients,
   active toggle, a "customised" marker when the default has been overridden).
@@ -839,8 +848,9 @@ submenus of LAW, no new top-level menus. The screen:
    (in that order, so no event is double-handled). In-flight entries sitting at
    "Approved, awaiting payment" keep working because the new webhook resolves
    `gf_entry_id` metadata through the migration map.
-6. Burn-in period with GF plugins still active but unused; then deactivate,
-   then remove.
+6. Burn-in period with the module's GF add-ons still active but unused; then
+   deactivate and remove the add-ons only. GF core stays for form 7 (Contact),
+   and the entry tables stay as the archive.
 
 ### 5.5 In-flight entries
 
@@ -888,16 +898,17 @@ permalinks and redirects switched to the CPT source behind the
 **Phase C: migration (M).** The Migration screen, runner, report, verification;
 rehearsals local and staging; live cutover per section 5.4.
 
-**Phase D: decommission (S).** Replace forms 1 (User registration), 3 (User
-profile) and 7 (Contact) with custom equivalents, carrying over everything the
-form 1 stack does today: role assignment (field 11, Role), sponsor
-organisation creation (the Advanced Post Creation feed), organisation user
-meta (`law_set_organisation_user_meta` and the `orgid` prepopulation), the
-HubSpot contact type value (`functions/hubspot.php`), the
-accessibility/dietary user meta sync (`law-user-profile-update.php`) and
-auto-login after registration (GW Auto Login). Then retire the GF plugin
-family (the section 2.4 list), GravityView views, Make scenarios, orphaned
-pages (`/inbox/`), tidy the Account navigation (role-gate or remove the
+**Phase D: decommission (S).** Replace forms 1 (User registration) and 3
+(User profile) with custom equivalents, carrying over everything the form 1
+stack does today: role assignment (field 11, Role), sponsor organisation
+creation (the Advanced Post Creation feed), organisation user meta
+(`law_set_organisation_user_meta` and the `orgid` prepopulation), the HubSpot
+contact type value (`functions/hubspot.php`), the accessibility/dietary user
+meta sync (`law-user-profile-update.php`) and auto-login after registration
+(GW Auto Login). **Form 7 (Contact) stays on Gravity Forms**, so GF core
+remains installed; retire the module add-on stack (the section 2.4 list),
+GravityView views, Make scenarios, orphaned pages (`/inbox/`), deactivate the
+migrated forms, tidy the Account navigation (role-gate or remove the
 committee-only links), and update EVENTS.md to describe the new system.
 
 4.2 then builds on phases A–B primitives (bookings, waitlist, basket, attendee
