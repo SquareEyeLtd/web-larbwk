@@ -609,11 +609,21 @@ WooCommerce's Settings → Emails:
 Storage: the defaults are the PHP templates in `notifications.php`
 (version-controlled, always present); admin overrides are stored per email in
 a single option and take precedence, so a broken edit is always one reset away
-from a known-good state. Rendering wraps every body in the shared branded
-wrapper, and each send is written to the event's activity log (template,
-recipient, subject). Delivery is untouched: `wp_mail`, which live routes
-through the installed Postmark plugin, local through Mailpit, with the
+from a known-good state. Each send is written to the event's activity log
+(template, recipient, subject). Delivery is untouched: `wp_mail`, which live
+routes through the installed Postmark plugin, local through Mailpit, with the
 `block-emails.php` environment guard still applying.
+
+**The HTML wrapper.** Gravity Forms itself has no email template: an HTML
+notification is just the message content with merge tags replaced, passed to
+`wp_mail` as `text/html` (`gravityforms/common.php`, `send_email()`). The
+branded look of today's emails comes from the **Email Templates plugin
+(active)**, which filters every `wp_mail` at priority 100 and injects the
+message into a Customiser-designed wrapper. The module therefore sends clean
+body content only and rides that same site-wide wrapper, like every other
+email the site sends; wrapping our own markup as well would double-wrap. If
+that plugin is ever retired, `notifications.php` gains a module-owned wrapper
+behind a single toggle, and nothing else changes.
 
 The comment thread itself: form 5 (Comments) child entries become WP comments
 (`comment_type = law_event_comment`) on the event, rendered in both the host
