@@ -1,0 +1,8 @@
+{
+  "name": "squareeye/larbwk-theme",
+  "description": "LAW theme dev dependencies (tests only)",
+  "require-dev": {
+    "phpunit/phpunit": "^11"
+  },
+  "config": { "optimize-autoloader": true }
+}

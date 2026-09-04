@@ -151,6 +151,9 @@ function law_event_workflow_side_effects( $event_id, $action, array $args, $acto
 		case 'approve':
 			$snapshot = law_event_snapshot_fee( $event_id );
 			update_post_meta( $event_id, '_law_approved_at', current_time( 'Y-m-d' ) );
+			if ( '' === (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
+				update_post_meta( $event_id, '_law_payment_status', 'unpaid' );
+			}
 			law_event_log(
 				$event_id,
 				sprintf(

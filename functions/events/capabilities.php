@@ -53,7 +53,9 @@ function law_events_grant_capabilities() {
 
 	update_option( 'law_events_caps_version', $version );
 }
-add_action( 'admin_init', 'law_events_grant_capabilities' );
+// On init (not admin_init): the committee acts from the front end, so the
+// grant must not wait for a wp-admin visit.
+add_action( 'init', 'law_events_grant_capabilities', 20 );
 
 /**
  * Whether a user may manage (view privately, edit, comment on) an event:
