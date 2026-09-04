@@ -1461,3 +1461,48 @@ the real-Stripe E2E smoke with CLI forwarding on staging (outbound Stripe is
 blocked on this local copy), disabling Make scenarios A then B, the live
 migration run itself, and a LAW wording review of the migrated emails on
 LAW → Emails.
+
+### 10.4 Phase D part 1 built (4 September 2026)
+
+The custom registration and profile forms are implemented
+(`functions/events/registration.php`, `templates/register.php`,
+`templates/account-profile.php`, `parts/events/profile-fields.php`),
+replacing the form 1 (User registration) and form 3 (User profile) embeds,
+the User Registration feeds, GW Auto Login and the mu-plugin checkbox sync:
+
+- **Registration** (anonymous): name, email (= username), organisation, job
+  title, country (choices read live from form 1 field 10 while GF core
+  remains, text fallback), the three self-service role checkboxes
+  (administrator/committee can never be self-assigned; whitelisted
+  server-side twice), accessibility/dietary choices writing the exact ACF
+  fields (law_role, accessibility, dietary) and meta keys (organisation,
+  job_title, country, accessibility_other, dietary_other) the old stack
+  wrote, the HubSpot contact type tags (year-aware), password + confirm with
+  a 10-character minimum, honeypot, per-IP rate limiting (5/hour), error
+  state keyed by a random per-visitor cookie (never bare IP), auto-login and
+  the /account/?action=registered redirect, and the migrated
+  "Email to admins > user registration" notification (form 1's real text,
+  imported with a form-1-specific tag map).
+- **Profile** (logged in): the same fields plus email change and optional
+  password change — BOTH requiring the current password (the email-change
+  path was a hijacked-session takeover lever; the old address is notified),
+  role sync limited to the self-service roles with attendee as the floor,
+  and typed values surviving validation errors.
+- `setup-account-pages` (CPT mode) assigns both templates and strips the
+  form 1/form 3 Gravity Forms blocks from the page content (void and wrapped
+  block shapes; leaving them would render both forms).
+- Accepted risks, documented: the duplicate-email message is an existence
+  oracle, but with open instant registration the oracle is inherent (a probe
+  can simply attempt to register), so neutral-message theatre buys nothing.
+- **Phase D part 2 remains post-burn-in**: deactivate/remove the GF add-on
+  stack, deactivate the migrated forms, delete the orphaned GravityView
+  views and /inbox/, tidy the Account navigation, rewrite EVENTS.md.
+
+A dedicated visual QA pass (screenshots of every module template, desktop
+and mobile, with computed-style contrast checks) now gates template work:
+it caught the committee dashboard's unstyled badges, the speaker single
+missing the card stylesheet on CPT slugs, and profile state loss, all fixed.
+Pre-existing and out of scope: the keyless Google Maps embed rendering blank
+on localhost (identical code on both data sources; the "Open in Google
+Maps" link works), Gravity Forms' own gf_vars console error on non-GF admin
+screens, and the role-agnostic post-login redirect.
