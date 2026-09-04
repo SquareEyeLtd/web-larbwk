@@ -141,6 +141,22 @@ function law_events_email_registry() {
 			'subject' => 'New host comment: {event_title} ({law_reference})',
 			'body'    => "The host has commented on {event_title} ({law_reference}):\n\n{latest_comment}\n\nView the thread: {committee_link}",
 		),
+		'admins_user_registered' => array(
+			'name'    => 'Email to admins > user registration',
+			'trigger' => 'user registration',
+			'to'      => array( 'emily.ocallaghan@lbresearch.com', 'marie@londonarbitrationweek.co.uk' ),
+			'active'  => true,
+			'subject' => 'New LAW account registered: {user_name}',
+			'body'    => "A new account has been registered on {site_name}.\n\nName: {user_name}\nEmail: {user_email}\nRoles: {user_roles}",
+		),
+		'squareeye_user_registered' => array(
+			'name'    => 'Email to Square Eye > user registration',
+			'trigger' => 'user registration',
+			'to'      => array( 'trevor@squareeye.com' ),
+			'active'  => false,
+			'subject' => 'LAW account registered: {user_name}',
+			'body'    => "New account: {user_name} ({user_email}), roles: {user_roles}.",
+		),
 		'committee_refund' => array(
 			'name'    => 'Email to committee > payment refunded',
 			'trigger' => 'Stripe refund',
@@ -230,6 +246,10 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{site_name}'        => get_bloginfo( 'name' ),
 		'{stripe_error}'     => '',
 		'{latest_comment}'   => '',
+		// User-registration emails (filled via the send call's placeholders).
+		'{user_name}'        => '',
+		'{user_email}'       => '',
+		'{user_roles}'       => '',
 	);
 
 	$latest = law_event_latest_comment( $event_id );

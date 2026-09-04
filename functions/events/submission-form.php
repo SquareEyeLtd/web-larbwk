@@ -574,7 +574,9 @@ function law_events_form_values( $post, array $state ) {
 add_action( 'wp_enqueue_scripts', function () {
 	if ( is_page_template( 'templates/account-event-form.php' )
 		|| is_page_template( 'templates/account-dashboard.php' )
-		|| is_page_template( 'templates/account-events.php' ) ) {
+		|| is_page_template( 'templates/account-events.php' )
+		|| is_page_template( 'templates/account-profile.php' )
+		|| is_page_template( 'templates/register.php' ) ) {
 		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '1.0' );
 		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), array(), '1.0', true );
 	}

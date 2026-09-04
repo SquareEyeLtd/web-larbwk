@@ -51,7 +51,7 @@ $law_can    = law_user_is_committee();
 		<div class="grid-x grid-padding-x">
 			<div class="large-8 cell">
 				<h1 class="law-dashboard__title"><?php echo esc_html( $law_detail->post_title ); ?>
-					<span class="law-cal-badge law-cal-badge--<?php echo esc_attr( law_calendar_status_slug( $law_status ) ); ?>"><?php echo esc_html( $law_status ); ?></span></h1>
+					<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( law_calendar_status_slug( $law_status ) ); ?>"><?php echo esc_html( $law_status ); ?></span></h1>
 
 				<dl class="law-dashboard__facts">
 					<dt>Reference</dt><dd><code><?php echo esc_html( (string) law_event_meta( $law_id, '_law_reference' ) ); ?></code></dd>
@@ -209,7 +209,7 @@ $law_can    = law_user_is_committee();
 							<code><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_reference' ) ); ?></code></td>
 						<td><?php echo esc_html( $law_row_author ? $law_row_author->display_name : '—' ); ?></td>
 						<td><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_slot_label' ) ?: '—' ); ?></td>
-						<td><span class="law-cal-badge law-cal-badge--<?php echo esc_attr( law_calendar_status_slug( $law_row_status ) ); ?>"><?php echo esc_html( $law_row_status ); ?></span></td>
+						<td><span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( law_calendar_status_slug( $law_row_status ) ); ?>"><?php echo esc_html( $law_row_status ); ?></span></td>
 						<td><?php echo esc_html( ucfirst( (string) law_event_meta( $law_row->ID, '_law_payment_status' ) ) ?: '—' ); ?></td>
 						<td><a class="button" href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, get_permalink() ) ); ?>">Review</a></td>
 					</tr>

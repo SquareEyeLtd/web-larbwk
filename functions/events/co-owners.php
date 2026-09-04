@@ -120,7 +120,9 @@ function law_events_create_host_user( $email, $name = '', $organisation = '', $s
 	}
 
 	if ( '' !== trim( $organisation ) ) {
-		update_user_meta( $user_id, 'law_organisation_name', sanitize_text_field( $organisation ) );
+		// 'organisation' is the site-wide user meta key (the old UR feed's
+		// mapping); phase D's profile form reads and writes the same key.
+		update_user_meta( $user_id, 'organisation', sanitize_text_field( $organisation ) );
 	}
 
 	if ( $send_email ) {

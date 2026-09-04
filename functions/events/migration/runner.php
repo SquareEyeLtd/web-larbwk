@@ -1202,6 +1202,56 @@ function law_migration_run_notifications( $dry ) {
 		) );
 	}
 
+	// Form 1 (User registration) notifications: phase D's custom registration
+	// form takes over their sending, so their texts and active states import
+	// the same way as form 2's.
+	$form1_map = array(
+		'Email to admins > user registration'     => 'admins_user_registered',
+		'Email to Square Eye > user registration' => 'squareeye_user_registered',
+	);
+	// Form 1's fields are user fields, so its merge tags translate to the
+	// user placeholders, and {all_fields} becomes a user summary.
+	$form1_tags = function ( $text ) {
+		return strtr(
+			(string) $text,
+			array(
+				'{all_fields}'         => "Name: {user_name}\nEmail: {user_email}\nRoles: {user_roles}",
+				'{Name (First):1.3}'   => '{user_name}',
+				'{Name (Last):1.6}'    => '',
+				'{Name:1}'             => '{user_name}',
+				'{Email:4}'            => '{user_email}',
+				'{embed_url}'          => '',
+				'{entry_url}'          => '',
+				'{site_title}'         => '{site_name}',
+			)
+		);
+	};
+	$form1 = GFAPI::get_form( 1 );
+	foreach ( (array) ( $form1['notifications'] ?? array() ) as $notification ) {
+		$name = (string) ( $notification['name'] ?? '' );
+		$slug = $form1_map[ $name ] ?? '';
+		if ( '' === $slug ) {
+			continue;
+		}
+		$ref = 'form 1 notification "' . $name . '"';
+		if ( $dry ) {
+			law_migration_log( 'notifications', 'dry-run', $ref, 'Would import into ' . $slug . '.' );
+			continue;
+		}
+		$override = array(
+			'subject' => sanitize_text_field( $form1_tags( (string) ( $notification['subject'] ?? '' ) ) ),
+			'body'    => sanitize_textarea_field( wp_strip_all_tags( $form1_tags( (string) ( $notification['message'] ?? '' ) ) ) ),
+			'active'  => ! empty( $notification['isActive'] ),
+		);
+		$to = (string) ( $notification['to'] ?? '' );
+		if ( str_contains( $to, '@' ) ) {
+			$override['to'] = array_filter( array_map( 'sanitize_email', array_map( 'trim', explode( ',', $to ) ) ), 'is_email' );
+		}
+		$overrides[ $slug ] = $override;
+		$migrated++;
+		law_migration_log( 'notifications', 'created', $ref, 'Imported into ' . $slug . ' (' . ( $override['active'] ? 'active' : 'inactive' ) . ').' );
+	}
+
 	// Inline Gravity Flow step notifications (steps 5, 8, 14).
 	global $wpdb;
 	$inline_map = array(

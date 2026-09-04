@@ -45,6 +45,8 @@ function law_setup_account_pages() {
 	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
 		$setup['account/events/submit'] = 'templates/account-event-form.php';
 		$setup['account/dashboard']     = 'templates/account-dashboard.php';
+		// Phase D: the custom profile form replaces the form 3 embed.
+		$setup['account/profile']       = 'templates/account-profile.php';
 	}
 
 	$report = array();

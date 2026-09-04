@@ -6,7 +6,9 @@
 .law-event-form fieldset { border: 0; padding: 0; margin: 0 0 2.5rem; }
 .law-event-form legend { color: #ffcc02; font-size: 1.4rem; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem; }
 .law-form-field { margin-bottom: 1.1rem; }
-.law-form-field label, .law-form-label { display: block; color: #ffcc02; font-weight: 600; margin-bottom: .25rem; }
+.law-form-field label, .law-form-label { display: block; font-weight: 600; margin-bottom: .25rem; }
+/* Yellow labels belong to the purple hero form only. */
+.law-event-form .law-form-field label, .law-event-form .law-form-label { color: #ffcc02; }
 .law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
 .law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select, .law-event-form textarea {
 	width: 100%; border: 0; border-radius: 0; padding: .6rem .75rem; background: #fff; color: #1a1a3d; margin: 0;
@@ -43,6 +45,29 @@
 .law-form-buttons .button { margin-right: .75rem; }
 .law-terms label { color: #fff; font-weight: 400; }
 .law-terms a { color: #ffcc02; text-decoration: underline; }
+
+/* Light-section colour reset: the theme's global styles paint body text,
+   headings and links WHITE (dark-hero-first design), so everything the
+   module renders on a white background recolours explicitly. */
+.law-dashboard, .law-dashboard h1, .law-dashboard h2, .law-dashboard h3,
+.law-dashboard dt, .law-dashboard dd, .law-dashboard td, .law-dashboard th,
+.law-dashboard label, .law-dashboard p, .law-dashboard li,
+.law-thread-view, .law-thread-view h2, .law-thread-view p,
+.law-thread-view label, .law-thread-view time {
+	color: #1a1a3d;
+}
+.law-dashboard a:not(.button), .law-thread-view a:not(.button) { color: #292459; text-decoration: underline; }
+.law-dashboard a:not(.button):hover, .law-thread-view a:not(.button):hover { color: #ef7d05; }
+.law-dashboard__chips a { text-decoration: none; color: #1a1a3d; }
+.law-dashboard__chips a.is-active { color: #fff; }
+.law-dashboard .law-form-notice { color: #1a1a3d; background: #f0f0f5; border-left-color: #292459; }
+.law-dashboard .law-form-notice.is-error { border-left-color: #b32d2e; background: #fcf0f1; }
+.law-dashboard .law-cal-card__badge { color: #fff; }
+.law-dashboard__controls .law-form-field label, .law-dashboard__controls .law-form-label { color: #1a1a3d; }
+.law-dashboard__controls h2 { color: #1a1a3d; }
+.law-dashboard__facts code { color: #1a1a3d; }
+.law-dashboard input[type="search"], .law-dashboard select, .law-dashboard textarea,
+.law-dashboard input[type="number"] { color: #1a1a3d; }
 
 /* The thread ------------------------------------------------------------ */
 .law-thread-view { max-width: 760px; margin: 1rem 0 2rem; }

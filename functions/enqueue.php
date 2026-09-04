@@ -52,7 +52,7 @@ add_action( 'wp_enqueue_scripts', function () {
 
 	// Account pages: login/forgot/reset, register and the account landing,
 	// all rendered inside the hero.
-	if ( is_page_template( array( 'templates/login.php', 'templates/register.php', 'templates/account.php' ) ) ) {
+	if ( is_page_template( array( 'templates/login.php', 'templates/register.php', 'templates/account.php', 'templates/account-profile.php', 'templates/account-event-form.php' ) ) ) {
 		wp_enqueue_style(
 			'law-auth',
 			get_theme_file_uri( '/assets/css/auth.css' ),
