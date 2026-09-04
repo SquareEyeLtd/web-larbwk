@@ -48,15 +48,16 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 
 						<fieldset>
 							<legend>Login details</legend>
+							<p class="law-form-field"><label for="law-prof-current">Current password<br>
+								<small>Required only when changing your email address or password.</small></label>
+								<input type="password" id="law-prof-current" name="current_password" autocomplete="current-password">
+								<?php if ( isset( $law_profile_errors['current_password'][0] ) ) : ?>
+									<span class="law-form-error" role="alert"><?php echo esc_html( $law_profile_errors['current_password'][0] ); ?></span>
+								<?php endif; ?></p>
 							<p class="law-form-field law-choices">
 								<label><input type="checkbox" name="change_password" value="1" data-law-toggle="password-fields"> Change password?</label>
 							</p>
 							<div class="law-password-fields" hidden>
-								<p class="law-form-field"><label for="law-prof-current">Current password</label>
-									<input type="password" id="law-prof-current" name="current_password" autocomplete="current-password">
-									<?php if ( isset( $law_profile_errors['current_password'][0] ) ) : ?>
-										<span class="law-form-error" role="alert"><?php echo esc_html( $law_profile_errors['current_password'][0] ); ?></span>
-									<?php endif; ?></p>
 								<div class="law-row-grid">
 									<p class="law-form-field"><label for="law-prof-pass">New password (10 characters minimum)</label>
 										<input type="password" id="law-prof-pass" name="password" minlength="10" autocomplete="new-password"></p>

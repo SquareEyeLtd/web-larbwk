@@ -69,6 +69,29 @@ function law_setup_account_pages() {
 		}
 	}
 
+	// Phase D (source = cpt): the Register and Profile pages drop their
+	// Gravity Forms blocks (forms 1 and 3) — the custom templates render the
+	// forms themselves, and leaving the blocks would render BOTH forms.
+	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
+		foreach ( array( 'register', 'account/profile' ) as $gf_path ) {
+			$gf_page = get_page_by_path( $gf_path );
+			if ( ! $gf_page instanceof WP_Post ) {
+				continue;
+			}
+			// Both block shapes: the void block (<!-- wp:gravityforms/form {...} /-->)
+			// and a wrapped one, plus the classic shortcode.
+			$content = preg_replace( '/<!--\s*wp:gravityforms\/form[^>]*?\/-->/s', '', $gf_page->post_content );
+			$content = preg_replace( '/<!--\s*wp:gravityforms\/form.*?\/wp:gravityforms\/form\s*-->/s', '', (string) $content );
+			$content = preg_replace( '/\[gravityform[^\]]*\]/', '', (string) $content );
+			if ( trim( (string) $content ) !== trim( $gf_page->post_content ) ) {
+				wp_update_post( array( 'ID' => $gf_page->ID, 'post_content' => trim( (string) $content ) ) );
+				$report[] = "UPDATED  /{$gf_path}/ content: Gravity Forms block removed (custom form renders instead)";
+			} else {
+				$report[] = "OK       /{$gf_path}/ content carries no Gravity Forms block";
+			}
+		}
+	}
+
 	// The Login page: drop the [law_login] shortcode block. The template
 	// renders the sign-in / forgot / reset forms itself; the shortcode would
 	// only render an empty string there, but removing it keeps the editor

@@ -1,0 +1,2 @@
+- [Phase D review 2026-09-04](phase-d-review-2026-09-04.md) — registration/profile handlers reviewed; open P1 on email change with no reauth; what's already clean
+- [Recurring patterns](recurring-patterns.md) — check step-up auth on account-detail changes; role-whitelist double-guard is the good pattern; two false positives to skip (anon nonce reuse, admin_init scoping)

@@ -182,7 +182,7 @@ function law_registration_handler() {
 	if ( $errors->has_errors() ) {
 		$safe_input = law_events_form_reusable_input( $input );
 		unset( $safe_input['password'], $safe_input['password_confirm'] );
-		set_transient( 'law_register_state_' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) ), array( 'errors' => $errors->errors, 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
+		law_registration_store_state( array( 'errors' => $errors->errors, 'input' => $safe_input ) );
 		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/register/' ) ) );
 		exit;
 	}
@@ -201,7 +201,7 @@ function law_registration_handler() {
 		)
 	);
 	if ( is_wp_error( $user_id ) ) {
-		set_transient( 'law_register_state_' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) ), array( 'errors' => array( 'email' => array( $user_id->get_error_message() ) ), 'input' => array() ), 10 * MINUTE_IN_SECONDS );
+		law_registration_store_state( array( 'errors' => array( 'email' => array( $user_id->get_error_message() ) ), 'input' => array() ) );
 		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/register/' ) ) );
 		exit;
 	}
@@ -231,9 +231,23 @@ function law_registration_handler() {
 	exit;
 }
 
-/** One-shot error/input state for the registration form (keyed by IP: anonymous). */
+/**
+ * One-shot error/input state for the (anonymous) registration form, keyed by
+ * a random per-visitor cookie rather than the IP: visitors behind a shared
+ * IP (office NAT, VPN, CGNAT) must never read each other's submitted PII.
+ */
+function law_registration_store_state( array $state ) {
+	$token = wp_generate_password( 20, false );
+	setcookie( 'law_reg_state', $token, time() + 10 * MINUTE_IN_SECONDS, COOKIEPATH ?: '/', COOKIE_DOMAIN, is_ssl(), true );
+	set_transient( 'law_register_state_' . $token, $state, 10 * MINUTE_IN_SECONDS );
+}
+
 function law_registration_state() {
-	$key   = 'law_register_state_' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) );
+	$token = preg_replace( '/[^A-Za-z0-9]/', '', (string) ( $_COOKIE['law_reg_state'] ?? '' ) );
+	if ( '' === $token ) {
+		return array( 'errors' => array(), 'input' => array() );
+	}
+	$key   = 'law_register_state_' . $token;
 	$state = get_transient( $key );
 	if ( $state ) {
 		delete_transient( $key );
@@ -275,12 +289,18 @@ function law_profile_handler() {
 	if ( '' === $first || '' === $last ) {
 		$errors->add( 'name', 'Please give your first and last name.' );
 	}
+	$email_changing = strtolower( $email ) !== strtolower( $user->user_email );
 	if ( ! is_email( $email ) ) {
 		$errors->add( 'email', 'Please give a valid email address.' );
-	} else {
+	} elseif ( $email_changing ) {
 		$existing = email_exists( $email );
 		if ( $existing && (int) $existing !== $user_id ) {
 			$errors->add( 'email', 'That email address belongs to another account.' );
+		}
+		// Changing the account email is an account-takeover lever from a
+		// hijacked session, so it re-authenticates like a password change.
+		if ( ! wp_check_password( (string) ( $input['current_password'] ?? '' ), $user->user_pass, $user_id ) ) {
+			$errors->add( 'current_password', 'Changing your email address requires your current password.' );
 		}
 	}
 
@@ -320,6 +340,19 @@ function law_profile_handler() {
 		set_transient( 'law_profile_state_' . $user_id, array( 'errors' => array( 'email' => array( $result->get_error_message() ) ) ), 10 * MINUTE_IN_SECONDS );
 		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/account/profile/' ) ) );
 		exit;
+	}
+
+	// The old address hears about an email change, so a hijack is visible.
+	if ( $email_changing ) {
+		wp_mail(
+			$user->user_email,
+			'Your London Arbitration Week account email has changed',
+			sprintf(
+				"The email address on your account was changed to %s just now.\n\nIf this was not you, contact the LAW team immediately and reset your password from %s",
+				$email,
+				home_url( '/login/?action=forgot' )
+			)
+		);
 	}
 
 	$roles = law_registration_write_profile_meta( $user_id, $input );
