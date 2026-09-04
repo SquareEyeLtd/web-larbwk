@@ -271,9 +271,10 @@ functions/events/
     client.php          thin Stripe API wrapper (invoices, customers, webhooks)
     service.php         create/send invoice, handle invoice.paid, error states
     webhook.php         REST route, signature verification
-  notifications.php     email templates + recipient settings
-  settings.php          LAW settings page: programme week/slots, committee
-                        recipients, Stripe keys, fee tiers
+  notifications.php     email default templates, placeholder rendering, sending
+  admin/emails-screen.php  LAW > Emails: list, edit, send test, reset
+  settings.php          LAW > Events settings: programme week/slots, committee
+                        recipients, fee tiers, Stripe tax rate/template IDs
   migration/
     page.php            the Migration admin screen
     runner.php          batched, idempotent migration steps
@@ -586,6 +587,34 @@ configs to a settings-page option. The sponsor/non-sponsor confirmed-email split
 switches from tier = Sponsor to **fee = 0**, fixing the fee-waived wording
 defect (EVENTS.md section 12.6). Mailpit remains the local test target.
 
+**Admin-side email management: LAW → Emails.** Gravity Forms currently gives
+admins a notifications screen (edit subject and body with merge tags, toggle
+active); the rebuild replaces it with a custom equivalent, the same pattern as
+WooCommerce's Settings → Emails:
+
+- a **list screen**: one row per notification (name, trigger, recipients,
+  active toggle, a "customised" marker when the default has been overridden);
+- an **edit screen** per email: subject and body (subject a text input, body
+  via `wp_editor`), a recipients field for the committee/admin-facing ones
+  (host-facing recipients stay dynamic), an active toggle, and a sidebar
+  listing the placeholder tags available to that specific email
+  (`{event_title}`, `{law_reference}`, `{host_name}`, `{status}`,
+  `{invoice_url}`, `{fee}`, `{latest_comment}`, `{rejection_reason}`,
+  `{edit_link}` and so on, replacing GF merge tags);
+- **Send test**: emails the current admin the rendered template using a real
+  event's data (or sample data when none exists), so wording changes can be
+  checked without walking the workflow; locally this lands in Mailpit;
+- **Reset to default** per email.
+
+Storage: the defaults are the PHP templates in `notifications.php`
+(version-controlled, always present); admin overrides are stored per email in
+a single option and take precedence, so a broken edit is always one reset away
+from a known-good state. Rendering wraps every body in the shared branded
+wrapper, and each send is written to the event's activity log (template,
+recipient, subject). Delivery is untouched: `wp_mail`, which live routes
+through the installed Postmark plugin, local through Mailpit, with the
+`block-emails.php` environment guard still applying.
+
 The comment thread itself: form 5 (Comments) child entries become WP comments
 (`comment_type = law_event_comment`) on the event, rendered in both the host
 event view and the committee detail view, with email notifications to the other
@@ -629,7 +658,8 @@ The public templates keep their markup and CSS; only the data layer changes:
 
 ### 3.10 Settings
 
-One "LAW events" settings screen: programme year and week dates, the slot
+One "Events settings" screen, a submenu of the existing LAW admin menu like
+every other screen in this module: programme year and week dates, the slot
 choices (currently hardcoded in two places), committee recipient emails, fee
 tier amounts, the Stripe tax rate and invoice rendering template IDs, and the
 toggle for which host-edit fields publish immediately vs route for review (the
@@ -691,7 +721,14 @@ custom tables/views we own, over configuration in plugins we work around.
 
 ### 5.2 The Migration admin screen
 
-A top-level wp-admin menu item, **LAW Migration** (admin-only capability):
+**LAW → Migration**, a submenu of the existing LAW admin menu (the ACF options
+page, slug `law-settings`), admin-only capability (per Denis, September 2026:
+under the registered LAW menu, not a new top-level item). Because Admin Menu
+Editor Pro rewrites the LAW parent file, it registers with the same
+options.php-child pattern as `law_register_migrate_speakers_page()` in
+`functions/migrate-speakers.php`, which is proven against AME. The same
+placement applies to every new admin screen in this module (settings, emails):
+submenus of LAW, no new top-level menus. The screen:
 
 - One card per migration step (5.3), each showing source count, migrated count,
   remaining, and last-run summary.
