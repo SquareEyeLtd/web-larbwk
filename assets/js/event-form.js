@@ -54,6 +54,50 @@
 		});
 	}
 
+	/* Conditional fields: a checkbox with data-law-toggles shows/hides the
+	   element with that id (the "Other: please specify" inputs). */
+	document.querySelectorAll('[data-law-toggles]').forEach(function (box) {
+		var target = document.getElementById(box.getAttribute('data-law-toggles'));
+		if (!target) { return; }
+		var sync = function () {
+			target.hidden = !box.checked;
+			if (target.hidden) {
+				var field = target.querySelector('input');
+				if (field) { field.value = ''; }
+			}
+		};
+		box.addEventListener('change', sync);
+	});
+
+	/* Password strength, WordPress-style (wp.passwordStrength / zxcvbn). */
+	var passField = document.querySelector('[data-law-strength]');
+	var confirmField = document.querySelector('[data-law-strength-confirm]');
+	var strengthOutput = document.querySelector('[data-law-strength-output]');
+	if (passField && strengthOutput && window.wp && wp.passwordStrength) {
+		var labels = {
+			'-1': ['Mismatch', 'is-mismatch'],
+			0: ['Very weak', 'is-short'],
+			1: ['Very weak', 'is-short'],
+			2: ['Weak', 'is-bad'],
+			3: ['Medium', 'is-good'],
+			4: ['Strong', 'is-strong']
+		};
+		var update = function () {
+			var pass = passField.value;
+			if (!pass) { strengthOutput.hidden = true; return; }
+			var disallowed = wp.passwordStrength.userInputDisallowedList
+				? wp.passwordStrength.userInputDisallowedList()
+				: [];
+			var score = wp.passwordStrength.meter(pass, disallowed, confirmField ? confirmField.value : '');
+			var result = labels[score] || labels[0];
+			strengthOutput.hidden = false;
+			strengthOutput.textContent = 'Password strength: ' + result[0];
+			strengthOutput.className = 'law-pass-strength ' + result[1];
+		};
+		passField.addEventListener('input', update);
+		if (confirmField) { confirmField.addEventListener('input', update); }
+	}
+
 	/* Section nav: smooth scroll + highlight. */
 	document.querySelectorAll('.law-form-nav a').forEach(function (link) {
 		link.addEventListener('click', function (event) {

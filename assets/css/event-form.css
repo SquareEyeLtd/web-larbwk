@@ -16,7 +16,25 @@
 .law-event-form .law-choices label { color: #fff; font-weight: 400; }
 .law-event-form .law-choices input { margin-right: .5rem; }
 .law-form-hint { color: #d7d7ea; font-size: .9rem; }
-.law-form-error { color: #ffb3ab; font-weight: 600; margin: .3rem 0 0; }
+/* Inline field errors share the error notice's design (light strip, red
+   left border, small text); high specificity so the hero's large white
+   paragraph styles cannot swallow them. */
+.auth-hero .law-form-error, .law-event-form .law-form-error, .law-dashboard .law-form-error,
+.law-thread-view .law-form-error, p.law-form-error, span.law-form-error {
+	display: block; background: rgba(255, 255, 255, .12); border-left: 4px solid #ff5c4d;
+	color: #fff; font-size: .9rem; font-weight: 600; padding: .45rem .75rem; margin: .4rem 0 0;
+}
+/* A field with an error is itself highlighted. */
+.law-form-field.is-invalid input, .law-form-field.is-invalid select, .law-form-field.is-invalid textarea {
+	outline: 3px solid #ff5c4d; outline-offset: 0;
+}
+/* Password strength, WordPress-style colours. */
+.auth-hero .law-pass-strength, .law-pass-strength {
+	display: block; font-size: .9rem; font-weight: 700; padding: .45rem .75rem; margin: .4rem 0 0; color: #1a1a3d;
+}
+.law-pass-strength.is-short, .law-pass-strength.is-bad, .law-pass-strength.is-mismatch { background: #ffabaf; }
+.law-pass-strength.is-good { background: #f0c33c; }
+.law-pass-strength.is-strong { background: #b8e6bf; }
 .law-form-notice { background: rgba(255, 255, 255, .12); border-left: 4px solid #ffcc02; color: #fff; padding: .8rem 1rem; margin-bottom: 1.2rem; }
 .law-form-notice.is-error { border-left-color: #ff5c4d; }
 .law-form-status { color: #d7d7ea; }

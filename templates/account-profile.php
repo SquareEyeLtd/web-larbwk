@@ -65,10 +65,11 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 							<div class="law-password-fields" hidden>
 								<div class="law-row-grid">
 									<p class="law-form-field"><label for="law-prof-pass">New password (10 characters minimum)</label>
-										<input type="password" id="law-prof-pass" name="password" minlength="10" autocomplete="new-password"></p>
+										<input type="password" id="law-prof-pass" name="password" minlength="10" autocomplete="new-password" data-law-strength></p>
 									<p class="law-form-field"><label for="law-prof-pass2">Confirm new password</label>
-										<input type="password" id="law-prof-pass2" name="password_confirm" autocomplete="new-password"></p>
+										<input type="password" id="law-prof-pass2" name="password_confirm" autocomplete="new-password" data-law-strength-confirm></p>
 								</div>
+								<p class="law-pass-strength" data-law-strength-output hidden></p>
 								<?php
 								foreach ( array( 'password', 'password_confirm' ) as $law_pw_field ) {
 									if ( isset( $law_profile_errors[ $law_pw_field ][0] ) ) {
