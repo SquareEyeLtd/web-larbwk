@@ -3,6 +3,13 @@
 
 /* The form ------------------------------------------------------------- */
 .law-event-form-hero .auth-intro { max-width: none; }
+/* Mobile: the site header is fixed and overlays the top of the viewport, so
+   on a short final section the "Finish" fieldset (terms + submit) came to rest
+   underneath it at max scroll and couldn't be reached. Reserve bottom room so
+   the buttons always scroll clear of the header. */
+@media screen and (max-width: 63.9375em) {
+	.law-event-form-hero { padding-bottom: 140px; }
+}
 .law-event-form fieldset { border: 0; padding: 0; margin: 0 0 2.5rem; }
 .law-event-form legend { color: #ffcc02; font-size: 1.4rem; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem; }
 .law-form-field { margin-bottom: 1.1rem; }
