@@ -1220,7 +1220,7 @@ function law_migration_run_notifications( $dry ) {
 				'{Name (Last):1.6}'    => '',
 				'{Name:1}'             => '{user_name}',
 				'{Email:4}'            => '{user_email}',
-				'{embed_url}'          => '',
+				'{embed_url}'          => '{site_name}',
 				'{entry_url}'          => '',
 				'{site_title}'         => '{site_name}',
 			)

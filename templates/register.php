@@ -43,7 +43,7 @@ $law_reg_values = (array) $law_reg_state['input'];
 						<?php wp_nonce_field( 'law_register' ); ?>
 						<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
 
-						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_reg_values, 'errors' => $law_reg_errors ) ); ?>
+						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_reg_values, 'errors' => $law_reg_errors, 'registration' => true ) ); ?>
 
 						<fieldset>
 							<legend>Login details</legend>

@@ -26,14 +26,19 @@ function law_registration_roles() {
 	);
 }
 
-/** Accessibility choices (form 1 field 17 / form 3 field 13). */
+/**
+ * Accessibility choices (form 1 field 17 / form 3 field 13): stored VALUE =>
+ * displayed label. The short values are the canonical stored format — the GF
+ * fields, ACF field 435 (Accessibility) and every existing user's meta all
+ * use them; storing labels would orphan existing selections.
+ */
 function law_registration_accessibility_choices() {
 	return array(
-		'I require captions',
-		'I require a sign language interpreter',
-		'I will be accompanied by a service animal or Personal Care Assistant',
-		'I require wheelchair access',
-		'Other',
+		'Captions'      => 'I require captions',
+		'Sign language' => 'I require a sign language interpreter',
+		'Animal / PCA'  => 'I will be accompanied by a service animal or Personal Care Assistant',
+		'Wheelchair'    => 'I require wheelchair access',
+		'Other'         => 'Other',
 	);
 }
 
@@ -74,6 +79,27 @@ function law_registration_country_choices() {
 	return $choices;
 }
 
+/**
+ * Country validation: when the select rendered its choice list, only a listed
+ * country is accepted (matching the old GF select); with no list available
+ * (GF gone) any non-empty text passes.
+ *
+ * @param string $country  Submitted value.
+ * @param bool   $required Whether an empty value is an error.
+ * @return string Error message, or '' when valid.
+ */
+function law_registration_validate_country( $country, $required ) {
+	$country = trim( $country );
+	if ( '' === $country ) {
+		return $required ? 'Please choose your country of residence.' : '';
+	}
+	$choices = law_registration_country_choices();
+	if ( $choices && ! in_array( $country, $choices, true ) ) {
+		return 'Please choose a country from the list.';
+	}
+	return '';
+}
+
 /** The HubSpot contact type tags (mirrors functions/hubspot.php). */
 function law_registration_hubspot_tags( array $roles ) {
 	$year = (int) law_events_setting( 'year', (int) gmdate( 'Y' ) );
@@ -101,7 +127,7 @@ function law_registration_write_profile_meta( $user_id, array $input ) {
 	}
 
 	$roles         = array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) );
-	$accessibility = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['accessibility'] ?? array() ) ), law_registration_accessibility_choices() ) );
+	$accessibility = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['accessibility'] ?? array() ) ), array_keys( law_registration_accessibility_choices() ) ) );
 	$dietary       = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['dietary'] ?? array() ) ), law_registration_dietary_choices() ) );
 
 	// The ACF user fields the old mu-plugin synced (law_role, accessibility,
@@ -151,8 +177,10 @@ function law_registration_handler() {
 		wp_safe_redirect( home_url( '/account/?action=registered' ) );
 		exit;
 	}
-	// Anonymous surface: strict per-IP limit.
-	if ( ! law_events_rate_limit_ok( 'register', 0, 5, HOUR_IN_SECONDS ) ) {
+	// Anonymous surface: per-IP limit. 20/hour absorbs a law-firm office or
+	// conference venue behind one NAT while still capping scripted abuse
+	// (which the nonce and honeypot already blunt).
+	if ( ! law_events_rate_limit_ok( 'register', 0, 20, HOUR_IN_SECONDS ) ) {
 		wp_die( 'Too many registration attempts from this connection. Please try again later.' );
 	}
 
@@ -177,6 +205,22 @@ function law_registration_handler() {
 		$errors->add( 'password', 'Please choose a password of at least 10 characters.' );
 	} elseif ( $password !== $confirm ) {
 		$errors->add( 'password_confirm', 'The two passwords do not match.' );
+	}
+
+	// Required-field parity with form 1 (organisation, job title, country and
+	// role were all required there) plus the country whitelist.
+	if ( '' === trim( (string) ( $input['organisation'] ?? '' ) ) ) {
+		$errors->add( 'organisation', 'Please give your organisation or firm name.' );
+	}
+	if ( '' === trim( (string) ( $input['job_title'] ?? '' ) ) ) {
+		$errors->add( 'job_title', 'Please give your job title.' );
+	}
+	$country_error = law_registration_validate_country( (string) ( $input['country'] ?? '' ), true );
+	if ( $country_error ) {
+		$errors->add( 'country', $country_error );
+	}
+	if ( ! array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) ) {
+		$errors->add( 'roles', 'Please choose at least one role.' );
 	}
 
 	if ( $errors->has_errors() ) {
@@ -302,6 +346,12 @@ function law_profile_handler() {
 		if ( ! wp_check_password( (string) ( $input['current_password'] ?? '' ), $user->user_pass, $user_id ) ) {
 			$errors->add( 'current_password', 'Changing your email address requires your current password.' );
 		}
+	}
+
+	// Country stays required (and list-checked), as on form 3.
+	$country_error = law_registration_validate_country( (string) ( $input['country'] ?? '' ), true );
+	if ( $country_error ) {
+		$errors->add( 'country', $country_error );
 	}
 
 	$change_password = ! empty( $input['change_password'] );

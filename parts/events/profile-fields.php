@@ -8,6 +8,9 @@
 
 $law_values = (array) ( $args['values'] ?? array() );
 $law_errors = (array) ( $args['errors'] ?? array() );
+// Registration mirrors form 1's required set (organisation, job title,
+// country, role); the profile requires only country, like form 3.
+$law_registration_mode = ! empty( $args['registration'] );
 
 $law_pf_error = function ( $field ) use ( $law_errors ) {
 	if ( isset( $law_errors[ $field ][0] ) ) {
@@ -32,26 +35,29 @@ $law_countries = law_registration_country_choices();
 	<input type="email" id="law-reg-email" name="email" required autocomplete="email" value="<?php echo esc_attr( $law_pf_value( 'email' ) ); ?>">
 	<?php $law_pf_error( 'email' ); ?></p>
 
-<p class="law-form-field"><label for="law-reg-org">Organisation / firm name</label>
-	<input type="text" id="law-reg-org" name="organisation" autocomplete="organization" value="<?php echo esc_attr( $law_pf_value( 'organisation' ) ); ?>"></p>
+<p class="law-form-field"><label for="law-reg-org">Organisation / firm name<?php echo $law_registration_mode ? ' *' : ''; ?></label>
+	<input type="text" id="law-reg-org" name="organisation" autocomplete="organization" <?php echo $law_registration_mode ? 'required' : ''; ?> value="<?php echo esc_attr( $law_pf_value( 'organisation' ) ); ?>">
+	<?php $law_pf_error( 'organisation' ); ?></p>
 
-<p class="law-form-field"><label for="law-reg-job">Job title</label>
-	<input type="text" id="law-reg-job" name="job_title" autocomplete="organization-title" value="<?php echo esc_attr( $law_pf_value( 'job_title' ) ); ?>"></p>
+<p class="law-form-field"><label for="law-reg-job">Job title<?php echo $law_registration_mode ? ' *' : ''; ?></label>
+	<input type="text" id="law-reg-job" name="job_title" autocomplete="organization-title" <?php echo $law_registration_mode ? 'required' : ''; ?> value="<?php echo esc_attr( $law_pf_value( 'job_title' ) ); ?>">
+	<?php $law_pf_error( 'job_title' ); ?></p>
 
-<p class="law-form-field"><label for="law-reg-country">Country of residence</label>
+<p class="law-form-field"><label for="law-reg-country">Country of residence *</label>
 	<?php if ( $law_countries ) : ?>
-		<select id="law-reg-country" name="country" autocomplete="country-name">
+		<select id="law-reg-country" name="country" autocomplete="country-name" required>
 			<option value="">Choose…</option>
 			<?php foreach ( $law_countries as $law_country ) : ?>
 				<option value="<?php echo esc_attr( $law_country ); ?>" <?php selected( $law_pf_value( 'country' ), $law_country ); ?>><?php echo esc_html( $law_country ); ?></option>
 			<?php endforeach; ?>
 		</select>
 	<?php else : ?>
-		<input type="text" id="law-reg-country" name="country" autocomplete="country-name" value="<?php echo esc_attr( $law_pf_value( 'country' ) ); ?>">
-	<?php endif; ?></p>
+		<input type="text" id="law-reg-country" name="country" autocomplete="country-name" required value="<?php echo esc_attr( $law_pf_value( 'country' ) ); ?>">
+	<?php endif; ?>
+	<?php $law_pf_error( 'country' ); ?></p>
 
 <div class="law-form-field">
-	<span class="law-form-label">Role</span>
+	<span class="law-form-label">Role<?php echo $law_registration_mode ? ' *' : ''; ?></span>
 	<div class="law-choices">
 		<?php
 		$law_chosen_roles = (array) $law_pf_value( 'roles', array() );
@@ -61,6 +67,7 @@ $law_countries = law_registration_country_choices();
 				<?php echo esc_html( $law_role_label ); ?></label>
 		<?php endforeach; ?>
 	</div>
+	<?php $law_pf_error( 'roles' ); ?>
 </div>
 
 <fieldset>
@@ -70,10 +77,10 @@ $law_countries = law_registration_country_choices();
 		<div class="law-choices">
 			<?php
 			$law_chosen_access = (array) $law_pf_value( 'accessibility', array() );
-			foreach ( law_registration_accessibility_choices() as $law_choice ) :
+			foreach ( law_registration_accessibility_choices() as $law_choice_value => $law_choice_label ) :
 				?>
-				<label><input type="checkbox" name="accessibility[]" value="<?php echo esc_attr( $law_choice ); ?>" <?php checked( in_array( $law_choice, $law_chosen_access, true ) ); ?>>
-					<?php echo esc_html( $law_choice ); ?></label>
+				<label><input type="checkbox" name="accessibility[]" value="<?php echo esc_attr( $law_choice_value ); ?>" <?php checked( in_array( $law_choice_value, $law_chosen_access, true ) ); ?>>
+					<?php echo esc_html( $law_choice_label ); ?></label>
 			<?php endforeach; ?>
 		</div>
 	</div>

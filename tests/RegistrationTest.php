@@ -32,12 +32,17 @@ class RegistrationTest extends LAW_Test_Case {
 				'country'       => 'United Kingdom',
 				// administrator must be silently dropped; junk choices too.
 				'roles'         => array( 'administrator', 'events_committee', 'event_host' ),
-				'accessibility' => array( 'I require wheelchair access', 'FAKE CHOICE' ),
+				'accessibility' => array( 'Wheelchair', 'I require wheelchair access', 'FAKE CHOICE' ),
 				'dietary'       => array( 'Vegan', '<img onerror=1>' ),
 			)
 		);
 
 		$this->assertSame( array( 'event_host' ), $roles, 'Only self-service roles survive: no self-assigned administrator or committee.' );
+		if ( function_exists( 'get_field' ) ) {
+			// The canonical stored accessibility format is the short VALUE
+			// ('Wheelchair'), never the display label.
+			$this->assertSame( array( 'Wheelchair' ), (array) get_field( 'accessibility', 'user_' . $user_id ) );
+		}
 		// sanitize_text_field strips script tags WITH their content.
 		$this->assertSame( 'Test Firm', get_user_meta( $user_id, 'organisation', true ) );
 		$this->assertSame( 'United Kingdom', get_user_meta( $user_id, 'country', true ) );
