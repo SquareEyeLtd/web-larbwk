@@ -319,7 +319,11 @@ function law_profile_handler() {
 	}
 
 	if ( $errors->has_errors() ) {
-		set_transient( 'law_profile_state_' . $user_id, array( 'errors' => $errors->errors ), 10 * MINUTE_IN_SECONDS );
+		// Keep the typed values (never the passwords) so a failed save does
+		// not throw away in-progress edits or collapse the password section.
+		$safe_input = law_events_form_reusable_input( $input );
+		unset( $safe_input['password'], $safe_input['password_confirm'], $safe_input['current_password'] );
+		set_transient( 'law_profile_state_' . $user_id, array( 'errors' => $errors->errors, 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
 		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/account/profile/' ) ) );
 		exit;
 	}
@@ -368,14 +372,14 @@ function law_profile_handler() {
 	exit;
 }
 
-/** One-shot error state for the profile form. */
+/** One-shot error/input state for the profile form. */
 function law_profile_state() {
 	$key   = 'law_profile_state_' . get_current_user_id();
 	$state = get_transient( $key );
 	if ( $state ) {
 		delete_transient( $key );
 	}
-	return is_array( $state ) ? $state : array( 'errors' => array() );
+	return is_array( $state ) ? $state : array( 'errors' => array(), 'input' => array() );
 }
 
 /** Current profile values for the form. */

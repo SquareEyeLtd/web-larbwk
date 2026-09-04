@@ -10,9 +10,14 @@
 get_header();
 
 $law_profile_user   = get_current_user_id();
-$law_profile_state  = function_exists( 'law_profile_state' ) ? law_profile_state() : array( 'errors' => array() );
+$law_profile_state  = function_exists( 'law_profile_state' ) ? law_profile_state() : array( 'errors' => array(), 'input' => array() );
 $law_profile_errors = (array) $law_profile_state['errors'];
 $law_profile_values = $law_profile_user ? law_profile_values( $law_profile_user ) : array();
+// After a validation error the typed values win over the stored profile.
+if ( ! empty( $law_profile_state['input'] ) ) {
+	$law_profile_values = array_merge( $law_profile_values, array_intersect_key( (array) $law_profile_state['input'], $law_profile_values ) );
+	$law_profile_values['change_password'] = ! empty( $law_profile_state['input']['change_password'] );
+}
 $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 ?>
 
@@ -55,7 +60,7 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 									<span class="law-form-error" role="alert"><?php echo esc_html( $law_profile_errors['current_password'][0] ); ?></span>
 								<?php endif; ?></p>
 							<p class="law-form-field law-choices">
-								<label><input type="checkbox" name="change_password" value="1" data-law-toggle="password-fields"> Change password?</label>
+								<label><input type="checkbox" name="change_password" value="1" data-law-toggle="password-fields" <?php checked( ! empty( $law_profile_values['change_password'] ) ); ?>> Change password?</label>
 							</p>
 							<div class="law-password-fields" hidden>
 								<div class="law-row-grid">

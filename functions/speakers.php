@@ -328,6 +328,11 @@ function law_speaker_requested_id() {
 }
 
 function law_speakers_is_single() {
+	// CPT mode: slug permalinks are singles too (the legacy numeric query var
+	// only covers old /speakers/<entry ID>/ URLs).
+	if ( 'cpt' === law_events_source() && is_singular( LAW_SPEAKER_CPT ) ) {
+		return true;
+	}
 	return law_speakers_is_template() && law_speaker_requested_id() > 0;
 }
 
