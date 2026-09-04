@@ -731,6 +731,10 @@ custom tables/views we own, over configuration in plugins we work around.
   locally, then on staging, then on live.
 - **Dry-run first.** The default mode validates and reports what *would* happen,
   creating nothing, exactly like the existing speaker migrator.
+- **Checked and empty, nothing to migrate:** GF save-and-continue drafts
+  (feature disabled on form 2, zero rows) and manual admin entry notes (zero
+  exist; all notes are Gravity Flow or notification records, covered by
+  step 6).
 - **Everything is reported.** Per-item outcome (created / skipped / error with
   reason), a persistent log, and a downloadable CSV report.
 
@@ -787,8 +791,24 @@ submenus of LAW, no new top-level menus. The screen:
 5. **Comments.** Form 5 (Comments) children (43 rows) → `law_event_comment`
    comments on the right event, authored to the matching user where the email
    resolves, timestamped from the entry date.
-6. **Workflow audit seed.** One `law_event_log` comment per event recording
-   the migration itself and the derived statuses.
+6. **Workflow history.** The GF entry notes table holds the full historical
+   timeline for the active form 2 (Event > submit an event) entries: 424
+   Gravity Flow notes (approvals, status steps, releases) and 560
+   notification-send notes (zero manual notes exist). All of them migrate
+   into each event's activity log as `law_event_log` entries with their
+   original timestamps, authors and types, so the committee keeps the full
+   who-did-what history of every live event. GravityView **entry revisions**
+   (1,405 meta rows of host-edit snapshots) migrate as one-line log entries
+   (editor, date) only; the full field-level snapshots stay in the retained
+   GF archive tables rather than being converted, since the diff format is
+   GravityView-specific and the archive keeps them inspectable. Finally, one
+   log entry per event records the migration itself and any derived statuses.
+6b. **Counters and settings seed.** The LAW reference generator is seeded
+   from GP Unique ID's `wp_gpui_sequence` row (form 2, field 70, currently
+   207) so numbering continues without collision; the settings screen is
+   seeded with the slot choices from field 68 (Confirmed slot), the programme
+   week dates, and the committee recipient list lifted from the current
+   notification configs.
 7. **Redirects.** Persist the entry-ID → post map (an option or small table)
    powering 301s for `?event=<entry ID>` and `/speakers/<entry ID>/`.
 8. **Notifications.** Migrate every form 2 (Event > submit an event)
