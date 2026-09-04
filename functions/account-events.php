@@ -43,7 +43,32 @@ function law_account_events() {
 
 	$items   = array();
 	$user_id = get_current_user_id();
-	if ( $user_id < 1 || ! class_exists( 'GFAPI' ) ) {
+	if ( $user_id < 1 ) {
+		return $items;
+	}
+
+	// CPT mode: the user's own and co-owned events, drafts included, with a
+	// faux minimal entry so the card helpers keep one code path.
+	if ( 'cpt' === law_events_source() ) {
+		foreach ( law_events_owned_event_ids( $user_id ) as $post_id ) {
+			$event = law_events_map_post( $post_id, array( '*' ) );
+			if ( ! $event ) {
+				continue;
+			}
+			$items[] = array(
+				'event' => $event,
+				'entry' => array(
+					'id' => $post_id,
+					'83' => (string) law_event_meta( $post_id, '_law_stripe_invoice_url' ),
+					'96' => ucfirst( (string) law_event_meta( $post_id, '_law_payment_status' ) ),
+				),
+			);
+		}
+		usort( $items, fn( $a, $b ) => strcmp( $a['event']['sort'], $b['event']['sort'] ) );
+		return $items;
+	}
+
+	if ( ! class_exists( 'GFAPI' ) ) {
 		return $items;
 	}
 
@@ -116,6 +141,11 @@ function law_account_events_view_id() {
  * @param array $entry Form 2 entry.
  */
 function law_account_event_edit_url( $entry ) {
+	if ( 'cpt' === law_events_source() ) {
+		return is_array( $entry )
+			? add_query_arg( 'law_event', (int) ( $entry['id'] ?? 0 ), law_account_events_submit_url() )
+			: '';
+	}
 	if ( ! class_exists( 'GravityView_Edit_Entry' ) || ! is_array( $entry ) ) {
 		return '';
 	}
@@ -133,6 +163,10 @@ function law_account_event_edit_url( $entry ) {
  * @param int $entry_id Form 2 entry ID.
  */
 function law_account_event_comments_url( $entry_id ) {
+	if ( 'cpt' === law_events_source() ) {
+		$page = get_page_by_path( 'account/events' );
+		return $page ? add_query_arg( 'law_thread', (int) $entry_id, get_permalink( $page ) ) : '';
+	}
 	if ( ! function_exists( 'gravity_flow' ) || ! class_exists( 'Gravity_Flow_Common' ) ) {
 		return '';
 	}

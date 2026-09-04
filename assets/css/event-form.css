@@ -1,0 +1,83 @@
+/* Events module front end: the submission/edit form, the comment thread and
+   the committee dashboard. Sits on the account-pages design (auth.css). */
+
+/* The form ------------------------------------------------------------- */
+.law-event-form-hero .auth-intro { max-width: none; }
+.law-event-form fieldset { border: 0; padding: 0; margin: 0 0 2.5rem; }
+.law-event-form legend { color: #ffcc02; font-size: 1.4rem; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem; }
+.law-form-field { margin-bottom: 1.1rem; }
+.law-form-field label, .law-form-label { display: block; color: #ffcc02; font-weight: 600; margin-bottom: .25rem; }
+.law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
+.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select, .law-event-form textarea {
+	width: 100%; border: 0; border-radius: 0; padding: .6rem .75rem; background: #fff; color: #1a1a3d; margin: 0;
+}
+.law-event-form .law-choices label { color: #fff; font-weight: 400; }
+.law-event-form .law-choices input { margin-right: .5rem; }
+.law-form-hint { color: #d7d7ea; font-size: .9rem; }
+.law-form-error { color: #ffb3ab; font-weight: 600; margin: .3rem 0 0; }
+.law-form-notice { background: rgba(255, 255, 255, .12); border-left: 4px solid #ffcc02; color: #fff; padding: .8rem 1rem; margin-bottom: 1.2rem; }
+.law-form-notice.is-error { border-left-color: #ff5c4d; }
+.law-form-status { color: #d7d7ea; }
+.law-form-status strong { color: #ffcc02; }
+.is-locked input, .is-locked select, .is-locked textarea { opacity: .55; }
+.law-locked-note { display: inline-block; color: #d7d7ea; font-size: .8rem; font-style: italic; margin-top: .2rem; }
+.law-hp { position: absolute !important; left: -9999px; height: 1px; overflow: hidden; }
+
+/* Section nav */
+.law-form-nav { position: sticky; top: 1rem; align-self: flex-start; }
+.law-form-nav ol { list-style: none; margin: 0; }
+.law-form-nav a { color: #fff; display: block; padding: .35rem 0; border-bottom: 1px solid rgba(255, 255, 255, .15); }
+.law-form-nav a:hover { color: #ffcc02; }
+@media screen and (max-width: 63.9375em) { .law-form-nav { display: none; } }
+
+/* Repeater rows */
+.law-row { position: relative; background: rgba(255, 255, 255, .08); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
+.law-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1rem; }
+.law-row-grid--three { grid-template-columns: 1fr 1fr 1fr; }
+.law-row-grid label { color: #fff; font-weight: 400; font-size: .9rem; }
+.law-row-wide { grid-column: 1 / -1; }
+.law-row-remove { position: absolute; top: .4rem; right: .6rem; background: none; border: 0; color: #ffb3ab; font-size: 1.3rem; cursor: pointer; line-height: 1; }
+.law-row-add { margin-top: .25rem; }
+@media screen and (max-width: 39.9375em) { .law-row-grid, .law-row-grid--three { grid-template-columns: 1fr; } }
+
+.law-form-buttons .button { margin-right: .75rem; }
+.law-terms label { color: #fff; font-weight: 400; }
+.law-terms a { color: #ffcc02; text-decoration: underline; }
+
+/* The thread ------------------------------------------------------------ */
+.law-thread-view { max-width: 760px; margin: 1rem 0 2rem; }
+.law-thread-view__header h2 { margin-bottom: .25rem; }
+.law-thread-list { list-style: none; margin: 1.2rem 0; }
+.law-bubble { max-width: 85%; margin-bottom: 1rem; padding: .9rem 1.1rem; border-radius: 8px; background: #f0f0f5; }
+.law-bubble.is-committee { background: #eaf1fa; border-left: 4px solid #1a1a3d; }
+.law-bubble.is-host { margin-left: auto; background: #fdf3e3; border-right: 4px solid #e87722; }
+.law-bubble__meta { display: flex; gap: .6rem; align-items: baseline; font-size: .82rem; color: #555; margin-bottom: .35rem; flex-wrap: wrap; }
+.law-bubble__badge { text-transform: uppercase; font-size: .7rem; letter-spacing: .04em; background: #1a1a3d; color: #fff; padding: .1rem .45rem; border-radius: 2px; }
+.is-host .law-bubble__badge { background: #e87722; }
+.law-bubble__body p:last-child { margin-bottom: 0; }
+.law-thread-reply label { font-weight: 700; display: block; margin-bottom: .3rem; }
+.law-thread-reply textarea { width: 100%; }
+.law-thread-reply__note { display: inline-block; margin-left: .6rem; font-size: .85rem; color: #555; font-style: italic; }
+.law-thread-empty { color: #555; font-style: italic; }
+
+/* The committee dashboard ------------------------------------------------ */
+.law-dashboard { padding: 1rem 0 3rem; }
+.law-dashboard__title { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+.law-dashboard__facts { display: grid; grid-template-columns: 180px 1fr; gap: .3rem .8rem; margin: 1.2rem 0; }
+.law-dashboard__facts dt { font-weight: 700; }
+.law-dashboard__facts dd { margin: 0; }
+.law-dashboard__filters { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+.law-dashboard__chips a { display: inline-block; padding: .3rem .7rem; margin: 0 .3rem .3rem 0; background: #f0f0f5; border-radius: 999px; font-size: .85rem; }
+.law-dashboard__chips a.is-active { background: #1a1a3d; color: #fff; }
+.law-dashboard__search { display: flex; gap: .5rem; align-items: center; }
+.law-dashboard__search input[type="search"] { margin: 0; }
+.law-dashboard__table { width: 100%; border-collapse: collapse; }
+.law-dashboard__table th, .law-dashboard__table td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid #e3e3ec; vertical-align: top; }
+.law-dashboard__controls { background: #f7f7fb; padding: 1.2rem; border: 1px solid #e3e3ec; position: sticky; top: 1rem; }
+.law-dashboard__controls h2 { font-size: 1.1rem; text-transform: uppercase; }
+.law-dashboard__controls .law-form-field label { font-weight: 600; display: block; margin-bottom: .2rem; }
+.law-dashboard__buttons .button { margin: 0 .4rem .5rem 0; }
+.law-dashboard__log { margin-top: 1.5rem; }
+.law-dashboard__log .law-log { list-style: none; max-height: 320px; overflow: auto; font-size: .85rem; }
+.law-dashboard__log .law-log li { padding: .3rem 0; border-bottom: 1px solid #eee; }
+.law-dashboard__log .law-log__date { color: #757575; margin-right: .4rem; }

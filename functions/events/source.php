@@ -56,13 +56,14 @@ function law_events_map_post( $post, $allowed = null ) {
 	if ( null === $allowed ) {
 		$allowed = law_calendar_public_statuses();
 	}
-	$status = law_event_status_label( $post );
-	$all    = is_array( $allowed ) && empty( $allowed );
+	$status        = law_event_status_label( $post );
+	$with_drafts   = is_array( $allowed ) && in_array( '*', $allowed, true ); // Host dashboard.
+	$all           = $with_drafts || ( is_array( $allowed ) && empty( $allowed ) );
 	if ( ! $all && ! in_array( $status, $allowed, true ) ) {
 		return null;
 	}
-	// Drafts are never listable, even for the committee.
-	if ( 'law-draft' === $post->post_status ) {
+	// Drafts appear only where explicitly asked for (the owner's dashboard).
+	if ( 'law-draft' === $post->post_status && ! $with_drafts ) {
 		return null;
 	}
 
@@ -364,8 +365,13 @@ add_action( 'template_redirect', function () {
 		: law_events_programme_page_id();
 
 	if ( $gate_page && ! members_can_current_user_view_post( $gate_page ) ) {
-		wp_safe_redirect( wp_login_url( get_permalink() ), 302 );
-		exit;
+		if ( ! is_user_logged_in() ) {
+			wp_safe_redirect( wp_login_url( get_permalink() ), 302 );
+			exit;
+		}
+		global $wp_query;
+		$wp_query->set_404();
+		status_header( 404 );
 	}
 }, 4 );
 

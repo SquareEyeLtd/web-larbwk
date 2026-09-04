@@ -19,7 +19,22 @@ get_header();
 	<div class="grid-container">
 		<div class="law-cal law-account-events">
 
-			<?php if ( law_account_events_in_entry_context() ) : ?>
+			<?php $law_thread_id = absint( $_GET['law_thread'] ?? 0 ); ?>
+			<?php if ( $law_thread_id && 'cpt' === law_events_source() ) : ?>
+
+				<?php
+				get_template_part(
+					'parts/layout/back-link',
+					null,
+					array(
+						'url'   => get_permalink(),
+						'label' => __( 'Back to my events', 'law' ),
+					)
+				);
+				get_template_part( 'parts/events/thread', null, array( 'event_id' => $law_thread_id, 'context' => 'host' ) );
+				?>
+
+			<?php elseif ( law_account_events_in_entry_context() ) : ?>
 
 				<?php
 				get_template_part(

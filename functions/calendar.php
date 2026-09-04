@@ -11,6 +11,19 @@ const LAW_CALENDAR_YEAR    = 2026;
  * Programme week, Monday–Friday. Empty days stay visible in list and day views.
  */
 function law_calendar_week_days() {
+	// The events module settings drive the week when configured
+	// (LAW → Events settings); the hardcoded 2026 week is the fallback.
+	if ( function_exists( 'law_events_setting' ) ) {
+		$start = strtotime( (string) law_events_setting( 'week_start', '' ) );
+		$end   = strtotime( (string) law_events_setting( 'week_end', '' ) );
+		if ( $start && $end && $end >= $start && ( $end - $start ) < 14 * DAY_IN_SECONDS ) {
+			$days = array();
+			for ( $ts = $start; $ts <= $end; $ts += DAY_IN_SECONDS ) {
+				$days[ gmdate( 'Y-m-d', $ts ) ] = date_i18n( 'l j F', $ts );
+			}
+			return $days;
+		}
+	}
 	return array(
 		'2026-11-30' => 'Monday 30 November',
 		'2026-12-01' => 'Tuesday 1 December',
@@ -175,6 +188,10 @@ function law_calendar_field_choices( $field_id ) {
 	}
 
 	$cache[ $field_id ] = array();
+	if ( 'cpt' === law_events_source() ) {
+		$cache[ $field_id ] = law_events_cpt_field_choices( $field_id );
+		return $cache[ $field_id ];
+	}
 	if ( ! class_exists( 'GFAPI' ) || ! class_exists( 'GFFormsModel' ) ) {
 		return $cache[ $field_id ];
 	}
@@ -340,10 +357,18 @@ function law_calendar_events() {
 	$allowed = law_calendar_is_committee() ? array() : law_calendar_public_statuses();
 	$filters = law_calendar_filters();
 	$events  = array();
-	foreach ( law_calendar_raw_entries() as $entry ) {
-		$mapped = law_calendar_map_entry( $entry, $allowed );
-		if ( $mapped && law_calendar_event_matches_filters( $mapped, $filters ) ) {
-			$events[] = $mapped;
+	if ( 'cpt' === law_events_source() ) {
+		foreach ( law_events_cpt_mapped_events( $allowed ) as $mapped ) {
+			if ( law_calendar_event_matches_filters( $mapped, $filters ) ) {
+				$events[] = $mapped;
+			}
+		}
+	} else {
+		foreach ( law_calendar_raw_entries() as $entry ) {
+			$mapped = law_calendar_map_entry( $entry, $allowed );
+			if ( $mapped && law_calendar_event_matches_filters( $mapped, $filters ) ) {
+				$events[] = $mapped;
+			}
 		}
 	}
 
@@ -747,6 +772,18 @@ function law_calendar_event_by_id( $entry_id ) {
 
 	if ( array_key_exists( $entry_id, $cache ) ) {
 		return $cache[ $entry_id ];
+	}
+
+	if ( 'cpt' === law_events_source() ) {
+		$post_id = law_events_resolve_event_post_id( $entry_id );
+		$event   = $post_id
+			? law_events_map_post( $post_id, law_calendar_is_committee() ? array() : null )
+			: null;
+		if ( $event ) {
+			$event = law_events_cpt_hydrate( $event );
+		}
+		$cache[ $entry_id ] = $event;
+		return $event;
 	}
 
 	$event = null;

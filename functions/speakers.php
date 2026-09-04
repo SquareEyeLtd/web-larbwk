@@ -105,7 +105,17 @@ function law_speakers() {
 	}
 	$speakers = array();
 
-	if ( ! class_exists( 'GFAPI' ) || ! law_speakers_user_can_view() ) {
+	if ( ! law_speakers_user_can_view() ) {
+		return $speakers;
+	}
+
+	// CPT mode: speaker posts referenced by Confirmed events, deduped at save.
+	if ( 'cpt' === law_events_source() ) {
+		$speakers = law_events_cpt_speakers();
+		return $speakers;
+	}
+
+	if ( ! class_exists( 'GFAPI' ) ) {
 		return $speakers;
 	}
 
@@ -260,6 +270,10 @@ function law_speaker_initials( $speaker ) {
  * listings live on /programme/ and must not produce /programme/<id>/.
  */
 function law_speaker_url( $entry_id ) {
+	if ( 'cpt' === law_events_source() ) {
+		$post_id = law_events_resolve_speaker_id( $entry_id );
+		return $post_id ? get_permalink( $post_id ) : '';
+	}
 	static $base = null;
 	if ( null === $base ) {
 		$page_id = law_speakers_page_id();
@@ -323,6 +337,9 @@ function law_speaker_profile( $entry_id ) {
 	if ( $entry_id < 1 ) {
 		return null;
 	}
+	if ( 'cpt' === law_events_source() ) {
+		return law_speakers_user_can_view() ? law_events_cpt_speaker_profile( $entry_id ) : null;
+	}
 	foreach ( law_speakers() as $speaker ) {
 		if ( in_array( $entry_id, $speaker['entry_ids'], true ) ) {
 			return $speaker;
@@ -332,8 +349,30 @@ function law_speaker_profile( $entry_id ) {
 }
 
 function law_speaker_current_profile() {
+	// CPT mode: the profile is the law_speaker post being viewed.
+	if ( 'cpt' === law_events_source() && is_singular( LAW_SPEAKER_CPT ) ) {
+		return law_speaker_profile( get_the_ID() );
+	}
 	return law_speakers_is_single() ? law_speaker_profile( law_speaker_requested_id() ) : null;
 }
+
+/** CPT mode: law_speaker singles render the existing profile template. */
+add_filter(
+	'template_include',
+	function ( $template ) {
+		if ( 'cpt' === law_events_source() && is_singular( LAW_SPEAKER_CPT ) ) {
+			if ( ! law_speaker_current_profile() ) {
+				global $wp_query;
+				$wp_query->set_404();
+				status_header( 404 );
+				return get_404_template();
+			}
+			return get_theme_file_path( 'templates/speaker.php' );
+		}
+		return $template;
+	},
+	19
+);
 
 add_filter(
 	'template_include',
@@ -387,6 +426,10 @@ function law_speaker_events( $speaker ) {
  * page instead.
  */
 function law_speaker_event_link( $event_id ) {
+	if ( 'cpt' === law_events_source() ) {
+		$post_id = law_events_resolve_event_post_id( $event_id );
+		return $post_id ? law_events_event_url( $post_id ) : '';
+	}
 	static $base = null;
 	if ( null === $base ) {
 		$pages = get_pages(
