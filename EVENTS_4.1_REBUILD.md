@@ -104,10 +104,18 @@ The account holds **five** scenarios; three are known:
 - **"LAW > new user registration > tag in HubSpot"** (disabled): the
   counterpart of form 1 (User registration)'s disabled HubSpot feed 15.
   Disabled on both sides, so nothing to replace, but confirm it stays off.
-- **Two further scenarios not yet identified** ("View all 5 in Scenarios").
-  One of them, or something outside Make, used the `make-read-only` GF REST
-  key on 1 September 2026. **Must be identified before cutover** (open
-  question, section 9).
+- **"LAW: log submitted event in HubSpot"** (disabled, 0 runs): never used;
+  nothing to replace.
+- **"Raindrop to Discovery (law firms)"** (enabled, scheduled): Raindrop
+  bookmarks to a WordPress site. Appears unrelated to the events module;
+  worth a one-line confirmation that its WordPress connection is not this
+  site.
+
+That is the complete list (all five identified, 4 September 2026). No enabled
+scenario **reads** Gravity Forms data on a schedule, so the `make-read-only`
+REST key's 1 September access was most likely Make verifying the stored
+connection rather than a data sync. Low risk; the key simply retires with the
+others at cutover.
 
 ### 2.3.1 Scenario A verified module map
 
@@ -130,14 +138,21 @@ email) → **Array aggregator** (Customer ID, Email) → **Upsert customer**: PO
 Then a **router** with three filtered routes:
 
 1. **"VAT number exists"** (field 79 VAT number exists AND field 84
-   Calculated fee (pence) > 0): POST `/v1/customers/{customer}/tax_ids`, with
-   a Resume error handler, so a failed VAT attach is swallowed and the run
-   continues. (Tax ID type in the body not captured; presumably `eu_vat` /
-   `gb_vat`.)
+   Calculated fee (pence) > 0): POST `/v1/customers/{customer}/tax_ids` with
+   `type = if(substring(field 79; 0; 2) = "GB"; gb_vat; eu_vat)` and `value` =
+   field 79 (VAT number), under a Resume error handler, so a failed VAT
+   attach is swallowed and the run continues. Note the gap this creates: any
+   non-GB, non-EU VAT/tax number is sent as `eu_vat`, which Stripe rejects,
+   and the rejection is silently swallowed. The rebuild validates the format
+   and logs the failure instead.
 2. **"Money is due"** (field 84 > 0): Tools (InvoiceContactName = 75.3 +
-   75.6) → **Create invoice** POST `/v1/invoices` (body not captured: due
-   date and collection method unverified, expected `send_invoice` +
-   `days_until_due: 5`) → Tools sets `lineAmount` = field 84 and `lineTax` =
+   75.6) → **Create invoice** POST `/v1/invoices` with
+   `customer={upserted id}`, `collection_method=send_invoice`,
+   `days_until_due=5`, `auto_advance=false`, a custom field
+   `Attention = {InvoiceContactName}` printed on the invoice,
+   `rendering[template] = inrtem_1SSbTmPhJqxRqE2K5Ppdv1Lq` (a branded Stripe
+   invoice rendering template), and metadata `gf_entry_id` + `law_reference`
+   (field 70, Unique ID) → Tools sets `lineAmount` = field 84 and `lineTax` =
    `if(field 85 VAT = 1; "&tax_rates[0]=txr_1TkIOyPhJqxRqE2KyejShg1c"; "")` →
    **Create line item** POST `/v1/invoiceitems` (`customer`, `invoice`,
    `currency=gbp`, `amount=lineAmount`, `description=Event fee for {field 17
@@ -147,15 +162,16 @@ Then a **router** with three filtered routes:
    credentials and `stripe_url = hosted_invoice_url`.
 3. **"Zero fee"** (field 84 = 0): **Skip logging invoice** (workflow-hooks
    POST releasing step 19, Log invoice URL) → **Set payment status to Free**
-   (workflow-hooks POST releasing step 20, Waiting for payment; body not
-   captured, presumably `payment_status: "Free"`).
+   (workflow-hooks POST with step 20, Waiting for payment's credentials and
+   `payment_status: "Free"`, the value that lands on the nonexistent field
+   86, like the Paid write).
 
 So the open VAT question is answered: **a fixed Stripe tax rate,
 `txr_1TkIOyPhJqxRqE2KyejShg1c`, applied to the line item when field 85 (VAT)
 = 1. Not Stripe Tax.** The rebuild stores that tax rate ID in settings and
-applies it the same way. (The 4.2 spec §7.2 says "Stripe Tax handles the
-calculation"; what is live today is a fixed rate. Align that wording when 4.2
-starts.)
+applies it the same way. (EVENTS_4.2_SPECS.md §7.2 previously said "Stripe Tax
+handles the calculation"; that wording has been corrected to the fixed-rate
+approach, per Denis, September 2026.)
 
 **Newly found defect (live): Stripe customers have no name.** The upsert maps
 `name`/`business_name` from deleted field 8; the database has zero rows for
@@ -431,9 +447,38 @@ law-draft ──submit──▶ law-proposed ──approve──▶ law-approved
 - `LAW\Events\Workflow::transition( $event_id, $action, $args )` is the only
   way status changes. Each transition has guards (who may do it, from which
   status), side effects (fee snapshot, invoice creation, emails) and writes an
-  **audit log entry**: a WP comment of type `law_event_log` on the event,
-  recording actor, action, old/new status and any note. This replaces the
-  Gravity Flow timeline and gives the committee a visible history.
+  **activity log entry**. This replaces the Gravity Flow timeline and gives
+  the committee a visible history.
+
+**The activity log** (requirement from Denis, September 2026: log the payment
+process and every status change like WooCommerce order notes, with as much
+information as possible). Storage: WP comments of type `law_event_log` on the
+event, each carrying a human-readable line plus structured comment meta (a
+JSON context blob) so nothing is lost to prose. Logged events:
+
+- every status transition: actor (user ID and display name), old and new
+  status, the action taken, and the **source** (committee UI, host resubmit,
+  Stripe webhook, migration, admin edit);
+- every payment-path step: invoice created (Stripe invoice ID, amount,
+  currency, VAT applied), invoice sent, `invoice.paid` received (Stripe event
+  ID, amount paid, payment timestamp, payment method summary where the event
+  carries it), payment failed/voided, refund recorded;
+- payment status changes (`_law_payment_status` old → new, with source);
+- fee changes: override ticked/unticked, override amount changes, the
+  snapshot taken at approval;
+- Stripe API failures and retries (error message, who pressed retry);
+- every notification email sent (template, recipient, subject);
+- committee assignee changes and host edits to a published event;
+- **manual notes**: committee and admins can add a free-text note from the
+  admin event screen and the committee detail view, like a private
+  WooCommerce order note.
+
+The log renders newest-first as a notes panel on the wp-admin event screen
+(`admin/event-screen.php`) and in the committee detail view, with system
+entries and manual notes visually distinguished, exactly the WooCommerce
+order-notes pattern. Log entries are append-only: no edit or delete from the
+UI. The same mechanism is reused for 4.2 bookings, where charge-on-approval
+and waitlist promotion make this history even more important.
 - Approve computes and snapshots `_law_fee_pence` and `_law_vat` (honouring the
   committee override), writes `_law_approved_at`, then either raises the Stripe
   invoice (fee > 0) or goes straight to `publish` with `_law_payment_status =
@@ -467,13 +512,16 @@ handles dependencies; no runtime dependency on any middleware).
    customer tax ID when present (attach failure logged, never fatal, matching
    the current scenario's Resume behaviour). This fixes the live empty-name
    defect (section 2.3.1).
-2. Create the invoice: one line item for the snapshot `_law_fee_pence`,
-   description "Event fee for <event title>" (as now), the fixed Stripe tax
-   rate (`txr_1TkIOyPhJqxRqE2KyejShg1c`, held in settings) applied when
-   `_law_vat` is 1, `collection_method = send_invoice` with
-   `days_until_due = 5` (to be confirmed against the Create invoice module
-   body, section 9), metadata `law_reference` and `law_event_id` (plus
-   `gf_entry_id` for continuity on migrated events).
+2. Create the invoice, matching the verified Make module exactly: one line
+   item for the snapshot `_law_fee_pence`, description "Event fee for <event
+   title>", the fixed Stripe tax rate (`txr_1TkIOyPhJqxRqE2KyejShg1c`, held
+   in settings) applied when `_law_vat` is 1,
+   `collection_method = send_invoice`, `days_until_due = 5`,
+   `auto_advance = false`, the custom field `Attention = <invoice contact
+   name>`, the branded rendering template
+   (`inrtem_1SSbTmPhJqxRqE2K5Ppdv1Lq`, held in settings), and metadata
+   `law_reference` and `law_event_id` (plus `gf_entry_id` for continuity on
+   migrated events).
 3. Finalise and send; store `_law_stripe_invoice_id` and the hosted URL; email
    the host the payment-due notification with the link.
 4. **On failure**: the event stays `law-approved` with an error flag meta, the
@@ -768,20 +816,18 @@ areas) rather than starting a second architecture.
    (Defect 5 needs the intent settled either way.)
 3. Migration of the 160 trashed form 2 entries: confirm leave-behind.
 
-**For Denis, about Make** (scenarios A and B are now verified, sections 2.3
-and 2.3.1; what remains):
+**For Denis, about Make and Stripe** (both scenarios and all module bodies are
+now fully verified, sections 2.3 and 2.3.1; test-mode Stripe keys received,
+held outside the repo in the gitignored working notes; what remains):
 
-1. The two unidentified scenarios of the account's five: names, whether they
-   touch this site, and which one (if any) used the `make-read-only` GF REST
-   key on 1 September 2026. The HubSpot registration scenario is disabled, so
-   something else is reading.
-2. Three module bodies not captured in the screenshots: **Create invoice**
-   (module 7: collection method and `days_until_due`), **Update VAT number**
-   (module 6: the tax ID `type` sent) and **Set payment status to Free**
-   (module 27: the exact payload). Each is one scroll into the module's Body
-   field.
-3. Stripe/Xero: is the Xero link a native Stripe app (unaffected by us) or
+1. Stripe/Xero: is the Xero link a native Stripe app (unaffected by us) or
    routed through Make?
-4. Stripe account access: can we get restricted API keys (invoices + customers
-   + webhooks) and confirm test mode is usable for the rebuild? (Make's
-   connection is "LAW: live", pinned to `Stripe-Version: 2025-09-30.clover`.)
+2. "Raindrop to Discovery (law firms)" (the fifth Make scenario, enabled,
+   scheduled): confirm its WordPress connection is not this site, then it can
+   be ignored.
+3. At cutover we will need a **live-mode** restricted key (customers,
+   invoices, webhook endpoints) and to create the webhook endpoint secret;
+   test mode is covered by the keys already provided. Also confirm the tax
+   rate (`txr_…`) and the invoice rendering template (`inrtem_…`) exist in
+   test mode, or we create test-mode equivalents and hold both IDs per mode
+   in settings.

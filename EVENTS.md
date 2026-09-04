@@ -359,7 +359,9 @@ in LAW's name on request. Verified module-by-module from Make screenshots on
 4 September 2026 (a fuller map is in EVENTS_4.1_REBUILD.md section 2.3.1). The
 account holds five scenarios: the two below (enabled), "LAW > new user
 registration > tag in HubSpot" (disabled, matching form 1's disabled HubSpot
-feed 15), and two others not yet identified.
+feed 15), "LAW: log submitted event in HubSpot" (disabled, never run), and
+"Raindrop to Discovery (law firms)" (enabled but believed unrelated to this
+site; its WordPress connection is still to be confirmed).
 
 **Scenario A, "LAW > event approved > Stripe invoice."** Triggered by step 17
 (Create Stripe invoice); the Make webhook is named `larbwk-event-submit`.
@@ -371,18 +373,25 @@ ID). The Stripe connection is "LAW: live", pinned to
 `Stripe-Version: 2025-09-30.clover`. A router then splits three ways:
 
 1. **VAT number exists** (field 79 present and field 84 > 0): POSTs the VAT
-   number to `/v1/customers/{id}/tax_ids`, with a Resume error handler, so a
-   failed attach is swallowed and the run continues.
-2. **Money is due** (field 84 > 0): creates the invoice (`/v1/invoices`), adds
-   one line item (`/v1/invoiceitems`: `currency=gbp`, `amount` = field 84,
-   `description` = "Event fee for {field 17, Event title}") applying the fixed
-   Stripe tax rate `txr_1TkIOyPhJqxRqE2KyejShg1c` when field 85 (VAT) = 1
-   (**a fixed tax rate, not Stripe Tax**), sends it (`/send`), fetches
-   `hosted_invoice_url` and posts it to step 19 (Log invoice URL)'s workflow
-   hook as `stripe_url`, releasing the park.
+   number to `/v1/customers/{id}/tax_ids` with `type` = `gb_vat` when field 79
+   starts "GB", else `eu_vat`, under a Resume error handler, so a failed
+   attach is swallowed and the run continues (a non-GB, non-EU tax number is
+   sent as `eu_vat`, rejected by Stripe, and silently dropped).
+2. **Money is due** (field 84 > 0): creates the invoice (`/v1/invoices`:
+   `collection_method=send_invoice`, `days_until_due=5`, `auto_advance=false`,
+   custom field `Attention` = field 75 (Invoice contact name), rendering
+   template `inrtem_1SSbTmPhJqxRqE2K5Ppdv1Lq`, metadata `gf_entry_id` +
+   `law_reference`), adds one line item (`/v1/invoiceitems`: `currency=gbp`,
+   `amount` = field 84, `description` = "Event fee for {field 17, Event
+   title}") applying the fixed Stripe tax rate
+   `txr_1TkIOyPhJqxRqE2KyejShg1c` when field 85 (VAT) = 1 (**a fixed tax
+   rate, not Stripe Tax**), sends it (`/send`), fetches `hosted_invoice_url`
+   and posts it to step 19 (Log invoice URL)'s workflow hook as `stripe_url`,
+   releasing the park.
 3. **Zero fee** (field 84 = 0): skips Stripe, releases step 19 (Log invoice
-   URL) and then step 20 (Waiting for payment), setting payment status `Free`
-   so the event publishes immediately.
+   URL) and then step 20 (Waiting for payment) with `payment_status: "Free"`
+   (which lands on the nonexistent field 86, defect 1) so the event publishes
+   immediately.
 
 **Scenario B, "LAW > invoice paid > update entry."** Two modules: a custom
 webhook receiving Stripe's `invoice.paid` event, then a Gravity Forms module
@@ -872,9 +881,10 @@ no longer exists (`meta_key = '8'` has zero rows in the database). Every
 customer is therefore created or updated with an empty name and business name;
 only `individual_name` (field 75, Invoice contact name) and the email are
 populated. Cosmetic in the Stripe dashboard and on invoice headers, but it
-makes transactions harder to find by name. Fix in Make by remapping `name` to
-field 75 (Invoice contact name) and `business_name` to field 105 (Host
-organisation(s)); the 4.1 rebuild does this by design.
+makes transactions harder to find by name. Decision (Denis, 4 September 2026):
+no Make-side fix; the 4.1 rebuild fixes it by design, mapping `name` from
+field 75 (Invoice contact name) and `business_name` from field 105 (Host
+organisation(s)). See EVENTS_4.1_REBUILD.md.
 
 ### 7. Minor
 
