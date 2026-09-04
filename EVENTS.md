@@ -355,24 +355,39 @@ Neither the theme nor any mu-plugin registers a REST route, rewrite rule,
 ## 6. Make scenarios
 
 Held in Square Eye's Make account, region eu1. They can be migrated to an account
-in LAW's name on request. **Their contents are not verifiable from this
-repository**; the descriptions below come from the handover documentation and
-should be re-checked in Make before relying on them.
+in LAW's name on request. Verified module-by-module from Make screenshots on
+4 September 2026 (a fuller map is in EVENTS_4.1_REBUILD.md section 2.3.1). The
+account holds five scenarios: the two below (enabled), "LAW > new user
+registration > tag in HubSpot" (disabled, matching form 1's disabled HubSpot
+feed 15), and two others not yet identified.
 
-**Scenario A, "LAW > event approved > Stripe invoice."** Triggered by step 17.
-Upserts the Stripe customer using the ISO code from field 88, then a router
-splits three ways:
+**Scenario A, "LAW > event approved > Stripe invoice."** Triggered by step 17
+(Create Stripe invoice); the Make webhook is named `larbwk-event-submit`.
+Searches Stripe customers by field 73 (Invoice contact email), then upserts the
+customer (create or update by ID) with `individual_name` from field 75 (Invoice
+contact name), the field 74 (Address) inputs, `address[country]` from field 88
+(Country ISO), and metadata `gf_entry_id` + `law_reference` (field 70, Unique
+ID). The Stripe connection is "LAW: live", pinned to
+`Stripe-Version: 2025-09-30.clover`. A router then splits three ways:
 
-1. VAT number present and fee > 0: attaches the customer's VAT number.
-2. Fee > 0: creates the invoice, adds the line item with conditional VAT, sends
-   it with a five-day due date, retrieves the hosted URL and posts it back to
-   field 83, releasing step 19.
-3. Fee = 0: skips Stripe, releases both step 19 and step 20, and sets payment
-   status to `Free` so the event publishes immediately.
+1. **VAT number exists** (field 79 present and field 84 > 0): POSTs the VAT
+   number to `/v1/customers/{id}/tax_ids`, with a Resume error handler, so a
+   failed attach is swallowed and the run continues.
+2. **Money is due** (field 84 > 0): creates the invoice (`/v1/invoices`), adds
+   one line item (`/v1/invoiceitems`: `currency=gbp`, `amount` = field 84,
+   `description` = "Event fee for {field 17, Event title}") applying the fixed
+   Stripe tax rate `txr_1TkIOyPhJqxRqE2KyejShg1c` when field 85 (VAT) = 1
+   (**a fixed tax rate, not Stripe Tax**), sends it (`/send`), fetches
+   `hosted_invoice_url` and posts it to step 19 (Log invoice URL)'s workflow
+   hook as `stripe_url`, releasing the park.
+3. **Zero fee** (field 84 = 0): skips Stripe, releases step 19 (Log invoice
+   URL) and then step 20 (Waiting for payment), setting payment status `Free`
+   so the event publishes immediately.
 
-**Scenario B, "LAW > invoice paid > update entry."** Triggered by Stripe's
-`invoice.paid` webhook. Reads the entry ID from the invoice metadata and calls
-step 20's workflow hook.
+**Scenario B, "LAW > invoice paid > update entry."** Two modules: a custom
+webhook receiving Stripe's `invoice.paid` event, then a Gravity Forms module
+POSTing `entries/{data.object.metadata.gf_entry_id}/workflow-hooks` with
+step 20 (Waiting for payment)'s credentials and `payment_status: "Paid"`.
 
 **Matching key.** Each invoice carries `gf_entry_id` and `law_reference` in its
 Stripe metadata, linking payments back to the form entry.
@@ -849,7 +864,19 @@ hear about every approval, delete the orphaned rule so the settings match the
 behaviour. If it really should be paid-only, tick "Enable condition" on the step.
 Leaving it as it is misleads whoever opens the step next.
 
-### 6. Minor
+### 6. Stripe customers are created without a name (low)
+
+Verified in Make on 4 September 2026: scenario A's "Upsert customer" module
+maps the Stripe `name` and `business_name` fields from form 2 field 8, which
+no longer exists (`meta_key = '8'` has zero rows in the database). Every
+customer is therefore created or updated with an empty name and business name;
+only `individual_name` (field 75, Invoice contact name) and the email are
+populated. Cosmetic in the Stripe dashboard and on invoice headers, but it
+makes transactions harder to find by name. Fix in Make by remapping `name` to
+field 75 (Invoice contact name) and `business_name` to field 105 (Host
+organisation(s)); the 4.1 rebuild does this by design.
+
+### 7. Minor
 
 - The public programme at `/programme/` and the speakers pages at `/speakers/`
   are still restricted to committee, editor and administrator. Deliberate

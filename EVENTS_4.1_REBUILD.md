@@ -87,17 +87,86 @@ All 19 steps are replaced by the custom workflow engine (section 3.6):
 - Step 7 (Create event listing) and step 13 (Publish event): already no-ops
   (EVENTS.md defect 3), nothing to replace.
 
-### 2.3 Make.com scenarios
+### 2.3 Make.com scenarios (verified from Make screenshots, 4 September 2026)
 
-- Scenario A, "LAW > event approved > Stripe invoice": replaced by
-  `Stripe_Service::create_invoice()` on the approval transition.
-- Scenario B, "LAW > invoice paid > update entry": replaced by a signed Stripe
-  webhook endpoint in WordPress.
-- **Suspected scenario C**: form 1 (User registration)'s HubSpot feed 15 is
-  disabled with the note "use Make instead", and the `make-read-only` REST key
-  was last used 1 September 2026, so Make appears to also poll or sync user/
-  entry data (probably to HubSpot). **Unconfirmed; needs checking in Make before
-  cutover** (open question 3, section 9).
+The account holds **five** scenarios; three are known:
+
+- **"LAW > event approved > Stripe invoice"** (enabled): replaced by
+  `Stripe_Service::create_invoice()` on the approval transition. Full verified
+  module map in section 2.3.1.
+- **"LAW > invoice paid > update entry"** (enabled): replaced by a signed
+  Stripe webhook endpoint in WordPress. Verified contents: a Make custom
+  webhook ("Stripe (LAW, invoice paid)", so the Stripe dashboard webhook for
+  `invoice.paid` points at hook.eu1.make.com), then one Gravity Forms module
+  POSTing `entries/{data.object.metadata.gf_entry_id}/workflow-hooks` with
+  step 20 (Waiting for payment)'s key/secret and `"payment_status": "Paid"`
+  (the value that lands on the nonexistent field 86, EVENTS.md defect 1).
+- **"LAW > new user registration > tag in HubSpot"** (disabled): the
+  counterpart of form 1 (User registration)'s disabled HubSpot feed 15.
+  Disabled on both sides, so nothing to replace, but confirm it stays off.
+- **Two further scenarios not yet identified** ("View all 5 in Scenarios").
+  One of them, or something outside Make, used the `make-read-only` GF REST
+  key on 1 September 2026. **Must be identified before cutover** (open
+  question, section 9).
+
+### 2.3.1 Scenario A verified module map
+
+Webhook `larbwk-event-submit` (receives the whole entry from step 17, Create
+Stripe invoice; the payload still carries ~116 keys including deleted legacy
+field IDs) → **Stripe Search Customers** by email = field 73 (Invoice contact
+email) → **Array aggregator** (Customer ID, Email) → **Upsert customer**: POST
+`/v1/customers/{id}` when found, else `/v1/customers` (connection "LAW: live",
+`Stripe-Version: 2025-09-30.clover`), body mapping:
+
+- `name` and `business_name` ← entry field **8, which no longer exists on
+  form 2 and has zero rows in the database**, so every customer is created or
+  updated with an empty name (see the defect note below);
+- `individual_name` ← field 75 (Invoice contact name), inputs 75.3 + 75.6;
+- `email` ← field 73 (Invoice contact email); `address[*]` ← field 74
+  (Address) inputs; `address[country]` ← field 88 (Country ISO);
+- `metadata[gf_entry_id]` ← entry ID; `metadata[law_reference]` ← field 70
+  (Unique ID).
+
+Then a **router** with three filtered routes:
+
+1. **"VAT number exists"** (field 79 VAT number exists AND field 84
+   Calculated fee (pence) > 0): POST `/v1/customers/{customer}/tax_ids`, with
+   a Resume error handler, so a failed VAT attach is swallowed and the run
+   continues. (Tax ID type in the body not captured; presumably `eu_vat` /
+   `gb_vat`.)
+2. **"Money is due"** (field 84 > 0): Tools (InvoiceContactName = 75.3 +
+   75.6) → **Create invoice** POST `/v1/invoices` (body not captured: due
+   date and collection method unverified, expected `send_invoice` +
+   `days_until_due: 5`) → Tools sets `lineAmount` = field 84 and `lineTax` =
+   `if(field 85 VAT = 1; "&tax_rates[0]=txr_1TkIOyPhJqxRqE2KyejShg1c"; "")` →
+   **Create line item** POST `/v1/invoiceitems` (`customer`, `invoice`,
+   `currency=gbp`, `amount=lineAmount`, `description=Event fee for {field 17
+   Event title}`, plus the lineTax suffix) → **Send invoice** POST
+   `/v1/invoices/{id}/send` → **Get invoice details** GET → **Log Stripe
+   invoice URL**: workflow-hooks POST with step 19 (Log invoice URL)'s
+   credentials and `stripe_url = hosted_invoice_url`.
+3. **"Zero fee"** (field 84 = 0): **Skip logging invoice** (workflow-hooks
+   POST releasing step 19, Log invoice URL) → **Set payment status to Free**
+   (workflow-hooks POST releasing step 20, Waiting for payment; body not
+   captured, presumably `payment_status: "Free"`).
+
+So the open VAT question is answered: **a fixed Stripe tax rate,
+`txr_1TkIOyPhJqxRqE2KyejShg1c`, applied to the line item when field 85 (VAT)
+= 1. Not Stripe Tax.** The rebuild stores that tax rate ID in settings and
+applies it the same way. (The 4.2 spec §7.2 says "Stripe Tax handles the
+calculation"; what is live today is a fixed rate. Align that wording when 4.2
+starts.)
+
+**Newly found defect (live): Stripe customers have no name.** The upsert maps
+`name`/`business_name` from deleted field 8; the database has zero rows for
+it, so the values sent are always empty and only `individual_name` (the
+invoice contact) is populated. The rebuild maps the customer name explicitly:
+`name` from field 75 (Invoice contact name), `business_name` from field 105
+(Host organisation(s)).
+
+Note: the screenshots also expose the workflow-hook keys/secrets for steps 19
+and 20. They die with the rebuild (the endpoints are removed), and until then
+they only release parked steps, but treat the screenshots as sensitive.
 
 ### 2.4 Plugins retired at the end of the rebuild
 
@@ -152,7 +221,15 @@ functions/events/
   committee.php         committee dashboard actions (approve/send back/reject)
   comments.php          the clarification thread as WP comments
   co-owners.php         co-owner user creation and linking
-  speakers-admin.php    speaker dedupe on save, admin columns, (4.2: merge tool)
+  admin/
+    fields.php          shared custom field renderers: text, number, select,
+                        media (photo), datetime, repeater, relationship picker
+    event-screen.php    law_event meta boxes: facts, fee/invoice, workflow
+                        actions, relationships, comment thread, audit log
+    speaker-screen.php  law_speaker meta boxes: contact fields, photo,
+                        related events (read-only reverse relationship)
+    session-screen.php  law_session meta boxes: times, speakers, parent event
+    columns.php         admin list-table columns and filters per CPT
   stripe/
     client.php          thin Stripe API wrapper (invoices, customers, webhooks)
     service.php         create/send invoice, handle invoice.paid, error states
@@ -165,6 +242,18 @@ functions/events/
     runner.php          batched, idempotent migration steps
     report.php          per-item logging, summary, CSV export
 ```
+
+**Admin editing is custom-built, not ACF.** Each CPT gets hand-built meta
+boxes on its wp-admin edit screen (per Denis, September 2026: the team has
+used ACF for admin fields historically, but the rebuild CPTs get custom forms
+so admins can view and manage every item natively). `admin/fields.php` is a
+small shared renderer library (text, number, select, datetime, media-library
+photo, repeater rows, and a relationship picker with AJAX search for
+speaker-to-event and organisation links), so each screen composes the same
+components rather than hand-rolling markup per field. Saving goes through the
+same `meta.php` sanitisers as the front-end forms, one code path for
+validation. ACF stays installed for the rest of the site but is not used by
+the events module.
 
 ### 3.1 Content model
 
@@ -373,14 +462,18 @@ handles dependencies; no runtime dependency on any middleware).
 **On approval with fee > 0** (replacing scenario A):
 
 1. Upsert the customer: search by `_law_stripe_customer_id`, else by invoice
-   email; create with name, email, address (ISO country), and VAT number as a
-   `eu_vat`/`gb_vat` customer tax ID when present.
+   email; create or update with `name` (invoice contact), `business_name`
+   (host organisation), email, address (ISO country), and the VAT number as a
+   customer tax ID when present (attach failure logged, never fatal, matching
+   the current scenario's Resume behaviour). This fixes the live empty-name
+   defect (section 2.3.1).
 2. Create the invoice: one line item for the snapshot `_law_fee_pence`,
-   description "LAW <year> event hosting fee: <event title>", VAT applied per
-   `_law_vat` (mechanism confirmed against the current scenario, open question
-   1: fixed tax rate ID vs Stripe Tax), `days_until_due = 5`, metadata
-   `law_reference` and `law_event_id` (plus `gf_entry_id` for continuity on
-   migrated events).
+   description "Event fee for <event title>" (as now), the fixed Stripe tax
+   rate (`txr_1TkIOyPhJqxRqE2KyejShg1c`, held in settings) applied when
+   `_law_vat` is 1, `collection_method = send_invoice` with
+   `days_until_due = 5` (to be confirmed against the Create invoice module
+   body, section 9), metadata `law_reference` and `law_event_id` (plus
+   `gf_entry_id` for continuity on migrated events).
 3. Finalise and send; store `_law_stripe_invoice_id` and the hosted URL; email
    the host the payment-due notification with the link.
 4. **On failure**: the event stays `law-approved` with an error flag meta, the
@@ -425,6 +518,19 @@ The comment thread itself: form 5 (Comments) child entries become WP comments
 (`comment_type = law_event_comment`) on the event, rendered in both the host
 event view and the committee detail view, with email notifications to the other
 party on reply. Ordinary WP comment moderation stays off for this type.
+
+A separate CPT for the thread was considered (raised by Denis, September
+2026) and WP comments are the recommendation, for these reasons: a comment
+natively belongs to a post (no parent meta to maintain), carries author, email
+and timestamp columns out of the box, threads for free, and stays out of the
+posts table so event/speaker admin lists never mix with chat messages. The
+admin manageability the CPT would have bought is provided anyway: the thread
+renders as a panel inside the event's custom admin screen (section on
+`admin/event-screen.php`), where committee/admins can read, reply and delete,
+and the audit log (`law_event_log`) sits beside it. A CPT would mean one post
+per chat message, which is the wrong grain for the posts table. If this
+recommendation turns out wrong in practice, swapping storage early in phase B
+is cheap because everything goes through `comments.php`.
 
 ### 3.9 Front-end re-pointing
 
@@ -593,6 +699,7 @@ after cutover). Nothing needs to be re-invoiced.
 | `?ec=` category prepopulation dead (EVENTS_4.1_FUNC.md §6) | The custom form reads `?ec=` natively into the category field |
 | Fee-waived events get non-sponsor wording | Confirmed-email split on fee = 0, not tier |
 | VAT flag matches price literals | `_law_vat` computed from fee > 0 |
+| Stripe customers created with an empty name (Make maps deleted field 8, section 2.3.1) | Customer name from field 75 (Invoice contact name), business name from field 105 (Host organisation(s)) |
 
 ---
 
@@ -640,11 +747,16 @@ areas) rather than starting a second architecture.
 5. **Stripe hosted invoices stay** for host fees: identical host experience to
    today; only the plumbing changes. (4.2 attendee payments add Checkout and
    SetupIntents on the same client.)
-6. **Comments and audit trail as WP comments** with custom types: free
-   threading, authorship and timestamps; no custom tables in 4.1. (4.2
-   bookings likely justify a custom table; decided then.)
+6. **Comments and audit trail as WP comments** with custom types, not a CPT:
+   free threading, authorship and timestamps, and no chat messages in the
+   posts table; the thread is fully manageable from the event's custom admin
+   screen. Rationale in section 3.8; swapping to a CPT stays cheap while
+   everything goes through `comments.php`.
 7. **Make removed entirely**, including error paths; nothing new is wired
    through it.
+8. **Custom admin meta boxes, not ACF**, for the module's CPTs (Denis,
+   September 2026): a shared field-renderer library in `admin/fields.php`,
+   saving through the same sanitisers as the front-end forms.
 
 ## 9. Open questions
 
@@ -656,18 +768,20 @@ areas) rather than starting a second architecture.
    (Defect 5 needs the intent settled either way.)
 3. Migration of the 160 trashed form 2 entries: confirm leave-behind.
 
-**For Denis, about Make (screenshots wanted, see the message accompanying this
-plan):**
+**For Denis, about Make** (scenarios A and B are now verified, sections 2.3
+and 2.3.1; what remains):
 
-1. Scenario A module-by-module: the exact Stripe calls, the customer upsert
-   matching rule, how VAT is applied (a fixed tax rate ID? Stripe Tax?), the
-   invoice description/footer fields, due date, and the metadata keys written.
-2. Scenario B: the trigger config and every module after it.
-3. Any other scenarios touching this site: the disabled HubSpot feed on form 1
-   (User registration) says "use Make instead", and the `make-read-only` REST
-   key was used on 1 September 2026, so something is reading regularly. What,
-   and does it need replacing or re-pointing at the new data?
-4. Stripe/Xero: is the Xero link a native Stripe app (unaffected by us) or
+1. The two unidentified scenarios of the account's five: names, whether they
+   touch this site, and which one (if any) used the `make-read-only` GF REST
+   key on 1 September 2026. The HubSpot registration scenario is disabled, so
+   something else is reading.
+2. Three module bodies not captured in the screenshots: **Create invoice**
+   (module 7: collection method and `days_until_due`), **Update VAT number**
+   (module 6: the tax ID `type` sent) and **Set payment status to Free**
+   (module 27: the exact payload). Each is one scroll into the module's Body
+   field.
+3. Stripe/Xero: is the Xero link a native Stripe app (unaffected by us) or
    routed through Make?
-5. Stripe account access: can we get restricted API keys (invoices + customers
-   + webhooks) and confirm test mode is usable for the rebuild?
+4. Stripe account access: can we get restricted API keys (invoices + customers
+   + webhooks) and confirm test mode is usable for the rebuild? (Make's
+   connection is "LAW: live", pinned to `Stripe-Version: 2025-09-30.clover`.)
