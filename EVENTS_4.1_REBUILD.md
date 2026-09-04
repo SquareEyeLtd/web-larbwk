@@ -1478,7 +1478,7 @@ the User Registration feeds, GW Auto Login and the mu-plugin checkbox sync:
   fields (law_role, accessibility, dietary) and meta keys (organisation,
   job_title, country, accessibility_other, dietary_other) the old stack
   wrote, the HubSpot contact type tags (year-aware), password + confirm with
-  a 10-character minimum, honeypot, per-IP rate limiting (5/hour), error
+  a 10-character minimum, honeypot, per-IP rate limiting (20/hour), error
   state keyed by a random per-visitor cookie (never bare IP), auto-login and
   the /account/?action=registered redirect, and the migrated
   "Email to admins > user registration" notification (form 1's real text,

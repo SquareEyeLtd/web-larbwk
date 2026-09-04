@@ -26,7 +26,24 @@ function law_migration_admin_page() {
 		check_admin_referer( 'law_migration_source', 'law_migration_source_nonce' );
 		$new = 'cpt' === ( $_POST['law_events_source'] ?? '' ) ? 'cpt' : 'gf';
 		update_option( 'law_events_source', $new, false );
-		echo '<div class="notice notice-success"><p>Front-end data source flipped to <strong>' . esc_html( $new ) . '</strong>.</p></div>';
+		// The migrated forms must stop accepting submissions the moment the
+		// module takes over: with the embeds gone they remain anonymously
+		// submittable through GF's REST API (/gf/v2/forms/<id>/submissions),
+		// which would run the LEGACY feeds and workflow. Form 7 (Contact)
+		// stays active. Flipping back to GF reactivates them.
+		$module_forms = array( 1, 2, 3, 4, 5, 6, 8, 9 );
+		if ( class_exists( 'GFAPI' ) && class_exists( 'GFFormsModel' ) ) {
+			foreach ( $module_forms as $form_id ) {
+				GFFormsModel::update_form_active( $form_id, 'cpt' === $new ? 0 : 1 );
+			}
+			law_migration_log(
+				'redirects',
+				'info',
+				'forms',
+				sprintf( 'Module Gravity Forms (1,2,3,4,5,6,8,9) marked %s with the source flip.', 'cpt' === $new ? 'INACTIVE' : 'active again' )
+			);
+		}
+		echo '<div class="notice notice-success"><p>Front-end data source flipped to <strong>' . esc_html( $new ) . '</strong>; the module Gravity Forms were marked ' . ( 'cpt' === $new ? 'inactive' : 'active' ) . ' (form 7, Contact, untouched).</p></div>';
 	}
 
 	$snapshot  = get_option( 'law_migration_snapshot' );

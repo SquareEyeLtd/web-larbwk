@@ -85,7 +85,8 @@ $law_countries = law_registration_country_choices();
 		</div>
 	</div>
 	<p class="law-form-field"><label for="law-reg-access-other">Other: please specify</label>
-		<input type="text" id="law-reg-access-other" name="accessibility_other" value="<?php echo esc_attr( $law_pf_value( 'accessibility_other' ) ); ?>"></p>
+		<input type="text" id="law-reg-access-other" name="accessibility_other" value="<?php echo esc_attr( $law_pf_value( 'accessibility_other' ) ); ?>">
+		<?php $law_pf_error( 'accessibility_other' ); ?></p>
 
 	<div class="law-form-field">
 		<span class="law-form-label">Dietary</span>
@@ -100,5 +101,6 @@ $law_countries = law_registration_country_choices();
 		</div>
 	</div>
 	<p class="law-form-field"><label for="law-reg-diet-other">Other: please specify</label>
-		<input type="text" id="law-reg-diet-other" name="dietary_other" value="<?php echo esc_attr( $law_pf_value( 'dietary_other' ) ); ?>"></p>
+		<input type="text" id="law-reg-diet-other" name="dietary_other" value="<?php echo esc_attr( $law_pf_value( 'dietary_other' ) ); ?>">
+		<?php $law_pf_error( 'dietary_other' ); ?></p>
 </fieldset>

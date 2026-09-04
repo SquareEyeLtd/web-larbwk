@@ -73,7 +73,7 @@ function law_setup_account_pages() {
 	// Gravity Forms blocks (forms 1 and 3) — the custom templates render the
 	// forms themselves, and leaving the blocks would render BOTH forms.
 	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
-		foreach ( array( 'register', 'account/profile' ) as $gf_path ) {
+		foreach ( array( 'register', 'account/profile', 'account/events/submit' ) as $gf_path ) {
 			$gf_page = get_page_by_path( $gf_path );
 			if ( ! $gf_page instanceof WP_Post ) {
 				continue;
