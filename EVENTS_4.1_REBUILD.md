@@ -59,9 +59,9 @@ Verified against the database on 4 September 2026.
 
 | Form | Title | Active entries | Fate |
 |---|---|---|---|
-| 1 | User registration | 250 users registered | Rebuilt as a custom registration form (phase C) |
+| 1 | User registration | 250 users registered | Rebuilt as a custom registration form (phase D) |
 | 2 | Event > submit an event | 75 (160 trashed) | Rebuilt as the custom submission form; entries migrate to `law_event` posts |
-| 3 | User profile | 17 | Rebuilt as a custom profile form (phase C) |
+| 3 | User profile | 17 | Rebuilt as a custom profile form (phase D) |
 | 4 | Event > host contact | 51 | Becomes repeatable contact rows in event meta |
 | 5 | Comments | 43 (49 trashed) | Becomes WP comments on the event post |
 | 6 | Event > co-owner | 54 | Becomes real WP users linked to the event |
@@ -89,7 +89,7 @@ All 19 steps are replaced by the custom workflow engine (section 3.6):
 
 ### 2.3 Make.com scenarios (verified from Make screenshots, 4 September 2026)
 
-The account holds **five** scenarios; three are known:
+The account holds **five** scenarios, all identified and dispositioned:
 
 - **"LAW > event approved > Stripe invoice"** (enabled): replaced by
   `Stripe_Service::create_invoice()` on the approval transition. Full verified
@@ -107,9 +107,8 @@ The account holds **five** scenarios; three are known:
 - **"LAW: log submitted event in HubSpot"** (disabled, 0 runs): never used;
   nothing to replace.
 - **"Raindrop to Discovery (law firms)"** (enabled, scheduled): Raindrop
-  bookmarks to a WordPress site. Appears unrelated to the events module;
-  worth a one-line confirmation that its WordPress connection is not this
-  site.
+  bookmarks to a WordPress site. Unrelated to the events module; confirmed
+  out of scope (Denis, 4 September 2026).
 
 That is the complete list (all five identified, 4 September 2026). No enabled
 scenario **reads** Gravity Forms data on a schedule, so the `make-read-only`
@@ -341,7 +340,8 @@ developer):
   cheap later.
 
 **Meta schema** (all keys registered via `register_post_meta` with sanitise
-callbacks; ACF field groups provide the wp-admin editing UI over the same keys):
+callbacks; the custom admin screens in `admin/` provide the wp-admin editing
+UI over the same keys, not ACF):
 
 | Meta key | From form 2 field | Notes |
 |---|---|---|
@@ -458,9 +458,10 @@ The single biggest rebuild item. A custom front-end form at
 - The old GravityView entry locking is replaced with `wp_set_post_lock` /
   heartbeat, which is native.
 
-Registration (form 1), profile (form 3) and contact (form 7) forms are smaller
-versions of the same pattern and land in a later phase (section 7); the events
-flow does not wait for them.
+Registration (form 1, User registration) and profile (form 3, User profile)
+forms are smaller versions of the same pattern and land in phase D; the events
+flow does not wait for them. Form 7 (Contact) stays on Gravity Forms and is
+not rebuilt.
 
 ### 3.6 The workflow engine
 
@@ -480,6 +481,16 @@ law-draft ──submit──▶ law-proposed ──approve──▶ law-approved
   status), side effects (fee snapshot, invoice creation, emails) and writes an
   **activity log entry**. This replaces the Gravity Flow timeline and gives
   the committee a visible history.
+- Approve computes and snapshots `_law_fee_pence` and `_law_vat` (honouring the
+  committee override), writes `_law_approved_at`, then either raises the Stripe
+  invoice (fee > 0) or goes straight to `publish` with `_law_payment_status =
+  free` (fee 0), replacing Make scenario A's route 3.
+- Send back requires a comment (the clarification thread, section 3.8-adjacent)
+  and emails the host; the host's resubmit returns it to `law-proposed`.
+  Rejection stores field 67 (Reason for rejection)'s replacement meta and emails
+  the host. The whole 26/8/27 clarification loop becomes ~30 lines of code.
+- The relabelled Gravity Flow vocabulary ("Proceed", "Send back") carries over
+  into the new UI so the committee sees nothing unfamiliar.
 
 **The activity log** (requirement from Denis, September 2026: log the payment
 process and every status change like WooCommerce order notes, with as much
@@ -510,16 +521,6 @@ entries and manual notes visually distinguished, exactly the WooCommerce
 order-notes pattern. Log entries are append-only: no edit or delete from the
 UI. The same mechanism is reused for 4.2 bookings, where charge-on-approval
 and waitlist promotion make this history even more important.
-- Approve computes and snapshots `_law_fee_pence` and `_law_vat` (honouring the
-  committee override), writes `_law_approved_at`, then either raises the Stripe
-  invoice (fee > 0) or goes straight to `publish` with `_law_payment_status =
-  free` (fee 0), replacing Make scenario A's route 3.
-- Send back requires a comment (the clarification thread, section 3.8-adjacent)
-  and emails the host; the host's resubmit returns it to `law-proposed`.
-  Rejection stores field 67 (Reason for rejection)'s replacement meta and emails
-  the host. The whole 26/8/27 clarification loop becomes ~30 lines of code.
-- The relabelled Gravity Flow vocabulary ("Proceed", "Send back") carries over
-  into the new UI so the committee sees nothing unfamiliar.
 
 **Committee UI**: the committee dashboard at `/account/dashboard/` is rebuilt
 as a theme template (same pattern as the host dashboard rework already on this
@@ -570,13 +571,15 @@ event ID (processed IDs stored, replays ignored). Refund events set
 human decision.
 
 The two Gravity Flow incoming-webhook park steps, their credentials and the GF
-REST keys all retire. **Xero**: the existing Stripe-to-Xero integration is
-outside WordPress and should be unaffected, to be confirmed (open question 4).
+REST keys all retire. **Xero**: out of scope (Denis, 4 September 2026); the
+existing Stripe-to-Xero integration is outside WordPress and untouched by the
+rebuild.
 
 ### 3.8 Notifications
 
-All current emails re-implemented in `notifications.php` as filterable PHP
-templates with a shared branded wrapper:
+All current events-module emails re-implemented in `notifications.php` as
+filterable PHP templates, delivered through the existing site-wide Email
+Templates wrapper (see "The HTML wrapper" below):
 
 | Current notification / step | New trigger |
 |---|---|
@@ -731,8 +734,9 @@ custom tables/views we own, over configuration in plugins we work around.
 ### 5.1 Principles
 
 - **Read-only on the source.** Gravity Forms data is never modified or deleted
-  by the migrator. GF stays installed (deactivated after burn-in) and the
-  tables remain as the audit archive.
+  by the migrator. GF core stays installed (form 7, Contact, remains live);
+  the module's add-ons are deactivated after burn-in and the tables remain as
+  the audit archive.
 - **Idempotent and resumable.** Every created object stores its source
   (`_law_gf_entry_id` on events, speakers, sessions; `_law_gf_child_entry_id`
   where relevant). Re-running skips already-migrated items and reports them, so
@@ -812,15 +816,15 @@ submenus of LAW, no new top-level menus. The screen:
    GF archive tables rather than being converted, since the diff format is
    GravityView-specific and the archive keeps them inspectable. Finally, one
    log entry per event records the migration itself and any derived statuses.
-6b. **Counters and settings seed.** The LAW reference generator is seeded
+7. **Counters and settings seed.** The LAW reference generator is seeded
    from GP Unique ID's `wp_gpui_sequence` row (form 2, field 70, currently
    207) so numbering continues without collision; the settings screen is
    seeded with the slot choices from field 68 (Confirmed slot), the programme
    week dates, and the committee recipient list lifted from the current
    notification configs.
-7. **Redirects.** Persist the entry-ID → post map (an option or small table)
+8. **Redirects.** Persist the entry-ID → post map (an option or small table)
    powering 301s for `?event=<entry ID>` and `/speakers/<entry ID>/`.
-8. **Notifications.** Migrate every form 2 (Event > submit an event)
+9. **Notifications.** Migrate every form 2 (Event > submit an event)
    notification, **active and inactive**, plus the inline notifications stored
    in Gravity Flow step settings (step 5 Committee review's rejection email,
    step 8 Clarification needed's assignee and completion emails, step 14 Email
@@ -883,8 +887,8 @@ after cutover). Nothing needs to be re-invoiced.
 Sized S/M/L relative to each other, not calendar estimates.
 
 **Phase A: foundations (M).** CPTs, statuses, taxonomies, meta schema,
-capabilities, settings page, fees. Admin-side event editing via ACF groups.
-Nothing user-facing changes.
+capabilities, settings page, fees, and the custom admin screens
+(`admin/fields.php` plus the per-CPT meta boxes). Nothing user-facing changes.
 
 **Phase B: the core flow (L).** Submission/edit form with repeaters and drafts;
 workflow engine and audit log; committee dashboard and actions; comments
@@ -939,6 +943,10 @@ areas) rather than starting a second architecture.
 8. **Custom admin meta boxes, not ACF**, for the module's CPTs (Denis,
    September 2026): a shared field-renderer library in `admin/fields.php`,
    saving through the same sanitisers as the front-end forms.
+9. **Gravity Forms core stays installed** for form 7 (Contact) and its
+   GF-managed notifications (Denis, September 2026); only the module's add-on
+   stack retires, and everything events-related is built in the custom module,
+   never as a new GF form.
 
 ## 9. Open questions
 
