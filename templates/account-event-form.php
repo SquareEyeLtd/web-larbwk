@@ -45,8 +45,8 @@ $law_sections = array(
 	<div class="grid-container">
 		<div class="grid-x grid-padding-x">
 			<div class="large-12 cell">
-				<h1><?php echo $law_post ? 'Edit your event' : 'Submit an event'; ?></h1>
-				<?php if ( $law_post ) : ?>
+				<h1><?php echo ( $law_post && $law_can_edit ) ? 'Edit your event' : 'Submit an event'; ?></h1>
+				<?php if ( $law_post && $law_can_edit ) : // Don't render a non-owned event's title/status: before this gate it leaked via ?law_event=<id> enumeration. ?>
 					<p class="law-form-status">
 						<?php echo esc_html( $law_post->post_title ); ?> — status:
 						<strong><?php echo esc_html( law_event_status_label( $law_post ) ); ?></strong>
@@ -182,6 +182,11 @@ $law_sections = array(
 					<fieldset id="law-section-speakers">
 						<legend>Speakers</legend>
 						<p class="law-form-hint">Add each speaker once. If they have spoken at LAW before, the email address links them to their existing profile automatically.</p>
+							<?php foreach ( $law_errors as $law_ekey => $law_evals ) : ?>
+								<?php if ( 0 === strpos( (string) $law_ekey, 'speaker_photo_' ) && isset( $law_evals[0] ) ) : ?>
+									<p class="law-form-error" role="alert"><?php echo esc_html( $law_evals[0] ); ?></p>
+								<?php endif; ?>
+							<?php endforeach; ?>
 						<div class="law-rows" data-law-rows-group="speakers">
 							<?php
 							$law_speaker_rows   = (array) $law_value( 'speakers', array() );

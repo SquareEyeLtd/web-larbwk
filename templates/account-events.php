@@ -3,10 +3,10 @@
  * Template Name: My events
  *
  * The host events dashboard: a theme-owned listing of the current user's
- * form 2 entries as event cards (functions/account-events.php). GravityView
- * stays as the edit engine: in its entry/edit context the page content (the
- * [gravityview] shortcode) renders instead, so editing, locking and Entry
- * Revisions keep working. Restrict the page with Members as before.
+ * events as cards (functions/account-events.php). On the custom CPT path this
+ * page also hosts the comment thread (?law_thread=) and links to the custom
+ * edit form; the legacy GravityView entry/edit branch remains only for the
+ * pre-cutover source. Restrict the page with Members as before.
  */
 
 get_header();
@@ -62,9 +62,25 @@ get_header();
 				<div class="grid-x grid-padding-x">
 					<div class="large-12 cell">
 
-						<?php if ( $law_submit_url ) : ?>
+						<?php
+						$law_notice = sanitize_key( $_GET['law_notice'] ?? '' );
+						$law_notice_text = array(
+							'event-updated'   => __( 'Your changes have been saved.', 'law' ),
+							'event-submitted' => __( 'Your event has been submitted to the committee.', 'law' ),
+						);
+						if ( isset( $law_notice_text[ $law_notice ] ) ) {
+							echo '<div class="law-form-notice" role="status">' . esc_html( $law_notice_text[ $law_notice ] ) . '</div>';
+						}
+						$law_is_committee = function_exists( 'law_user_is_committee' ) && law_user_is_committee();
+						if ( $law_submit_url || $law_is_committee ) :
+						?>
 							<div class="law-account-events__toolbar">
-								<a class="button orange" href="<?php echo esc_url( $law_submit_url ); ?>"><?php esc_html_e( 'Submit an event', 'law' ); ?></a>
+								<?php if ( $law_submit_url ) : ?>
+									<a class="button orange" href="<?php echo esc_url( $law_submit_url ); ?>"><?php esc_html_e( 'Submit an event', 'law' ); ?></a>
+								<?php endif; ?>
+								<?php if ( $law_is_committee ) : ?>
+									<a class="button" href="<?php echo esc_url( home_url( '/account/dashboard/' ) ); ?>"><?php esc_html_e( 'Review queue', 'law' ); ?></a>
+								<?php endif; ?>
 							</div>
 						<?php endif; ?>
 

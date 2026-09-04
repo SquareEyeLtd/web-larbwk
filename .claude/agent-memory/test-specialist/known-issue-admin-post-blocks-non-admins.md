@@ -1,11 +1,17 @@
 ---
 name: known-issue-admin-post-blocks-non-admins
-description: Critical, reproducible bug (found 2026-09-04) — every custom events-module form that posts to /wp-admin/admin-post.php silently fails for any non-administrator role
+description: FIXED as of 2026-09-04 (later same day) — was a critical bug where every custom events-module form posting to /wp-admin/admin-post.php silently failed for non-administrator roles
 metadata:
   type: project
 ---
 
-**Status as of 2026-09-04 (events-4.1-rebuild-custom branch): confirmed, unfixed.**
+**Status as of 2026-09-04, later same day: FIXED. Verified with real non-admin accounts.**
+
+`functions/wordpress.php` now has an explicit exclusion in the `admin_init` handler that blocks non-admin wp-admin access: it checks `'admin-post.php' === $GLOBALS['pagenow']` and returns early before the redirect-to-home logic, with a comment explaining admin-post.php is the front end's form handler. Confirmed working end-to-end during a UX persona pass: a genuine `event_host`-only account (`claude-test-host`, not an admin) successfully submitted an event via `/account/events/submit/` (admin_post_law_event_form), and a genuine `events_committee`-only account (`claude-test-committee`) successfully used Send back / Approve / reply-thread actions on `/account/dashboard/` (admin_post_law_committee_action) and the host reply on `/account/events/?law_thread=`. No silent redirect-to-home, no swallowed submissions. wp-admin's `post.php?action=edit` for a `law_event` also loads correctly for the committee role (the "Full editing in wp-admin →" escape hatch on the review screen works).
+
+Keeping the history below for context in case of regression.
+
+**Status as of 2026-09-04 (events-4.1-rebuild-custom branch), originally: confirmed, unfixed.**
 
 Every front-end form in the rebuilt events module (host submission at `/account/events/submit/`, committee Approve/Send back/Reject at `/account/dashboard/`, presumably comment replies too) posts to `/wp-admin/admin-post.php`. For a user whose only role is `event_host` or `events_committee` (i.e. NOT `administrator`), that POST returns a clean 302 to bare `home_url()` with **zero** PHP warnings/errors logged, no event created/updated, no email sent. The same action succeeds instantly when performed by a true `administrator` account.
 

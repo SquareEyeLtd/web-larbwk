@@ -181,7 +181,13 @@ function law_registration_handler() {
 	// conference venue behind one NAT while still capping scripted abuse
 	// (which the nonce and honeypot already blunt).
 	if ( ! law_events_rate_limit_ok( 'register', 0, 20, HOUR_IN_SECONDS ) ) {
-		wp_die( 'Too many registration attempts from this connection. Please try again later.' );
+		// 429 (not the wp_die default 500) with a title and a way back, so a
+		// shared-office/NAT user who hits the cap isn't left on a bare error.
+		wp_die(
+			esc_html__( 'Too many registration attempts from this connection. Please wait a little while and try again.', 'law' ),
+			esc_html__( 'Please try again shortly', 'law' ),
+			array( 'response' => 429, 'back_link' => true )
+		);
 	}
 
 	$input  = wp_unslash( $_POST );
@@ -322,7 +328,11 @@ function law_profile_handler() {
 		exit;
 	}
 	if ( ! law_events_rate_limit_ok( 'profile', $user_id, 10, 600 ) ) {
-		wp_die( 'Too many profile updates in a short time. Please wait a few minutes.' );
+		wp_die(
+			esc_html__( 'Too many profile updates in a short time. Please wait a few minutes.', 'law' ),
+			esc_html__( 'Please try again shortly', 'law' ),
+			array( 'response' => 429, 'back_link' => true )
+		);
 	}
 
 	$input  = wp_unslash( $_POST );

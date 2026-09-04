@@ -57,6 +57,16 @@ function law_event_calculate_vat( $fee_pence ) {
 }
 
 /**
+ * The VAT rate (0.20 = 20%). Stripe's own tax rate object (settings
+ * tax_rate_id) is authoritative for charging; this mirror is used only to
+ * reconcile the amount Stripe reports as paid. Kept here (filterable) so a rate
+ * change lives in one place rather than as a bare literal in the webhook.
+ */
+function law_events_vat_rate() {
+	return (float) apply_filters( 'law_events_vat_rate', 0.20 );
+}
+
+/**
  * Snapshot the fee onto the event at approval. Returns the snapshot.
  *
  * @param int $event_id law_event post ID.

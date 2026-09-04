@@ -280,7 +280,49 @@ function law_events_cpt_speaker_profile( $id ) {
 	return law_speaker_post_profile( $id, $events );
 }
 
-/** Resolve a speaker reference: post ID as-is, else legacy entry ID via the map. */
+/**
+ * Fallback resolver: find a migrated post by the legacy GF entry ID it stores
+ * durably in meta. The entry-map option is the fast path, but it is a single
+ * serialized option; every migrated post also carries `_law_gf_entry_id` (and
+ * speakers the merged `_law_gf_entry_ids`), so if that option is ever lost or
+ * stale, legacy URLs and Stripe webhooks keyed by entry ID still resolve
+ * instead of silently failing on the money path.
+ *
+ * @param int    $entry_id  Legacy GF entry ID.
+ * @param string $post_type Target CPT constant.
+ * @return int Post ID or 0.
+ */
+function law_events_post_by_legacy_entry( $entry_id, $post_type ) {
+	$entry_id = absint( $entry_id );
+	if ( ! $entry_id ) {
+		return 0;
+	}
+	// Primary singular key (both CPTs), then, for speakers, the serialized list
+	// of merged child entry IDs (matched on the serialized-int needle `i:N;`,
+	// whose trailing semicolon prevents a 12 → 123 false match).
+	$queries = array(
+		array( 'key' => '_law_gf_entry_id', 'value' => (string) $entry_id ),
+	);
+	if ( LAW_SPEAKER_CPT === $post_type ) {
+		$queries[] = array( 'key' => '_law_gf_entry_ids', 'value' => 'i:' . $entry_id . ';', 'compare' => 'LIKE' );
+	}
+	foreach ( $queries as $meta ) {
+		$found = get_posts( array(
+			'post_type'   => $post_type,
+			'post_status' => 'any',
+			'numberposts' => 1,
+			'fields'      => 'ids',
+			'no_found_rows' => true,
+			'meta_query'  => array( $meta ),
+		) );
+		if ( $found ) {
+			return (int) $found[0];
+		}
+	}
+	return 0;
+}
+
+/** Resolve a speaker reference: post ID as-is, else legacy entry ID via the map (meta fallback). */
 function law_events_resolve_speaker_id( $id ) {
 	$id = absint( $id );
 	if ( ! $id ) {
@@ -291,10 +333,13 @@ function law_events_resolve_speaker_id( $id ) {
 	}
 	$map = get_option( 'law_events_entry_map', array() );
 	$post_id = absint( $map['speakers'][ $id ] ?? 0 );
+	if ( ! $post_id || get_post_type( $post_id ) !== LAW_SPEAKER_CPT ) {
+		$post_id = law_events_post_by_legacy_entry( $id, LAW_SPEAKER_CPT );
+	}
 	return $post_id && get_post_type( $post_id ) === LAW_SPEAKER_CPT ? $post_id : 0;
 }
 
-/** Resolve an event reference: post ID as-is, else legacy form 2 entry ID via the map. */
+/** Resolve an event reference: post ID as-is, else legacy form 2 entry ID via the map (meta fallback). */
 function law_events_resolve_event_post_id( $id ) {
 	$id = absint( $id );
 	if ( ! $id ) {
@@ -305,6 +350,9 @@ function law_events_resolve_event_post_id( $id ) {
 	}
 	$map = get_option( 'law_events_entry_map', array() );
 	$post_id = absint( $map['events'][ $id ] ?? 0 );
+	if ( ! $post_id || get_post_type( $post_id ) !== LAW_EVENT_CPT ) {
+		$post_id = law_events_post_by_legacy_entry( $id, LAW_EVENT_CPT );
+	}
 	return $post_id && get_post_type( $post_id ) === LAW_EVENT_CPT ? $post_id : 0;
 }
 

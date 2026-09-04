@@ -48,6 +48,12 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
 					array( 'action' => 'co_owner_linked', 'user' => (int) $user->ID, 'source' => 'workflow' ),
 					array( 'user_id' => (int) $actor )
 				);
+				// Tell the linked account it now has access. Linking an existing
+				// user by email match otherwise grants event access silently; the
+				// notice gives them a route to flag it if unexpected.
+				if ( $send_email ) {
+					law_event_notify_co_owner_linked( $event_id, $user );
+				}
 			}
 			continue;
 		}
@@ -75,6 +81,26 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
 	$ids = array_values( array_unique( array_filter( $ids ) ) );
 	law_event_set_co_owner_ids( $event_id, $ids );
 	return $ids;
+}
+
+/**
+ * Notify an existing account that it has been linked as a co-owner. Kept plain
+ * (not a managed template) so it always sends even outside the approval email
+ * batch; the point is that the person is never linked without being told.
+ *
+ * @param int     $event_id law_event post ID.
+ * @param WP_User $user     The newly linked account.
+ */
+function law_event_notify_co_owner_linked( $event_id, $user ) {
+	$title   = get_the_title( $event_id );
+	$subject = sprintf( 'You have been added as an owner of "%s"', $title );
+	$body    = sprintf(
+		"Hello %s,\n\nYou have been added as an additional owner of the London Arbitration Week event \"%s\". You can now view and manage it from your account:\n\n%s\n\nIf you were not expecting this, please reply to this email or contact the events committee so we can look into it.\n\nLondon Arbitration Week",
+		$user->display_name,
+		$title,
+		home_url( '/account/events/' )
+	);
+	wp_mail( $user->user_email, $subject, $body );
 }
 
 /**

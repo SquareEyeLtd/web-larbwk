@@ -113,6 +113,14 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	}
 	if ( ! in_array( 'title', $locked, true ) && '' !== $title ) {
 		$postarr['post_title'] = $title;
+	} elseif ( $post ) {
+		// On update always carry the existing title forward. wp_insert_post()
+		// fills any OMITTED key from its defaults (post_title => ''), so leaving
+		// the key out when the title is locked silently wipes the title of an
+		// approved/confirmed event — and law_events_map_post() treats an empty
+		// title as "doesn't exist", making the event vanish from the host and
+		// committee dashboards, the programme and its single page at once.
+		$postarr['post_title'] = $post->post_title;
 	}
 	$postarr['post_content'] = $description;
 
@@ -303,7 +311,8 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 				'website'      => (string) ( $row['website'] ?? '' ),
 				'bio'          => (string) ( $row['bio'] ?? '' ),
 				'photo_id'     => $photo_id,
-			)
+			),
+			array( 'event_id' => (int) $event_id, 'actor' => get_current_user_id() )
 		);
 		if ( $speaker_id ) {
 			$relationships[] = array( 'speaker_id' => $speaker_id, 'role' => '', 'organisation_override' => '', 'sort' => $sort++ );
@@ -577,7 +586,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {
-		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '1.5' );
+		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '1.6' );
 		// Core's zxcvbn-based strength meter powers the WordPress-style
 		// password indicator on the register and profile forms.
 		$deps = array();

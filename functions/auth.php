@@ -46,6 +46,23 @@ function law_auth_redirect_to() {
 	return $redirect ? $redirect : home_url( '/account/events/' );
 }
 
+/**
+ * Committee members land on their review queue, not the host "My events" page.
+ * That page is empty for them and there is otherwise no in-app path to the
+ * dashboard, so a committee member would have to know the URL. Runs on core's
+ * post-authentication redirect, where the WP_User is known.
+ */
+add_filter( 'login_redirect', 'law_auth_committee_redirect', 10, 3 );
+function law_auth_committee_redirect( $redirect_to, $requested, $user ) {
+	if ( $user instanceof WP_User && user_can( $user, 'edit_others_law_events' ) ) {
+		$default = home_url( '/account/events/' );
+		if ( '' === (string) $redirect_to || untrailingslashit( $redirect_to ) === untrailingslashit( $default ) ) {
+			return home_url( '/account/dashboard/' );
+		}
+	}
+	return $redirect_to;
+}
+
 /* Notices ________________________________________________________ */
 
 /**

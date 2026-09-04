@@ -15,6 +15,14 @@
 }
 .law-event-form .law-choices label { color: #fff; font-weight: 400; }
 .law-event-form .law-choices input { margin-right: .5rem; }
+/* Brand the checkboxes/radios (they were bare browser chrome) and give the
+   selects a visible dropdown chevron so they don't read as text inputs. */
+.law-event-form input[type="checkbox"], .law-event-form input[type="radio"] { accent-color: #ef7d05; width: 1.1rem; height: 1.1rem; vertical-align: -.15rem; }
+.law-event-form select {
+	-webkit-appearance: none; appearance: none;
+	background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%231a1a3d' d='M0 0h12L6 8z'/%3E%3C/svg%3E") no-repeat right .7rem center;
+	background-size: .7rem; padding-right: 2rem;
+}
 .law-form-hint { color: #d7d7ea; font-size: .9rem; }
 /* Inline field errors share the error notice's design (light strip, red
    left border, small text); high specificity so the hero's large white
@@ -62,13 +70,21 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 @media screen and (max-width: 63.9375em) { .law-form-nav { display: none; } }
 
 /* Repeater rows */
-.law-row { position: relative; background: rgba(255, 255, 255, .08); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
+/* Each repeated row needs a visible boundary: at 8% tint it vanished against
+   the hero photo, so a multi-speaker panel ran together. */
+.law-row { position: relative; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
 .law-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1rem; }
 .law-row-grid--three { grid-template-columns: 1fr 1fr 1fr; }
 .law-row-grid label { color: #fff; font-weight: 400; font-size: .9rem; }
 .law-row-wide { grid-column: 1 / -1; }
 .law-row-remove { position: absolute; top: .4rem; right: .6rem; background: none; border: 0; color: #ffb3ab; font-size: 1.3rem; cursor: pointer; line-height: 1; }
 .law-row-add { margin-top: .25rem; }
+/* Without this the shared "Add …" button falls back to Foundation's default
+   blue on hover/focus (#14679e), which looks broken against the brand. */
+.law-row-add:hover, .law-row-add:focus { background-color: #292459; color: #fff; }
+/* Grow the tiny remove hit area and drop the ad-hoc pink for the brand error red. */
+.law-row-remove { padding: .1rem .35rem; color: #ff8f84; }
+.law-row-remove:hover, .law-row-remove:focus { color: #ff5c4d; }
 @media screen and (max-width: 39.9375em) { .law-row-grid, .law-row-grid--three { grid-template-columns: 1fr; } }
 
 .law-form-buttons .button { margin-right: .75rem; }
@@ -91,7 +107,13 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__chips a.is-active { color: #fff; }
 .law-dashboard .law-form-notice { color: #1a1a3d; background: #f0f0f5; border-left-color: #292459; }
 .law-dashboard .law-form-notice.is-error { border-left-color: #b32d2e; background: #fcf0f1; }
-.law-dashboard .law-cal-card__badge { color: #fff; }
+/* The calendar badge is position:absolute for the card grid; in the dashboard
+   it sits inline (next to the detail title and in the table's Status cell), so
+   neutralise the absolute positioning — otherwise it escapes its cell and all
+   rows' badges stack invisibly at one point. Each --status modifier already
+   sets its own text colour, so DON'T force a colour here (a blanket white made
+   the approved/proposed/sent-back badges white-on-pale, i.e. illegible). */
+.law-dashboard .law-cal-card__badge { position: static; display: inline-block; vertical-align: middle; }
 .law-dashboard__controls .law-form-field label, .law-dashboard__controls .law-form-label { color: #1a1a3d; }
 .law-dashboard__controls h2 { color: #1a1a3d; }
 .law-dashboard__facts code { color: #1a1a3d; }
@@ -100,7 +122,7 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 
 /* The thread ------------------------------------------------------------ */
 .law-thread-view { max-width: 760px; margin: 1rem 0 2rem; }
-.law-thread-view__header h2 { margin-bottom: .25rem; }
+.law-thread-view__header h2 { margin-bottom: .25rem; font-family: poppins, sans-serif; }
 .law-thread-list { list-style: none; margin: 1.2rem 0; }
 .law-bubble { max-width: 85%; margin-bottom: 1rem; padding: .9rem 1.1rem; border-radius: 8px; background: #f0f0f5; }
 .law-bubble.is-committee { background: #eaf1fa; border-left: 4px solid #1a1a3d; }
@@ -131,6 +153,8 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__controls h2 { font-size: 1.1rem; text-transform: uppercase; }
 .law-dashboard__controls .law-form-field label { font-weight: 600; display: block; margin-bottom: .2rem; }
 .law-dashboard__buttons .button { margin: 0 .4rem .5rem 0; }
+/* Reject inherits the base button's orange border over its red fill; match it. */
+.law-dashboard .button.alert { border-color: #cc4b37; }
 .law-dashboard__log { margin-top: 1.5rem; }
 .law-dashboard__log .law-log { list-style: none; max-height: 320px; overflow: auto; font-size: .85rem; }
 .law-dashboard__log .law-log li { padding: .3rem 0; border-bottom: 1px solid #eee; }

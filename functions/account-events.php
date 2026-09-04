@@ -2,13 +2,12 @@
 /**
  * The host events dashboard, /account/events/ (templates/account-events.php).
  *
- * The listing is theme-owned: entries come straight from GFAPI (form 2,
- * created_by = current user, all statuses) and render as event cards.
- * GravityView 386 "Events (hosts)" stays as the edit engine only: Edit links
- * are generated with GravityView_Edit_Entry::get_edit_link(), and when the
- * page is visited in GravityView's entry/edit context the template renders
- * the page content (the [gravityview] shortcode) instead of the dashboard,
- * so field whitelisting, entry locking and Entry Revisions keep working.
+ * The listing is theme-owned and branches on law_events_source(): on the
+ * custom CPT path it reads law_event posts owned or co-owned by the current
+ * user and links to the custom edit form (templates/account-event-form.php).
+ * The legacy path (entries from GFAPI form 2, edited via the GravityView 386
+ * "Events (hosts)" view) is retained only until the pre-cutover source is
+ * decommissioned.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {

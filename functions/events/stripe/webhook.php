@@ -46,10 +46,28 @@ function law_stripe_webhook_handler( WP_REST_Request $request ) {
 		return new WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
 	}
 
+	// Close the check-and-set window: two concurrent deliveries of the same
+	// event could both pass the in_array() check before either records it, each
+	// re-dispatching (duplicate confirm attempt and duplicate emails). add_option
+	// is atomic on the options table's unique key, so only the first delivery
+	// wins the lock; a stale lock (>60s, from a crashed dispatch) is taken over
+	// so it can never wedge future retries.
+	$lock_key = 'law_stripe_lock_' . md5( (string) $event['id'] );
+	$existing = (int) get_option( $lock_key, 0 );
+	if ( $existing && ( time() - $existing ) < 60 ) {
+		return new WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
+	}
+	if ( $existing ) {
+		update_option( $lock_key, time(), false );
+	} elseif ( ! add_option( $lock_key, time(), '', false ) ) {
+		return new WP_REST_Response( array( 'received' => true, 'duplicate' => true ), 200 );
+	}
+
 	$handled = law_stripe_webhook_dispatch( $event );
 
 	$processed[] = (string) $event['id'];
 	update_option( 'law_stripe_processed_events', array_slice( $processed, -500 ), false );
+	delete_option( $lock_key );
 
 	return new WP_REST_Response( array( 'received' => true, 'handled' => (bool) $handled ), 200 );
 }
@@ -112,7 +130,7 @@ function law_stripe_handle_invoice_paid( array $invoice, $stripe_event_id ) {
 	// (the settings tax rate is 20%). A mismatch never blocks confirmation —
 	// the money genuinely arrived — but it is logged loudly and alerted.
 	$fee      = (int) law_event_meta( $event_id, '_law_fee_pence' );
-	$expected = law_event_meta( $event_id, '_law_vat' ) ? (int) round( $fee * 1.2 ) : $fee;
+	$expected = law_event_meta( $event_id, '_law_vat' ) ? (int) round( $fee * ( 1 + law_events_vat_rate() ) ) : $fee;
 	if ( $fee > 0 && $amount !== $expected ) {
 		law_event_log(
 			$event_id,
@@ -231,6 +249,13 @@ function law_stripe_resolve_event_id( array $object ) {
 	if ( $gf_entry_id ) {
 		$map = get_option( 'law_events_entry_map', array() );
 		$post_id = absint( $map['events'][ $gf_entry_id ] ?? 0 );
+		if ( ! $post_id || get_post_type( $post_id ) !== LAW_EVENT_CPT ) {
+			// Fall back to the durable per-post meta if the map option is stale
+			// or missing, so a payment never silently fails to resolve its event.
+			$post_id = function_exists( 'law_events_post_by_legacy_entry' )
+				? law_events_post_by_legacy_entry( $gf_entry_id, LAW_EVENT_CPT )
+				: 0;
+		}
 		if ( $post_id && get_post_type( $post_id ) === LAW_EVENT_CPT ) {
 			return $post_id;
 		}

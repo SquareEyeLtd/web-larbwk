@@ -106,12 +106,15 @@ function law_migration_create_snapshot() {
 	if ( function_exists( 'shell_exec' ) && ! in_array( 'shell_exec', array_map( 'trim', explode( ',', (string) ini_get( 'disable_functions' ) ) ), true ) ) {
 		$binary = trim( (string) shell_exec( 'command -v mysqldump 2>/dev/null' ) );
 		if ( '' !== $binary ) {
+			// Pass the password via MYSQL_PWD, not -p<pw>: a CLI password argument
+			// is visible to any local user in `ps aux` for the life of the dump,
+			// whereas the env var is only in the process environment.
 			$command = sprintf(
-				'%s --single-transaction --no-tablespaces -h%s -u%s -p%s %s 2>/dev/null | gzip > %s',
+				'MYSQL_PWD=%s %s --single-transaction --no-tablespaces -h%s -u%s %s 2>/dev/null | gzip > %s',
+				escapeshellarg( DB_PASSWORD ),
 				escapeshellcmd( $binary ),
 				escapeshellarg( DB_HOST ),
 				escapeshellarg( DB_USER ),
-				escapeshellarg( DB_PASSWORD ),
 				escapeshellarg( DB_NAME ),
 				escapeshellarg( $file )
 			);

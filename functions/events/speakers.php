@@ -68,13 +68,15 @@ function law_speaker_normalise_name( $name ) {
  *                    photo_id (attachment ID).
  * @return int Post ID, 0 on failure.
  */
-function law_speaker_upsert( array $data ) {
+function law_speaker_upsert( array $data, array $log = array() ) {
 	$name = trim( (string) ( $data['name'] ?? '' ) );
 	if ( '' === $name ) {
 		return 0;
 	}
 
-	$post_id = law_speaker_find_existing( (string) ( $data['email'] ?? '' ), $name );
+	$post_id  = law_speaker_find_existing( (string) ( $data['email'] ?? '' ), $name );
+	$is_new   = ! $post_id;
+	$filled   = array(); // Fields this submission backfilled on a PRE-EXISTING record.
 
 	if ( ! $post_id ) {
 		$post_id = wp_insert_post(
@@ -94,6 +96,7 @@ function law_speaker_upsert( array $data ) {
 		$existing = get_post( $post_id );
 		if ( $existing && '' === trim( $existing->post_content ) && '' !== trim( (string) ( $data['bio'] ?? '' ) ) ) {
 			wp_update_post( array( 'ID' => $post_id, 'post_content' => sanitize_textarea_field( (string) $data['bio'] ) ) );
+			$filled[] = 'biography';
 		}
 	}
 
@@ -107,11 +110,29 @@ function law_speaker_upsert( array $data ) {
 		$value = trim( (string) ( $data[ $field ] ?? '' ) );
 		if ( '' !== $value && '' === (string) law_event_meta( $post_id, $key ) ) {
 			law_event_update_meta( $post_id, $key, 'email' === $field ? mb_strtolower( $value ) : $value );
+			if ( ! $is_new ) {
+				$filled[] = $field;
+			}
 		}
 	}
 
 	if ( ! empty( $data['photo_id'] ) && ! has_post_thumbnail( $post_id ) ) {
 		set_post_thumbnail( $post_id, (int) $data['photo_id'] );
+		if ( ! $is_new ) {
+			$filled[] = 'photo';
+		}
+	}
+
+	// A shared, publicly-displayed speaker profile was altered by a host other
+	// than its originator; record it on the event so the committee can spot a
+	// bad backfill against a real speaker's record during review.
+	if ( ! $is_new && $filled && ! empty( $log['event_id'] ) && function_exists( 'law_event_log' ) ) {
+		law_event_log(
+			(int) $log['event_id'],
+			sprintf( 'Existing speaker profile "%s" backfilled from this submission: %s.', $name, implode( ', ', $filled ) ),
+			array( 'action' => 'speaker_backfilled', 'speaker' => (int) $post_id, 'fields' => $filled, 'source' => 'submission' ),
+			array( 'user_id' => (int) ( $log['actor'] ?? 0 ) )
+		);
 	}
 
 	return (int) $post_id;
