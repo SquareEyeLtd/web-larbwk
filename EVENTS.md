@@ -360,8 +360,8 @@ in LAW's name on request. Verified module-by-module from Make screenshots on
 account holds five scenarios: the two below (enabled), "LAW > new user
 registration > tag in HubSpot" (disabled, matching form 1's disabled HubSpot
 feed 15), "LAW: log submitted event in HubSpot" (disabled, never run), and
-"Raindrop to Discovery (law firms)" (enabled but believed unrelated to this
-site; its WordPress connection is still to be confirmed).
+"Raindrop to Discovery (law firms)" (enabled; unrelated to this site,
+confirmed out of scope by Denis, 4 September 2026).
 
 **Scenario A, "LAW > event approved > Stripe invoice."** Triggered by step 17
 (Create Stripe invoice); the Make webhook is named `larbwk-event-submit`.

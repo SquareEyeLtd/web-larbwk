@@ -186,10 +186,31 @@ they only release parked steps, but treat the screenshots as sensitive.
 
 ### 2.4 Plugins retired at the end of the rebuild
 
-Gravity Forms, Gravity Flow, Gravity Flow Form Connector, Gravity Flow Incoming
-Webhook, Gravity Perks Nested Forms, Gravity Perks Advanced Calculations,
-GravityView + Advanced Filter + Inline Edit + Entry Revisions, and the GF User
-Registration and Advanced Post Creation add-ons.
+Verified against the plugins directory on 4 September 2026. The whole
+GF-family stack goes: Gravity Forms, Gravity Flow, Gravity Flow Form
+Connector, Gravity Flow Incoming Webhook, Gravity Flow Stripe, the GF User
+Registration, Advanced Post Creation, HubSpot, Stripe, Survey and Webhooks
+add-ons, Gravity Perks Nested Forms, Advanced Calculations, Advanced Select,
+Inventory, Populate Anything and Unique ID, GW Auto Login, GW Word Count,
+Gravity PDF, GravityView + Advanced Filter + DataTables + Entry Revisions +
+Inline Edit, and wdt-gravity-integration.
+
+Three of those carry behaviour the rebuild must absorb, beyond the obvious:
+
+- **GP Unique ID** generates field 70 (Unique ID), format `LAW26-00206`
+  (`LAW<yy>-<5-digit sequence>`). The rebuild generates new references in the
+  same format in code (`_law_reference`), continuing the existing sequence;
+  migration preserves existing values verbatim.
+- **GW Auto Login** signs the new user in after form 1 (User registration)'s
+  confirmation redirect. The custom registration form (phase D) reproduces
+  auto-login on successful registration.
+- **Gravity PDF** has one feed on form 2 (Event > submit an event): "Invoice",
+  template `larbweek-event-invoice`, **inactive**. Nothing to replace; noted
+  so nobody reactivates it mid-rebuild.
+
+Also checked: wpDataTables (which stays) has one GF-sourced table, table 1
+("Events"), embedded on no page, so retiring `wdt-gravity-integration` breaks
+nothing; and Code Snippets holds no active event-related snippets.
 
 Kept: Members (page access), Pods (`organisation` and `person` CPTs), ACF,
 SEOPress, If Menu. Note that form 1 (User registration) currently has an active
@@ -317,7 +338,7 @@ callbacks; ACF field groups provide the wp-admin editing UI over the same keys):
 
 | Meta key | From form 2 field | Notes |
 |---|---|---|
-| `_law_reference` | 70 (Unique ID) | The LAW reference; preserved verbatim in migration |
+| `_law_reference` | 70 (Unique ID) | The LAW reference; preserved verbatim in migration. New events get `LAW<yy>-<5-digit sequence>` generated in code, continuing the GP Unique ID sequence |
 | `_law_start` / `_law_end` | 68 (Confirmed slot), parsed | Real datetimes, replacing the hardcoded slot-label parsing. Slot *choices* move to the settings page |
 | `_law_preferred_slots` | 77 (Preferred date & time slots) | Array of slot keys |
 | `_law_venue` | 21 (Venue) | Free text, as now |
@@ -344,6 +365,9 @@ callbacks; ACF field groups provide the wp-admin editing UI over the same keys):
 | `_law_registration_state` | (new, 4.2) | `open` / `apply` / `free` / `external` / `invitation` / `closed`; unused in 4.1 but registered so nothing re-migrates |
 | `_law_gf_entry_id` | (migration) | The source form 2 entry ID; powers URL redirects and Stripe metadata continuity |
 | `_law_rejection_reason` | 67 (Reason for rejection) | |
+| `_law_sector_jurisdiction` | 61 (Jurisdiction-specific: please specify) | Free-text qualifier for the Jurisdiction-specific sector choice |
+| `_law_sector_other` | 62 (Other/sector-neutral: please specify) | Free-text qualifier for the Other / sector-neutral choice |
+| `_law_terms_consent` | 69 (Terms & conditions) | Consent value and timestamp; the acceptance record must survive migration |
 
 Submitter details (fields 3 Name, 7 Email, 100 ID, 101 Username) are not
 duplicated into meta: `post_author` is the source of truth, as it should have
@@ -607,10 +631,17 @@ The public templates keep their markup and CSS; only the data layer changes:
 
 One "LAW events" settings screen: programme year and week dates, the slot
 choices (currently hardcoded in two places), committee recipient emails, fee
-tier amounts, Stripe keys (secret, publishable, webhook secret; live and test),
-and the toggle for which host-edit fields publish immediately vs route for
-review (the 4.2 §4.2 "adjustable without a code change" requirement, present
-from day one even if 4.1 publishes everything immediately).
+tier amounts, the Stripe tax rate and invoice rendering template IDs, and the
+toggle for which host-edit fields publish immediately vs route for review (the
+4.2 §4.2 "adjustable without a code change" requirement, present from day one
+even if 4.1 publishes everything immediately).
+
+Stripe **keys** are not settings: they live in wp-config.php as constants
+(`LAW_STRIPE_PUBLISHABLE_KEY`, `LAW_STRIPE_SECRET_KEY`,
+`LAW_STRIPE_WEBHOOK_SECRET`), outside the repo and the database. The test-mode
+keys are already defined locally (4 September 2026); live values are set per
+environment at cutover. The settings screen shows which mode is active,
+read-only.
 
 ---
 
@@ -772,10 +803,16 @@ permalinks and redirects switched to the CPT source behind the
 rehearsals local and staging; live cutover per section 5.4.
 
 **Phase D: decommission (S).** Replace forms 1 (User registration), 3 (User
-profile) and 7 (Contact) with custom equivalents (including the sponsor
-organisation creation from form 1's feed), retire the GF plugin family,
-GravityView views, Make scenarios, orphaned pages (`/inbox/`), and update
-EVENTS.md to describe the new system.
+profile) and 7 (Contact) with custom equivalents, carrying over everything the
+form 1 stack does today: role assignment (field 11, Role), sponsor
+organisation creation (the Advanced Post Creation feed), organisation user
+meta (`law_set_organisation_user_meta` and the `orgid` prepopulation), the
+HubSpot contact type value (`functions/hubspot.php`), the
+accessibility/dietary user meta sync (`law-user-profile-update.php`) and
+auto-login after registration (GW Auto Login). Then retire the GF plugin
+family (the section 2.4 list), GravityView views, Make scenarios, orphaned
+pages (`/inbox/`), tidy the Account navigation (role-gate or remove the
+committee-only links), and update EVENTS.md to describe the new system.
 
 4.2 then builds on phases A–B primitives (bookings, waitlist, basket, attendee
 areas) rather than starting a second architecture.
@@ -816,18 +853,13 @@ areas) rather than starting a second architecture.
    (Defect 5 needs the intent settled either way.)
 3. Migration of the 160 trashed form 2 entries: confirm leave-behind.
 
-**For Denis, about Make and Stripe** (both scenarios and all module bodies are
-now fully verified, sections 2.3 and 2.3.1; test-mode Stripe keys received,
-held outside the repo in the gitignored working notes; what remains):
+**Make and Stripe: all resolved.** Both scenarios and every module body are
+verified (sections 2.3 and 2.3.1). Xero and the "Raindrop to Discovery (law
+firms)" scenario are out of scope (Denis, 4 September 2026: ignore both).
+Test-mode keys are defined in wp-config.php. Remaining, at cutover only:
 
-1. Stripe/Xero: is the Xero link a native Stripe app (unaffected by us) or
-   routed through Make?
-2. "Raindrop to Discovery (law firms)" (the fifth Make scenario, enabled,
-   scheduled): confirm its WordPress connection is not this site, then it can
-   be ignored.
-3. At cutover we will need a **live-mode** restricted key (customers,
-   invoices, webhook endpoints) and to create the webhook endpoint secret;
-   test mode is covered by the keys already provided. Also confirm the tax
-   rate (`txr_…`) and the invoice rendering template (`inrtem_…`) exist in
-   test mode, or we create test-mode equivalents and hold both IDs per mode
-   in settings.
+1. A **live-mode** restricted key (customers, invoices, webhook endpoints) and
+   the webhook endpoint secret, set as the wp-config constants on production.
+2. Confirm the tax rate (`txr_…`) and invoice rendering template (`inrtem_…`)
+   have test-mode counterparts, or create them; the settings screen holds the
+   IDs per mode.
