@@ -1055,6 +1055,22 @@ function law_migration_run_counters( $dry ) {
 	if ( $sequence > (int) get_option( 'law_events_reference_counter', 0 ) ) {
 		update_option( 'law_events_reference_counter', $sequence, false );
 	}
+
+	// User-meta cleanup: early co-owner accounts stored their organisation
+	// under law_organisation_name; the site-wide key is 'organisation'.
+	// Idempotent: moves only where the target is empty, then drops the old key.
+	$stranded = $wpdb->get_results( "SELECT user_id, meta_value FROM {$wpdb->usermeta} WHERE meta_key = 'law_organisation_name'" );
+	$moved    = 0;
+	foreach ( (array) $stranded as $row ) {
+		if ( '' === (string) get_user_meta( $row->user_id, 'organisation', true ) ) {
+			update_user_meta( $row->user_id, 'organisation', $row->meta_value );
+			$moved++;
+		}
+		delete_user_meta( $row->user_id, 'law_organisation_name' );
+	}
+	if ( $stranded ) {
+		law_migration_log( 'counters', 'created', 'user meta', sprintf( 'Moved %d stranded law_organisation_name values to the organisation key (%d rows cleaned).', $moved, count( $stranded ) ) );
+	}
 	$changes = array( 'slots' => $slots );
 	if ( $committee ) {
 		$changes['committee_emails'] = $committee;

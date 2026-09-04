@@ -405,20 +405,25 @@ function law_profile_handler() {
 	if ( $change_password ) {
 		$update['user_pass'] = $new_password;
 	}
+	// Core sends its own email-change notice INSIDE wp_update_user, so the
+	// suppression must be in place BEFORE the call; the module's more
+	// informative notice below replaces it.
+	if ( $email_changing ) {
+		add_filter( 'send_email_change_email', '__return_false' );
+	}
 	$result = wp_update_user( $update );
 	if ( is_wp_error( $result ) ) {
 		$safe_input = law_events_form_reusable_input( $input );
 		unset( $safe_input['password'], $safe_input['password_confirm'], $safe_input['current_password'] );
+		foreach ( array( 'roles', 'accessibility', 'dietary' ) as $group ) {
+			$safe_input[ $group ] = (array) ( $input[ $group ] ?? array() );
+		}
 		set_transient( 'law_profile_state_' . $user_id, array( 'errors' => array( 'email' => array( $result->get_error_message() ) ), 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
 		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/account/profile/' ) ) );
 		exit;
 	}
 
-	// The old address hears about an email change through OUR notice (which
-	// explains the reset path); core's terse duplicate is suppressed so the
-	// recipient gets one alert, not two differently worded ones.
 	if ( $email_changing ) {
-		add_filter( 'send_email_change_email', '__return_false' );
 		wp_mail(
 			$user->user_email,
 			'Your London Arbitration Week account email has changed',

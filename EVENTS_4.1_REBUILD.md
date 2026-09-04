@@ -1489,14 +1489,22 @@ the User Registration feeds, GW Auto Login and the mu-plugin checkbox sync:
   role sync limited to the self-service roles with attendee as the floor,
   and typed values surviving validation errors.
 - `setup-account-pages` (CPT mode) assigns both templates and strips the
-  form 1/form 3 Gravity Forms blocks from the page content (void and wrapped
-  block shapes; leaving them would render both forms).
+  form 1/form 3 Gravity Forms blocks from the page content, plus page 294
+  (Submit an event)'s inert form 2 block (void and wrapped block shapes;
+  leaving them would render both forms).
+- **The source flip (de)activates the module Gravity Forms** (1, 2, 3, 4, 5,
+  6, 8, 9; form 7 Contact untouched): with the embeds gone they were still
+  anonymously submittable through GF's REST submissions endpoint, which
+  would have run the legacy feeds and workflow. Flipping back to GF
+  reactivates them, keeping the rollback intact. Inactive forms still serve
+  choice lists via GFAPI (the country select).
 - Accepted risks, documented: the duplicate-email message is an existence
   oracle, but with open instant registration the oracle is inherent (a probe
   can simply attempt to register), so neutral-message theatre buys nothing.
 - **Phase D part 2 remains post-burn-in**: deactivate/remove the GF add-on
-  stack, deactivate the migrated forms, delete the orphaned GravityView
-  views and /inbox/, tidy the Account navigation, rewrite EVENTS.md.
+  stack (the forms themselves are already deactivated by the source flip),
+  delete the orphaned GravityView views and /inbox/, tidy the Account
+  navigation, rewrite EVENTS.md.
 
 A dedicated visual QA pass (screenshots of every module template, desktop
 and mobile, with computed-style contrast checks) now gates template work:
