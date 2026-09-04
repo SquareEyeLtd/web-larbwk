@@ -22,12 +22,16 @@ function law_stripe_webhook_secret() {
 /**
  * One Stripe API call.
  *
- * @param string $method GET / POST / DELETE.
- * @param string $path   e.g. '/v1/invoices'.
- * @param array  $body   Request params (form-encoded; nested arrays allowed).
+ * @param string $method          GET / POST / DELETE.
+ * @param string $path            e.g. '/v1/invoices'.
+ * @param array  $body            Request params (form-encoded; nested arrays allowed).
+ * @param string $idempotency_key Optional Idempotency-Key for mutating calls,
+ *                                so a timed-out request retried with the same
+ *                                key returns the original object instead of
+ *                                creating a duplicate.
  * @return array|WP_Error Decoded response body.
  */
-function law_stripe_request( $method, $path, array $body = array() ) {
+function law_stripe_request( $method, $path, array $body = array(), $idempotency_key = '' ) {
 	// Test seam: unit tests short-circuit the network with this filter.
 	$mocked = apply_filters( 'law_stripe_request_mock', null, $method, $path, $body );
 	if ( null !== $mocked ) {
@@ -48,6 +52,9 @@ function law_stripe_request( $method, $path, array $body = array() ) {
 			'Content-Type'   => 'application/x-www-form-urlencoded',
 		),
 	);
+	if ( '' !== $idempotency_key && 'POST' === $args['method'] ) {
+		$args['headers']['Idempotency-Key'] = substr( $idempotency_key, 0, 255 );
+	}
 
 	$url = 'https://api.stripe.com' . $path;
 	if ( 'GET' === $args['method'] ) {

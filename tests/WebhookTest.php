@@ -112,16 +112,34 @@ class WebhookTest extends LAW_Test_Case {
 		$this->assertFalse( $response->get_data()['handled'] );
 	}
 
-	public function test_charge_refunded_records_but_does_not_unpublish(): void {
+	public function test_charge_refunded_resolves_via_stored_charge_id_with_no_metadata(): void {
+		// Reality: a Charge from an invoice payment carries NO invoice
+		// metadata. Resolution runs on the charge ID captured at invoice.paid.
 		$event_id = $this->make_event( array( '_law_payment_status' => 'paid' ), 'publish' );
+		update_post_meta( $event_id, '_law_stripe_charge_id', 'ch_stored_test_1' );
+
 		list( $payload, $header ) = $this->signed_webhook( array(
 			'id'   => 'evt_refund_' . wp_generate_password( 6, false ),
 			'type' => 'charge.refunded',
-			'data' => array( 'object' => array( 'id' => 'ch_1', 'metadata' => array( 'law_event_id' => (string) $event_id ) ) ),
+			'data' => array( 'object' => array( 'id' => 'ch_stored_test_1', 'metadata' => array() ) ),
 		) );
 		$this->dispatch( $payload, $header );
 
 		$this->assertSame( 'refunded', law_event_meta( $event_id, '_law_payment_status' ) );
 		$this->assertSame( 'publish', get_post_status( $event_id ), 'Refunds never auto-unpublish; that is a human decision.' );
+	}
+
+	public function test_invoice_paid_amount_mismatch_is_logged_but_still_confirms(): void {
+		$event_id = $this->make_event( array( '_law_fee_pence' => 120000, '_law_vat' => 1, '_law_payment_status' => 'unpaid' ), 'law-approved' );
+
+		$body = $this->paid_event_body( $event_id, array( 'law_event_id' => (string) $event_id ) );
+		$body['data']['object']['amount_paid'] = 99999; // Expected: 144000 (fee + 20% VAT).
+		list( $payload, $header ) = $this->signed_webhook( $body );
+		$this->dispatch( $payload, $header );
+
+		$this->assertSame( 'publish', get_post_status( $event_id ), 'The money arrived; confirmation is not blocked.' );
+		$messages = implode( "\n", wp_list_pluck( law_event_log_entries( $event_id ), 'comment_content' ) );
+		$this->assertStringContainsString( 'AMOUNT MISMATCH', $messages );
+		$this->assertStringContainsString( '£1,440.00', $messages );
 	}
 }

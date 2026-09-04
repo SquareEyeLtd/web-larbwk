@@ -95,6 +95,22 @@ function law_user_is_committee( $user_id = 0 ) {
 }
 
 /**
+ * Validate a posted assignee: only a user who actually holds committee-level
+ * capability may be stored (a bad ID would otherwise receive committee
+ * notification emails).
+ *
+ * @param mixed $raw Posted value.
+ * @return int A committee-capable user ID, or 0.
+ */
+function law_events_sanitize_assignee( $raw ) {
+	$user_id = absint( $raw );
+	if ( ! $user_id ) {
+		return 0;
+	}
+	return user_can( $user_id, 'edit_others_law_events' ) ? $user_id : 0;
+}
+
+/**
  * Committee members (for the assignee picker): users with the
  * events_committee role, plus admins already assigned.
  *

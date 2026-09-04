@@ -88,6 +88,27 @@ function law_migration_log_tail( $limit = 12 ) {
 	);
 }
 
+/* Snapshot download (PHP-gated; the file URL is never linked directly) ______ */
+
+add_action( 'admin_post_law_migration_snapshot_download', function () {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'Sorry, you are not allowed to download the snapshot.' );
+	}
+	check_admin_referer( 'law_migration_snapshot_download' );
+
+	$snapshot = get_option( 'law_migration_snapshot' );
+	if ( ! is_array( $snapshot ) || empty( $snapshot['file'] ) || ! file_exists( $snapshot['file'] ) ) {
+		wp_die( 'No snapshot file exists.' );
+	}
+
+	nocache_headers();
+	header( 'Content-Type: application/gzip' );
+	header( 'Content-Length: ' . filesize( $snapshot['file'] ) );
+	header( 'Content-Disposition: attachment; filename=' . basename( $snapshot['file'] ) );
+	readfile( $snapshot['file'] );
+	exit;
+} );
+
 /* CSV export ________________________________________________________________ */
 
 add_action( 'admin_post_law_migration_export', function () {

@@ -94,8 +94,11 @@ function law_migration_snapshot_dir() {
  */
 function law_migration_create_snapshot() {
 	global $wpdb;
-	$dir  = law_migration_snapshot_dir();
-	$file = $dir . '/snapshot-' . gmdate( 'Ymd-His' ) . '-' . wp_generate_password( 8, false ) . '.sql.gz';
+	$dir = law_migration_snapshot_dir();
+	// Secret-strength filename: the .htaccess deny only protects Apache, so
+	// the name itself must not be guessable, and the exposure self-test below
+	// fails closed when the web server serves the file anyway.
+	$file = $dir . '/snapshot-' . gmdate( 'Ymd-His' ) . '-' . wp_generate_password( 32, false ) . '.sql.gz';
 
 	$tables = $wpdb->get_col( 'SHOW TABLES' );
 
@@ -122,6 +125,22 @@ function law_migration_create_snapshot() {
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
+	}
+
+	// Exposure self-test: request the snapshot's public URL WITHOUT
+	// credentials. If the web server serves it (nginx ignores .htaccess),
+	// delete the dump and refuse: a full-database export must never be one
+	// unauthenticated GET away.
+	$uploads    = wp_upload_dir();
+	$public_url = str_replace( $uploads['basedir'], $uploads['baseurl'], $file );
+	$probe      = wp_remote_get( $public_url, array( 'timeout' => 15, 'redirection' => 0, 'sslverify' => false ) );
+	if ( ! is_wp_error( $probe ) && 200 === (int) wp_remote_retrieve_response_code( $probe ) ) {
+		unlink( $file );
+		law_migration_log( 'snapshot', 'error', basename( $file ), 'EXPOSURE: the snapshot was publicly downloadable, so it was deleted. Add server-level protection for wp-content/uploads/law-migration/ (e.g. an nginx deny block) before migrating.' );
+		return new WP_Error(
+			'law_snapshot_exposed',
+			'The snapshot file was publicly downloadable (the server ignores .htaccess). It has been deleted. Add a server-level deny rule for wp-content/uploads/law-migration/ and try again.'
+		);
 	}
 
 	$snapshot = array(

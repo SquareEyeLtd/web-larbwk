@@ -94,7 +94,7 @@ function law_committee_action_handler() {
 		law_event_log_fee_change( $event_id, $before_override, $before_amount, $actor );
 	}
 	if ( isset( $_POST['law_assignee'] ) ) {
-		law_event_update_meta( $event_id, '_law_assignee', wp_unslash( $_POST['law_assignee'] ) );
+		law_event_update_meta( $event_id, '_law_assignee', law_events_sanitize_assignee( wp_unslash( $_POST['law_assignee'] ) ) );
 		law_event_maybe_notify_assignee( $event_id, $before_assignee, $actor );
 	}
 	if ( isset( $_POST['law_slot_label'] ) ) {

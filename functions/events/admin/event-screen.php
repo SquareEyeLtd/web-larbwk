@@ -279,12 +279,14 @@ function law_event_admin_save( $post_id, $post ) {
 		'law_invoice_name'        => '_law_invoice_name',
 		'law_invoice_email'       => '_law_invoice_email',
 		'law_vat_number'          => '_law_vat_number',
-		'law_assignee'            => '_law_assignee',
 	);
 	foreach ( $plain as $field => $key ) {
 		if ( isset( $_POST[ $field ] ) ) {
 			law_event_update_meta( $post_id, $key, wp_unslash( $_POST[ $field ] ) );
 		}
+	}
+	if ( isset( $_POST['law_assignee'] ) ) {
+		law_event_update_meta( $post_id, '_law_assignee', law_events_sanitize_assignee( wp_unslash( $_POST['law_assignee'] ) ) );
 	}
 
 	law_event_update_meta( $post_id, '_law_fee_override', ! empty( $_POST['law_fee_override'] ) );

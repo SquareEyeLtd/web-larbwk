@@ -146,12 +146,19 @@ function law_events_redirect_back( array $args = array() ) {
  * @param int    $window  Window in seconds.
  */
 function law_events_rate_limit_ok( $surface, $user_id = 0, $max = 10, $window = 300 ) {
-	$who   = $user_id ? 'u' . (int) $user_id : 'ip' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) );
-	$key   = 'law_rl_' . $surface . '_' . $who;
-	$count = (int) get_transient( $key );
-	if ( $count >= $max ) {
-		return false;
+	// Per-IP AND per-user: many fresh accounts behind one IP share the IP
+	// budget, and one account hopping IPs shares the user budget.
+	$keys   = array( 'law_rl_' . $surface . '_ip' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) ) );
+	if ( $user_id ) {
+		$keys[] = 'law_rl_' . $surface . '_u' . (int) $user_id;
 	}
-	set_transient( $key, $count + 1, $window );
+	foreach ( $keys as $key ) {
+		if ( (int) get_transient( $key ) >= $max ) {
+			return false;
+		}
+	}
+	foreach ( $keys as $key ) {
+		set_transient( $key, (int) get_transient( $key ) + 1, $window );
+	}
 	return true;
 }

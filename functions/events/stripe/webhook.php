@@ -80,7 +80,13 @@ function law_stripe_webhook_dispatch( array $event ) {
 			return true;
 
 		case 'charge.refunded':
-			$event_id = law_stripe_resolve_event_id( $object );
+			// A Charge created by an invoice payment carries NO invoice
+			// metadata, so refunds resolve by the charge ID captured at
+			// invoice.paid, with metadata as a best-effort fallback.
+			$event_id = law_stripe_event_by_charge_id( (string) ( $object['id'] ?? '' ) );
+			if ( ! $event_id ) {
+				$event_id = law_stripe_resolve_event_id( $object );
+			}
 			if ( $event_id ) {
 				// Recorded and alerted; the event is NOT auto-unpublished
 				// (a human decision, EVENTS_4.1_REBUILD.md §3.7).
@@ -103,6 +109,33 @@ function law_stripe_handle_invoice_paid( array $invoice, $stripe_event_id ) {
 	}
 
 	$amount = isset( $invoice['amount_paid'] ) ? (int) $invoice['amount_paid'] : 0;
+
+	// Reconcile against the approval snapshot: fee, plus VAT when applied
+	// (the settings tax rate is 20%). A mismatch never blocks confirmation —
+	// the money genuinely arrived — but it is logged loudly and alerted.
+	$fee      = (int) law_event_meta( $event_id, '_law_fee_pence' );
+	$expected = law_event_meta( $event_id, '_law_vat' ) ? (int) round( $fee * 1.2 ) : $fee;
+	if ( $fee > 0 && $amount !== $expected ) {
+		law_event_log(
+			$event_id,
+			sprintf(
+				'AMOUNT MISMATCH on invoice.paid: paid %s, expected %s (fee snapshot %s%s). Review in Stripe.',
+				law_events_format_pence( $amount ),
+				law_events_format_pence( $expected ),
+				law_events_format_pence( $fee ),
+				law_event_meta( $event_id, '_law_vat' ) ? ' + 20% VAT' : ''
+			),
+			array( 'action' => 'amount_mismatch', 'paid' => $amount, 'expected' => $expected, 'stripe_event' => $stripe_event_id, 'source' => 'stripe_webhook' ),
+			array( 'user_id' => 0 )
+		);
+		law_events_send( 'admin_stripe_error', $event_id, array(
+			'placeholders' => array( 'stripe_error' => 'invoice.paid amount mismatch: paid ' . law_events_format_pence( $amount ) . ', expected ' . law_events_format_pence( $expected ) ),
+		) );
+	}
+
+	// Capture the paying charge so a later charge.refunded can resolve back
+	// to this event (charges carry no invoice metadata). Best effort.
+	law_stripe_store_charge_id( $event_id, (string) ( $invoice['id'] ?? '' ) );
 	law_event_log(
 		$event_id,
 		sprintf(
@@ -129,6 +162,55 @@ function law_stripe_handle_invoice_paid( array $invoice, $stripe_event_id ) {
 	}
 
 	return true;
+}
+
+/**
+ * Fetch and store the charge behind a paid invoice: invoice payments →
+ * payment intent → latest charge. Best effort; failures are logged only.
+ */
+function law_stripe_store_charge_id( $event_id, $invoice_id ) {
+	if ( '' === $invoice_id || '' !== (string) law_event_meta( $event_id, '_law_stripe_charge_id' ) ) {
+		return;
+	}
+	$payments = law_stripe_request( 'GET', '/v1/invoice_payments', array( 'invoice' => $invoice_id, 'limit' => 1 ) );
+	if ( is_wp_error( $payments ) || empty( $payments['data'][0]['payment'] ) ) {
+		return;
+	}
+	$payment   = (array) $payments['data'][0]['payment'];
+	$charge_id = (string) ( $payment['charge'] ?? '' );
+	if ( '' === $charge_id && ! empty( $payment['payment_intent'] ) ) {
+		$intent = law_stripe_request( 'GET', '/v1/payment_intents/' . rawurlencode( (string) $payment['payment_intent'] ), array() );
+		if ( ! is_wp_error( $intent ) ) {
+			$charge_id = (string) ( $intent['latest_charge'] ?? '' );
+		}
+	}
+	if ( '' !== $charge_id ) {
+		update_post_meta( $event_id, '_law_stripe_charge_id', sanitize_text_field( $charge_id ) );
+		law_event_log(
+			$event_id,
+			sprintf( 'Payment charge %s recorded for refund traceability.', $charge_id ),
+			array( 'action' => 'charge_recorded', 'charge_id' => $charge_id, 'source' => 'stripe_webhook' ),
+			array( 'user_id' => 0 )
+		);
+	}
+}
+
+/** The event whose stored payment charge matches a charge ID, or 0. */
+function law_stripe_event_by_charge_id( $charge_id ) {
+	if ( '' === $charge_id ) {
+		return 0;
+	}
+	$posts = get_posts(
+		array(
+			'post_type'      => LAW_EVENT_CPT,
+			'post_status'    => law_event_all_status_keys(),
+			'meta_key'       => '_law_stripe_charge_id',
+			'meta_value'     => $charge_id,
+			'fields'         => 'ids',
+			'posts_per_page' => 1,
+		)
+	);
+	return $posts ? (int) $posts[0] : 0;
 }
 
 /**

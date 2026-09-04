@@ -43,7 +43,8 @@ function law_migration_admin_page() {
 				<h2>Step 0: database snapshot</h2>
 				<?php if ( is_array( $snapshot ) ) : ?>
 					<p><strong><?php echo esc_html( basename( $snapshot['file'] ) ); ?></strong><br>
-						<?php echo esc_html( sprintf( '%s · %d tables · %s · sha256 %s…', size_format( $snapshot['size'] ), $snapshot['tables'], gmdate( 'j M Y H:i', $snapshot['at'] ) . ' UTC', substr( $snapshot['sha256'], 0, 12 ) ) ); ?></p>
+						<?php echo esc_html( sprintf( '%s · %d tables · %s · sha256 %s…', size_format( $snapshot['size'] ), $snapshot['tables'], gmdate( 'j M Y H:i', $snapshot['at'] ) . ' UTC', substr( $snapshot['sha256'], 0, 12 ) ) ); ?>
+						· <a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=law_migration_snapshot_download' ), 'law_migration_snapshot_download' ) ); ?>">Download</a></p>
 				<?php else : ?>
 					<p>No snapshot yet.</p>
 				<?php endif; ?>

@@ -228,6 +228,13 @@ function law_events_validate_photos( array $files ) {
 		$check = wp_check_filetype_and_ext( $batch['tmp_name'][ $i ] ?? '', (string) $name );
 		if ( empty( $check['type'] ) || ! in_array( $check['type'], $allowed, true ) ) {
 			$errors[ 'speaker_photo_' . $i ] = sprintf( 'Speaker photo "%s" must be a JPG, PNG or WebP image.', $name );
+			continue;
+		}
+		// Dimension bounds: rejects pixel-flood/decompression-bomb images
+		// before any thumbnail generation runs (§3.11 upload validation).
+		$dimensions = @getimagesize( (string) ( $batch['tmp_name'][ $i ] ?? '' ) );
+		if ( ! $dimensions || $dimensions[0] < 50 || $dimensions[1] < 50 || $dimensions[0] > 6000 || $dimensions[1] > 6000 ) {
+			$errors[ 'speaker_photo_' . $i ] = sprintf( 'Speaker photo "%s" must be between 50×50 and 6000×6000 pixels.', $name );
 		}
 	}
 	return $errors;

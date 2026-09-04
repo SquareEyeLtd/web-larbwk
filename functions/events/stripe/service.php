@@ -51,6 +51,47 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
 
 	law_stripe_maybe_attach_vat_number( $event_id, $customer_id );
 
+	// RESUME before create: if a previous attempt already produced an
+	// invoice, never create a second one. A finalised/sent invoice is reused
+	// (double-billing guard); a leftover draft is deleted first.
+	$existing_id = (string) law_event_meta( $event_id, '_law_stripe_invoice_id' );
+	if ( '' !== $existing_id ) {
+		$existing = law_stripe_request( 'GET', '/v1/invoices/' . rawurlencode( $existing_id ), array() );
+		if ( ! is_wp_error( $existing ) ) {
+			$status = (string) ( $existing['status'] ?? '' );
+			if ( in_array( $status, array( 'open', 'paid', 'uncollectible' ), true ) ) {
+				law_event_update_meta( $event_id, '_law_stripe_invoice_url', (string) ( $existing['hosted_invoice_url'] ?? '' ) );
+				law_event_log(
+					$event_id,
+					sprintf( 'Existing Stripe invoice %s (%s) resumed; no new invoice created.', $existing_id, $status ),
+					array( 'action' => 'invoice_resumed', 'invoice_id' => $existing_id, 'status' => $status, 'source' => 'stripe' )
+				);
+				return $existing;
+			}
+			if ( 'draft' === $status ) {
+				$deleted = law_stripe_request( 'DELETE', '/v1/invoices/' . rawurlencode( $existing_id ), array() );
+				law_event_log(
+					$event_id,
+					sprintf(
+						'Leftover draft invoice %s from a failed attempt %s.',
+						$existing_id,
+						is_wp_error( $deleted ) ? 'could not be deleted (check Stripe): ' . $deleted->get_error_message() : 'deleted'
+					),
+					array( 'action' => 'invoice_draft_cleanup', 'invoice_id' => $existing_id, 'source' => 'stripe' )
+				);
+			}
+			// void → fall through and create a fresh invoice.
+		}
+		delete_post_meta( $event_id, '_law_stripe_invoice_id' );
+		delete_post_meta( $event_id, '_law_stripe_invoice_url' );
+	}
+
+	// One attempt number per NEW invoice creation; the Idempotency-Keys below
+	// make a network-level retry of the same attempt return the same objects.
+	$attempt = (int) get_post_meta( $event_id, '_law_stripe_attempt', true ) + 1;
+	update_post_meta( $event_id, '_law_stripe_attempt', $attempt );
+	$idem = fn( $step ) => sprintf( 'law-%s-%d-a%d', $step, $event_id, $attempt );
+
 	$invoice_body = array(
 		'customer'          => $customer_id,
 		'collection_method' => 'send_invoice',
@@ -75,11 +116,14 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
 		$invoice_body['rendering'] = array( 'template' => $template );
 	}
 
-	$invoice = law_stripe_request( 'POST', '/v1/invoices', $invoice_body );
+	$invoice = law_stripe_request( 'POST', '/v1/invoices', $invoice_body, $idem( 'inv' ) );
 	if ( is_wp_error( $invoice ) ) {
 		return $invoice;
 	}
 	$invoice_id = (string) $invoice['id'];
+	// Persisted IMMEDIATELY, before the line item and send: a failure anywhere
+	// after this point resumes the same invoice instead of creating another.
+	update_post_meta( $event_id, '_law_stripe_invoice_id', $invoice_id );
 
 	$line_body = array(
 		'customer'    => $customer_id,
@@ -92,12 +136,12 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
 	if ( law_event_meta( $event_id, '_law_vat' ) && '' !== $tax_rate ) {
 		$line_body['tax_rates'] = array( $tax_rate );
 	}
-	$line = law_stripe_request( 'POST', '/v1/invoiceitems', $line_body );
+	$line = law_stripe_request( 'POST', '/v1/invoiceitems', $line_body, $idem( 'line' ) );
 	if ( is_wp_error( $line ) ) {
 		return $line;
 	}
 
-	$sent = law_stripe_request( 'POST', '/v1/invoices/' . rawurlencode( $invoice_id ) . '/send', array() );
+	$sent = law_stripe_request( 'POST', '/v1/invoices/' . rawurlencode( $invoice_id ) . '/send', array(), $idem( 'send' ) );
 	if ( is_wp_error( $sent ) ) {
 		return $sent;
 	}
@@ -107,7 +151,6 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
 		return $details;
 	}
 
-	update_post_meta( $event_id, '_law_stripe_invoice_id', $invoice_id );
 	law_event_update_meta( $event_id, '_law_stripe_invoice_url', (string) ( $details['hosted_invoice_url'] ?? '' ) );
 
 	law_event_log(
@@ -140,7 +183,9 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
  * @return array|WP_Error Customer object.
  */
 function law_stripe_upsert_customer( $event_id, WP_Post $post ) {
-	$email = (string) law_event_meta( $event_id, '_law_invoice_email' );
+	// Lowercased: Stripe's ?email= filter is an exact, case-sensitive match,
+	// and a casing mismatch would create a duplicate customer.
+	$email = mb_strtolower( (string) law_event_meta( $event_id, '_law_invoice_email' ) );
 	if ( ! is_email( $email ) ) {
 		return new WP_Error( 'law_no_invoice_email', 'The event has no valid invoice contact email.' );
 	}
@@ -263,12 +308,12 @@ function law_stripe_record_failure( $event_id, WP_Error $error ) {
 
 add_action( 'admin_post_law_event_retry_invoice', 'law_event_handle_retry_invoice' );
 function law_event_handle_retry_invoice() {
-	check_admin_referer( 'law_event_retry_invoice' );
-
-	$event_id = absint( $_REQUEST['event_id'] ?? 0 );
 	if ( ! law_user_is_committee() ) {
 		wp_die( 'Sorry, you are not allowed to retry invoices.' );
 	}
+	check_admin_referer( 'law_event_retry_invoice' );
+
+	$event_id = absint( $_REQUEST['event_id'] ?? 0 );
 
 	law_event_log(
 		$event_id,
