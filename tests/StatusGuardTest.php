@@ -35,6 +35,13 @@ class StatusGuardTest extends LAW_Test_Case {
 		$this->assertSame( 'trash', get_post_status( $event ) );
 	}
 
+	public function test_untrash_restores_the_previous_status(): void {
+		$event = $this->make_event( array(), 'law-sent-back' );
+		wp_trash_post( $event );
+		wp_untrash_post( $event );
+		$this->assertSame( 'law-sent-back', get_post_status( $event ), 'Untrash restores the pre-trash status, never core draft (and never sticks in trash).' );
+	}
+
 	public function test_co_owner_query_matches_values_not_array_keys(): void {
 		$low  = $this->make_user(); // Simulates a low user ID being an array KEY.
 		$co_a = $this->make_user();

@@ -48,10 +48,30 @@ add_filter(
 			return $data; // The workflow engine is moving the status.
 		}
 		$current = get_post_field( 'post_status', $post_id );
+		if ( 'trash' === $current ) {
+			return $data; // Untrash restores must pass (see the filter below).
+		}
 		if ( $current && $current !== ( $data['post_status'] ?? '' ) && 'trash' !== ( $data['post_status'] ?? '' ) ) {
 			$data['post_status'] = $current;
 		}
 		return $data;
+	},
+	10,
+	2
+);
+
+/**
+ * Untrash restores the status the event was trashed with (core would restore
+ * to `draft`, a status the module never uses).
+ */
+add_filter(
+	'wp_untrash_post_status',
+	function ( $new_status, $post_id ) {
+		if ( get_post_type( $post_id ) !== LAW_EVENT_CPT ) {
+			return $new_status;
+		}
+		$previous = (string) get_post_meta( $post_id, '_wp_trash_meta_status', true );
+		return array_key_exists( $previous, law_event_statuses() ) ? $previous : 'law-proposed';
 	},
 	10,
 	2
@@ -114,9 +134,9 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 	$old_status = $post->post_status;
 	$new_status = $config['to'];
 
-	// The status guard in law_events_guard_status() only lets a status
-	// change through while this flag is up: the workflow engine is the ONLY
-	// way an existing event's status moves.
+	// The wp_insert_post_data status guard above only lets a status change
+	// through while this flag is up: the workflow engine is the ONLY way an
+	// existing event's status moves.
 	$GLOBALS['law_workflow_transitioning'] = true;
 	$updated = wp_update_post(
 		array( 'ID' => $event_id, 'post_status' => $new_status ),

@@ -489,7 +489,7 @@ been all along.
 
 ### 3.3 Sessions: CPT `law_session`
 
-- `post_parent`: the `law_event`. Meta: `_law_start` / `_law_end` (times),
+- `post_parent`: the `law_event`. Meta: `_law_start_time` / `_law_end_time` (HH:MM),
   `_law_speakers` (same row shape as events). Title and description map from
   form 9 (Event > session) fields 4 (Session title) and 5 (Description).
 - Not publicly queryable on their own; rendered inside the event page as now.
@@ -1433,3 +1433,31 @@ Everything found was fixed:
 - Suite grown to cover the new seams: the status guard (direct
   publish/draft reverted, workflow still moves, trash allowed) and the
   co-owner value-vs-key query.
+
+### 10.3 Verification round 3 outcomes (4 September 2026): READY
+
+The final audit hunted regressions in the earlier fixes and re-verified a
+sample of prior claims. Three blockers found, all fixed and live-verified:
+
+- **Untrash** no longer strands an event in trash (a regression from the
+  round 2 status guard): restores pass the guard, and
+  `wp_untrash_post_status` returns the pre-trash status instead of core's
+  `draft`. Covered by a new test.
+- **The legacy `?event=` redirect fires only on the public programme page**
+  (`templates/calendar.php`). It had been intercepting the committee
+  dashboard's own `?event=<post ID>` detail links, killing the detail view
+  for every Confirmed event and, on entry/post ID collisions, opening the
+  wrong event entirely.
+- **Migrated email wording**: First+Last merge-tag pairs collapse to one
+  `{host_name}`, and `{ID:100}` maps to `{law_reference}`; step 9 re-imported
+  and verified clean.
+- A co-owner row added in wp-admin on an approved event now creates the
+  account, matching the host-edit path.
+
+Everything else in rounds 1-3 audited sound. Suite: 35 tests / 125
+assertions. Remaining work is staging/cutover-time by design, not local:
+the live restricted Stripe key and webhook endpoint + secret (Denis, §9),
+the real-Stripe E2E smoke with CLI forwarding on staging (outbound Stripe is
+blocked on this local copy), disabling Make scenarios A then B, the live
+migration run itself, and a LAW wording review of the migrated emails on
+LAW → Emails.

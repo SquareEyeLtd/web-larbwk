@@ -324,6 +324,11 @@ function law_event_admin_save( $post_id, $post ) {
 
 	// Repeaters and relationships.
 	law_event_update_meta( $post_id, '_law_co_owner_rows', law_events_rows_from_post( 'law_co_owner_rows' ) );
+	// A co-owner added on an already-approved event gets their account now,
+	// matching the host-edit path.
+	if ( in_array( $post->post_status, array( 'law-approved', 'publish' ), true ) ) {
+		law_event_ensure_co_owner_users( $post_id, $actor );
+	}
 	law_event_update_meta( $post_id, '_law_contacts', law_events_rows_from_post( 'law_contacts' ) );
 	law_event_update_meta( $post_id, '_law_speakers', law_events_rows_from_post( 'law_speakers' ) );
 	law_event_update_meta( $post_id, '_law_organisation_ids', array_map( 'absint', (array) ( $_POST['law_organisation_ids'] ?? array() ) ) );

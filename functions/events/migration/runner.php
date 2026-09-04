@@ -1089,8 +1089,10 @@ function law_migration_run_redirects( $dry ) {
 function law_migration_translate_tags( $text ) {
 	$translations = array(
 		'{Email:7}'                  => '{host_email}',
+		// First+Last pairs collapse into one {host_name}: First carries it,
+		// Last drops (mapping both would print the name twice).
 		'{Name (First):3.3}'         => '{host_name}',
-		'{Name (Last):3.6}'          => '{host_name}',
+		'{Name (Last):3.6}'          => '',
 		'{Name:3}'                   => '{host_name}',
 		'{Event title:17}'           => '{event_title}',
 		'{Unique ID:70}'             => '{law_reference}',
@@ -1106,7 +1108,7 @@ function law_migration_translate_tags( $text ) {
 		'{entry_id}'                 => '{law_reference}',
 		'{entry_url}'                => '{committee_link}',
 		'{entry_revision_diff}'      => '(see the event\'s activity log for the change history)',
-		'{ID:100}'                   => '',
+		'{ID:100}'                   => '{law_reference}',
 		'{admin_email}'              => get_option( 'admin_email' ),
 		'{site_title}'               => '{site_name}',
 	);

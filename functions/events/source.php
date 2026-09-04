@@ -334,12 +334,12 @@ add_action( 'template_redirect', function () {
 		return;
 	}
 
-	// ?event=<legacy entry id> → permalink (public pages only; the committee
-	// programme keeps its query-string view, whose values are post IDs).
-	// Legacy intent wins here: entry IDs and post IDs overlap numerically, so
-	// a public ?event= URL is looked up in the migration map FIRST and only
-	// falls back to a direct post ID when the map has no row.
-	if ( isset( $_GET['event'] ) && ! law_calendar_is_committee() && ! is_singular( LAW_EVENT_CPT ) ) {
+	// ?event=<legacy entry id> → permalink, ONLY on the public programme page
+	// (the one place legacy links ever pointed). The committee programme and
+	// the committee dashboard both use ?event=<post ID> internally and must
+	// never be intercepted: entry IDs and post IDs overlap numerically, and
+	// hijacking the dashboard's detail links misdirected Confirmed events.
+	if ( isset( $_GET['event'] ) && is_page_template( 'templates/calendar.php' ) ) {
 		$requested = absint( $_GET['event'] );
 		$map       = get_option( LAW_MIGRATION_MAP_OPTION, array() );
 		$post_id   = absint( $map['events'][ $requested ] ?? 0 );
