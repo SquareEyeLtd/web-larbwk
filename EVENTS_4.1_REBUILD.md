@@ -965,6 +965,8 @@ Test-mode keys are defined in wp-config.php. Remaining, at cutover only:
 
 1. A **live-mode** restricted key (customers, invoices, webhook endpoints) and
    the webhook endpoint secret, set as the wp-config constants on production.
-2. Confirm the tax rate (`txr_…`) and invoice rendering template (`inrtem_…`)
-   have test-mode counterparts, or create them; the settings screen holds the
-   IDs per mode.
+2. ~~Test-mode counterparts for the tax rate and rendering template~~
+   **Resolved, 4 September 2026**: verified via the API that test mode already
+   has both: tax rate `txr_1Tex2CPhJqxRqE2K2Bn3XBqH` (VAT, GB, 20%, exclusive)
+   and rendering template `inrtem_1TewtwPhJqxRqE2KQg885Tkf` ("LAW: event
+   hosts", active). The settings screen holds the IDs per mode.
