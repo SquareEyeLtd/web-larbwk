@@ -417,17 +417,17 @@ been all along.
   `attendee`); Members keeps gating pages. We add per-object checks in
   `capabilities.php`: `law_user_can_manage_event( $user_id, $event_id )` is true
   for the author, any co-owner, committee, editor and admin.
-- **Co-owners become real users at submission** (fixing EVENTS.md defect 2 and
-  meeting the 4.2 §4.1 requirement). For each row in the co-owners repeater:
-  match an existing user by email, otherwise `wp_insert_user` with the
-  `event_host` role and send the standard new-account email (password set via
-  the branded reset flow that already exists in `functions/auth.php`). Store the
-  user ID in `_law_co_owner_ids`. The host events dashboard queries
-  `post_author = me OR _law_co_owner_ids CONTAINS me`.
-- Timing: creation happens at submission rather than approval. The 4.2 spec
-  says "on approval"; creating at submission is simpler (no deferred queue) and
-  harmless (an account with access to one proposed event). Flagged as a
-  decision to confirm with LAW (section 9).
+- **Co-owners become real users on approval** (decided by Denis, September
+  2026, matching the 4.2 §4.1 wording; fixes EVENTS.md defect 2). The
+  submitted co-owner rows (name, organisation, email) are stored on the event
+  at submission; the **approve transition** then walks them: match an existing
+  user by email, otherwise `wp_insert_user` with the `event_host` role and
+  send the standard new-account email (password set via the branded reset flow
+  that already exists in `functions/auth.php`). Store the user IDs in
+  `_law_co_owner_ids`. A co-owner added by a host edit after approval is
+  processed the same way on save. The host events dashboard queries
+  `post_author = me OR _law_co_owner_ids CONTAINS me`; before approval only
+  the submitter sees the event, which matches current behaviour anyway.
 
 ### 3.5 The submission and edit forms
 
@@ -574,6 +574,17 @@ The two Gravity Flow incoming-webhook park steps, their credentials and the GF
 REST keys all retire. **Xero**: out of scope (Denis, 4 September 2026); the
 existing Stripe-to-Xero integration is outside WordPress and untouched by the
 rebuild.
+
+**Local webhook testing** uses the Stripe CLI, no tunnel required:
+`stripe listen --forward-to http://law.localhost/wp-json/law/v1/stripe-webhook`
+polls Stripe outbound and replays test-mode events against the local endpoint,
+printing a `whsec_…` signing secret to set as `LAW_STRIPE_WEBHOOK_SECRET` in
+the local wp-config. End-to-end: approve a test event locally (a real
+test-mode invoice is created), open its hosted invoice URL, pay with card
+4242 4242 4242 4242, and the forwarded `invoice.paid` walks the entire
+publish path. `stripe trigger invoice.paid` covers quick unit-level checks,
+and automated tests can POST constructed events signed with the known local
+secret.
 
 ### 3.8 Notifications
 
@@ -780,10 +791,13 @@ submenus of LAW, no new top-level menus. The screen:
 
 ### 5.3 Migration steps, in dependency order
 
-1. **Users for co-owners.** Walk form 6 (Event > co-owner) children (54 rows):
-   match by email to existing users, create the rest as `event_host`. Report
-   matched vs created. (No welcome email during migration; accounts are
-   announced at cutover, decision for LAW.)
+1. **Users for co-owners.** Walk the form 6 (Event > co-owner) children (54
+   rows) whose parent event is **Approved or Confirmed** (per the on-approval
+   decision, section 3.4): match by email to existing users, create the rest
+   as `event_host`. Report matched vs created vs deferred. Co-owners of
+   Proposed/Sent back events migrate as stored rows only; their accounts are
+   created by the approve transition after cutover. No welcome emails are sent
+   during migration.
 2. **Speakers.** Form 8 (Event > speaker) children (186 rows) plus any
    remaining form 2 field 48 (Speakers (list)) rows on unmigrated entries:
    dedupe by email then name (the same rules as today's render-time dedupe),
@@ -843,9 +857,12 @@ submenus of LAW, no new top-level menus. The screen:
 
 1. Code deployed dark: CPTs registered, migration screen available, templates
    still reading GF.
-2. Announce a short submission freeze to LAW (there are 75 events; minutes, not
-   hours, of migration).
-3. Run the migration on live, review the report and verification panel.
+2. Run the migration on live **immediately after deploying** (per Denis,
+   September 2026: deploy, then launch the migration right away; hosts and the
+   committee shouldn't notice anything beyond the improvements). With 75
+   events the run takes minutes, so no announced freeze is needed; the only
+   practical care is not deploying while the committee is mid-approval.
+3. Review the report and verification panel.
 4. Flip the template data source (a single option/constant,
    `law_events_source`), so rollback is flipping it back.
 5. Point Stripe's webhook at the new endpoint; disable Make scenarios A and B
@@ -874,7 +891,7 @@ after cutover). Nothing needs to be re-invoiced.
 | 2. Co-owners not created as users | Section 3.4, plus migration step 1 |
 | 3. Create/Publish event steps are no-ops | Whole post-creation story replaced by the CPT itself |
 | 4. Make outage silently completes workflow | Direct Stripe with error state, alert and retry (section 3.7) |
-| 5. Step 30 fee condition saved but off | Notification conditions are code; the approved-email audience is decided explicitly (asking LAW: every approval, or paid only) |
+| 5. Step 30 fee condition saved but off | Decided (Denis, September 2026): the committee approved-email fires on **every** approval for now; the orphaned fee condition is not carried over, and narrowing to paid-only later is a one-line change |
 | `?ec=` category prepopulation dead (EVENTS_4.1_FUNC.md §6) | The custom form reads `?ec=` natively into the category field |
 | Fee-waived events get non-sponsor wording | Confirmed-email split on fee = 0, not tier |
 | VAT flag matches price literals | `_law_vat` computed from fee > 0 |
@@ -948,25 +965,23 @@ areas) rather than starting a second architecture.
    stack retires, and everything events-related is built in the custom module,
    never as a new GF form.
 
-## 9. Open questions
+## 9. Open questions: none
 
-**For LAW (via Denis):**
+Everything is settled (all decisions dated September 2026, from Denis):
 
-1. Co-owner accounts created at submission (recommended) or only on approval
-   (as the 4.2 spec words it)?
-2. Committee approved-event email: every approval, or paid events only?
-   (Defect 5 needs the intent settled either way.)
-3. Migration of the 160 trashed form 2 entries: confirm leave-behind.
-
-**Make and Stripe: all resolved.** Both scenarios and every module body are
-verified (sections 2.3 and 2.3.1). Xero and the "Raindrop to Discovery (law
-firms)" scenario are out of scope (Denis, 4 September 2026: ignore both).
-Test-mode keys are defined in wp-config.php. Remaining, at cutover only:
-
-1. A **live-mode** restricted key (customers, invoices, webhook endpoints) and
-   the webhook endpoint secret, set as the wp-config constants on production.
-2. ~~Test-mode counterparts for the tax rate and rendering template~~
-   **Resolved, 4 September 2026**: verified via the API that test mode already
-   has both: tax rate `txr_1Tex2CPhJqxRqE2K2Bn3XBqH` (VAT, GB, 20%, exclusive)
-   and rendering template `inrtem_1TewtwPhJqxRqE2KQg885Tkf` ("LAW: event
-   hosts", active). The settings screen holds the IDs per mode.
+1. **Co-owner accounts are created on approval**, not at submission
+   (section 3.4).
+2. **The committee approved-email fires on every approval** for now; the
+   paid-only condition is not carried over (defects table, item 5).
+3. **Trashed form 2 entries stay in the archive**; clients don't interact with
+   the storage layer, and cutover is deploy-then-migrate in one go
+   (section 5.4).
+4. Make scenarios A and B fully verified (sections 2.3, 2.3.1); Xero and
+   Raindrop out of scope.
+5. Stripe test mode fully provisioned: keys in wp-config.php, tax rate
+   `txr_1Tex2CPhJqxRqE2K2Bn3XBqH` (VAT, GB, 20%) and rendering template
+   `inrtem_1TewtwPhJqxRqE2KQg885Tkf` ("LAW: event hosts") verified via the
+   API. Local webhook testing via the Stripe CLI (section 3.7).
+6. At cutover, Denis sets the **live-mode restricted key** (customers,
+   invoices, webhook endpoints) in production wp-config himself; the live
+   webhook endpoint and signing secret are created with it then.
