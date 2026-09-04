@@ -476,6 +476,11 @@ been all along.
   a host adds a speaker, we look up by email first, then normalised name, and
   attach the existing post rather than creating a duplicate. The 4.2 "use this
   existing speaker" suggestion UI and the admin merge tool bolt onto this.
+  Reality check (scanned 4 September 2026): only 13 of the 186 existing
+  speaker entries carry a valid email, so in practice the name fallback does
+  most of the matching today. The custom speaker repeater should nudge hosts
+  towards providing the email (it is what makes 4.2's dedupe reliable) while
+  keeping it optional, as now.
 - Visibility stays derived: a speaker renders publicly only while at least one
   `publish` event references them. No status juggling on the speaker itself.
 - URLs become `/speakers/<post-slug>/`; the migration writes `_law_gf_entry_id`
@@ -498,6 +503,14 @@ been all along.
   `attendee`); Members keeps gating pages. We add per-object checks in
   `capabilities.php`: `law_user_can_manage_event( $user_id, $event_id )` is true
   for the author, any co-owner, committee, editor and admin.
+- **The `events_committee` role currently has almost no capabilities**
+  (verified 4 September 2026): just `read` plus the GravityView cap set, no
+  wp-admin content access at all; committee members work entirely through the
+  front-end views (Marie also holds `editor`, but that is her account, not
+  the role). `capabilities.php` therefore grants `events_committee` the
+  mapped caps for `law_event`, `law_speaker` and `law_session` (edit, read,
+  upload for photos) so the wp-admin event screens work for the whole
+  committee, and the orphaned GravityView caps retire with the plugin.
 - **Co-owners become real users on approval** (decided by Denis, September
   2026, matching the 4.2 §4.1 wording; fixes EVENTS.md defect 2). The
   submitted co-owner rows (name, organisation, email) are stored on the event
@@ -540,6 +553,16 @@ The single biggest rebuild item. A custom front-end form at
   fields locked after approval. Edits by a host on a published event fire the
   "event updated" committee email (replacing the Entry Revisions hook), and a
   wp post revision is recorded for audit.
+- For reference, **today's** GravityView 386 edit whitelist (dumped
+  4 September 2026) is status-blind and looser: hosts can edit field 17
+  (Event title), 63 (Event type), 77 (Preferred date & time slots), 23
+  (Description), 60/61/62 (Sector and qualifiers), 103/21/55 (venue fields),
+  54 (Tickets available), 48 (Speakers (list), the **legacy** list; the
+  nested field 112 Speakers is not editable at all today) and 99 (Comments),
+  at any status. The rebuild's per-state lock list is a **deliberate
+  tightening** to the 4.2 §4.2 rules (title, slots and fees lock after
+  approval), and giving hosts a real speaker editor is a straight
+  improvement over the legacy-list-only editing they have now.
 - The old GravityView entry locking is replaced with `wp_set_post_lock` /
   heartbeat, which is native.
 
@@ -970,6 +993,17 @@ submenus of LAW, no new top-level menus. The screen:
 - Post-run **verification panel**: counts compared (entries vs posts, child
   entries vs speakers/sessions/comments/contacts), orphan checks, spot-check
   links (old URL → new URL side by side).
+- **Automated preflight checks**, run before the Migrate buttons enable.
+  Everything in this plan was verified against the *local* database; the
+  preflight re-verifies the same assumptions on whatever environment the
+  migrator is actually running against, so live drift is caught by the tool,
+  not by an incident: form structure (the expected field IDs and types exist
+  on forms 2, 4, 5, 6, 8, 9), source counts, the orphaned-children scan, a
+  slot-parse test over every field 68 (Confirmed slot) value, photo file
+  existence for form 8 field 6 (Photo) uploads, the `wp_gpui_sequence` value,
+  target CPTs registered, the `law_events_source` flag still on GF, and
+  Stripe key constants present. Failures list the exact items; warnings
+  (e.g. missing photo files) do not block but are carried into the report.
 
 ### 5.3 Migration steps, in dependency order
 
@@ -1104,6 +1138,46 @@ checkable side by side because the flip is a single switch:
 Where behaviour intentionally differs, it is only ever additive: payment
 status now populated, co-owners now get accounts (on approval), the activity
 log now exists, and the edit/comments screens look better.
+
+### 5.7 Known data quirks (scanned 4 September 2026)
+
+Facts about the live data the migrator must tolerate, found by scanning all
+active entries against the migration assumptions. Each has defined handling:
+
+- **Speaker emails are mostly absent**: 13 of 186 form 8 (Event > speaker)
+  entries have a valid field 8 (Email). Dedupe proceeds by email where
+  present, normalised name otherwise (the current rules), and the report
+  lists every name-based merge for eyeballing.
+- **Speaker photo files**: 6 speakers have a field 6 (Photo) value, and on
+  this local copy all 6 files are missing from disk (uploads not synced).
+  The migrator sideloads what exists and logs what doesn't as a warning, so
+  the local rehearsal will show 6 warnings and the live run should show none;
+  if live also lacks a file, the speaker migrates without a photo, exactly
+  like today's rendering fallback.
+- **3 orphaned child entries** (active children whose `gpnf_entry_parent` is
+  missing or trashed): skipped and reported, never guessed at.
+- **Entry 1144 is Confirmed with an empty field 68 (Confirmed slot)**: the
+  calendar already has an unscheduled bucket
+  (`law_calendar_unscheduled_events()`), so the mapper keeps `_law_start` /
+  `_law_end` empty, the event stays off the day grid as today, and the report
+  flags it for the committee to slot.
+- **Entries 303 and 774 still carry field 48 (Speakers (list)) rows with no
+  nested speakers**: exactly the case migration step 2 exists for; their list
+  rows become `law_speaker` posts (without emails or photos, as the list has
+  neither).
+- **Two dash conventions in slot values**: field 68 (Confirmed slot) choices
+  use an en dash in the time range ("08:30–10:00"), field 77 (Preferred
+  date & time slots) uses a hyphen ("08:30-10:00"). The slot parser accepts
+  both.
+- **Field 90 (Committee assignee)** holds the display value "Marie"; the
+  migrator maps it to the real user (ID 3, `marie`, verified) and stores the
+  user ID in `_law_assignee`.
+- **Inline Gravity Flow notification texts confirmed extractable** from feed
+  meta for migration step 9: step 5 (Committee review) carries
+  `rejection_notification_*` (enabled) and assignee message keys, step 8
+  (Clarification needed) the assignee and completion notification keys, and
+  step 14 (Email to committee > payment received) the
+  `workflow_notification_*` keys.
 
 ---
 
