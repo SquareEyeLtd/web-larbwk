@@ -15,6 +15,41 @@ accurate until cutover. This file is the plan for the *next* one.
 
 ---
 
+## 0. Context for the implementing agent
+
+This document is written to be sufficient on its own. Alongside it, know:
+
+- **Read EVENTS.md first**: the canonical description of the current system,
+  its forms, workflow and defects. `EVENTS_4.1_FUNC.md` is a **gitignored**
+  working reference that also holds the Stripe test keys and the verified
+  test-mode tax rate / rendering template IDs; never copy its contents into a
+  tracked file.
+- **Verifying against the database**: wp-cli is the phar at
+  `/home/gusev/.local/bin/wp-cli.phar`, run from `/srv/http/law`, and it
+  **must** be run as `php -d memory_limit=512M …` (the default 128M fatals
+  while Pods autoloads). Verify form/field/step facts against the DB, not
+  against docs, which can drift.
+- **House rule**: in anything you write for Denis (reports, docs, commit
+  messages), pair every Gravity Forms form, field, step, view and page ID
+  with its name, every time: "field 95 (Event status)", never "field 95".
+- **Local environment**: outgoing mail lands in Mailpit
+  (http://localhost:8025); the Postmark plugin is neutralised locally by
+  `mu-plugins/block-emails.php`. Stripe test keys are wp-config constants
+  (section 3.10); the Stripe CLI is installed at `/usr/bin/stripe` for
+  webhook forwarding (section 3.7). Playwright browser testing is available
+  for the E2E smoke tests (add `.playwright/` and `.playwright-cli/` to
+  .gitignore before first use).
+- **Conventions**: new admin screens go under the existing LAW menu using the
+  AME-compatible pattern (section 5.2); first-party JS goes in `assets/js/`
+  (not `assets/js/vendor/`); admin editing UIs are custom meta boxes, not ACF
+  (section 3, admin editing note); work happens on the
+  `events-4.1-rebuild-custom` branch.
+- **Documentation duty**: update EVENTS.md in the same piece of work as any
+  change to what it describes, and keep this plan's decisions sections
+  accurate as build reality intrudes.
+
+---
+
 ## 1. Why rebuild
 
 The current build works, but it has structural costs we keep paying:
@@ -754,6 +789,47 @@ keys are already defined locally (4 September 2026); live values are set per
 environment at cutover. The settings screen shows which mode is active,
 read-only.
 
+### 3.11 Automated tests, hardening and review gates
+
+Requested by Denis, September 2026. These are build requirements, not
+nice-to-haves, and phase B does not ship without them.
+
+**Unit tests (PHPUnit) for the money path**, written alongside each
+sub-module, covering at minimum:
+
+- `fees.php`: every tier, the override on/off matrix, the VAT flag from
+  fee > 0, pence conversion, zero-fee routing;
+- `workflow.php`: transition guards (who may do what, from which status),
+  illegal transitions rejected, side effects fired exactly once (Stripe and
+  mail calls mocked), co-owner creation on approve;
+- `stripe/webhook.php`: signature verification (valid, invalid, missing),
+  idempotency (a replayed Stripe event ID is a no-op), unknown event types
+  tolerated, entry resolution via both `law_event_id` and the migrated
+  `gf_entry_id` map;
+- the reference generator (format `LAW<yy>-<5 digits>`, sequence
+  continuation) and the migration's merge-tag translation table.
+
+**E2E smoke (Playwright)**: submit → committee approves → pay the test-mode
+invoice with 4242 4242 4242 4242 (Stripe CLI forwarding) → event published
+and emails in Mailpit; plus the send-back/comment/resubmit loop. Run before
+each phase lands and before cutover.
+
+**Spam and abuse protection** on every public-facing write surface (the
+submission form, registration, comment replies): honeypot field, nonces,
+per-IP and per-user rate limiting, and strict upload validation on speaker
+photos (type, size, dimensions). Gravity Forms provided its own hardening;
+the custom forms must not ship with less.
+
+**Security review gate**: at the end of phase B, before phase C rehearsals, a
+structured security review of the new attack surface: the Stripe webhook
+route, the AJAX migration endpoints, capability checks on every admin-post
+and AJAX handler, upload handling, and the committee/host permission
+boundaries. Findings fixed before cutover.
+
+**Explicit non-goal (Denis, September 2026): overdue invoice chasing.** No
+reminder or escalation mechanism for unpaid invoices in 4.1; an Approved
+event simply stays unpaid until paid, as today. Revisit in 4.2 if wanted.
+
 ---
 
 ## 4. How this sets up Phase 4.2
@@ -816,6 +892,18 @@ options.php-child pattern as `law_register_migrate_speakers_page()` in
 placement applies to every new admin screen in this module (settings, emails):
 submenus of LAW, no new top-level menus. The screen:
 
+- **Step 0, database snapshot** (Denis, September 2026), handled inside
+  wp-admin like everything else: a "Create snapshot" card that dumps the full
+  database before any real run. Implementation: `mysqldump` via `shell_exec`
+  when available (detected, using the wp-config credentials), falling back to
+  a batched pure-PHP export (table by table over the same AJAX runner, so no
+  timeout) written as gzipped SQL to a protected directory
+  (`wp-content/uploads/law-migration/`, guarded by an `.htaccess` deny, an
+  `index.php`, and a random filename suffix). The card shows file size, table
+  count, checksum and a download link. **The real (non-dry) Migrate buttons
+  are disabled unless a snapshot from the last 60 minutes exists**, with an
+  explicit "I have a server-level backup" override checkbox for environments
+  where the hosting snapshot is preferred.
 - One card per migration step (5.3), each showing source count, migrated count,
   remaining, and last-run summary.
 - Controls: Dry run / Migrate buttons per step, plus "Run all" in order. A
@@ -902,9 +990,11 @@ submenus of LAW, no new top-level menus. The screen:
    still reading GF.
 2. Run the migration on live **immediately after deploying** (per Denis,
    September 2026: deploy, then launch the migration right away; hosts and the
-   committee shouldn't notice anything beyond the improvements). With 75
-   events the run takes minutes, so no announced freeze is needed; the only
-   practical care is not deploying while the committee is mid-approval.
+   committee shouldn't notice anything beyond the improvements). Step 0's
+   database snapshot runs first, from the same screen, and gates the real
+   run. With 75 events the run takes minutes, so no announced freeze is
+   needed; the only practical care is not deploying while the committee is
+   mid-approval.
 3. Review the report and verification panel.
 4. Flip the template data source (a single option/constant,
    `law_events_source`), so rollback is flipping it back.
@@ -986,6 +1076,9 @@ capabilities, settings page, fees, and the custom admin screens
 workflow engine and audit log; committee dashboard and actions; comments
 thread; co-owner user creation; notifications; Stripe service and webhook.
 This is the bulk of the work and lands as one reviewable unit per sub-module.
+**Phase B exits through the section 3.11 gates**: money-path unit tests green,
+spam/abuse protection in place on every public write surface, the E2E smoke
+passing, and the security review done with findings fixed.
 
 **Phase B2: re-pointing (M).** Calendar, speakers, host dashboard, single event
 permalinks and redirects switched to the CPT source behind the
