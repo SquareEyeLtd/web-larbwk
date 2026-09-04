@@ -253,10 +253,54 @@ Also checked: wpDataTables (which stays) has one GF-sourced table, table 1
 nothing; and Code Snippets holds no active event-related snippets.
 
 Kept: Members (page access), Pods (`organisation` and `person` CPTs), ACF,
-SEOPress, If Menu. Note that form 1 (User registration) currently has an active
-Advanced Post Creation feed 2 (Create sponsor organisation) creating
-`organisation` posts on sponsor registration; the custom registration form must
-reproduce that behaviour before APC goes.
+SEOPress, If Menu.
+
+**Newly found dead configuration (audited 4 September 2026):** form 1 (User
+registration)'s Advanced Post Creation feed 2 (Create sponsor organisation) is
+active but **can never fire**: its condition tests field 7 = "other", and
+field 7 (the old organisation select) was deleted from the form. The entire
+registration-organisation cluster died with it: the feed, the theme's
+`gppa_input_choices_1_7` "My organisation is not listed" filter,
+`law_set_organisation_user_meta()` (reads field 7) and the `orgid`
+prepopulation are all referencing the removed field. Since then, registering
+users get no ACF `organisation` user meta, and `organisation` posts are being
+created manually. Form 2 field 109 (Organisation), which drives the sponsor
+highlight, is unaffected: it has prepopulation off and is manually curated
+(7 entries carry values). Phase D therefore does **not** reproduce the feed;
+whether to resurrect organisation selection at registration is a small LAW
+product decision, and the custom registration form can add it cleanly if
+wanted.
+
+### 2.6 Form settings, confirmations and personal data (audited 4 September 2026)
+
+Checked on every form so the custom forms reproduce real behaviour, not
+assumed behaviour:
+
+- **Require login**: form 2 (Event > submit an event) only. The custom
+  submission form keeps a server-side logged-in check in its handlers, on top
+  of the Members page gate.
+- **Honeypot**: enabled only on child forms 4 (Event > host contact) and 6
+  (Event > co-owner); form 2 itself has none. The section 3.11 spam
+  protection exceeds current parity everywhere.
+- **Entry limits, scheduling, save-and-continue**: all off on every form.
+- **Personal data settings: unconfigured on every form.** No retention
+  policy, no IP-capture prevention, no export/erase wiring anywhere, so there
+  is no GF privacy behaviour to reproduce. (GF stores submitter IPs on
+  entries by default; the new module simply doesn't collect IPs on events.)
+- **Confirmations**: form 2 → page 372 (Event submitted,
+  `/account/events/submit/done/`), reproduced by the custom form
+  (section 3.5). Form 1 (User registration) → redirect to `/account/` with
+  `action=registered` (the `[action-message]` panel plus auto-login),
+  reproduced in phase D. Form 3 (User profile) and all child forms → plain
+  message confirmations.
+- **Notifications outside form 2**: form 1 has one **active** notification,
+  "Email to admins > user registration" (to the LAW admins), which phase D
+  must carry over, plus the inactive "Email to Square Eye > user
+  registration". Forms 3, 4, 5, 6, 8 and 9 carry only the inactive default
+  admin notification: nothing fires, nothing to migrate (the migrator reports
+  them as skipped by design).
+- **Webhooks add-on**: zero feeds; the only outbound webhook is Gravity Flow
+  step 17 (Create Stripe invoice), as documented.
 
 ### 2.5 Theme and mu-plugin code being replaced or re-pointed
 
@@ -483,6 +527,10 @@ The single biggest rebuild item. A custom front-end form at
 - Validation errors re-render the form with the user's input intact; per-field
   messages. Files (speaker photos) upload via the standard WP media handling
   with type/size checks.
+- Post-submit behaviour matches today's confirmation: redirect to page 372
+  (Event submitted, `/account/events/submit/done/`). The form requires a
+  logged-in user server-side (form 2 has `requireLogin` today), independent of
+  the Members page gate.
 - **Draft saving**: submissions this long need it. Save creates the
   `law_event` post in a `law-draft` status visible only to its owner, so
   "save and continue later" is a status, not a separate mechanism.
@@ -1100,12 +1148,17 @@ rehearsals local and staging; live cutover per section 5.4.
 
 **Phase D: decommission (S).** Replace forms 1 (User registration) and 3
 (User profile) with custom equivalents, carrying over everything the form 1
-stack does today: role assignment (field 11, Role), sponsor organisation
-creation (the Advanced Post Creation feed), organisation user meta
-(`law_set_organisation_user_meta` and the `orgid` prepopulation), the HubSpot
-contact type value (`functions/hubspot.php`), the accessibility/dietary user
-meta sync (`law-user-profile-update.php`) and auto-login after registration
-(GW Auto Login). **Form 7 (Contact) stays on Gravity Forms**, so GF core
+stack **actually does** today: user creation with username and email from
+field 4 (Email), first/last from field 1 (Name), password field 6, the
+`event_host` feed default adjusted by `functions/users.php` from field 11
+(Role, limited to attendee/sponsor/event_host); the HubSpot contact type
+value (`functions/hubspot.php`); the accessibility/dietary user meta sync
+(`law-user-profile-update.php`); auto-login after registration (GW Auto
+Login) with the redirect to `/account/?action=registered`; and the active
+"Email to admins > user registration" notification. The sponsor-organisation
+APC feed and organisation user meta are **not** carried over: they are dead
+configuration (section 2.4), and resurrecting organisation selection at
+registration is a separate small LAW decision. **Form 7 (Contact) stays on Gravity Forms**, so GF core
 remains installed; retire the module add-on stack (the section 2.4 list),
 GravityView views, Make scenarios, orphaned pages (`/inbox/`), deactivate the
 migrated forms, tidy the Account navigation (role-gate or remove the

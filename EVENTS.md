@@ -886,7 +886,22 @@ no Make-side fix; the 4.1 rebuild fixes it by design, mapping `name` from
 field 75 (Invoice contact name) and `business_name` from field 105 (Host
 organisation(s)). See EVENTS_4.1_REBUILD.md.
 
-### 7. Minor
+### 7. Registration organisation linking is dead (low)
+
+Found 4 September 2026. Form 1 (User registration) once had field 7, an
+organisation select; it has been deleted, and everything that referenced it
+can no longer fire: the active Advanced Post Creation feed 2 (Create sponsor
+organisation, condition field 7 = "other"), the theme's
+`gppa_input_choices_1_7` "My organisation is not listed" choice,
+`law_set_organisation_user_meta()` (`functions/gravity-forms.php`, reads
+field 7) and the `orgid` prepopulation. Registering users therefore get no
+ACF `organisation` user meta, and `organisation` posts are created manually.
+Form 2 field 109 (Organisation), the sponsor-highlight input, is unaffected:
+prepopulation is off and it is manually curated. Decision recorded in
+EVENTS_4.1_REBUILD.md: the rebuild does not reproduce this dead behaviour;
+reinstating organisation selection at registration is a separate LAW decision.
+
+### 8. Minor
 
 - The public programme at `/programme/` and the speakers pages at `/speakers/`
   are still restricted to committee, editor and administrator. Deliberate
