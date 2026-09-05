@@ -22,6 +22,19 @@
 }
 .law-event-form .law-choices label { color: #fff; font-weight: 400; }
 .law-event-form .law-choices input { margin-right: .5rem; }
+/* Checkbox groups: tighter vertical rhythm between options, and optional
+   fixed-column layouts (roles in 3, requirements in 2). Each option is a block
+   so the columns line up; the small row gap is the "reduce spacing after each
+   checkbox" ask. */
+.law-event-form .law-choices label { display: block; margin: 0 0 .1rem; }
+.law-choices--cols-2, .law-choices--cols-3 { display: grid; gap: .1rem 1rem; }
+.law-choices--cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.law-choices--cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.law-choices--cols-2 label, .law-choices--cols-3 label { margin-bottom: 0; }
+@media screen and (max-width: 39.9375em) {
+	.law-choices--cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.law-choices--cols-2 { grid-template-columns: 1fr; }
+}
 /* Brand the checkboxes/radios (they were bare browser chrome) and give the
    selects a visible dropdown chevron so they don't read as text inputs. */
 .law-event-form input[type="checkbox"], .law-event-form input[type="radio"] { accent-color: #ef7d05; width: 1.1rem; height: 1.1rem; vertical-align: -.15rem; }

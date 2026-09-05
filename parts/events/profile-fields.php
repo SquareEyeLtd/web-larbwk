@@ -27,42 +27,43 @@ $law_pf_class = function ( $field ) use ( $law_errors ) {
 $law_countries = law_registration_country_choices();
 ?>
 
-<div class="law-row-grid">
+<div class="law-row-grid law-row-grid--three">
 	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'name' ) ); ?>"><label for="law-reg-first">First name *</label>
 		<input type="text" id="law-reg-first" name="first_name" required autocomplete="given-name" value="<?php echo esc_attr( $law_pf_value( 'first_name' ) ); ?>"></p>
 	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'name' ) ); ?>"><label for="law-reg-last">Last name *</label>
 		<input type="text" id="law-reg-last" name="last_name" required autocomplete="family-name" value="<?php echo esc_attr( $law_pf_value( 'last_name' ) ); ?>"></p>
+	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'email' ) ); ?>"><label for="law-reg-email">Email (this is your username) *</label>
+		<input type="email" id="law-reg-email" name="email" required autocomplete="email" value="<?php echo esc_attr( $law_pf_value( 'email' ) ); ?>">
+		<?php $law_pf_error( 'email' ); ?></p>
 </div>
 <?php $law_pf_error( 'name' ); ?>
 
-<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'email' ) ); ?>"><label for="law-reg-email">Email (this is your username) *</label>
-	<input type="email" id="law-reg-email" name="email" required autocomplete="email" value="<?php echo esc_attr( $law_pf_value( 'email' ) ); ?>">
-	<?php $law_pf_error( 'email' ); ?></p>
+<div class="law-row-grid law-row-grid--three">
+	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'organisation' ) ); ?>"><label for="law-reg-org">Organisation / firm name<?php echo $law_registration_mode ? ' *' : ''; ?></label>
+		<input type="text" id="law-reg-org" name="organisation" autocomplete="organization" <?php echo $law_registration_mode ? 'required' : ''; ?> value="<?php echo esc_attr( $law_pf_value( 'organisation' ) ); ?>">
+		<?php $law_pf_error( 'organisation' ); ?></p>
 
-<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'organisation' ) ); ?>"><label for="law-reg-org">Organisation / firm name<?php echo $law_registration_mode ? ' *' : ''; ?></label>
-	<input type="text" id="law-reg-org" name="organisation" autocomplete="organization" <?php echo $law_registration_mode ? 'required' : ''; ?> value="<?php echo esc_attr( $law_pf_value( 'organisation' ) ); ?>">
-	<?php $law_pf_error( 'organisation' ); ?></p>
+	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'job_title' ) ); ?>"><label for="law-reg-job">Job title<?php echo $law_registration_mode ? ' *' : ''; ?></label>
+		<input type="text" id="law-reg-job" name="job_title" autocomplete="organization-title" <?php echo $law_registration_mode ? 'required' : ''; ?> value="<?php echo esc_attr( $law_pf_value( 'job_title' ) ); ?>">
+		<?php $law_pf_error( 'job_title' ); ?></p>
 
-<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'job_title' ) ); ?>"><label for="law-reg-job">Job title<?php echo $law_registration_mode ? ' *' : ''; ?></label>
-	<input type="text" id="law-reg-job" name="job_title" autocomplete="organization-title" <?php echo $law_registration_mode ? 'required' : ''; ?> value="<?php echo esc_attr( $law_pf_value( 'job_title' ) ); ?>">
-	<?php $law_pf_error( 'job_title' ); ?></p>
-
-<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'country' ) ); ?>"><label for="law-reg-country">Country of residence *</label>
-	<?php if ( $law_countries ) : ?>
-		<select id="law-reg-country" name="country" autocomplete="country-name" required>
-			<option value="">Choose…</option>
-			<?php foreach ( $law_countries as $law_country ) : ?>
-				<option value="<?php echo esc_attr( $law_country ); ?>" <?php selected( $law_pf_value( 'country' ), $law_country ); ?>><?php echo esc_html( $law_country ); ?></option>
-			<?php endforeach; ?>
-		</select>
-	<?php else : ?>
-		<input type="text" id="law-reg-country" name="country" autocomplete="country-name" required value="<?php echo esc_attr( $law_pf_value( 'country' ) ); ?>">
-	<?php endif; ?>
-	<?php $law_pf_error( 'country' ); ?></p>
+	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'country' ) ); ?>"><label for="law-reg-country">Country of residence *</label>
+		<?php if ( $law_countries ) : ?>
+			<select id="law-reg-country" name="country" autocomplete="country-name" required>
+				<option value="">Choose…</option>
+				<?php foreach ( $law_countries as $law_country ) : ?>
+					<option value="<?php echo esc_attr( $law_country ); ?>" <?php selected( $law_pf_value( 'country' ), $law_country ); ?>><?php echo esc_html( $law_country ); ?></option>
+				<?php endforeach; ?>
+			</select>
+		<?php else : ?>
+			<input type="text" id="law-reg-country" name="country" autocomplete="country-name" required value="<?php echo esc_attr( $law_pf_value( 'country' ) ); ?>">
+		<?php endif; ?>
+		<?php $law_pf_error( 'country' ); ?></p>
+</div>
 
 <div class="law-form-field<?php echo esc_attr( $law_pf_class( 'roles' ) ); ?>">
 	<span class="law-form-label">Role<?php echo $law_registration_mode ? ' *' : ''; ?></span>
-	<div class="law-choices">
+	<div class="law-choices law-choices--cols-3">
 		<?php
 		$law_chosen_roles = (array) $law_pf_value( 'roles', array() );
 		foreach ( law_registration_roles() as $law_role_slug => $law_role_label ) :
@@ -78,7 +79,7 @@ $law_countries = law_registration_country_choices();
 	<legend>Requirements</legend>
 	<div class="law-form-field">
 		<span class="law-form-label">Accessibility</span>
-		<div class="law-choices">
+		<div class="law-choices law-choices--cols-2">
 			<?php
 			$law_chosen_access = (array) $law_pf_value( 'accessibility', array() );
 			foreach ( law_registration_accessibility_choices() as $law_choice_value => $law_choice_label ) :
@@ -98,7 +99,7 @@ $law_countries = law_registration_country_choices();
 
 	<div class="law-form-field">
 		<span class="law-form-label">Dietary</span>
-		<div class="law-choices">
+		<div class="law-choices law-choices--cols-2">
 			<?php
 			$law_chosen_diet = (array) $law_pf_value( 'dietary', array() );
 			foreach ( law_registration_dietary_choices() as $law_choice ) :
