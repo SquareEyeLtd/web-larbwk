@@ -155,7 +155,7 @@ function law_events_sanitize_value( $value, $type ) {
 		case 'address':
 			$value = (array) $value;
 			$out   = array();
-			foreach ( array( 'line1', 'line2', 'city', 'state', 'postal_code', 'country' ) as $part ) {
+			foreach ( law_events_address_parts() as $part ) {
 				$out[ $part ] = sanitize_text_field( (string) ( $value[ $part ] ?? '' ) );
 			}
 			return $out;
@@ -223,8 +223,33 @@ function law_events_sanitize_value( $value, $type ) {
  * @param string $key     Schema key.
  * @param mixed  $value   Raw value.
  */
+/**
+ * The three meta schemas merged into one map, built once per request. This is
+ * the hot path: law_event_meta() reads run into the hundreds on a single
+ * programme render, so the merge is memoised rather than rebuilt each call.
+ *
+ * @return array<string,string> Meta key => type.
+ */
+/**
+ * The ordered invoice/billing address part keys — the single source the meta
+ * sanitiser, the admin screen and the migrator loop over.
+ *
+ * @return string[]
+ */
+function law_events_address_parts() {
+	return array( 'line1', 'line2', 'city', 'state', 'postal_code', 'country' );
+}
+
+function law_events_all_meta_schemas() {
+	static $schemas = null;
+	if ( null === $schemas ) {
+		$schemas = array_merge( law_event_meta_schema(), law_speaker_meta_schema(), law_session_meta_schema() );
+	}
+	return $schemas;
+}
+
 function law_event_update_meta( $post_id, $key, $value ) {
-	$schemas = array_merge( law_event_meta_schema(), law_speaker_meta_schema(), law_session_meta_schema() );
+	$schemas = law_events_all_meta_schemas();
 	if ( ! isset( $schemas[ $key ] ) ) {
 		return false;
 	}
@@ -243,7 +268,7 @@ function law_event_update_meta( $post_id, $key, $value ) {
  */
 function law_event_meta( $post_id, $key ) {
 	$value   = get_post_meta( $post_id, $key, true );
-	$schemas = array_merge( law_event_meta_schema(), law_speaker_meta_schema(), law_session_meta_schema() );
+	$schemas = law_events_all_meta_schemas();
 	$type    = $schemas[ $key ] ?? 'text';
 	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows' ), true ) ) {
 		return is_array( $value ) ? $value : array();

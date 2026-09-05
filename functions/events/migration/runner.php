@@ -557,17 +557,16 @@ function law_migration_run_events( $dry ) {
 	return array( 'done' => true, 'summary' => $created . ' events created.' );
 }
 
-/** Payment status derivation for the blank field 96 (EVENTS_4.1_REBUILD.md §5.3.3). */
-function law_migration_derive_payment( $legacy_status, $fee_pence, $invoice_url ) {
-	$stored = ''; // Field 96 is blank on every active entry (defect 1).
-	if ( '' !== $stored ) {
-		return strtolower( $stored );
-	}
+/**
+ * Payment status derivation for the blank field 96 (EVENTS_4.1_REBUILD.md
+ * §5.3.3). Field 96 was empty on every active entry (defect 1), so the value
+ * is derived purely from the legacy status: a Confirmed event is paid (or free
+ * with no fee); anything else is unpaid. ($invoice_url is retained in the
+ * signature for the caller; it no longer affects the outcome.)
+ */
+function law_migration_derive_payment( $legacy_status, $fee_pence, $invoice_url = '' ) {
 	if ( 'Confirmed' === $legacy_status ) {
 		return $fee_pence > 0 ? 'paid' : 'free';
-	}
-	if ( 'Approved' === $legacy_status && '' !== $invoice_url ) {
-		return 'unpaid';
 	}
 	return 'unpaid';
 }
@@ -1120,7 +1119,6 @@ function law_migration_translate_tags( $text ) {
 		'{Venue:21}'                 => '{venue}',
 		'{Stripe invoice URL:83}'    => '{invoice_url}',
 		'{Reason for rejection:67}'  => '{rejection_reason}',
-		'{latest_comment}'           => '{latest_comment}',
 		// GF's submission table becomes the module's rendered facts block.
 		'{all_fields}'               => '{event_summary}',
 		'{embed_url}'                => '{committee_link}',
@@ -1131,9 +1129,7 @@ function law_migration_translate_tags( $text ) {
 		'{admin_email}'              => get_option( 'admin_email' ),
 		'{site_title}'               => '{site_name}',
 	);
-	$text = strtr( (string) $text, $translations );
-	// Generic field tags: {Label:ID} and {Label:ID.x}.
-	return $text;
+	return strtr( (string) $text, $translations );
 }
 
 /** Slugs the current GF notifications map onto. */

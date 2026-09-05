@@ -87,6 +87,29 @@ function law_events_slots( $include_retired = false ) {
 	return $out;
 }
 
+/**
+ * Apply a confirmed slot label to an event: write _law_start/_law_end from the
+ * slot's date/time, or clear them when the label is emptied. Shared by the
+ * committee dashboard and the wp-admin event screen so the two save paths can't
+ * drift (the admin path previously left stale datetimes when a slot was
+ * cleared).
+ *
+ * @param int    $event_id   law_event post ID.
+ * @param string $slot_label Chosen slot label (empty to clear).
+ */
+function law_event_apply_slot_label( $event_id, $slot_label ) {
+	$slot_label = (string) $slot_label;
+	$slots      = law_events_slots( true );
+	if ( isset( $slots[ $slot_label ] ) && $slots[ $slot_label ]['date'] ) {
+		$slot = $slots[ $slot_label ];
+		law_event_update_meta( $event_id, '_law_start', $slot['date'] . ' ' . ( $slot['start'] ?: '00:00' ) );
+		law_event_update_meta( $event_id, '_law_end', $slot['end'] ? $slot['date'] . ' ' . $slot['end'] : '' );
+	} elseif ( '' === $slot_label ) {
+		law_event_update_meta( $event_id, '_law_start', '' );
+		law_event_update_meta( $event_id, '_law_end', '' );
+	}
+}
+
 /** Committee recipient emails, filtered to valid addresses. */
 function law_events_committee_emails() {
 	$emails = law_events_setting( 'committee_emails', array() );

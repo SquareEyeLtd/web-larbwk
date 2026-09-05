@@ -91,7 +91,11 @@ function law_events_map_post( $post, $allowed = null ) {
 	$type    = law_events_post_term_name( $post->ID, 'law_event_type' );
 	$tickets = (int) law_event_meta( $post->ID, '_law_tickets_available' );
 
-	$description = apply_filters( 'the_content', $post->post_content );
+	// Raw content in the list shape: the excerpt strips tags and the keyword
+	// filter runs wp_strip_all_tags, so neither needs the rendered pipeline.
+	// the_content (wpautop, shortcodes, embeds) runs once, in the hydrate step
+	// for the single view, instead of on every event on the programme.
+	$description = $post->post_content;
 
 	return array(
 		'id'           => (int) $post->ID,
@@ -212,6 +216,9 @@ function law_events_cpt_author_counts() {
 function law_events_cpt_hydrate( array $event ) {
 	$event['speakers'] = law_event_speaker_cards( $event['id'] );
 	$event['sessions'] = law_event_session_rows( $event['id'] );
+	// The single view is the only place that renders the full description, so
+	// the_content runs here rather than for every event in the list map.
+	$event['description'] = apply_filters( 'the_content', $event['description'] );
 	return $event;
 }
 

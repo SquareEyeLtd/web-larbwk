@@ -59,7 +59,7 @@ function law_stripe_request( $method, $path, array $body = array(), $idempotency
 	$url = 'https://api.stripe.com' . $path;
 	if ( 'GET' === $args['method'] ) {
 		if ( $body ) {
-			$url = add_query_arg( array(), $url ) . ( str_contains( $url, '?' ) ? '&' : '?' ) . http_build_query( $body );
+			$url .= ( str_contains( $url, '?' ) ? '&' : '?' ) . http_build_query( $body );
 		}
 	} else {
 		$args['body'] = http_build_query( $body );

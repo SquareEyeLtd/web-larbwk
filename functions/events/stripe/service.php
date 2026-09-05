@@ -119,13 +119,7 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
 				'value' => mb_substr( (string) law_event_meta( $event_id, '_law_invoice_name' ), 0, 140 ),
 			),
 		),
-		'metadata'          => array_filter(
-			array(
-				'law_reference' => (string) law_event_meta( $event_id, '_law_reference' ),
-				'law_event_id'  => (string) $event_id,
-				'gf_entry_id'   => (string) law_event_meta( $event_id, '_law_gf_entry_id' ),
-			)
-		),
+		'metadata'          => law_stripe_event_metadata( $event_id ),
 	);
 	$template = (string) law_events_setting( 'rendering_template_id', '' );
 	if ( '' !== $template ) {
@@ -198,6 +192,23 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
  *
  * @return array|WP_Error Customer object.
  */
+/**
+ * The metadata block attached to both the Stripe customer and invoice, so the
+ * two objects always carry the same identifiers back to us on webhooks.
+ *
+ * @param int $event_id law_event post ID.
+ * @return array<string,string>
+ */
+function law_stripe_event_metadata( $event_id ) {
+	return array_filter(
+		array(
+			'law_reference' => (string) law_event_meta( $event_id, '_law_reference' ),
+			'law_event_id'  => (string) $event_id,
+			'gf_entry_id'   => (string) law_event_meta( $event_id, '_law_gf_entry_id' ),
+		)
+	);
+}
+
 function law_stripe_upsert_customer( $event_id, WP_Post $post ) {
 	// Lowercased: Stripe's ?email= filter is an exact, case-sensitive match,
 	// and a casing mismatch would create a duplicate customer.
@@ -226,13 +237,7 @@ function law_stripe_upsert_customer( $event_id, WP_Post $post ) {
 				'country'     => $iso,
 			)
 		),
-		'metadata'        => array_filter(
-			array(
-				'law_reference' => (string) law_event_meta( $event_id, '_law_reference' ),
-				'law_event_id'  => (string) $event_id,
-				'gf_entry_id'   => (string) law_event_meta( $event_id, '_law_gf_entry_id' ),
-			)
-		),
+		'metadata'        => law_stripe_event_metadata( $event_id ),
 	);
 
 	$customer_id = (string) law_event_meta( $event_id, '_law_stripe_customer_id' );

@@ -206,8 +206,11 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	}
 
 	// Repeaters.
-	law_event_update_meta( $event_id, '_law_co_owner_rows', law_events_form_rows( $input['co_owners'] ?? array() ) );
-	law_event_update_meta( $event_id, '_law_contacts', law_events_form_rows( $input['contacts'] ?? array() ) );
+	// Raw rows go straight to the schema: the 'people_rows' sanitiser in
+	// law_event_update_meta() cleans name/organisation/email and drops empty
+	// rows, so a separate pre-parser here only risked sanitising differently.
+	law_event_update_meta( $event_id, '_law_co_owner_rows', $input['co_owners'] ?? array() );
+	law_event_update_meta( $event_id, '_law_contacts', $input['contacts'] ?? array() );
 	law_events_form_save_speakers( $event_id, (array) ( $input['speakers'] ?? array() ), $files );
 	law_events_form_save_sessions( $event_id, (array) ( $input['sessions'] ?? array() ) );
 
@@ -227,22 +230,6 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	}
 
 	return (int) $event_id;
-}
-
-/** name/organisation/email rows from a form repeater. */
-function law_events_form_rows( $raw ) {
-	$rows = array();
-	foreach ( (array) $raw as $row ) {
-		if ( ! is_array( $row ) ) {
-			continue;
-		}
-		$rows[] = array(
-			'name'         => sanitize_text_field( (string) ( $row['name'] ?? '' ) ),
-			'organisation' => sanitize_text_field( (string) ( $row['organisation'] ?? '' ) ),
-			'email'        => sanitize_email( (string) ( $row['email'] ?? '' ) ),
-		);
-	}
-	return $rows;
 }
 
 /** Photo upload validation: images only, 5 MB cap. */

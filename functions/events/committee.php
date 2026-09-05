@@ -33,20 +33,15 @@ function law_committee_events() {
 
 /** Count per status for the dashboard filter chips. */
 function law_committee_status_counts() {
+	// One query for every status via wp_count_posts, rather than a capped
+	// get_posts per status (which miscounts silently above its limit).
+	$totals = wp_count_posts( LAW_EVENT_CPT );
 	$counts = array();
 	foreach ( array_keys( law_event_statuses() ) as $status ) {
 		if ( 'law-draft' === $status ) {
 			continue;
 		}
-		$found = get_posts(
-			array(
-				'post_type'      => LAW_EVENT_CPT,
-				'post_status'    => $status,
-				'fields'         => 'ids',
-				'posts_per_page' => 300,
-			)
-		);
-		$counts[ $status ] = count( $found );
+		$counts[ $status ] = (int) ( $totals->{$status} ?? 0 );
 	}
 	return $counts;
 }
@@ -101,15 +96,7 @@ function law_committee_action_handler() {
 		$slot_label = sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ) );
 		$old_label  = (string) law_event_meta( $event_id, '_law_slot_label' );
 		law_event_update_meta( $event_id, '_law_slot_label', $slot_label );
-		$slots = law_events_slots( true );
-		if ( isset( $slots[ $slot_label ] ) && $slots[ $slot_label ]['date'] ) {
-			$slot = $slots[ $slot_label ];
-			law_event_update_meta( $event_id, '_law_start', $slot['date'] . ' ' . ( $slot['start'] ?: '00:00' ) );
-			law_event_update_meta( $event_id, '_law_end', $slot['end'] ? $slot['date'] . ' ' . $slot['end'] : '' );
-		} elseif ( '' === $slot_label ) {
-			law_event_update_meta( $event_id, '_law_start', '' );
-			law_event_update_meta( $event_id, '_law_end', '' );
-		}
+		law_event_apply_slot_label( $event_id, $slot_label );
 		if ( $old_label !== $slot_label ) {
 			law_event_log(
 				$event_id,

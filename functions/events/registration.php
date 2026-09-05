@@ -309,6 +309,27 @@ function law_registration_state() {
 
 /* Profile ___________________________________________________________________ */
 
+/**
+ * Persist a failed profile submission and bounce back to the form. Keeps the
+ * typed values (never the passwords), and always re-arrays the checkbox groups
+ * so a fully CLEARED group stays cleared rather than falling back to the stored
+ * value. Shared by the validation-fail and wp_update_user-fail paths.
+ *
+ * @param int   $user_id Acting user.
+ * @param array $errors  Errors in WP_Error->errors shape (code => messages[]).
+ * @param array $input   Unslashed POST.
+ */
+function law_profile_store_error_state( $user_id, array $errors, array $input ) {
+	$safe_input = law_events_form_reusable_input( $input );
+	unset( $safe_input['password'], $safe_input['password_confirm'], $safe_input['current_password'] );
+	foreach ( array( 'roles', 'accessibility', 'dietary' ) as $group ) {
+		$safe_input[ $group ] = (array) ( $input[ $group ] ?? array() );
+	}
+	set_transient( 'law_profile_state_' . $user_id, array( 'errors' => $errors, 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
+	wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/account/profile/' ) ) );
+	exit;
+}
+
 add_action( 'admin_post_law_profile', 'law_profile_handler' );
 add_action( 'admin_post_nopriv_law_profile', function () {
 	wp_safe_redirect( wp_login_url( home_url( '/account/profile/' ) ) );
@@ -389,19 +410,7 @@ function law_profile_handler() {
 	}
 
 	if ( $errors->has_errors() ) {
-		// Keep the typed values (never the passwords) so a failed save does
-		// not throw away in-progress edits or collapse the password section.
-		// Checkbox groups normalise to arrays: a fully CLEARED group is
-		// absent from POST, and without the key the template would fall back
-		// to the stored values, silently re-ticking what the user cleared.
-		$safe_input = law_events_form_reusable_input( $input );
-		unset( $safe_input['password'], $safe_input['password_confirm'], $safe_input['current_password'] );
-		foreach ( array( 'roles', 'accessibility', 'dietary' ) as $group ) {
-			$safe_input[ $group ] = (array) ( $input[ $group ] ?? array() );
-		}
-		set_transient( 'law_profile_state_' . $user_id, array( 'errors' => $errors->errors, 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
-		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/account/profile/' ) ) );
-		exit;
+		law_profile_store_error_state( $user_id, $errors->errors, $input );
 	}
 
 	$update = array(
@@ -423,14 +432,7 @@ function law_profile_handler() {
 	}
 	$result = wp_update_user( $update );
 	if ( is_wp_error( $result ) ) {
-		$safe_input = law_events_form_reusable_input( $input );
-		unset( $safe_input['password'], $safe_input['password_confirm'], $safe_input['current_password'] );
-		foreach ( array( 'roles', 'accessibility', 'dietary' ) as $group ) {
-			$safe_input[ $group ] = (array) ( $input[ $group ] ?? array() );
-		}
-		set_transient( 'law_profile_state_' . $user_id, array( 'errors' => array( 'email' => array( $result->get_error_message() ) ), 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
-		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/account/profile/' ) ) );
-		exit;
+		law_profile_store_error_state( $user_id, array( 'email' => array( $result->get_error_message() ) ), $input );
 	}
 
 	if ( $email_changing ) {

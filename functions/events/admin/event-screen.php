@@ -299,20 +299,13 @@ function law_event_admin_save( $post_id, $post ) {
 
 	law_event_update_meta( $post_id, '_law_fee_override', ! empty( $_POST['law_fee_override'] ) );
 
-	// A chosen slot fills the start/end datetimes.
-	$slot_label = sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ?? '' ) );
-	if ( '' !== $slot_label ) {
-		$slots = law_events_slots( true );
-		if ( isset( $slots[ $slot_label ] ) && $slots[ $slot_label ]['date'] ) {
-			$slot = $slots[ $slot_label ];
-			law_event_update_meta( $post_id, '_law_start', $slot['date'] . ' ' . ( $slot['start'] ?: '00:00' ) );
-			law_event_update_meta( $post_id, '_law_end', $slot['end'] ? $slot['date'] . ' ' . $slot['end'] : '' );
-		}
-	}
+	// A chosen slot fills the start/end datetimes; an emptied slot clears them
+	// (shared helper, so this matches the committee dashboard save path).
+	law_event_apply_slot_label( $post_id, sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ?? '' ) ) );
 
 	// Invoice address parts + derived ISO.
 	$address = array();
-	foreach ( array( 'line1', 'line2', 'city', 'state', 'postal_code', 'country' ) as $part ) {
+	foreach ( law_events_address_parts() as $part ) {
 		$address[ $part ] = sanitize_text_field( wp_unslash( $_POST[ 'law_invoice_address_' . $part ] ?? '' ) );
 	}
 	law_event_update_meta( $post_id, '_law_invoice_address', $address );
