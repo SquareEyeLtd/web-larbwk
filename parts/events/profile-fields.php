@@ -63,7 +63,7 @@ $law_countries = law_registration_country_choices();
 
 <div class="law-form-field<?php echo esc_attr( $law_pf_class( 'roles' ) ); ?>">
 	<span class="law-form-label">Role<?php echo $law_registration_mode ? ' *' : ''; ?></span>
-	<div class="law-choices law-choices--cols-3">
+	<div class="law-choices">
 		<?php
 		$law_chosen_roles = (array) $law_pf_value( 'roles', array() );
 		foreach ( law_registration_roles() as $law_role_slug => $law_role_label ) :
@@ -79,7 +79,7 @@ $law_countries = law_registration_country_choices();
 	<legend>Requirements</legend>
 	<div class="law-form-field">
 		<span class="law-form-label">Accessibility</span>
-		<div class="law-choices law-choices--cols-2">
+		<div class="law-choices">
 			<?php
 			$law_chosen_access = (array) $law_pf_value( 'accessibility', array() );
 			foreach ( law_registration_accessibility_choices() as $law_choice_value => $law_choice_label ) :
@@ -99,7 +99,7 @@ $law_countries = law_registration_country_choices();
 
 	<div class="law-form-field">
 		<span class="law-form-label">Dietary</span>
-		<div class="law-choices law-choices--cols-2">
+		<div class="law-choices">
 			<?php
 			$law_chosen_diet = (array) $law_pf_value( 'dietary', array() );
 			foreach ( law_registration_dietary_choices() as $law_choice ) :
