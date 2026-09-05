@@ -573,7 +573,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {
-		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '2.2' );
+		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '2.4' );
 		// Core's zxcvbn-based strength meter powers the WordPress-style
 		// password indicator on the register and profile forms.
 		$deps = array();

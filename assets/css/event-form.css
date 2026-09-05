@@ -26,6 +26,12 @@
 /* Match the <select> height to the text inputs exactly (appearance:none renders
    it shorter otherwise): same total height with border-box. */
 .law-event-form select { height: 39px; }
+/* Time inputs: WebKit doesn't vertically centre the value/clock when a custom
+   line-height is forced, so normalise it and match the input height; nudge the
+   picker indicator to sit centred against the field. */
+.law-event-form input[type="time"] { height: 39px; line-height: normal; }
+.law-event-form input[type="time"]::-webkit-calendar-picker-indicator { margin: 0; opacity: .55; }
+.law-event-form input[type="time"]::-webkit-datetime-edit { padding: 0; }
 .law-event-form .law-choices label { color: #fff; font-weight: 400; }
 /* Checkbox/radio options everywhere on the form (choice groups and the inline
    radio/checkbox lists in Venue, Fees and Finish): keep the box tight to its
@@ -33,8 +39,11 @@
    options spaced further apart than the box sits from its text. */
 .law-event-form label:has(> input[type="checkbox"]),
 .law-event-form label:has(> input[type="radio"]) { display: block; margin: 0 0 .2rem; line-height: 1.3; color: #fff; font-weight: 400; }
+/* Full margin reset: Foundation ships radios/checkboxes with margin:0 0 1rem,
+   and that 1rem bottom margin was opening a gap between options wider than the
+   box-to-label gap. Keep only the small right margin to the label. */
 .law-event-form label > input[type="checkbox"],
-.law-event-form label > input[type="radio"] { margin-right: .45rem; }
+.law-event-form label > input[type="radio"] { margin: 0 .45rem 0 0; vertical-align: middle; }
 /* Checkbox groups: tighter vertical rhythm between options, and optional
    fixed-column layouts (roles in 3, requirements in 2). Each option is a block
    so the columns line up; the small row gap is the "reduce spacing after each
