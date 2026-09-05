@@ -54,8 +54,9 @@
 		});
 	}
 
-	/* Conditional fields: a checkbox with data-law-toggles shows/hides the
-	   element with that id (the "Other: please specify" inputs). */
+	/* Conditional fields: a checkbox or radio with data-law-toggles shows/hides
+	   the element with that id (the sector "please specify" inputs, the venue
+	   name field). */
 	document.querySelectorAll('[data-law-toggles]').forEach(function (box) {
 		var target = document.getElementById(box.getAttribute('data-law-toggles'));
 		if (!target) { return; }
@@ -67,6 +68,29 @@
 			}
 		};
 		box.addEventListener('change', sync);
+		/* A radio fires 'change' only when it becomes checked, never when a
+		   sibling takes the selection, so watch the whole group to hide again. */
+		if (box.type === 'radio' && box.name) {
+			Array.prototype.forEach.call(document.getElementsByName(box.name), function (sib) {
+				if (sib !== box) { sib.addEventListener('change', sync); }
+			});
+		}
+	});
+
+	/* Photo upload: reveal a Clear button once a file is chosen, and reset the
+	   input on click. Delegated so cloned speaker rows work too. */
+	document.addEventListener('change', function (event) {
+		if (event.target && event.target.type === 'file') {
+			var btn = event.target.parentNode && event.target.parentNode.querySelector('.law-file-clear');
+			if (btn) { btn.hidden = !event.target.value; }
+		}
+	});
+	document.addEventListener('click', function (event) {
+		if (event.target && event.target.classList && event.target.classList.contains('law-file-clear')) {
+			var input = event.target.parentNode && event.target.parentNode.querySelector('input[type="file"]');
+			if (input) { input.value = ''; }
+			event.target.hidden = true;
+		}
 	});
 
 	/* Password strength, WordPress-style (wp.passwordStrength / zxcvbn). */
