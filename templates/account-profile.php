@@ -64,8 +64,8 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 							</p>
 							<div class="law-password-fields" hidden>
 								<div class="law-row-grid">
-									<p class="law-form-field"><label for="law-prof-pass">New password (10 characters minimum)</label>
-										<input type="password" id="law-prof-pass" name="password" minlength="10" autocomplete="new-password" data-law-strength></p>
+									<p class="law-form-field"><label for="law-prof-pass">New password (<?php echo esc_html( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?> characters minimum)</label>
+										<input type="password" id="law-prof-pass" name="password" minlength="<?php echo esc_attr( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?>" autocomplete="new-password" data-law-strength></p>
 									<p class="law-form-field"><label for="law-prof-pass2">Confirm new password</label>
 										<input type="password" id="law-prof-pass2" name="password_confirm" autocomplete="new-password" data-law-strength-confirm></p>
 								</div>

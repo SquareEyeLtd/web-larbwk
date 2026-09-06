@@ -207,8 +207,8 @@ function law_registration_handler() {
 	} elseif ( email_exists( $email ) || username_exists( $email ) ) {
 		$errors->add( 'email', 'An account already exists for this email address. You can sign in, or reset your password from the login page.' );
 	}
-	if ( strlen( $password ) < 10 ) {
-		$errors->add( 'password', 'Please choose a password of at least 10 characters.' );
+	if ( strlen( $password ) < LAW_AUTH_MIN_PASSWORD_LENGTH ) {
+		$errors->add( 'password', sprintf( 'Please choose a password of at least %d characters.', LAW_AUTH_MIN_PASSWORD_LENGTH ) );
 	} elseif ( $password !== $confirm ) {
 		$errors->add( 'password_confirm', 'The two passwords do not match.' );
 	}
@@ -227,6 +227,16 @@ function law_registration_handler() {
 	}
 	if ( ! array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) ) {
 		$errors->add( 'roles', 'Please choose at least one role.' );
+	}
+	// Deliberate divergence from form 1 (User registration), which left fields 18
+	// and 20 ("Other: please specify") optional: ticking Other and saying nothing
+	// records a requirement nobody can act on. Form 3 (User profile) already
+	// required its equivalents (fields 14 and 16), so both forms now behave alike.
+	if ( in_array( 'Other', (array) ( $input['accessibility'] ?? array() ), true ) && '' === trim( (string) ( $input['accessibility_other'] ?? '' ) ) ) {
+		$errors->add( 'accessibility_other', 'Please specify your other accessibility requirement.' );
+	}
+	if ( in_array( 'Other', (array) ( $input['dietary'] ?? array() ), true ) && '' === trim( (string) ( $input['dietary_other'] ?? '' ) ) ) {
+		$errors->add( 'dietary_other', 'Please specify your other dietary requirement.' );
 	}
 
 	if ( $errors->has_errors() ) {
@@ -402,8 +412,8 @@ function law_profile_handler() {
 		if ( ! wp_check_password( (string) ( $input['current_password'] ?? '' ), $user->user_pass, $user_id ) ) {
 			$errors->add( 'current_password', 'Your current password is not correct.' );
 		}
-		if ( strlen( $new_password ) < 10 ) {
-			$errors->add( 'password', 'Please choose a new password of at least 10 characters.' );
+		if ( strlen( $new_password ) < LAW_AUTH_MIN_PASSWORD_LENGTH ) {
+			$errors->add( 'password', sprintf( 'Please choose a new password of at least %d characters.', LAW_AUTH_MIN_PASSWORD_LENGTH ) );
 		} elseif ( $new_password !== (string) ( $input['password_confirm'] ?? '' ) ) {
 			$errors->add( 'password_confirm', 'The two passwords do not match.' );
 		}

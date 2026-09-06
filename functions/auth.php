@@ -21,6 +21,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+/**
+ * Minimum password length. The reset form previously accepted any non-empty
+ * password, so a user could reset their way past the 10-character rule the
+ * registration and profile forms enforce; all three now share this constant.
+ */
+const LAW_AUTH_MIN_PASSWORD_LENGTH = 10;
+
 /* Helpers ________________________________________________________ */
 
 function law_auth_login_url( $args = array() ) {
@@ -117,6 +124,11 @@ function law_auth_notices() {
 			'type' => 'error',
 			'text' => 'The reset email could not be sent. Please try again, or contact us if the problem continues.',
 		);
+	} elseif ( 'throttled' === $forgot ) {
+		$notices[] = array(
+			'type' => 'error',
+			'text' => 'Too many reset requests from this connection. Please wait a little while and try again.',
+		);
 	}
 
 	$reset = isset( $_GET['reset'] ) ? sanitize_key( wp_unslash( $_GET['reset'] ) ) : '';
@@ -129,6 +141,14 @@ function law_auth_notices() {
 		$notices[] = array(
 			'type' => 'error',
 			'text' => 'Please choose a password and confirm it.',
+		);
+	} elseif ( 'short' === $reset ) {
+		$notices[] = array(
+			'type' => 'error',
+			'text' => sprintf(
+				'Please choose a password of at least %d characters.',
+				LAW_AUTH_MIN_PASSWORD_LENGTH
+			),
 		);
 	}
 
@@ -220,8 +240,8 @@ function law_auth_render_reset_form() {
 	?>
 	<form class="law-auth-form" method="post" action="<?php echo esc_url( $action ); ?>">
 		<p class="law-auth-field">
-			<label for="law-reset-pass1">New password</label>
-			<input type="password" name="law_pass1" id="law-reset-pass1" autocomplete="new-password" required>
+			<label for="law-reset-pass1">New password (<?php echo esc_html( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?> characters minimum)</label>
+			<input type="password" name="law_pass1" id="law-reset-pass1" autocomplete="new-password" minlength="<?php echo esc_attr( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?>" required>
 		</p>
 		<p class="law-auth-field">
 			<label for="law-reset-pass2">Confirm new password</label>
@@ -290,6 +310,15 @@ add_action( 'template_redirect', function () {
 		exit;
 	}
 
+	// Anonymous surface, and for logged-out visitors the nonce is effectively a
+	// shared constant, so without a throttle this form is an unauthenticated way
+	// to bomb any known LAW address with reset mail. Same per-IP limiter the
+	// registration form uses; 10/hour is far above genuine use.
+	if ( function_exists( 'law_events_rate_limit_ok' ) && ! law_events_rate_limit_ok( 'forgot', 0, 10, HOUR_IN_SECONDS ) ) {
+		wp_safe_redirect( law_auth_login_url( array( 'action' => 'forgot', 'forgot' => 'throttled' ) ) );
+		exit;
+	}
+
 	$result = retrieve_password( $email );
 
 	// Unknown accounts get the same neutral confirmation as real ones, so the
@@ -343,6 +372,12 @@ add_action( 'template_redirect', function () {
 	}
 	if ( $pass1 !== $pass2 ) {
 		wp_safe_redirect( law_auth_login_url( $back + array( 'reset' => 'mismatch' ) ) );
+		exit;
+	}
+	// Same floor as registration and the profile form: a reset must not be a
+	// way to set a password those two would have refused.
+	if ( strlen( $pass1 ) < LAW_AUTH_MIN_PASSWORD_LENGTH ) {
+		wp_safe_redirect( law_auth_login_url( $back + array( 'reset' => 'short' ) ) );
 		exit;
 	}
 

@@ -121,22 +121,29 @@ body.page-template-templatesaccount-php {
 	margin-bottom: 1.25rem;
 }
 
+/* Matches the field labels on every other custom form (.law-form-field label
+   in event-form.css): same yellow, 600 weight and 1rem size. */
 .law-auth-form .law-auth-field label {
 	display: block;
 	margin-bottom: 0.4rem;
 	color: #ffcc02;
 	font-family: poppins, sans-serif;
-	font-weight: 500;
-	font-size: 1.05rem;
+	font-weight: 600;
+	font-size: 0.875rem;
 	line-height: 1.3;
 }
 
+/*
+ * The shared control height (--law-field-height in event-form.css). Stated
+ * here as well, with the same value, because the sign-in, forgot and reset
+ * pages load auth.css without event-form.css. Change the two together.
+ */
 .law-auth-form input[type="text"],
 .law-auth-form input[type="email"],
 .law-auth-form input[type="password"] {
 	display: block;
 	width: 100%;
-	height: 2.75rem;
+	height: var(--law-field-height, 2.75rem);
 	margin: 0;
 	padding: 0 0.75rem;
 	border: none;
@@ -146,6 +153,17 @@ body.page-template-templatesaccount-php {
 	color: #292459;
 	font-size: 1rem;
 	line-height: 1.4;
+}
+
+/* Hover and focus match event-form.css exactly, so a field behaves the same on
+ * the sign-in page as it does on register, profile and the event form: a
+ * hairline orange ring on hover, the same ring at full strength on focus.
+ */
+.law-auth-form input[type="text"]:hover,
+.law-auth-form input[type="email"]:hover,
+.law-auth-form input[type="password"]:hover {
+	outline: 1px solid rgba(239, 125, 5, 0.55);
+	outline-offset: 0;
 }
 
 .law-auth-form input[type="text"]:focus,

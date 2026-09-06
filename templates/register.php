@@ -48,8 +48,8 @@ $law_reg_values = (array) $law_reg_state['input'];
 						<fieldset>
 							<legend>Login details</legend>
 							<div class="law-row-grid">
-								<p class="law-form-field<?php echo isset( $law_reg_errors['password'][0] ) ? ' is-invalid' : ''; ?>"><label for="law-reg-pass">Password (10 characters minimum) *</label>
-									<input type="password" id="law-reg-pass" name="password" required minlength="10" autocomplete="new-password" data-law-strength></p>
+								<p class="law-form-field<?php echo isset( $law_reg_errors['password'][0] ) ? ' is-invalid' : ''; ?>"><label for="law-reg-pass">Password (<?php echo esc_html( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?> characters minimum) *</label>
+									<input type="password" id="law-reg-pass" name="password" required minlength="<?php echo esc_attr( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?>" autocomplete="new-password" data-law-strength></p>
 								<p class="law-form-field<?php echo isset( $law_reg_errors['password_confirm'][0] ) ? ' is-invalid' : ''; ?>"><label for="law-reg-pass2">Confirm password *</label>
 									<input type="password" id="law-reg-pass2" name="password_confirm" required autocomplete="new-password" data-law-strength-confirm></p>
 							</div>

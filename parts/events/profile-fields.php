@@ -14,7 +14,9 @@ $law_registration_mode = ! empty( $args['registration'] );
 
 $law_pf_error = function ( $field ) use ( $law_errors ) {
 	if ( isset( $law_errors[ $field ][0] ) ) {
-		echo '<p class="law-form-error" role="alert">' . esc_html( $law_errors[ $field ][0] ) . '</p>';
+		// A <span> (not <p>): see the same note in account-event-form.php — a
+		// nested <p> is auto-closed and would orphan the message from its field.
+		echo '<span class="law-form-error" role="alert">' . esc_html( $law_errors[ $field ][0] ) . '</span>';
 	}
 };
 $law_pf_value = function ( $key, $default = '' ) use ( $law_values ) {
@@ -93,7 +95,7 @@ $law_countries = law_registration_country_choices();
 	</div>
 	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'accessibility_other' ) ); ?>" id="law-access-other-field"
 		<?php echo ( in_array( 'Other', $law_chosen_access, true ) || '' !== (string) $law_pf_value( 'accessibility_other' ) ) ? '' : 'hidden'; ?>>
-		<label for="law-reg-access-other">Other: please specify</label>
+		<label for="law-reg-access-other">Other: please specify *</label>
 		<input type="text" id="law-reg-access-other" name="accessibility_other" value="<?php echo esc_attr( $law_pf_value( 'accessibility_other' ) ); ?>">
 		<?php $law_pf_error( 'accessibility_other' ); ?></p>
 
@@ -113,7 +115,7 @@ $law_countries = law_registration_country_choices();
 	</div>
 	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'dietary_other' ) ); ?>" id="law-diet-other-field"
 		<?php echo ( in_array( 'Other', $law_chosen_diet, true ) || '' !== (string) $law_pf_value( 'dietary_other' ) ) ? '' : 'hidden'; ?>>
-		<label for="law-reg-diet-other">Other: please specify</label>
+		<label for="law-reg-diet-other">Other: please specify *</label>
 		<input type="text" id="law-reg-diet-other" name="dietary_other" value="<?php echo esc_attr( $law_pf_value( 'dietary_other' ) ); ?>">
 		<?php $law_pf_error( 'dietary_other' ); ?></p>
 </fieldset>
