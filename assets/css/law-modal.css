@@ -1,0 +1,74 @@
+/* Reusable confirmation modal (parts/layout/modal.php, assets/js/law-modal.js).
+   A small centred dialog for actions that want a confirmation, and optionally a
+   note, before they fire: the committee dashboard's Approve, Send back, Reject
+   and Mark paid & confirm buttons all use it. The dialog is rendered inside its
+   caller's form, so it inherits nothing from the page but its own surface: the
+   theme's dark hero paints headings and paragraphs white, so everything here
+   recolours explicitly and sits on a light dialog of its own. */
+/* !important because Foundation and the theme both set display on generic
+   containers, and a modal that leaks onto the page is the worst failure here. */
+.law-modal[hidden] { display: none !important; }
+.law-modal { position: fixed; inset: 0; z-index: 10050; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+/* The scrim is its own element so a click anywhere off the dialog closes the
+   modal, and the dialog's own clicks never reach it. */
+.law-modal__overlay { position: absolute; inset: 0; background: rgba(26, 26, 61, .6); }
+.law-modal__dialog {
+	position: relative; width: 100%; max-width: 32rem; background: #fff; color: #1a1a3d;
+	border: 1px solid #e3e3ec; box-shadow: 0 12px 40px rgba(26, 26, 61, .35);
+	padding: 1.5rem 1.5rem 1.25rem;
+	/* Short viewports scroll inside the dialog rather than pushing the actions
+	   off the bottom of the screen. */
+	max-height: calc(100vh - 2rem); overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+/* The same light-section reset the committee panel does: the theme paints
+   headings and paragraphs white for the dark hero, so the dialog recolours
+   explicitly rather than inheriting whatever page it was dropped into. */
+.law-modal__dialog, .law-modal__title, .law-modal__copy, .law-modal .law-form-field label { color: #1a1a3d; }
+/* A dialog with no field takes focus itself (tabindex="-1"), which is for
+   screen readers and the Tab trap, not something to draw a ring around. */
+.law-modal__dialog:focus { outline: none; }
+/* Right margin on the title keeps it clear of the close button. */
+.law-modal__title { font-size: 1.25rem; margin: 0 2rem .6rem 0; }
+.law-modal__copy { margin: 0 0 1rem; }
+.law-modal .law-form-field { margin-bottom: 1rem; }
+.law-modal .law-form-field label { display: block; font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
+/* The textarea sits on a white dialog, not the purple form, so it takes dark
+   text on a bordered pale field: the hero form's borderless white control would
+   disappear against the dialog. */
+.law-modal textarea {
+	width: 100%; box-sizing: border-box; margin: 0; padding: .6rem .75rem;
+	background: #fff; color: #1a1a3d; border: 1px solid #e3e3ec; border-radius: 0;
+	font-family: inherit; font-size: 1rem; line-height: 1.5; box-shadow: none;
+}
+.law-modal textarea:hover { border-color: rgba(239, 125, 5, .55); }
+.law-modal textarea:focus { outline: 2px solid #ef7d05; outline-offset: 1px; border-color: #e3e3ec; background: #fff; box-shadow: none; }
+.law-modal__close { position: absolute; top: .4rem; right: .5rem; background: none; border: 0; padding: .2rem .45rem; line-height: 1; font-size: 1.6rem; color: #292459; cursor: pointer; }
+.law-modal__close:hover { color: #ef7d05; }
+/* Hover and focus otherwise share the same orange, so keyboard users get a ring
+   of their own on the close button and on both actions. */
+.law-modal__close:focus-visible, .law-modal__actions .button:focus-visible { outline: 2px solid #ef7d05; outline-offset: 2px; }
+.law-modal__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin: 0; }
+/* The base .button is width:100% (app.css), which would stretch each action
+   across the dialog; in the actions row they size to their own labels. */
+.law-modal__actions .button { width: auto; margin: 0; }
+.law-modal__actions .button.alert { border-color: #cc4b37; }
+/* Lock the page behind the dialog so the background can't scroll under it, the
+   same trick the calendar's mobile filter modal uses. */
+body.law-modal-open { overflow: hidden; }
+@media screen and (max-width: 39.9375em) {
+	/* Near full width with a small inset, and pinned to the top so a tall dialog
+	   opens where the eye already is. */
+	.law-modal { padding: .75rem; align-items: flex-start; }
+	.law-modal__dialog { max-height: calc(100vh - 1.5rem); padding: 1.25rem 1rem 1rem; }
+	/* Stacked and thumb-sized, confirm first (column-reverse) so the action being
+	   confirmed stays directly under the note the committee just typed. */
+	.law-modal__actions { flex-direction: column-reverse; }
+	.law-modal__actions .button { width: 100%; padding-top: .85rem; padding-bottom: .85rem; }
+}
+/* A short fade in, and none at all for anyone who asked for less motion. */
+.law-modal { animation: law-modal-in .12s ease-out; }
+@keyframes law-modal-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+	.law-modal { animation: none; }
+	.law-modal textarea { transition: none; }
+}

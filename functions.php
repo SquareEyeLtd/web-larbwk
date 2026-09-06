@@ -13,6 +13,7 @@ require_once(get_theme_file_path('/functions/editor.php'));
 require_once(get_theme_file_path('/functions/menus.php'));
 require_once(get_theme_file_path('/functions/helpers.php'));
 require_once(get_theme_file_path('/functions/enqueue.php'));
+require_once(get_theme_file_path('/functions/modal.php'));
 require_once(get_theme_file_path('/functions/shortcodes.php'));
 
 require_once(get_theme_file_path('/functions/gravity-forms.php'));
