@@ -786,7 +786,25 @@ The screen provides:
 - **Send test**: emails the current admin the rendered template using a real
   event's data (or sample data when none exists), so wording changes can be
   checked without walking the workflow; locally this lands in Mailpit;
-- **Reset to default** per email.
+- **Reset to default** per email;
+- **Test mode** (top of the list screen): an "Enable test mode" checkbox plus
+  a "Deliver all to email below" address, saved together. The address is
+  validated as you type over admin-ajax (`law_events_check_email`): syntax
+  first, then a DNS lookup on the domain (MX, falling back to A/AAAA). DNS can
+  only prove the domain accepts mail, so the field reports "deliverable
+  domain", not "real mailbox" — nothing short of sending can prove the mailbox
+  exists. Ticking the box without a valid address is refused rather than saved,
+  so the setting can never look on while doing nothing. While it is on,
+  `law_events_test_mode_redirect()` on the `wp_mail` filter (priority 99, i.e.
+  just before the Email Templates wrapper at 100) sends **every** email the
+  site produces to that one address: subject prefixed `[TEST MODE]`, the
+  intended recipients named in a note at the top of the body and in an
+  `X-LAW-Test-Original-To` header, and any Cc/Bcc stripped so nothing leaks to
+  the people the redirect is meant to protect. `law_events_is_test_mode()` is
+  the single check; `law_events_send()` also substitutes the test address when
+  an audience resolves empty (an unconfigured committee list, say), because in
+  test mode a missing recipient should still show you the email. The activity
+  log records the redirect on every send.
 
 Storage: the defaults are the PHP templates in `notifications.php`
 (version-controlled, always present); admin overrides are stored per email in
