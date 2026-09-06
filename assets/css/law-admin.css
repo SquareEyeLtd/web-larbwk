@@ -20,3 +20,16 @@
 .law-log__date { color: #757575; margin-right: 6px; }
 .law-log__source { float: right; color: #757575; font-style: italic; }
 .law-badge { background: #f0f6fc; border: 1px solid #72aee6; color: #043959; font-size: 11px; padding: 1px 6px; border-radius: 2px; }
+
+/* LAW → Emails: test mode panel. */
+.law-test-mode { background: #fff; border: 1px solid #c3c4c7; border-left: 4px solid #dcdcde; padding: 12px 16px; margin: 0 0 16px; max-width: 780px; }
+.law-test-mode.is-active { border-left-color: #dba617; background: #fcf9e8; }
+.law-test-mode p { margin: 0 0 8px; }
+.law-test-mode__toggle { display: flex; align-items: center; gap: 8px; }
+.law-test-mode__fields { margin-top: 8px; }
+.law-test-mode__status { display: inline-block; margin-left: 8px; font-size: 13px; }
+.law-test-mode__status.is-ok { color: #00a32a; }
+.law-test-mode__status.is-warning { color: #996800; }
+.law-test-mode__status.is-error { color: #b32d2e; }
+.law-test-mode__status.is-idle { color: #757575; }
+.law-badge--warning { background: #fcf9e8; border-color: #dba617; color: #664d03; }

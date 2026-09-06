@@ -99,6 +99,73 @@
 		});
 	});
 
+	/* Test mode: reveal the address field and validate it over AJAX. */
+	(function () {
+		var form = document.querySelector('[data-law-test-mode]');
+		if (!form) {
+			return;
+		}
+
+		var toggle = form.querySelector('[data-law-test-toggle]');
+		var fields = form.querySelector('[data-law-test-fields]');
+		var input = form.querySelector('[data-law-test-email]');
+		var status = form.querySelector('[data-law-test-status]');
+		var request = 0;
+
+		toggle.addEventListener('change', function () {
+			fields.hidden = !toggle.checked;
+			if (toggle.checked) {
+				input.focus();
+				check();
+			}
+		});
+
+		function show(level, message) {
+			status.className = 'law-test-mode__status is-' + level;
+			status.textContent = message;
+		}
+
+		function check() {
+			var value = input.value.trim();
+			if (!value) {
+				show('idle', '');
+				return;
+			}
+			var id = ++request;
+			show('idle', 'Checking…');
+			var url = lawEventsAdmin.ajaxUrl +
+				'?action=law_events_check_email' +
+				'&_wpnonce=' + encodeURIComponent(lawEventsAdmin.nonce) +
+				'&email=' + encodeURIComponent(value);
+
+			fetch(url, { credentials: 'same-origin' })
+				.then(function (response) { return response.json(); })
+				.then(function (payload) {
+					// Ignore answers to superseded keystrokes.
+					if (id !== request || !payload || !payload.success) {
+						return;
+					}
+					show(payload.data.level, payload.data.message);
+				})
+				.catch(function () {
+					if (id === request) {
+						show('warning', 'Could not check the address just now.');
+					}
+				});
+		}
+
+		var timer = null;
+		input.addEventListener('input', function () {
+			window.clearTimeout(timer);
+			timer = window.setTimeout(check, 400);
+		});
+		input.addEventListener('blur', check);
+
+		if (toggle.checked && input.value) {
+			check();
+		}
+	})();
+
 	/* Media picker. */
 	document.querySelectorAll('[data-law-media]').forEach(function (field) {
 		var input = field.querySelector('input[type=hidden]');

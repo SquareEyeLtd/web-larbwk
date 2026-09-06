@@ -21,6 +21,11 @@ function law_events_emails_page() {
 
 	$slug = sanitize_key( $_GET['email'] ?? '' );
 
+	if ( isset( $_POST['law_test_mode_nonce'] ) ) {
+		check_admin_referer( 'law_events_test_mode', 'law_test_mode_nonce' );
+		law_events_emails_handle_test_mode_post();
+	}
+
 	if ( isset( $_POST['law_email_nonce'] ) ) {
 		check_admin_referer( 'law_email_edit', 'law_email_nonce' );
 		law_events_emails_handle_post( $slug );
@@ -37,6 +42,7 @@ function law_events_emails_list_screen() {
 	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
 	echo '<div class="wrap"><h1>Events emails</h1>';
 	echo '<p>Events-module notifications. The contact form\'s emails stay in the Gravity Forms notifications admin.</p>';
+	law_events_emails_test_mode_card();
 	echo '<table class="widefat striped"><thead><tr><th>Notification</th><th>Trigger</th><th>Recipients</th><th>Status</th><th></th></tr></thead><tbody>';
 	foreach ( law_events_email_registry() as $slug => $definition ) {
 		$merged     = law_events_email( $slug );
@@ -153,4 +159,126 @@ function law_events_emails_handle_post( $slug ) {
 	$overrides[ $slug ] = $override;
 	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
 	echo '<div class="notice notice-success"><p>Email saved.</p></div>';
+}
+
+/* Test mode ________________________________________________________________ */
+
+/**
+ * Notice for the test-mode form, held between the POST handler and the render
+ * so it prints inside the page wrap rather than above the heading.
+ *
+ * @param array|null $set Message to store (['type' => ..., 'text' => ...]).
+ * @return array|null
+ */
+function law_events_emails_test_mode_notice( $set = null ) {
+	static $notice = null;
+	if ( null !== $set ) {
+		$notice = $set;
+	}
+	return $notice;
+}
+
+/** The Enable test mode panel at the top of the emails list. */
+function law_events_emails_test_mode_card() {
+	$settings = law_events_test_mode();
+	$active   = law_events_is_test_mode();
+	$notice   = law_events_emails_test_mode_notice();
+	?>
+	<div class="law-test-mode <?php echo $active ? 'is-active' : ''; ?>">
+		<?php if ( $notice ) : ?>
+			<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> inline"><p><?php echo esc_html( $notice['text'] ); ?></p></div>
+		<?php endif; ?>
+		<form method="post" data-law-test-mode>
+			<?php wp_nonce_field( 'law_events_test_mode', 'law_test_mode_nonce' ); ?>
+			<p class="law-test-mode__toggle">
+				<label>
+					<input type="checkbox" name="test_mode_enabled" value="1" data-law-test-toggle <?php checked( $settings['enabled'] ); ?>>
+					<strong>Enable test mode</strong>
+				</label>
+				<?php if ( $active ) : ?>
+					<span class="law-badge law-badge--warning">On until <?php echo esc_html( law_events_test_mode_expiry_label( $settings['expires_at'] ) ); ?>: all email goes to <?php echo esc_html( $settings['email'] ); ?></span>
+				<?php endif; ?>
+			</p>
+			<div class="law-test-mode__fields" <?php echo $settings['enabled'] ? '' : 'hidden'; ?> data-law-test-fields>
+				<p>
+					<label for="law-test-email"><strong>Deliver all to email below</strong></label><br>
+					<input type="email" id="law-test-email" name="test_mode_email" class="regular-text" value="<?php echo esc_attr( $settings['email'] ); ?>" autocomplete="off" data-law-test-email>
+					<span class="law-test-mode__status" data-law-test-status aria-live="polite"></span>
+				</p>
+				<p class="description">
+					While test mode is on, <strong>every</strong> email this site sends (events notifications, account and password emails, and the contact form) is delivered to this address instead of its real recipients. Subjects are prefixed <code>[TEST MODE]</code> and the intended recipients are listed at the top of the message. It switches itself off automatically after <?php echo esc_html( law_events_test_mode_duration_label() ); ?>, and a warning appears on every admin screen while it is on. Saving this card again restarts the <?php echo esc_html( law_events_test_mode_duration_label() ); ?> if you need longer.
+				</p>
+				<?php if ( law_events_is_production() ) : ?>
+					<p class="law-test-mode__confirm">
+						<label>
+							<input type="checkbox" name="test_mode_confirm" value="1">
+							<strong>This is the live site.</strong> I understand that password reset and new-account emails for real users will be diverted to the address above.
+						</label>
+					</p>
+				<?php endif; ?>
+			</div>
+			<p><?php submit_button( 'Save test mode', 'secondary', 'save_test_mode', false ); ?></p>
+		</form>
+	</div>
+	<?php
+}
+
+/** Save the test-mode checkbox and address together. */
+function law_events_emails_handle_test_mode_post() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	$enabled = ! empty( $_POST['test_mode_enabled'] );
+	$email   = sanitize_text_field( wp_unslash( $_POST['test_mode_email'] ?? '' ) );
+	$stored  = law_events_test_mode();
+
+	// A ticked box needs a usable address, or the setting is refused outright
+	// rather than saved in a state that looks on but does nothing.
+	if ( $enabled ) {
+		$check = law_events_test_mode_check_email( $email );
+		if ( ! $check['valid'] ) {
+			law_events_emails_test_mode_notice( array( 'type' => 'error', 'text' => 'Test mode not enabled. ' . $check['message'] ) );
+			return;
+		}
+
+		// On production, turning it on diverts real people's password resets,
+		// so it takes a deliberate second confirmation rather than one click.
+		if ( law_events_is_production() && empty( $_POST['test_mode_confirm'] ) ) {
+			law_events_emails_test_mode_notice(
+				array(
+					'type' => 'error',
+					'text' => 'Test mode not enabled. This is the live site, so please tick the confirmation box to acknowledge that real password reset and account emails will be diverted.',
+				)
+			);
+			return;
+		}
+
+		update_option(
+			LAW_EVENTS_TEST_MODE_OPTION,
+			array( 'enabled' => true, 'email' => sanitize_email( $email ), 'enabled_at' => time() ),
+			false
+		);
+		$settings = law_events_test_mode();
+		law_events_emails_test_mode_notice(
+			array(
+				'type' => 'warning',
+				'text' => sprintf(
+					'Test mode is ON. Every email the site sends now goes to %s, and it switches itself off %s. %s',
+					sanitize_email( $email ),
+					law_events_test_mode_expiry_label( $settings['expires_at'] ),
+					$check['message']
+				),
+			)
+		);
+		return;
+	}
+
+	// Keep the address on record so re-enabling does not mean retyping it.
+	update_option(
+		LAW_EVENTS_TEST_MODE_OPTION,
+		array( 'enabled' => false, 'email' => is_email( $email ) ? sanitize_email( $email ) : $stored['email'], 'enabled_at' => 0 ),
+		false
+	);
+	law_events_emails_test_mode_notice( array( 'type' => 'success', 'text' => 'Test mode is off. Emails go to their real recipients.' ) );
 }

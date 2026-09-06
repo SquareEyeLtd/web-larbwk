@@ -69,6 +69,22 @@ function law_events_email_registry() {
 			'subject' => 'Event approved: {event_title} ({law_reference})',
 			'body'    => "{event_title} ({law_reference}) has been approved.\n\nFee: {fee}\nHost: {host_name} ({host_email})",
 		),
+		'user_co_owner_created' => array(
+			'name'    => 'Email to additional host > account created',
+			'trigger' => 'approve (additional host with no account)',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your London Arbitration Week host account: {event_title}',
+			'body'    => "Dear {co_owner_name},\n\n{host_name} has added you as an additional host of {event_title} ({law_reference}), part of London Arbitration Week.\n\nWe have created an account for you so that you can view and manage the event. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address.\n\nOnce you are signed in, the event will be waiting on your events dashboard: {dashboard_link}\n\nIf that link has expired, you can request a new one here: {forgot_link}\n\nIf you were not expecting this, please contact the events committee.",
+		),
+		'user_co_owner_linked' => array(
+			'name'    => 'Email to additional host > added to an event',
+			'trigger' => 'approve (additional host with an existing account)',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'You have been added as a host of {event_title}',
+			'body'    => "Dear {co_owner_name},\n\n{host_name} has added you as an additional host of {event_title} ({law_reference}), part of London Arbitration Week.\n\nYou already have an account on {site_name}, so sign in with your usual details and the event will be on your events dashboard:\n\n{dashboard_link}\n\nIf you have forgotten your password, you can set a new one here: {forgot_link}\n\nIf you were not expecting this, please contact the events committee.",
+		),
 		'user_payment_due' => array(
 			'name'    => 'Email to user > event approved, pending payment',
 			'trigger' => 'approve (paid events)',
@@ -246,10 +262,15 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{site_name}'        => get_bloginfo( 'name' ),
 		'{stripe_error}'     => '',
 		'{latest_comment}'   => '',
+		'{forgot_link}'      => law_auth_login_url( array( 'action' => 'forgot' ) ),
 		// User-registration emails (filled via the send call's placeholders).
 		'{user_name}'        => '',
 		'{user_email}'       => '',
 		'{user_roles}'       => '',
+		// Additional-host emails (filled via the send call's placeholders).
+		'{co_owner_name}'    => '',
+		'{username}'         => '',
+		'{set_password_link}' => '',
 	);
 
 	$latest = law_event_latest_comment( $event_id );
@@ -314,8 +335,14 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 	}
 
 	$recipients = law_events_email_recipients( $definition, $event_id, $extra );
+	$test_mode  = law_events_test_mode_address();
 	if ( ! $recipients ) {
-		return false;
+		// In test mode an unconfigured audience (an empty committee list, say)
+		// must not silently swallow the email: the whole point is to see it.
+		if ( '' === $test_mode ) {
+			return false;
+		}
+		$recipients = array( $test_mode );
 	}
 
 	$placeholders = law_events_email_placeholders( $event_id, (array) ( $extra['placeholders'] ?? array() ) );
@@ -333,14 +360,21 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 
 	law_event_log(
 		$event_id,
-		sprintf( '%s: %s → %s.', $sent ? 'Email sent' : 'Email send FAILED', $definition['name'], implode( ', ', $recipients ) ),
+		sprintf(
+			'%s: %s → %s.%s',
+			$sent ? 'Email sent' : 'Email send FAILED',
+			$definition['name'],
+			implode( ', ', $recipients ),
+			'' !== $test_mode ? ' TEST MODE: delivered to ' . $test_mode . ' instead.' : ''
+		),
 		array(
-			'action'  => 'email',
-			'slug'    => $slug,
-			'to'      => $recipients,
-			'subject' => $subject,
-			'sent'    => (bool) $sent,
-			'source'  => 'notifications',
+			'action'    => 'email',
+			'slug'      => $slug,
+			'to'        => $recipients,
+			'subject'   => $subject,
+			'sent'      => (bool) $sent,
+			'source'    => 'notifications',
+			'test_mode' => '' !== $test_mode ? $test_mode : false,
 		)
 	);
 

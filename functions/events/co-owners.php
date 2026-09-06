@@ -58,7 +58,7 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
 			continue;
 		}
 
-		$user_id = law_events_create_host_user( $email, (string) ( $row['name'] ?? '' ), (string) ( $row['organisation'] ?? '' ), $send_email );
+		$user_id = law_events_create_host_user( $email, (string) ( $row['name'] ?? '' ), (string) ( $row['organisation'] ?? '' ) );
 		if ( is_wp_error( $user_id ) ) {
 			law_event_log(
 				$event_id,
@@ -76,6 +76,10 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
 			array( 'action' => 'co_owner_created', 'user' => (int) $user_id, 'source' => 'workflow' ),
 			array( 'user_id' => (int) $actor )
 		);
+
+		if ( $send_email ) {
+			law_event_notify_co_owner_created( $event_id, (int) $user_id );
+		}
 	}
 
 	$ids = array_values( array_unique( array_filter( $ids ) ) );
@@ -84,23 +88,86 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
 }
 
 /**
- * Notify an existing account that it has been linked as a co-owner. Kept plain
- * (not a managed template) so it always sends even outside the approval email
- * batch; the point is that the person is never linked without being told.
+ * Notify an existing account that it has been linked as a co-owner: linking by
+ * email match otherwise grants event access silently, and the notice gives the
+ * person a route to flag it if it was unexpected.
+ *
+ * Sent through the module's own registry (LAW → Emails), so the copy is
+ * editable, branded by the Email Templates wrapper and written to the event's
+ * activity log like every other module email.
  *
  * @param int     $event_id law_event post ID.
  * @param WP_User $user     The newly linked account.
+ * @return bool Whether the send was accepted.
  */
 function law_event_notify_co_owner_linked( $event_id, $user ) {
-	$title   = get_the_title( $event_id );
-	$subject = sprintf( 'You have been added as an owner of "%s"', $title );
-	$body    = sprintf(
-		"Hello %s,\n\nYou have been added as an additional owner of the London Arbitration Week event \"%s\". You can now view and manage it from your account:\n\n%s\n\nIf you were not expecting this, please reply to this email or contact the events committee so we can look into it.\n\nLondon Arbitration Week",
-		$user->display_name,
-		$title,
-		home_url( '/account/events/' )
+	return law_events_send(
+		'user_co_owner_linked',
+		$event_id,
+		array(
+			'to'           => array( $user->user_email ),
+			'placeholders' => array(
+				'co_owner_name' => $user->display_name ? $user->display_name : $user->user_email,
+				'username'      => $user->user_login,
+			),
+		)
 	);
-	wp_mail( $user->user_email, $subject, $body );
+}
+
+/**
+ * Welcome a freshly created co-owner account, with the set-password link.
+ *
+ * The module does NOT use core's new-user notification for this. BNFW (Better
+ * Notifications for WP) overrides the pluggable wp_new_user_notification() and
+ * its user branch never applies the wp_new_user_notification_email filter, so
+ * the branded host welcome in mu-plugins/law-secondary-host-users.php never
+ * fires and what actually goes out is BNFW's unbranded fallback. Sending from
+ * the registry instead keeps the copy in LAW → Emails and in the activity log.
+ *
+ * The reset key expires (24 hours by default, the password_reset_expiration
+ * filter), which is why the body also carries {forgot_link}.
+ *
+ * @param int $event_id law_event post ID.
+ * @param int $user_id  The account just created.
+ * @return bool Whether the send was accepted.
+ */
+function law_event_notify_co_owner_created( $event_id, $user_id ) {
+	$user = get_user_by( 'id', (int) $user_id );
+	if ( ! $user ) {
+		return false;
+	}
+
+	$key  = get_password_reset_key( $user );
+	$link = is_wp_error( $key )
+		? law_auth_login_url( array( 'action' => 'forgot' ) )
+		: law_auth_login_url(
+			array(
+				'action' => 'reset',
+				'key'    => rawurlencode( $key ),
+				'login'  => rawurlencode( $user->user_login ),
+			)
+		);
+
+	if ( is_wp_error( $key ) ) {
+		law_event_log(
+			$event_id,
+			sprintf( 'Could not mint a set-password link for %s: %s. The welcome email points at the forgot-password form instead.', $user->user_email, $key->get_error_message() ),
+			array( 'action' => 'co_owner_error', 'user' => (int) $user->ID, 'source' => 'workflow' )
+		);
+	}
+
+	return law_events_send(
+		'user_co_owner_created',
+		$event_id,
+		array(
+			'to'           => array( $user->user_email ),
+			'placeholders' => array(
+				'co_owner_name'     => $user->display_name ? $user->display_name : $user->user_email,
+				'username'          => $user->user_login,
+				'set_password_link' => $link,
+			),
+		)
+	);
 }
 
 /**
@@ -122,12 +189,16 @@ function law_event_set_co_owner_ids( $event_id, array $ids ) {
 }
 
 /**
- * Create an event_host user. Username = email (matching the form 1 feed),
- * password reset via the branded flow in functions/auth.php.
+ * Create an event_host user. Username = email (matching the form 1 feed).
+ *
+ * Deliberately silent: the welcome email is the caller's job, so it can be sent
+ * from the module's email registry with the event's context attached (see
+ * law_event_notify_co_owner_created()). The migration creates accounts with no
+ * email at all.
  *
  * @return int|WP_Error User ID.
  */
-function law_events_create_host_user( $email, $name = '', $organisation = '', $send_email = true ) {
+function law_events_create_host_user( $email, $name = '', $organisation = '' ) {
 	$name_parts = preg_split( '/\s+/', trim( $name ), 2 );
 	$user_id    = wp_insert_user(
 		array(
@@ -149,12 +220,6 @@ function law_events_create_host_user( $email, $name = '', $organisation = '', $s
 		// 'organisation' is the site-wide user meta key (the old UR feed's
 		// mapping); phase D's profile form reads and writes the same key.
 		update_user_meta( $user_id, 'organisation', sanitize_text_field( $organisation ) );
-	}
-
-	if ( $send_email ) {
-		// Core new-user notification carries the password-set link, which the
-		// auth module rewrites onto the branded /login/?action=reset page.
-		wp_send_new_user_notifications( $user_id, 'user' );
 	}
 
 	return (int) $user_id;

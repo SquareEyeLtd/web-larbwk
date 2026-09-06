@@ -230,8 +230,8 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 	}
 
 	wp_enqueue_media();
-	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.0' );
-	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.0', true );
+	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.1' );
+	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.1', true );
 	wp_localize_script(
 		'law-events-admin',
 		'lawEventsAdmin',

@@ -364,7 +364,7 @@ function law_migration_run_co_owners( $dry ) {
 			continue;
 		}
 
-		$user_id = law_events_create_host_user( $email, $name, (string) rgar( $child, '3' ), false );
+		$user_id = law_events_create_host_user( $email, $name, (string) rgar( $child, '3' ) );
 		if ( is_wp_error( $user_id ) ) {
 			law_migration_log( 'co_owners', 'error', $ref, 'Account creation failed: ' . $user_id->get_error_message() );
 			continue;
