@@ -431,6 +431,14 @@ add_action( 'template_redirect', function () {
 		return;
 	}
 
+	// An event's author and co-owners (and committee, via
+	// law_user_can_manage_event()) can always view their own listing, so a
+	// host's "View listing" button works while the programme is still gated.
+	if ( is_singular( LAW_EVENT_CPT )
+		&& law_user_can_manage_event( get_current_user_id(), get_queried_object_id() ) ) {
+		return;
+	}
+
 	$gate_page = is_singular( LAW_SPEAKER_CPT )
 		? ( function_exists( 'law_speakers_page_id' ) ? law_speakers_page_id() : 0 )
 		: law_events_programme_page_id();
