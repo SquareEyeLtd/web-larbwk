@@ -27,6 +27,43 @@ function law_event_workflow_actions() {
 }
 
 /**
+ * The actions the two committee UIs actually offer. Both the front-end
+ * dashboard handler and the wp-admin event screen check a posted action
+ * against this list before handing it to the workflow engine, so a hand-made
+ * request cannot reach a transition no button exposes. One source, so the two
+ * screens cannot drift apart.
+ *
+ * @return string[]
+ */
+function law_event_ui_actions() {
+	return array( 'approve', 'send_back', 'reject', 'mark_paid' );
+}
+
+/**
+ * The UI actions legal for an event's CURRENT status, from the same from-lists
+ * the transition guard enforces. Both committee screens render only these
+ * buttons, so a member is never offered an action the engine would refuse
+ * (e.g. Send back on an Approved event).
+ *
+ * @param int|WP_Post $event Event ID or post.
+ * @return string[] Subset of law_event_ui_actions(), in that order.
+ */
+function law_event_available_ui_actions( $event ) {
+	$post = get_post( $event );
+	if ( ! $post || LAW_EVENT_CPT !== $post->post_type ) {
+		return array();
+	}
+	$actions   = law_event_workflow_actions();
+	$available = array();
+	foreach ( law_event_ui_actions() as $action ) {
+		if ( in_array( $post->post_status, $actions[ $action ]['from'], true ) ) {
+			$available[] = $action;
+		}
+	}
+	return $available;
+}
+
+/**
  * The status guard: an EXISTING law_event's status can only change through
  * law_event_workflow_transition(). This is what stops the classic editor's
  * Publish / Save Draft buttons (which know nothing of the custom statuses)
@@ -118,7 +155,13 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 		if ( 'owner' === $config['who'] && ! law_user_can_manage_event( $actor, $event_id ) ) {
 			return new WP_Error( 'law_not_allowed', 'Only the event owner can do that.' );
 		}
-		if ( 'system' === $config['who'] && ! law_user_is_committee( $actor ) ) {
+		if ( 'system' === $config['who'] ) {
+			// Unconditional: 'system' means machine-only (confirm). Being
+			// committee only ever needed to satisfy the two branches above;
+			// letting a committee user through here too is what made
+			// 'confirm' reachable outside the committee dashboard's action
+			// whitelist (e.g. via the wp-admin event screen's
+			// law_workflow_action field posting 'confirm' directly).
 			return new WP_Error( 'law_not_allowed', 'That transition is automatic.' );
 		}
 	}
@@ -201,6 +244,13 @@ function law_event_workflow_side_effects( $event_id, $action, array $args, $acto
 		case 'reject':
 			$reason = trim( (string) ( $args['reason'] ?? '' ) );
 			update_post_meta( $event_id, '_law_rejection_reason', sanitize_textarea_field( $reason ) );
+			// The reason goes to the event thread as well as the email, the way
+			// send back does, so the host can see why on their dashboard and not
+			// only in their inbox. law_event_add_comment() sends no email of its
+			// own, so this cannot double up on user_rejected below.
+			if ( '' !== $reason ) {
+				law_event_add_comment( $event_id, $reason, $actor );
+			}
 			law_events_send( 'user_rejected', $event_id );
 			break;
 

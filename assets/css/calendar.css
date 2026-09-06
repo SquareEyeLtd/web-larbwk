@@ -21,6 +21,18 @@
 	margin-top: 24px;
 }
 
+/* The empty state carries its own call to action, so it needs link styling back. */
+.law-cal .law-cal__empty a {
+	color: #ef7d05;
+	text-decoration: underline;
+	font-weight: 600;
+}
+
+.law-cal .law-cal__empty a:hover,
+.law-cal .law-cal__empty a:focus {
+	color: #292459;
+}
+
 /* --- Day jump links ------------------------------------------------------ */
 
 .law-cal-daynav {
@@ -437,6 +449,18 @@
 .law-cal-skeleton__card {
 	padding: 1.25rem 1.5rem;
 	margin: 0 0 1rem;
+}
+
+/* Table-shaped skeleton (data-law-skeleton="table"): the committee dashboard. */
+.law-cal-skeleton__bar--table-head {
+	height: 2.4rem;
+	margin: 0 0 0.35rem;
+	background: #d8d5e6;
+}
+
+.law-cal-skeleton__bar--table-row {
+	height: 3.1rem;
+	margin: 0 0 0.35rem;
 }
 
 .law-cal-skeleton__line {

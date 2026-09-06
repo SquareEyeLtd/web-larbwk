@@ -86,8 +86,9 @@ add_action( 'wp_enqueue_scripts', function () {
 		wp_enqueue_script( 'law-speaker-search', $uri . '/assets/js/speaker-search.js', array(), $v( '/assets/js/speaker-search.js' ), true );
 	}
 
-	// Programme filters: AJAX filtering, keyword debounce, mobile filter modal.
-	if ( law_calendar_is_calendar_page() ) {
+	// Programme and committee-dashboard filters: AJAX filtering, keyword
+	// debounce, mobile filter modal.
+	if ( law_calendar_is_calendar_page() || is_page_template( 'templates/account-dashboard.php' ) ) {
 		wp_enqueue_script( 'law-calendar-filters', $uri . '/assets/js/calendar-filters.js', array(), $v( '/assets/js/calendar-filters.js' ), true );
 	}
 }, 20 );

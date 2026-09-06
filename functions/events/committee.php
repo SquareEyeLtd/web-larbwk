@@ -56,6 +56,35 @@ function law_committee_requested_event() {
 	return $post && LAW_EVENT_CPT === $post->post_type ? $post : null;
 }
 
+/**
+ * AJAX partial: the dashboard URL with &law_partial=1 returns only the event
+ * list markup (parts/events/dashboard-list.php), so the filter bar can swap it
+ * in place without a reload. Mirrors law_calendar_maybe_render_partial(); the
+ * page's Members restriction and the committee check both still apply.
+ */
+add_action( 'template_redirect', 'law_committee_maybe_render_partial' );
+function law_committee_maybe_render_partial() {
+	if ( empty( $_GET['law_partial'] ) || ! is_page_template( 'templates/account-dashboard.php' ) ) {
+		return;
+	}
+
+	$page_id = get_queried_object_id();
+	if ( function_exists( 'members_can_current_user_view_post' ) && $page_id && ! members_can_current_user_view_post( $page_id ) ) {
+		status_header( 403 );
+		exit;
+	}
+	if ( ! law_user_is_committee() ) {
+		status_header( 403 );
+		exit;
+	}
+
+	status_header( 200 );
+	header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
+	nocache_headers();
+	get_template_part( 'parts/events/dashboard-list' );
+	exit;
+}
+
 /* The committee action handler ______________________________________________ */
 
 add_action( 'admin_post_law_committee_action', 'law_committee_action_handler' );
@@ -122,6 +151,27 @@ function law_committee_action_handler() {
 
 	$notice = 'saved';
 	$action = sanitize_key( $_POST['law_action'] ?? '' );
+	// Only the actions this screen actually offers may come from this POST.
+	// Without the whitelist a hand-made request could run 'confirm' and publish
+	// an approved event whose invoice is still Unpaid (open finding 3 in
+	// EVENTS_4.1_FUNC_V2.md §6). An empty action is the plain "Save changes".
+	$allowed = law_event_ui_actions();
+	if ( '' !== $action && ! in_array( $action, $allowed, true ) ) {
+		law_event_log(
+			$event_id,
+			sprintf( 'Refused committee action "%s": not offered by the dashboard.', $action ),
+			array( 'action' => 'refused', 'attempted' => $action, 'source' => 'ui' ),
+			array( 'user_id' => $actor )
+		);
+		set_transient( 'law_dashboard_error_' . $actor, 'That action is not available from the dashboard.', 60 );
+		wp_safe_redirect(
+			add_query_arg(
+				array( 'event' => $event_id, 'law_notice' => 'action-failed' ),
+				home_url( '/account/dashboard/' )
+			)
+		);
+		exit;
+	}
 	if ( '' !== $action ) {
 		$note   = trim( (string) wp_unslash( $_POST['law_note'] ?? '' ) );
 		$result = law_event_workflow_transition(

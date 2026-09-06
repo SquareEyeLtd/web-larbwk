@@ -1,11 +1,14 @@
 /**
- * Programme calendar filters.
+ * Programme calendar filters, shared with the committee dashboard.
  *
- * Desktop: keyword (debounced) and the two selects re-fetch the events over
+ * Desktop: keyword (debounced) and the selects re-fetch the events over
  * AJAX as soon as they change. Mobile: the filters live in a modal opened by
  * the Filters button; changes apply when Apply is pressed. The fetch hits the
  * page's own URL with &law_partial=1, which returns only the events markup
- * (parts/calendar-events.php), so Members access rules still apply.
+ * (parts/calendar-events.php, or parts/events/dashboard-list.php on the
+ * dashboard), so Members access rules still apply. The filter fields are read
+ * from the form generically, so each page brings its own set; the results
+ * container picks its skeleton with data-law-skeleton="table" for list tables.
  */
 (function () {
 	'use strict';
@@ -34,13 +37,16 @@
 		toggle.hidden = false;
 	}
 
+	function filterFields() {
+		return form.querySelectorAll('input[name], select[name]');
+	}
+
 	function filterParams() {
 		var params = new URLSearchParams();
-		['law_kw', 'law_sector', 'law_type'].forEach(function (name) {
-			var field = form.elements[name];
-			var value = field ? field.value.trim() : '';
+		filterFields().forEach(function (field) {
+			var value = field.value.trim();
 			if (value !== '') {
-				params.set(name, value);
+				params.set(field.name, value);
 			}
 		});
 		return params;
@@ -48,15 +54,22 @@
 
 	function skeletonHtml() {
 		var section = '';
-		for (var s = 0; s < 2; s++) {
-			section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--day"></div>';
-			section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--slot"></div>';
-			for (var c = 0; c < 2; c++) {
-				section +=
-					'<div class="law-cal-skeleton__card">' +
-					'<div class="law-cal-skeleton__line law-cal-skeleton__line--title"></div>' +
-					'<div class="law-cal-skeleton__line law-cal-skeleton__line--meta"></div>' +
-					'</div>';
+		if (results.getAttribute('data-law-skeleton') === 'table') {
+			section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--table-head"></div>';
+			for (var r = 0; r < 6; r++) {
+				section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--table-row"></div>';
+			}
+		} else {
+			for (var s = 0; s < 2; s++) {
+				section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--day"></div>';
+				section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--slot"></div>';
+				for (var c = 0; c < 2; c++) {
+					section +=
+						'<div class="law-cal-skeleton__card">' +
+						'<div class="law-cal-skeleton__line law-cal-skeleton__line--title"></div>' +
+						'<div class="law-cal-skeleton__line law-cal-skeleton__line--meta"></div>' +
+						'</div>';
+				}
 			}
 		}
 		return '<div class="law-cal-skeleton" aria-hidden="true">' + section + '</div>';
@@ -207,10 +220,9 @@
 		clearLink.addEventListener('click', function (event) {
 			event.preventDefault();
 			form.reset();
-			['law_kw', 'law_sector', 'law_type'].forEach(function (name) {
-				if (form.elements[name]) {
-					form.elements[name].value = '';
-				}
+			// reset() restores the server-rendered values, so blank explicitly.
+			filterFields().forEach(function (field) {
+				field.value = '';
 			});
 			closeModal();
 			fetchEvents();

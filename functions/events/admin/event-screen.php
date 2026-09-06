@@ -37,19 +37,26 @@ function law_event_box_workflow( $post ) {
 	}
 	law_field_select( 'law_assignee', 'Committee assignee', (string) law_event_meta( $post->ID, '_law_assignee' ), $assignees );
 
-	echo '<hr><p><strong>Actions</strong></p>';
-	$actions = array(
+	// Only the actions legal for the current status are offered, from the same
+	// from-lists the workflow engine enforces (law_event_available_ui_actions()).
+	$labels = array(
 		'approve'   => 'Approve',
 		'send_back' => 'Send back',
 		'reject'    => 'Reject',
 		'mark_paid' => 'Mark paid & confirm',
 	);
+	$available = law_event_available_ui_actions( $post );
+	if ( ! $available ) {
+		echo '<hr><p class="description">No workflow actions apply to this status.</p>';
+		return;
+	}
+	echo '<hr><p><strong>Actions</strong></p>';
 	echo '<p class="law-workflow-actions">';
-	foreach ( $actions as $action => $label ) {
+	foreach ( $available as $action ) {
 		printf(
 			'<label style="display:block;margin-bottom:4px"><input type="radio" name="law_workflow_action" value="%s"> %s</label>',
 			esc_attr( $action ),
-			esc_html( $label )
+			esc_html( $labels[ $action ] )
 		);
 	}
 	echo '</p>';
@@ -129,10 +136,7 @@ function law_event_box_facts( $post ) {
 		'law_venue_capacity',
 		'Venue capacity',
 		(string) law_event_meta( $post->ID, '_law_venue_capacity' ),
-		array_combine(
-			array( 'Under 50', '51-100', '101-150', '151-250', '251+', 'TBC' ),
-			array( 'Under 50', '51-100', '101-150', '151-250', '251+', 'TBC' )
-		),
+		array_combine( array_keys( law_events_venue_capacity_bands() ), array_keys( law_events_venue_capacity_bands() ) ),
 		array( 'placeholder' => '(not set)' )
 	);
 	law_field_number( 'law_tickets_available', 'Tickets available', (string) law_event_meta( $post->ID, '_law_tickets_available' ) );
@@ -348,7 +352,21 @@ function law_event_admin_save( $post_id, $post ) {
 
 	// A workflow action chosen on the box runs after the field writes, so an
 	// approval uses the freshly saved override values for its fee snapshot.
+	// Whitelisted the same way as the front-end dashboard handler: only an
+	// action this box actually offers may reach the workflow engine, so a
+	// hand-made Update cannot run a transition (such as 'confirm') that no
+	// button exposes. law_event_ui_actions() is the shared list.
 	$action = sanitize_key( $_POST['law_workflow_action'] ?? '' );
+	if ( '' !== $action && ! in_array( $action, law_event_ui_actions(), true ) ) {
+		law_event_log(
+			$post_id,
+			sprintf( 'Refused workflow action "%s": not offered by the event screen.', $action ),
+			array( 'action' => 'refused', 'attempted' => $action, 'source' => 'ui' ),
+			array( 'user_id' => $actor )
+		);
+		set_transient( 'law_event_notice_' . $actor, 'That action is not available from this screen.', 60 );
+		$action = '';
+	}
 	if ( '' !== $action ) {
 		$note   = trim( (string) wp_unslash( $_POST['law_workflow_note'] ?? '' ) );
 		$result = law_event_workflow_transition(
