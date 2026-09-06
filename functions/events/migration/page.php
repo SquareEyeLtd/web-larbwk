@@ -201,6 +201,19 @@ function law_migration_admin_page() {
 			return data.data;
 		}
 
+		// A step may return done:false (the time-boxed history step): keep
+		// requesting batches until it reports done, surfacing batch progress.
+		async function runStepToCompletion(step, dry, label) {
+			let result;
+			do {
+				result = await runStep(step, dry);
+				if (label && result && result.summary) {
+					label.textContent = step + (dry ? ' (dry run)' : '') + ' — ' + result.summary;
+				}
+			} while (result && result.done === false);
+			return result;
+		}
+
 		function busy(on) {
 			document.querySelectorAll('.law-mig-run, .law-mig-run-all').forEach(b => b.disabled = on);
 			if (spinner) spinner.classList.toggle('is-active', on);
@@ -210,7 +223,8 @@ function law_migration_admin_page() {
 			button.addEventListener('click', async () => {
 				if (button.dataset.dry === '0' && !confirm('Run this step for real? (A dry run first is strongly recommended.)')) return;
 				busy(true);
-				try { await runStep(button.dataset.step, button.dataset.dry === '1'); location.reload(); }
+				progress.hidden = false;
+				try { await runStepToCompletion(button.dataset.step, button.dataset.dry === '1', progress.querySelector('.law-mig-progress-label')); location.reload(); }
 				catch (e) { alert(e.message); busy(false); }
 			});
 		});
@@ -227,7 +241,7 @@ function law_migration_admin_page() {
 					for (let i = 0; i < gated.length; i++) {
 						label.textContent = gated[i] + (dry ? ' (dry run)' : '');
 						bar.value = Math.round((i / gated.length) * 100);
-						await runStep(gated[i], dry);
+						await runStepToCompletion(gated[i], dry, label);
 					}
 					bar.value = 100;
 					location.reload();

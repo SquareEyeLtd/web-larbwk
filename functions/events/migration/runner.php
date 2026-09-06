@@ -936,7 +936,17 @@ function law_migration_run_history( $dry ) {
 		$revisions_by_parent[ (int) $row->parent_id ][] = $row;
 	}
 
+	$started = time();
+
 	foreach ( $map['events'] as $entry_id => $post_id ) {
+		// Time-box a real run: writing every timeline (~1,000 comment inserts)
+		// in one request exceeds a proxy upstream timeout (seen on Kinsta), so
+		// stop BETWEEN events after ~20s and let the page JS request the next
+		// batch. The guard never fires mid-event, so an event is always either
+		// fully written and flagged or untouched — re-runs cannot duplicate.
+		if ( ! $dry && $migrated > 0 && time() - $started >= 20 ) {
+			return array( 'done' => false, 'summary' => $migrated . ' event histories migrated this batch; more remain.' );
+		}
 		if ( ! get_post( $post_id ) ) {
 			continue;
 		}

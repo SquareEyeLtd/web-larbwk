@@ -14,7 +14,8 @@ Gravity Forms / Gravity Flow / GravityView / Make stack described in
 EVENTS_4.1_FUNC.md. Verified against the codebase and the local database on
 5 September 2026, re-verified after the forms/payments security round and
 the additional-host email round the same day, and updated 6 September 2026
-for the pre-launch-gate host bypass and the new `404.php`. The companion EVENTS_4.1_REBUILD.md remains the design contract;
+for the pre-launch-gate host bypass, the new `404.php` and the time-boxed,
+batched migration history step. The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.
 
 Unlike EVENTS_4.1_FUNC.md, this file carries no secrets, so it is safe to
@@ -635,7 +636,14 @@ screens, columns, emails) → migration (report, runner, page).
   status (field 96 Payment status was blank on every entry — defect 1);
   `law_migration_translate_tags()` rewrites GF merge tags into the module's
   placeholders. `law_migration_run_step()`, `law_migration_verification()` and
-  `law_migration_spot_checks()` drive and verify a run.
+  `law_migration_spot_checks()` drive and verify a run. **The history step is
+  time-boxed**: a real run stops between events after ~20 seconds and returns
+  `done => false`, and the page JS keeps requesting batches until `done` — one
+  request per batch, so a proxy upstream timeout (hit on Kinsta staging, where
+  the ~1,000 timeline inserts exceeded it in a single request) can no longer
+  kill the step. The guard never fires mid-event, so the per-event
+  `_law_history_migrated` flag still guarantees an event's timeline is written
+  whole or not at all.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
