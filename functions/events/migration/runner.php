@@ -26,6 +26,7 @@ function law_migration_steps() {
 		'counters'      => array( 'label' => 'Step 7: counters and settings seed', 'gated' => true ),
 		'redirects'     => array( 'label' => 'Step 8: redirect map', 'gated' => true ),
 		'notifications' => array( 'label' => 'Step 9: notifications', 'gated' => true ),
+		'pages'         => array( 'label' => 'Step 10: account page templates', 'gated' => true ),
 	);
 }
 
@@ -1320,6 +1321,95 @@ function law_migration_run_notifications( $dry ) {
 	return array( 'done' => true, 'summary' => $migrated . ' notifications imported.' );
 }
 
+/* Step 10: account page templates _____________________________________________ */
+
+/**
+ * The pages the rebuild re-templated (or created) locally, keyed by path.
+ * Every module code path resolves these BY PATH (get_page_by_path), never by
+ * ID, so creating a missing page on another environment is safe. Ordered
+ * shallow-first so a created parent exists before its children.
+ *
+ * @return array<string,array{title:string,template:string}>
+ */
+function law_migration_page_map() {
+	return array(
+		'account'                    => array( 'title' => 'Account', 'template' => 'templates/account.php' ),
+		'register'                   => array( 'title' => 'Register for an Account', 'template' => 'templates/register.php' ),
+		'account/dashboard'          => array( 'title' => 'Events dashboard', 'template' => 'templates/account-dashboard.php' ),
+		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
+		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
+		'account/events/submit'      => array( 'title' => 'Submit an event', 'template' => 'templates/account-event-form.php' ),
+		'account/events/submit/done' => array( 'title' => 'Event submitted', 'template' => 'templates/account.php' ),
+	);
+}
+
+/**
+ * Reconcile the account pages with the templates the module expects: assign
+ * the template where a page exists with the wrong one, create the page where
+ * it is missing. Existing page content is never touched (the templates render
+ * their own markup and ignore it). Idempotent: a correct page is reported and
+ * skipped.
+ */
+function law_migration_run_pages( $dry ) {
+	$updated = 0;
+	$created = 0;
+
+	foreach ( law_migration_page_map() as $path => $config ) {
+		$ref  = '/' . $path . '/';
+		$page = get_page_by_path( $path );
+
+		if ( $page ) {
+			$current = (string) get_post_meta( $page->ID, '_wp_page_template', true );
+			if ( $current === $config['template'] ) {
+				law_migration_log( 'pages', 'skipped', $ref, sprintf( 'Page %d already uses %s.', $page->ID, $config['template'] ) );
+				continue;
+			}
+			if ( $dry ) {
+				law_migration_log( 'pages', 'dry-run', $ref, sprintf( 'Would change page %d template from "%s" to %s.', $page->ID, $current ?: 'default', $config['template'] ) );
+				continue;
+			}
+			update_post_meta( $page->ID, '_wp_page_template', $config['template'] );
+			$updated++;
+			law_migration_log( 'pages', 'created', $ref, sprintf( 'Page %d template changed from "%s" to %s (content untouched).', $page->ID, $current ?: 'default', $config['template'] ) );
+			continue;
+		}
+
+		// Missing page: create it under its parent path. The map is ordered
+		// shallow-first, so a parent created in this run already exists.
+		$parent_path = dirname( $path );
+		$parent      = '.' === $parent_path ? null : get_page_by_path( $parent_path );
+		if ( '.' !== $parent_path && ! $parent ) {
+			law_migration_log( 'pages', 'warning', $ref, sprintf( 'Parent page /%s/ is missing; create it first.', $parent_path ) );
+			continue;
+		}
+
+		if ( $dry ) {
+			law_migration_log( 'pages', 'dry-run', $ref, sprintf( 'Would create page "%s" with template %s.', $config['title'], $config['template'] ) );
+			continue;
+		}
+
+		$page_id = wp_insert_post(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+				'post_title'  => $config['title'],
+				'post_name'   => basename( $path ),
+				'post_parent' => $parent ? $parent->ID : 0,
+			),
+			true
+		);
+		if ( is_wp_error( $page_id ) || ! $page_id ) {
+			law_migration_log( 'pages', 'error', $ref, 'wp_insert_post failed: ' . ( is_wp_error( $page_id ) ? $page_id->get_error_message() : 'unknown' ) );
+			continue;
+		}
+		update_post_meta( $page_id, '_wp_page_template', $config['template'] );
+		$created++;
+		law_migration_log( 'pages', 'created', $ref, sprintf( 'Created page %d "%s" with template %s.', $page_id, $config['title'], $config['template'] ) );
+	}
+
+	return array( 'done' => true, 'summary' => sprintf( '%d templates assigned, %d pages created.', $updated, $created ) );
+}
+
 /* Step dispatcher ____________________________________________________________ */
 
 /**
@@ -1378,6 +1468,8 @@ function law_migration_run_step( $step, $dry ) {
 			return law_migration_run_redirects( $dry );
 		case 'notifications':
 			return law_migration_run_notifications( $dry );
+		case 'pages':
+			return law_migration_run_pages( $dry );
 	}
 	return new WP_Error( 'law_bad_step', 'Unknown migration step.' );
 }

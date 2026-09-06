@@ -625,7 +625,7 @@ screens, columns, emails) → migration (report, runner, page).
   and CSV-export admin-post handlers.
 - **`runner.php`** — the engine. `law_migration_steps()` defines the ordered
   steps: snapshot → preflight → co-owners → speakers → events → sessions →
-  comments → history → counters → redirects → notifications.
+  comments → history → counters → redirects → notifications → pages.
   `law_migration_create_snapshot()` runs `mysqldump` (password via `MYSQL_PWD`,
   not a `-p` CLI arg) with a random filename in a protected dir, then
   `law_migration_snapshot_ok()` fetches the snapshot's own public URL
@@ -643,7 +643,16 @@ screens, columns, emails) → migration (report, runner, page).
   the ~1,000 timeline inserts exceeded it in a single request) can no longer
   kill the step. The guard never fires mid-event, so the per-event
   `_law_history_migrated` flag still guarantees an event's timeline is written
-  whole or not at all.
+  whole or not at all. **Step 10 (account page templates)**,
+  `law_migration_run_pages()`, reconciles the account pages with the templates
+  the rebuild expects (`law_migration_page_map()`, keyed by page path):
+  assigns the right template where a page exists with the wrong one, creates a
+  missing page under its parent, and never touches existing page content. The
+  module resolves all of these pages by path, never by ID, so created pages
+  get new IDs safely. This exists because page templates are database state:
+  the git deploy cannot carry the local re-templating to another environment,
+  which left staging rendering the legacy GravityView dashboards after the
+  source flip.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
