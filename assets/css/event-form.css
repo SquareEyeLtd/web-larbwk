@@ -13,53 +13,159 @@
 .law-event-form fieldset { border: 0; padding: 0; margin: 0 0 2.5rem; }
 .law-event-form legend { color: #ffcc02; font-size: 1.4rem; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem; }
 .law-form-field { margin-bottom: 1.1rem; }
-.law-form-field label, .law-form-label { display: block; font-weight: 600; margin-bottom: .25rem; }
+/* The single field-label style for every custom form (event form, register,
+   profile, committee dashboard; .law-auth-field in auth.css matches it). The
+   size is stated rather than inherited so it can't drift with Foundation's
+   own `label { font-size: .875rem }`. */
+.law-form-field label, .law-form-label { display: block; font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
 /* Yellow labels belong to the purple hero form only. */
 .law-event-form .law-form-field label, .law-event-form .law-form-label { color: #ffcc02; }
+/* One control height for every single-line control on every custom form, so a
+   <select> can never render a few pixels shorter than the text input beside it
+   (the bug: selects were pinned to Foundation's 39px while the register and
+   profile text inputs took auth.css's 2.75rem). auth.css states the same value
+   for the sign-in/forgot/reset forms, which load without this file. */
+:root { --law-field-height: 2.75rem; }
 .law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
+.law-event-form input[type="password"],
 .law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select, .law-event-form textarea {
 	width: 100%; border: 0; border-radius: 0; padding: .6rem .75rem; background: #fff; color: #1a1a3d; margin: 0;
-	/* box-sizing + a shared line-height so a <select> is exactly as tall as a
-	   text input (appearance:none otherwise renders it a few pixels shorter). */
+	/* box-sizing so the padding and any error border are inside the stated
+	   height, not added to it. */
 	box-sizing: border-box; line-height: 1.5; font-size: 1rem; font-family: inherit;
 }
-/* Match the <select> height to the text inputs exactly (appearance:none renders
-   it shorter otherwise): same total height with border-box. */
-.law-event-form select { height: 39px; }
-/* Time inputs: WebKit doesn't vertically centre the value/clock when a custom
-   line-height is forced, so normalise it and match the input height; nudge the
-   picker indicator to sit centred against the field. */
-.law-event-form input[type="time"] { height: 39px; line-height: normal; }
-.law-event-form input[type="time"]::-webkit-calendar-picker-indicator { margin: 0; opacity: .55; }
+/* The height itself, on the single-line controls only — a textarea keeps
+   growing with its rows. Height rather than padding alone because a <select>
+   with appearance:none sizes from its own shadow content, not from ours. */
+.law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
+.law-event-form input[type="password"],
+.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select:not([multiple]) {
+	height: var(--law-field-height);
+}
+/* Time inputs: WebKit doesn't vertically centre the value when a custom
+   line-height is forced, so normalise it. */
+.law-event-form input[type="time"] { line-height: normal; }
+/* Every interaction state, stated once for all three control types, because
+   Foundation styles them apart and the two drifted: a text input took auth.css's
+   orange focus ring while a <select> and a <textarea> took Foundation's grey
+   glow, off-white focus background and 0.5s transition. Reset Foundation first,
+   then paint one shared rest / hover / focus / disabled set.
+   The shorthand `outline` is used for focus rather than a border so the ring
+   never changes the control's box, and so it clears the (borderless) white
+   field it sits on. */
+.law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
+.law-event-form input[type="password"],
+.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select,
+.law-event-form textarea {
+	box-shadow: none; transition: outline-color .15s ease-in-out;
+}
+/* Hover: a hairline orange ring, drawn as an outline so it sits outside the
+   control and can't nudge the text or the select's chevron. */
+.law-event-form input[type="text"]:hover, .law-event-form input[type="email"]:hover,
+.law-event-form input[type="url"]:hover, .law-event-form input[type="password"]:hover,
+.law-event-form input[type="number"]:hover, .law-event-form input[type="time"]:hover,
+.law-event-form select:hover, .law-event-form textarea:hover {
+	outline: 1px solid rgba(239, 125, 5, .55); outline-offset: 0;
+}
+/* Focus: the same orange ring at full strength, matching auth.css's sign-in
+   fields. `outline: none` on Foundation's select:focus must be overridden
+   explicitly or a focused select shows no ring at all. */
+.law-event-form input[type="text"]:focus, .law-event-form input[type="email"]:focus,
+.law-event-form input[type="url"]:focus, .law-event-form input[type="password"]:focus,
+.law-event-form input[type="number"]:focus, .law-event-form input[type="time"]:focus,
+.law-event-form select:focus, .law-event-form textarea:focus {
+	outline: 2px solid #ef7d05; outline-offset: 1px;
+	border-color: transparent; background-color: #fff; box-shadow: none;
+}
+/* An invalid control keeps its red border under the focus ring, rather than
+   the transparent one the focus rule would otherwise give it. */
+.law-form-field.is-invalid input:focus, .law-form-field.is-invalid select:focus,
+.law-form-field.is-invalid textarea:focus,
+.law-form-field:has(> .law-form-error) input:focus, .law-form-field:has(> .law-form-error) select:focus,
+.law-form-field:has(> .law-form-error) textarea:focus { border-color: #ff5c4d; }
+/* Locked fields: a text input is rendered readonly and a select disabled (a
+   readonly select isn't a thing), so both attributes have to paint the same
+   grey. Foundation's own rules cover only some of these combinations. */
+.law-event-form input:disabled, .law-event-form input[readonly],
+.law-event-form select:disabled, .law-event-form textarea:disabled,
+.law-event-form textarea[readonly] {
+	background-color: #e6e6e6; color: #55556e; cursor: not-allowed;
+}
+.law-event-form input:disabled:hover, .law-event-form input[readonly]:hover,
+.law-event-form select:disabled:hover, .law-event-form textarea:disabled:hover,
+.law-event-form textarea[readonly]:hover { outline: none; }
+/* Chrome paints an autofilled input its own pale yellow, which no <select> can
+   ever match. Force our white back with the inset-shadow trick (background is
+   not overridable in the autofill state). */
+.law-event-form input:-webkit-autofill, .law-event-form input:-webkit-autofill:hover,
+.law-event-form input:-webkit-autofill:focus {
+	-webkit-box-shadow: inset 0 0 0 100px #fff; box-shadow: inset 0 0 0 100px #fff;
+	-webkit-text-fill-color: #1a1a3d; caret-color: #1a1a3d;
+}
+/* The browser's own clock sits in the input's shadow flex flow, so it lands
+   neither vertically centred nor tight to the right edge, and it can't be moved
+   from here. Where the native indicator CAN be hidden (Chromium and WebKit
+   expose ::-webkit-calendar-picker-indicator), draw the clock as a background
+   image instead, at the same right .7rem centre offset as the chevron on the
+   selects, and keep the now-transparent indicator over it so clicking the icon
+   still opens the picker. Browsers without that pseudo-element (Firefox) fail
+   the @supports test and keep their own icon, rather than showing two. */
+@supports selector(::-webkit-calendar-picker-indicator) {
+	.law-event-form input[type="time"] {
+		background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%231a1a3d' stroke-width='1.4'%3E%3Ccircle cx='8' cy='8' r='6.3'/%3E%3Cpath d='M8 4.4V8l2.4 1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right .7rem center;
+		background-size: 1rem 1rem;
+	}
+	.law-event-form input[type="time"]::-webkit-calendar-picker-indicator {
+		width: 1rem; height: 1rem; margin: 0; padding: 0; opacity: 0; cursor: pointer;
+	}
+}
 .law-event-form input[type="time"]::-webkit-datetime-edit { padding: 0; }
-.law-event-form .law-choices label { color: #fff; font-weight: 400; }
+/* Only the colour of a choice option is theme-specific (white on the purple
+   hero form, dark in the light committee panel). Everything below it is layout,
+   so it is stated once for both and every custom form shares one option rhythm. */
+.law-event-form .law-choices label { color: #fff; }
 /* Checkbox/radio options everywhere on the form (choice groups and the inline
    radio/checkbox lists in Venue, Fees and Finish): keep the box tight to its
-   own label, and keep the gap BETWEEN options no larger than that — the bug was
-   options spaced further apart than the box sits from its text. */
+   own label, and keep the gap BETWEEN options no larger than that (the bug was
+   options spaced further apart than the box sits from its text).
+   The committee controls panel is named alongside the form because these two
+   selectors match a bare <label>, so leaving them unscoped would reach any
+   label on the page, not just ours. */
 .law-event-form label:has(> input[type="checkbox"]),
-.law-event-form label:has(> input[type="radio"]) { display: block; margin: 0 0 .2rem; line-height: 1.3; color: #fff; font-weight: 400; }
+.law-event-form label:has(> input[type="radio"]),
+.law-dashboard__controls label:has(> input[type="checkbox"]),
+.law-dashboard__controls label:has(> input[type="radio"]) { display: block; margin: 0 0 .2rem; line-height: 1.3; font-weight: 400; }
+.law-event-form label:has(> input[type="checkbox"]),
+.law-event-form label:has(> input[type="radio"]) { color: #fff; }
 /* Full margin reset: Foundation ships radios/checkboxes with margin:0 0 1rem,
    and that 1rem bottom margin was opening a gap between options wider than the
    box-to-label gap. Keep only the small right margin to the label. */
 .law-event-form label > input[type="checkbox"],
-.law-event-form label > input[type="radio"] { margin: 0 .45rem 0 0; vertical-align: middle; }
+.law-event-form label > input[type="radio"],
+.law-dashboard__controls label > input[type="checkbox"],
+.law-dashboard__controls label > input[type="radio"] { margin: 0 .45rem 0 0; vertical-align: middle; }
 /* Checkbox groups: tighter vertical rhythm between options, and optional
    fixed-column layouts (roles in 3, requirements in 2). Each option is a block
    so the columns line up; the small row gap is the "reduce spacing after each
-   checkbox" ask. */
-.law-event-form .law-choices label { display: block; margin: 0 0 .1rem; }
-.law-choices--cols-2, .law-choices--cols-3 { display: grid; gap: .1rem 1rem; }
-.law-choices--cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.law-choices--cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.law-choices--cols-2 label, .law-choices--cols-3 label { margin-bottom: 0; }
+   checkbox" ask. Unscoped (like the column modifiers below it) because
+   .law-choices is our own wrapper: the registration, profile and committee
+   groups all want the same spacing and the same normal weight, and only the
+   group heading above them is bold. */
+.law-choices label { display: block; margin: 0 0 .1rem; font-weight: 400; }
+.law-choices--cols-2 { display: grid; gap: .1rem 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.law-choices--cols-2 label { margin-bottom: 0; }
+/* The slots use CSS multi-column rather than a grid so the options read top to
+   bottom down each column (chronological order) instead of across the rows. */
+.law-choices--cols-3 { columns: 3; column-gap: 1rem; }
+.law-choices--cols-3 label { margin-bottom: .1rem; break-inside: avoid; }
 @media screen and (max-width: 39.9375em) {
-	.law-choices--cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.law-choices--cols-3 { columns: 2; }
 	.law-choices--cols-2 { grid-template-columns: 1fr; }
 }
 /* Brand the checkboxes/radios (they were bare browser chrome) and give the
    selects a visible dropdown chevron so they don't read as text inputs. */
-.law-event-form input[type="checkbox"], .law-event-form input[type="radio"] { accent-color: #ef7d05; width: 1.1rem; height: 1.1rem; vertical-align: -.15rem; }
+.law-event-form input[type="checkbox"], .law-event-form input[type="radio"],
+.law-dashboard__controls input[type="checkbox"], .law-dashboard__controls input[type="radio"] { accent-color: #ef7d05; width: 1.1rem; height: 1.1rem; vertical-align: -.15rem; }
 .law-event-form select {
 	-webkit-appearance: none; appearance: none;
 	background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%231a1a3d' d='M0 0h12L6 8z'/%3E%3C/svg%3E") no-repeat right .7rem center;
@@ -71,12 +177,25 @@
    paragraph styles cannot swallow them. */
 .auth-hero .law-form-error, .law-event-form .law-form-error, .law-dashboard .law-form-error,
 .law-thread-view .law-form-error, p.law-form-error, span.law-form-error {
+	/* Same type as the form-level notice above the form (inherited size, normal
+	   weight): the inline message is the same voice, not a louder one. */
 	display: block; background: rgba(255, 255, 255, .12); border-left: 4px solid #ff5c4d;
-	color: #fff; font-size: .9rem; font-weight: 600; padding: .45rem .75rem; margin: .4rem 0 0;
+	color: #fff; font-weight: 400; padding: .45rem .75rem; margin: .4rem 0 0;
 }
-/* A field with an error is itself highlighted. */
-.law-form-field.is-invalid input, .law-form-field.is-invalid select, .law-form-field.is-invalid textarea {
-	outline: 3px solid #ff5c4d; outline-offset: 0;
+/* A field with an error is itself highlighted, by a red border on its control.
+   :has() pairs a field with the message it renders, so nothing has to tag the
+   wrapper; .is-invalid stays supported for the fields that set it explicitly.
+   The border is 2px on controls that are otherwise borderless, so it must go
+   transparent (not away) when cleared, or the text inside would shift. */
+.law-form-field.is-invalid input, .law-form-field.is-invalid select, .law-form-field.is-invalid textarea,
+.law-form-field:has(> .law-form-error) input, .law-form-field:has(> .law-form-error) select,
+.law-form-field:has(> .law-form-error) textarea {
+	border: 2px solid #ff5c4d;
+}
+/* Cleared as soon as the host edits the control (event-form.js adds
+   .is-touched), so a corrected field stops shouting at them. */
+.law-form-field.is-touched input, .law-form-field.is-touched select, .law-form-field.is-touched textarea {
+	border-color: transparent;
 }
 /* Password strength: WordPress core's own indicator design — a solid
    pastel bar with a matching border and dark centred text. Hidden while
@@ -112,7 +231,12 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    link scrolls to a section. */
 .law-event-form fieldset[id^="law-section-"] { scroll-margin-top: 160px; }
 .law-form-nav ol { list-style: none; margin: 0; }
-.law-form-nav a { color: #fff; display: block; padding: .35rem 0; border-bottom: 1px solid rgba(255, 255, 255, .15); }
+/* Foundation's global a:focus/a:visited turn links blue after a click; keep
+   every non-hover state white so hover is the only colour change. */
+.law-form-nav a,
+.law-form-nav a:visited,
+.law-form-nav a:focus,
+.law-form-nav a:active { color: #fff; display: block; padding: .35rem 0; border-bottom: 1px solid rgba(255, 255, 255, .15); }
 .law-form-nav a:hover { color: #ffcc02; }
 @media screen and (max-width: 63.9375em) { .law-form-nav { display: none; } }
 
@@ -122,8 +246,22 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-row { position: relative; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
 .law-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1rem; }
 .law-row-grid--three { grid-template-columns: 1fr 1fr 1fr; }
-.law-row-grid label { color: #fff; font-weight: 400; font-size: .9rem; }
+/* Repeater rows (speakers, sessions, additional owners, event contacts): their
+   labels wrap their own input, so they are white and a little smaller than a
+   field label on the purple form, but they carry the same 600 weight as every
+   other field label in the theme.
+   Scoped to .law-row because .law-row-grid is also used as a plain two/three-up
+   layout wrapper around ordinary .law-form-field blocks (Event type / Host
+   organisation, the registration and profile fields, Venue, the invoice
+   address), and an unscoped rule flattened those real field labels.
+   Scoped to DIRECT children so it never reaches the option labels inside a
+   choice group in a row (the session speaker checkboxes), which stay 400. */
+.law-row .law-row-grid > label { color: #fff; font-weight: 600; font-size: .9rem; }
 .law-row-wide { grid-column: 1 / -1; }
+/* The session speaker picker sits inside a repeater row, so its group label
+   matches the row's own labels rather than a full-size field label. */
+.law-row .law-session-speakers .law-form-label { color: #fff; font-weight: 600; font-size: .9rem; }
+.law-session-speakers .law-form-hint { margin: 0; }
 .law-row-remove { position: absolute; top: .4rem; right: .6rem; background: none; border: 0; color: #ffb3ab; font-size: 1.3rem; cursor: pointer; line-height: 1; }
 .law-row-add { margin-top: .25rem; }
 /* The shared "Add …" button falls back to Foundation's blue on hover; give it
@@ -160,10 +298,14 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 }
 .law-dashboard a:not(.button), .law-thread-view a:not(.button) { color: #292459; text-decoration: underline; }
 .law-dashboard a:not(.button):hover, .law-thread-view a:not(.button):hover { color: #ef7d05; }
-.law-dashboard__chips a { text-decoration: none; color: #1a1a3d; }
-.law-dashboard__chips a.is-active { color: #fff; }
-.law-dashboard .law-form-notice { color: #1a1a3d; background: #f0f0f5; border-left-color: #292459; }
-.law-dashboard .law-form-notice.is-error { border-left-color: #b32d2e; background: #fcf0f1; }
+/* Light-background pages (committee dashboard, comment thread, My events): the
+   base notice is white-on-translucent for the purple hero and is invisible on
+   white, so repaint it dark on a pale strip. */
+.law-dashboard .law-form-notice, .law-thread-view .law-form-notice, .law-cal .law-form-notice {
+	color: #1a1a3d; background: #f0f0f5; border-left-color: #292459;
+}
+.law-dashboard .law-form-notice.is-error, .law-thread-view .law-form-notice.is-error,
+.law-cal .law-form-notice.is-error { border-left-color: #b32d2e; background: #fcf0f1; }
 /* The calendar badge is position:absolute for the card grid; in the dashboard
    it sits inline (next to the detail title and in the table's Status cell), so
    neutralise the absolute positioning — otherwise it escapes its cell and all
@@ -188,30 +330,77 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-bubble__badge { text-transform: uppercase; font-size: .7rem; letter-spacing: .04em; background: #1a1a3d; color: #fff; padding: .1rem .45rem; border-radius: 2px; }
 .is-host .law-bubble__badge { background: #e87722; }
 .law-bubble__body p:last-child { margin-bottom: 0; }
-.law-thread-reply label { font-weight: 700; display: block; margin-bottom: .3rem; }
+.law-thread-reply label { font-weight: 600; display: block; margin-bottom: .3rem; }
 .law-thread-reply textarea { width: 100%; }
 .law-thread-reply__note { display: inline-block; margin-left: .6rem; font-size: .85rem; color: #555; font-style: italic; }
 .law-thread-empty { color: #555; font-style: italic; }
+/* The inline AJAX send confirmation/error below the reply button. */
+.law-thread-view .law-thread-reply__status { margin: .8rem 0 0; }
+.law-thread-reply button[disabled] { opacity: .65; cursor: default; }
 
 /* The committee dashboard ------------------------------------------------ */
 .law-dashboard { padding: 1rem 0 3rem; }
 .law-dashboard__title { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
 .law-dashboard__facts { display: grid; grid-template-columns: 180px 1fr; gap: .3rem .8rem; margin: 1.2rem 0; }
 .law-dashboard__facts dt { font-weight: 700; }
-.law-dashboard__facts dd { margin: 0; }
-.law-dashboard__filters { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
-.law-dashboard__chips a { display: inline-block; padding: .3rem .7rem; margin: 0 .3rem .3rem 0; background: #f0f0f5; border-radius: 999px; font-size: .85rem; }
-.law-dashboard__chips a.is-active { background: #1a1a3d; color: #fff; }
-.law-dashboard__search { display: flex; gap: .5rem; align-items: center; }
-.law-dashboard__search input[type="search"] { margin: 0; }
+/* min-width: 0 + overflow-wrap: a grid item's min-width defaults to auto, so
+   one unbreakable value (an email, a fee-tier label) would push the whole
+   value column past the viewport on mobile. */
+.law-dashboard__facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+@media screen and (max-width: 39.9375em) {
+	.law-dashboard__facts { grid-template-columns: 1fr; gap: 0 .8rem; }
+	.law-dashboard__facts dt { margin-top: .5rem; }
+}
+/* The table scrolls sideways inside its wrap on narrow screens rather than
+   squashing its columns or overflowing the page. */
+.law-dashboard__table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .law-dashboard__table { width: 100%; border-collapse: collapse; }
-.law-dashboard__table th, .law-dashboard__table td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid #e3e3ec; vertical-align: top; }
-.law-dashboard__controls { background: #f7f7fb; padding: 1.2rem; border: 1px solid #e3e3ec; position: sticky; top: 1rem; }
-.law-dashboard__controls h2 { font-size: 1.1rem; text-transform: uppercase; }
-.law-dashboard__controls .law-form-field label { font-weight: 600; display: block; margin-bottom: .2rem; }
+.law-dashboard__table th, .law-dashboard__table td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid #e3e3ec; vertical-align: top; white-space: nowrap; }
+.law-dashboard__table td:first-child { white-space: normal; min-width: 220px; }
+/* The reference code sits tight under the title without this. */
+.law-dashboard__table code { display: inline-block; margin-top: .35rem; }
+.law-dashboard__table .button { width: auto; }
+/* Plain buttons (Review, Save changes, Send back) fall back to Foundation's
+   blue hover; match the site-wide orange. Orange buttons keep their navy
+   hover (app.css) and Reject keeps Foundation's red. */
+.law-dashboard .button:not(.orange):not(.alert):hover,
+.law-dashboard .button:not(.orange):not(.alert):focus { background: #ef7d05; border-color: #ef7d05; color: #fff; }
+.law-dashboard__controls { background: #f7f7fb; padding: 1.2rem; border: 1px solid #e3e3ec; }
+/* The panel is a dense control surface rather than a long form, so it runs its
+   own tighter rhythm: roughly half the 1.1rem gap .law-form-field carries on
+   the submission form, and a heading that sits close to the first control. The
+   client's note on the screenshot was that the sections drifted too far apart. */
+.law-dashboard__controls h2 { font-size: 1.1rem; text-transform: uppercase; margin: 0 0 .7rem; }
+.law-dashboard__controls .law-form-field { margin-bottom: .55rem; }
+/* Direct child only, so the bold weight lands on the field label and the group
+   heading but never on the option labels inside a .law-choices group, which
+   keep the normal weight the shared choice rules give them. */
+.law-dashboard__controls .law-form-field > label, .law-dashboard__controls .law-form-label { font-weight: 600; display: block; margin-bottom: .2rem; }
+/* Belt and braces, in its own rule so an unsupported :has() can't take the line
+   above down with it: a label that wraps its own tick is an option rather than a
+   field heading, so it stays normal weight even without a .law-choices group. */
+.law-dashboard__controls .law-form-field > label:has(> input) { font-weight: 400; }
+.law-dashboard__buttons { margin: .9rem 0 .2rem; }
 .law-dashboard__buttons .button { margin: 0 .4rem .5rem 0; }
+/* Mobile: the tight option rhythm leaves the ticks awkward to hit with a thumb,
+   so pad each option row back out without loosening the desktop panel. */
+@media screen and (max-width: 39.9375em) {
+	.law-dashboard__controls .law-choices label { padding: .2rem 0; }
+}
 /* Reject inherits the base button's orange border over its red fill; match it. */
 .law-dashboard .button.alert { border-color: #cc4b37; }
+.law-dashboard__section { margin-top: 1.5rem; }
+.law-dashboard__section h2 { font-size: 1.2rem; }
+.law-dashboard__section h3 { font-size: 1rem; margin: .8rem 0 .3rem; }
+.law-dashboard__people { list-style: none; margin: .5rem 0 0; }
+.law-dashboard__people li { display: flex; gap: .8rem; align-items: flex-start; padding: .5rem 0; border-bottom: 1px solid #eee; }
+.law-dashboard__people--plain li { display: block; }
+.law-dashboard__person-photo { width: 56px; height: 56px; object-fit: cover; border-radius: 50%; flex-shrink: 0; }
+.law-dashboard__person-bio { margin: .3rem 0 0; font-size: .9rem; color: #444; }
+.law-dashboard__sessions { list-style: none; margin: .5rem 0 0; }
+.law-dashboard__sessions li { padding: .5rem 0; border-bottom: 1px solid #eee; }
+.law-dashboard__sessions p { margin: .2rem 0 0; }
+.law-dashboard__session-speakers { font-size: .9rem; color: #444; }
 .law-dashboard__log { margin-top: 1.5rem; }
 .law-dashboard__log .law-log { list-style: none; max-height: 320px; overflow: auto; font-size: .85rem; }
 .law-dashboard__log .law-log li { padding: .3rem 0; border-bottom: 1px solid #eee; }

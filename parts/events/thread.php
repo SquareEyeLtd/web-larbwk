@@ -39,17 +39,8 @@ $law_notice          = sanitize_key( $_GET['law_notice'] ?? '' );
 		<p class="law-thread-empty">No comments yet. This thread is between you and the LAW committee.</p>
 	<?php else : ?>
 		<ol class="law-thread-list">
-			<?php foreach ( $law_thread_comments as $law_comment ) :
-				$law_from_committee = law_event_comment_is_committee( $law_comment );
-				?>
-				<li class="law-bubble <?php echo $law_from_committee ? 'is-committee' : 'is-host'; ?>">
-					<div class="law-bubble__meta">
-						<strong><?php echo esc_html( $law_comment->comment_author ); ?></strong>
-						<span class="law-bubble__badge"><?php echo $law_from_committee ? 'Committee' : 'Host'; ?></span>
-						<time datetime="<?php echo esc_attr( $law_comment->comment_date_gmt ); ?>"><?php echo esc_html( mysql2date( 'j F Y, H:i', $law_comment->comment_date ) ); ?></time>
-					</div>
-					<div class="law-bubble__body"><?php echo wp_kses_post( wpautop( $law_comment->comment_content ) ); ?></div>
-				</li>
+			<?php foreach ( $law_thread_comments as $law_comment ) : ?>
+				<?php get_template_part( 'parts/events/thread-bubble', null, array( 'comment' => $law_comment ) ); ?>
 			<?php endforeach; ?>
 		</ol>
 	<?php endif; ?>

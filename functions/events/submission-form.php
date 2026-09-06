@@ -68,6 +68,63 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		if ( '' === trim( wp_strip_all_tags( $description ) ) ) {
 			$errors->add( 'description', 'Please describe the event.' );
 		}
+		// The required set below mirrors form 2 (Event > submit an event) field
+		// for field, so the custom form refuses exactly what Gravity Forms
+		// refused: 63 Event type, 105 Host organisation(s), 77 Preferred date &
+		// time slots, 103 Venue needed, 21 Venue (conditional), 61/62 the two
+		// sector "please specify" inputs (conditional), and 74 Address.
+		// A locked field is never re-validated: an approved event's host cannot
+		// change it, so a blank one is the committee's to fix, not theirs.
+		if ( ! in_array( 'type', $locked, true ) && '' === trim( (string) ( $input['event_type'] ?? '' ) ) ) {
+			$errors->add( 'event_type', 'Please choose the event type.' );
+		}
+		if ( ! in_array( 'host_organisations', $locked, true ) && '' === trim( (string) ( $input['host_organisations'] ?? '' ) ) ) {
+			$errors->add( 'host_organisations', 'Please give the host organisation(s).' );
+		}
+		if ( ! in_array( 'preferred_slots', $locked, true ) && ! array_filter( (array) ( $input['preferred_slots'] ?? array() ) ) ) {
+			$errors->add( 'preferred_slots', 'Please choose at least one preferred date and time slot.' );
+		}
+		if ( ! in_array( 'sectors', $locked, true ) ) {
+			$sectors = (array) ( $input['sectors'] ?? array() );
+			if ( in_array( 'Jurisdiction-specific', $sectors, true ) && '' === trim( (string) ( $input['sector_jurisdiction'] ?? '' ) ) ) {
+				$errors->add( 'sector_jurisdiction', 'Please specify the jurisdiction.' );
+			}
+			if ( in_array( 'Other / sector-neutral', $sectors, true ) && '' === trim( (string) ( $input['sector_other'] ?? '' ) ) ) {
+				$errors->add( 'sector_other', 'Please specify the other sector.' );
+			}
+		}
+		if ( ! in_array( 'venue_needed', $locked, true ) ) {
+			$venue_needed = (string) ( $input['venue_needed'] ?? '' );
+			if ( '' === $venue_needed ) {
+				$errors->add( 'venue_needed', 'Please tell us whether you need a venue.' );
+			} elseif ( 0 === strpos( $venue_needed, 'No,' ) && '' === trim( (string) ( $input['venue'] ?? '' ) ) ) {
+				$errors->add( 'venue', 'Please give the venue name and/or address.' );
+			}
+		}
+		// Tickets can never exceed the approved venue capacity band. The band
+		// itself is locked after approval (and a disabled <select> posts nothing),
+		// so on an approved event the stored value is the one to check against —
+		// hosts keep editing ticket allocations WITHIN that band.
+		$tickets = trim( (string) ( $input['tickets_available'] ?? '' ) );
+		if ( '' !== $tickets ) {
+			$capacity = in_array( 'venue_capacity', $locked, true ) && $post
+				? (string) law_event_meta( $post->ID, '_law_venue_capacity' )
+				: (string) ( $input['venue_capacity'] ?? '' );
+			$bands = law_events_venue_capacity_bands();
+			$limit = $bands[ $capacity ] ?? null;
+			if ( (int) $tickets < 1 ) {
+				$errors->add( 'tickets_available', 'Tickets available must be at least 1.' );
+			} elseif ( null !== $limit && (int) $tickets > $limit ) {
+				$errors->add(
+					'tickets_available',
+					sprintf(
+						'Tickets available cannot exceed the venue capacity you chose (%1$s allows at most %2$d).',
+						$capacity,
+						$limit
+					)
+				);
+			}
+		}
 		$tier = sanitize_key( $input['fee_tier'] ?? '' );
 		if ( ! in_array( 'fee_tier', $locked, true ) ) {
 			if ( '' === $tier ) {
@@ -79,8 +136,66 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 				if ( '' === trim( (string) ( $input['invoice_name'] ?? '' ) ) ) {
 					$errors->add( 'invoice_name', 'Please give the invoice contact name.' );
 				}
-				if ( '' === trim( (string) ( $input['invoice_country'] ?? '' ) ) ) {
+				// A required Gravity Forms address (field 74) requires street,
+				// city, postcode and country; line 2 and county/state stay optional.
+				if ( '' === trim( (string) ( $input['invoice_line1'] ?? '' ) ) ) {
+					$errors->add( 'invoice_line1', 'Please give the first line of the billing address.' );
+				}
+				if ( '' === trim( (string) ( $input['invoice_city'] ?? '' ) ) ) {
+					$errors->add( 'invoice_city', 'Please give the billing city.' );
+				}
+				if ( '' === trim( (string) ( $input['invoice_postal_code'] ?? '' ) ) ) {
+					$errors->add( 'invoice_postal_code', 'Please give the billing postcode.' );
+				}
+				// Same list as the registration and profile forms, with one exception:
+				// whatever the event already has stored stays acceptable, so a
+				// migrated country spelled differently doesn't trap the host on a
+				// field they never touched.
+				$invoice_country = trim( (string) ( $input['invoice_country'] ?? '' ) );
+				$stored_country  = $post ? (string) ( law_event_meta( $post->ID, '_law_invoice_address' )['country'] ?? '' ) : '';
+				if ( '' === $invoice_country ) {
 					$errors->add( 'invoice_country', 'Please give the billing country.' );
+				} elseif ( $invoice_country !== $stored_country ) {
+					$country_error = law_registration_validate_country( $invoice_country, true );
+					if ( $country_error ) {
+						$errors->add( 'invoice_country', 'Please choose a country from the list.' );
+					}
+				}
+			}
+		}
+		// Repeater rows. The groups themselves are optional (their Gravity Forms
+		// nested-form fields 112, 106, 94 and 115 are not required), but a row
+		// that has been started must be complete, exactly as the nested forms 8
+		// (Event > speaker), 6 (Event > co-owner), 4 (Event > host contact) and
+		// 9 (Event > session) required their own fields.
+		$row_rules = array(
+			'speakers'  => array( 'label' => 'speaker', 'fields' => array( 'name' => 'a name', 'email' => 'an email address', 'organisation' => 'an organisation', 'job_title' => 'a job title' ) ),
+			'co_owners' => array( 'label' => 'additional event owner', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
+			'contacts'  => array( 'label' => 'event contact', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
+			'sessions'  => array( 'label' => 'session', 'fields' => array( 'title' => 'a title', 'start' => 'a start time', 'description' => 'a description' ) ),
+		);
+		foreach ( $row_rules as $group => $rule ) {
+			foreach ( (array) ( $input[ $group ] ?? array() ) as $i => $row ) {
+				$filled = is_array( $row ) ? array_filter( $row, function ( $v ) { return is_scalar( $v ) && '' !== trim( (string) $v ); } ) : array();
+				if ( ! $filled ) {
+					continue; // Untouched row: dropped on save, so nothing to require.
+				}
+				$missing = array();
+				foreach ( $rule['fields'] as $key => $description_of ) {
+					if ( '' === trim( (string) ( $row[ $key ] ?? '' ) ) ) {
+						$missing[] = $description_of;
+					}
+				}
+				if ( $missing ) {
+					$errors->add(
+						$group,
+						sprintf(
+							'Each %s needs %s. Please complete row %d, or clear it.',
+							$rule['label'],
+							law_events_list_words( $missing ),
+							(int) $i + 1
+						)
+					);
 				}
 			}
 		}
@@ -232,6 +347,15 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	return (int) $event_id;
 }
 
+/** "a, b and c" for a validation message listing what a row is missing. */
+function law_events_list_words( array $words ) {
+	if ( count( $words ) < 2 ) {
+		return (string) reset( $words );
+	}
+	$last = array_pop( $words );
+	return implode( ', ', $words ) . ' and ' . $last;
+}
+
 /** Photo upload validation: images only, 5 MB cap. */
 function law_events_validate_photos( array $files ) {
 	$errors  = array();
@@ -376,8 +500,14 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 		law_event_update_meta( $session_id, '_law_start_time', $row['start'] ?? '' );
 		law_event_update_meta( $session_id, '_law_end_time', $row['end'] ?? '' );
 
-		// "Jane Smith, John Doe" → this event's speaker rows by name.
-		$wanted = array_filter( array_map( 'trim', explode( ',', (string) ( $row['speakers'] ?? '' ) ) ) );
+		// The session's chosen speakers, matched to this event's speaker rows by
+		// name. The picker posts an array of names taken from those same rows, so
+		// a match is guaranteed; the comma-separated string is still accepted for
+		// anything saved before the picker replaced the free-text field.
+		$submitted = $row['speakers'] ?? '';
+		$wanted    = is_array( $submitted )
+			? array_filter( array_map( 'trim', array_map( 'strval', $submitted ) ) )
+			: array_filter( array_map( 'trim', explode( ',', (string) $submitted ) ) );
 		$linked = array();
 		foreach ( $wanted as $name ) {
 			foreach ( $event_speakers as $relationship ) {
@@ -573,14 +703,22 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {
-		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), '2.4' );
+		// filemtime, not a hand-bumped string: the version was going stale on
+		// every edit and serving cached CSS.
+		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), filemtime( get_theme_file_path( 'assets/css/event-form.css' ) ) );
 		// Core's zxcvbn-based strength meter powers the WordPress-style
 		// password indicator on the register and profile forms.
 		$deps = array();
 		if ( is_page_template( 'templates/register.php' ) || is_page_template( 'templates/account-profile.php' ) ) {
 			$deps[] = 'password-strength-meter';
 		}
-		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, '1.3', true );
+		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, filemtime( get_theme_file_path( 'assets/js/event-form.js' ) ), true );
+	}
+	// The committee dashboard's confirmation dialogs (parts/layout/modal.php).
+	// The partial enqueues these itself, but by then the head is already out,
+	// so ask for them here and the stylesheet prints with the rest.
+	if ( is_page_template( 'templates/account-dashboard.php' ) ) {
+		law_modal_enqueue();
 	}
 } );
 

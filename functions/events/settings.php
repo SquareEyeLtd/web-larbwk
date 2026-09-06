@@ -31,6 +31,9 @@ function law_events_settings_defaults() {
 		'tax_rate_id'           => '',
 		'rendering_template_id' => '',
 		'host_edit_review'      => 'immediate', // or 'review' (4.2 §4.2 toggle).
+		// Host terms page. Empty = resolve the page by its path (see
+		// law_events_terms_url()); set to a page ID or an absolute URL to override.
+		'terms_page'            => '',
 	);
 }
 
@@ -58,6 +61,57 @@ function law_events_update_settings( array $changes ) {
 	$settings = array_merge( law_events_settings(), $changes );
 	update_option( LAW_EVENTS_SETTINGS_OPTION, $settings, false );
 	return $settings;
+}
+
+/**
+ * The host terms & conditions page the submission form links to.
+ *
+ * Form 2 (Event > submit an event) field 69 (Terms & conditions) linked to the
+ * page at /policies/event-host-terms-conditions/ from its description, so that
+ * page stays the target. The 'terms_page' setting (a page ID or an absolute
+ * URL) overrides it; if neither resolves, the Policies index is the fallback,
+ * which is at least a real page.
+ *
+ * @return string Absolute URL.
+ */
+function law_events_terms_url() {
+	$setting = law_events_setting( 'terms_page', '' );
+	if ( is_numeric( $setting ) && get_post_status( (int) $setting ) ) {
+		return (string) get_permalink( (int) $setting );
+	}
+	if ( is_string( $setting ) && 0 === strpos( $setting, 'http' ) ) {
+		return $setting;
+	}
+	foreach ( array( 'policies/event-host-terms-conditions', 'policies' ) as $path ) {
+		$page = get_page_by_path( $path );
+		if ( $page && 'publish' === $page->post_status ) {
+			return (string) get_permalink( $page );
+		}
+	}
+	return home_url( '/policies/' );
+}
+
+/**
+ * Venue capacity bands (form 2 field 55 Venue capacity), each mapped to the
+ * largest audience it allows. Shared by the host form, the wp-admin event
+ * screen and the ticket-allocation check, so the three cannot drift.
+ *
+ * Every band is inclusive of its number: tickets may equal the band ceiling,
+ * never exceed it. "Under 50" therefore allows 50 — the legacy band list runs
+ * "Under 50" then "51-100", so a strict 49 would leave exactly 50 with no band
+ * that accepts it. "251+" and "TBC" have no ceiling to check against (null).
+ *
+ * @return array<string,int|null> Band label => maximum tickets, or null when uncapped.
+ */
+function law_events_venue_capacity_bands() {
+	return array(
+		'Under 50' => 50,
+		'51-100'   => 100,
+		'101-150'  => 150,
+		'151-250'  => 250,
+		'251+'     => null,
+		'TBC'      => null,
+	);
 }
 
 /**

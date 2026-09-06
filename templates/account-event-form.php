@@ -22,7 +22,10 @@ $law_notice   = sanitize_key( $_GET['law_notice'] ?? '' );
 
 $law_error_message = function ( $field ) use ( $law_errors ) {
 	if ( isset( $law_errors[ $field ][0] ) ) {
-		echo '<p class="law-form-error" role="alert">' . esc_html( $law_errors[ $field ][0] ) . '</p>';
+		// A <span> (not <p>): these render inside p.law-form-field, and a nested
+		// <p> would be auto-closed by the parser, orphaning the message from
+		// its field and breaking the invalid-field highlight.
+		echo '<span class="law-form-error" role="alert">' . esc_html( $law_errors[ $field ][0] ) . '</span>';
 	}
 };
 $law_value = function ( $key, $default = '' ) use ( $law_values ) {
@@ -121,24 +124,26 @@ $law_sections = array(
 
 						<div class="law-row-grid">
 							<p class="law-form-field <?php echo in_array( 'type', $law_locked, true ) ? 'is-locked' : ''; ?>">
-								<label for="law-type">Event type</label>
-								<select id="law-type" name="event_type" <?php echo in_array( 'type', $law_locked, true ) ? 'disabled' : ''; ?>>
+								<label for="law-type">Event type *</label>
+								<select id="law-type" name="event_type" <?php echo in_array( 'type', $law_locked, true ) ? 'disabled' : 'required'; ?>>
 									<option value="">Choose…</option>
 									<?php foreach ( law_events_cpt_field_choices( '63' ) as $law_choice ) : ?>
 										<option value="<?php echo esc_attr( $law_choice ); ?>" <?php selected( $law_value( 'event_type' ), $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
 									<?php endforeach; ?>
 								</select>
+								<?php $law_error_message( 'event_type' ); ?>
 							</p>
 
 							<p class="law-form-field <?php echo in_array( 'host_organisations', $law_locked, true ) ? 'is-locked' : ''; ?>">
-								<label for="law-hosts">Host organisation(s)</label>
-								<input type="text" id="law-hosts" name="host_organisations" value="<?php echo esc_attr( $law_value( 'host_organisations' ) ); ?>" <?php echo in_array( 'host_organisations', $law_locked, true ) ? 'readonly' : ''; ?>>
+								<label for="law-hosts">Host organisation(s) *</label>
+								<input type="text" id="law-hosts" name="host_organisations" value="<?php echo esc_attr( $law_value( 'host_organisations' ) ); ?>" <?php echo in_array( 'host_organisations', $law_locked, true ) ? 'readonly' : 'required'; ?>>
+								<?php $law_error_message( 'host_organisations' ); ?>
 								<?php if ( in_array( 'host_organisations', $law_locked, true ) ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
 							</p>
 						</div>
 
 						<div class="law-form-field <?php echo in_array( 'preferred_slots', $law_locked, true ) ? 'is-locked' : ''; ?>">
-							<span class="law-form-label">Preferred date &amp; time slots</span>
+							<span class="law-form-label">Preferred date &amp; time slots *</span>
 							<?php if ( in_array( 'preferred_slots', $law_locked, true ) ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
 							<div class="law-choices law-choices--cols-3">
 								<?php
@@ -151,11 +156,12 @@ $law_sections = array(
 										<?php echo esc_html( $law_slot['label'] ); ?></label>
 								<?php endforeach; ?>
 							</div>
+							<?php $law_error_message( 'preferred_slots' ); ?>
 						</div>
 
 						<p class="law-form-field">
 							<label for="law-description">Description *</label>
-							<textarea id="law-description" name="description" rows="8"><?php echo esc_textarea( $law_value( 'description' ) ); ?></textarea>
+							<textarea id="law-description" name="description" rows="8" required><?php echo esc_textarea( $law_value( 'description' ) ); ?></textarea>
 							<?php $law_error_message( 'description' ); ?>
 						</p>
 
@@ -186,10 +192,12 @@ $law_sections = array(
 						</div>
 
 						<div class="law-row-grid law-row-grid--three">
-							<p class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>" id="law-sector-j-field" <?php echo $law_show_jur ? '' : 'hidden'; ?>><label for="law-sector-j">Jurisdiction-specific: please specify</label>
-								<input type="text" id="law-sector-j" name="sector_jurisdiction" value="<?php echo esc_attr( $law_value( 'sector_jurisdiction' ) ); ?>" <?php echo in_array( 'sectors', $law_locked, true ) ? 'readonly' : ''; ?>></p>
-							<p class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>" id="law-sector-o-field" <?php echo $law_show_oth ? '' : 'hidden'; ?>><label for="law-sector-o">Other / sector-neutral: please specify</label>
-								<input type="text" id="law-sector-o" name="sector_other" value="<?php echo esc_attr( $law_value( 'sector_other' ) ); ?>" <?php echo in_array( 'sectors', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+							<p class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>" id="law-sector-j-field" <?php echo $law_show_jur ? '' : 'hidden'; ?>><label for="law-sector-j">Jurisdiction-specific: please specify *</label>
+								<input type="text" id="law-sector-j" name="sector_jurisdiction" value="<?php echo esc_attr( $law_value( 'sector_jurisdiction' ) ); ?>" <?php echo in_array( 'sectors', $law_locked, true ) ? 'readonly' : ''; ?>>
+								<?php $law_error_message( 'sector_jurisdiction' ); ?></p>
+							<p class="law-form-field <?php echo in_array( 'sectors', $law_locked, true ) ? 'is-locked' : ''; ?>" id="law-sector-o-field" <?php echo $law_show_oth ? '' : 'hidden'; ?>><label for="law-sector-o">Other / sector-neutral: please specify *</label>
+								<input type="text" id="law-sector-o" name="sector_other" value="<?php echo esc_attr( $law_value( 'sector_other' ) ); ?>" <?php echo in_array( 'sectors', $law_locked, true ) ? 'readonly' : ''; ?>>
+								<?php $law_error_message( 'sector_other' ); ?></p>
 						</div>
 					</fieldset>
 
@@ -211,26 +219,28 @@ $law_sections = array(
 								<div class="law-row" <?php echo $law_is_template ? 'data-law-row-template hidden' : ''; ?>>
 									<button type="button" class="law-row-remove" aria-label="Remove speaker">×</button>
 									<div class="law-row-grid">
-										<label>Name<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][name]" value="<?php echo esc_attr( (string) ( $law_row['name'] ?? '' ) ); ?>"></label>
-										<label>Email<input type="email" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][email]" value="<?php echo esc_attr( (string) ( $law_row['email'] ?? '' ) ); ?>"></label>
-										<label>Organisation / firm / chambers<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][organisation]" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
-										<label>Job title / role<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][job_title]" value="<?php echo esc_attr( (string) ( $law_row['job_title'] ?? '' ) ); ?>"></label>
-										<label>Website profile URL<input type="url" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][website]" value="<?php echo esc_attr( (string) ( $law_row['website'] ?? '' ) ); ?>"></label>
+										<label>Name *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][name]" value="<?php echo esc_attr( (string) ( $law_row['name'] ?? '' ) ); ?>"></label>
+										<label>Email *<input type="email" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][email]" value="<?php echo esc_attr( (string) ( $law_row['email'] ?? '' ) ); ?>"></label>
+										<label>Organisation / firm / chambers *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][organisation]" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
+										<label>Job title / role *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][job_title]" value="<?php echo esc_attr( (string) ( $law_row['job_title'] ?? '' ) ); ?>"></label>
+										<label>Website profile URL<input type="url" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][website]" value="<?php echo esc_attr( (string) ( $law_row['website'] ?? '' ) ); ?>"></label>
 										<label>Photo (JPG/PNG/WebP, 5 MB max)<input type="file" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speaker_photo[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>]" accept=".jpg,.jpeg,.png,.webp"><button type="button" class="law-file-clear" hidden>Clear photo</button></label>
 										<label class="law-row-wide">Biography<textarea rows="3" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][bio]"><?php echo esc_textarea( (string) ( $law_row['bio'] ?? '' ) ); ?></textarea></label>
 									</div>
 								</div>
 							<?php endforeach; ?>
 						</div>
+						<?php $law_error_message( 'speakers' ); ?>
 						<button type="button" class="button law-row-add" data-law-add="speakers">Add a speaker</button>
 					</fieldset>
 
 					<fieldset id="law-section-venue">
 						<legend>Venue</legend>
 						<div class="law-form-field <?php echo in_array( 'venue_needed', $law_locked, true ) ? 'is-locked' : ''; ?>">
-							<span class="law-form-label">Venue needed?</span>
+							<span class="law-form-label">Venue needed? *</span>
 							<label><input type="radio" name="venue_needed" value="Yes, please share our details with venue hosts" <?php checked( $law_value( 'venue_needed' ), 'Yes, please share our details with venue hosts' ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> Yes, please share our details with venue hosts</label>
 							<label><input type="radio" name="venue_needed" value="No, we already have a venue planned" data-law-toggles="law-venue-field" <?php checked( $law_value( 'venue_needed' ), 'No, we already have a venue planned' ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> No, we already have a venue planned</label>
+							<?php $law_error_message( 'venue_needed' ); ?>
 						</div>
 						<?php
 						// Venue (name/address) mirrors form 2 field 21: shown only when the
@@ -238,18 +248,27 @@ $law_sections = array(
 						$law_show_venue = 'No, we already have a venue planned' === (string) $law_value( 'venue_needed' ) || '' !== (string) $law_value( 'venue' );
 						?>
 						<div class="law-row-grid law-row-grid--three">
-							<p class="law-form-field" id="law-venue-field" <?php echo $law_show_venue ? '' : 'hidden'; ?>><label for="law-venue">Venue (name and/or address)</label>
-								<input type="text" id="law-venue" name="venue" value="<?php echo esc_attr( $law_value( 'venue' ) ); ?>"></p>
+							<p class="law-form-field" id="law-venue-field" <?php echo $law_show_venue ? '' : 'hidden'; ?>><label for="law-venue">Venue (name and/or address) *</label>
+								<input type="text" id="law-venue" name="venue" value="<?php echo esc_attr( $law_value( 'venue' ) ); ?>">
+								<?php $law_error_message( 'venue' ); ?></p>
 							<p class="law-form-field <?php echo in_array( 'venue_capacity', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo in_array( 'venue_capacity', $law_locked, true ) ? ' (locked)' : ''; ?></label>
-								<select id="law-capacity" name="venue_capacity" <?php disabled( in_array( 'venue_capacity', $law_locked, true ) ); ?>>
+								<select id="law-capacity" name="venue_capacity" data-law-capacity <?php disabled( in_array( 'venue_capacity', $law_locked, true ) ); ?>>
 									<option value="">Choose…</option>
-									<?php foreach ( array( 'Under 50', '51-100', '101-150', '151-250', '251+', 'TBC' ) as $law_choice ) : ?>
-										<option value="<?php echo esc_attr( $law_choice ); ?>" <?php selected( $law_value( 'venue_capacity' ), $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
+									<?php foreach ( law_events_venue_capacity_bands() as $law_choice => $law_band_max ) : ?>
+										<option value="<?php echo esc_attr( $law_choice ); ?>" data-law-max="<?php echo esc_attr( null === $law_band_max ? '' : (string) $law_band_max ); ?>" <?php selected( $law_value( 'venue_capacity' ), $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
 									<?php endforeach; ?>
 								</select></p>
 							<p class="law-form-field">
 								<label for="law-tickets">Tickets available</label>
-								<input type="number" id="law-tickets" name="tickets_available" min="0" value="<?php echo esc_attr( $law_value( 'tickets_available' ) ); ?>">
+								<?php
+								// max comes from the chosen capacity band and is kept in step by
+								// event-form.js; min is 1, as on form 2 field 54 (Tickets available).
+								$law_capacity_max = law_events_venue_capacity_bands()[ (string) $law_value( 'venue_capacity' ) ] ?? null;
+								?>
+								<input type="number" id="law-tickets" name="tickets_available" min="1"
+									<?php echo null === $law_capacity_max ? '' : 'max="' . esc_attr( (string) $law_capacity_max ) . '"'; ?>
+									data-law-tickets value="<?php echo esc_attr( $law_value( 'tickets_available' ) ); ?>">
+								<?php $law_error_message( 'tickets_available' ); ?>
 							</p>
 						</div>
 					</fieldset>
@@ -262,11 +281,13 @@ $law_sections = array(
 							'group'  => 'co_owners',
 							'label'  => 'Additional event owners',
 							'rows'   => (array) $law_value( 'co_owners', array() ),
+							'error'  => $law_errors['co_owners'][0] ?? '',
 						) );
 						get_template_part( 'parts/events/people-repeater', null, array(
 							'group'  => 'contacts',
 							'label'  => 'Event contacts',
 							'rows'   => (array) $law_value( 'contacts', array() ),
+							'error'  => $law_errors['contacts'][0] ?? '',
 						) );
 						?>
 					</fieldset>
@@ -290,39 +311,76 @@ $law_sections = array(
 						<div class="law-invoice-fields" data-law-invoice <?php echo 'sponsor' === $law_value( 'fee_tier' ) ? 'hidden' : ''; ?>>
 							<div class="law-row-grid">
 								<p class="law-form-field"><label for="law-inv-name">Invoice contact name *</label>
-									<input type="text" id="law-inv-name" name="invoice_name" value="<?php echo esc_attr( $law_value( 'invoice_name' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<input type="text" id="law-inv-name" name="invoice_name" autocomplete="section-invoice billing name" value="<?php echo esc_attr( $law_value( 'invoice_name' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
 									<?php $law_error_message( 'invoice_name' ); ?></p>
 								<p class="law-form-field"><label for="law-inv-email">Invoice contact email *</label>
-									<input type="email" id="law-inv-email" name="invoice_email" value="<?php echo esc_attr( $law_value( 'invoice_email' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<input type="email" id="law-inv-email" name="invoice_email" autocomplete="section-invoice billing email" value="<?php echo esc_attr( $law_value( 'invoice_email' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
 									<?php $law_error_message( 'invoice_email' ); ?></p>
 							</div>
 							<div class="law-row-grid">
-								<p class="law-form-field"><label for="law-inv-line1">Address line 1</label>
-									<input type="text" id="law-inv-line1" name="invoice_line1" value="<?php echo esc_attr( $law_value( 'invoice_line1' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+								<p class="law-form-field"><label for="law-inv-line1">Address line 1 *</label>
+									<input type="text" id="law-inv-line1" name="invoice_line1" autocomplete="section-invoice billing address-line1" value="<?php echo esc_attr( $law_value( 'invoice_line1' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<?php $law_error_message( 'invoice_line1' ); ?></p>
 								<p class="law-form-field"><label for="law-inv-line2">Address line 2</label>
-									<input type="text" id="law-inv-line2" name="invoice_line2" value="<?php echo esc_attr( $law_value( 'invoice_line2' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+									<input type="text" id="law-inv-line2" name="invoice_line2" autocomplete="section-invoice billing address-line2" value="<?php echo esc_attr( $law_value( 'invoice_line2' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
 							</div>
 							<div class="law-row-grid">
-								<p class="law-form-field"><label for="law-inv-city">City</label>
-									<input type="text" id="law-inv-city" name="invoice_city" value="<?php echo esc_attr( $law_value( 'invoice_city' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+								<p class="law-form-field"><label for="law-inv-city">City *</label>
+									<input type="text" id="law-inv-city" name="invoice_city" autocomplete="section-invoice billing address-level2" value="<?php echo esc_attr( $law_value( 'invoice_city' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<?php $law_error_message( 'invoice_city' ); ?></p>
 								<p class="law-form-field"><label for="law-inv-state">County / state</label>
-									<input type="text" id="law-inv-state" name="invoice_state" value="<?php echo esc_attr( $law_value( 'invoice_state' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+									<input type="text" id="law-inv-state" name="invoice_state" autocomplete="section-invoice billing address-level1" value="<?php echo esc_attr( $law_value( 'invoice_state' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
 							</div>
 							<div class="law-row-grid">
-								<p class="law-form-field"><label for="law-inv-postcode">Postcode</label>
-									<input type="text" id="law-inv-postcode" name="invoice_postal_code" value="<?php echo esc_attr( $law_value( 'invoice_postal_code' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+								<p class="law-form-field"><label for="law-inv-postcode">Postcode *</label>
+									<input type="text" id="law-inv-postcode" name="invoice_postal_code" autocomplete="section-invoice billing postal-code" value="<?php echo esc_attr( $law_value( 'invoice_postal_code' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<?php $law_error_message( 'invoice_postal_code' ); ?></p>
 								<p class="law-form-field"><label for="law-inv-country">Country *</label>
-									<input type="text" id="law-inv-country" name="invoice_country" value="<?php echo esc_attr( $law_value( 'invoice_country' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<?php
+									// Same country list as the registration and profile forms
+									// (form 1 field 10 Country of residence). A stored value that
+									// is not on the list is kept as its own option so an older
+									// event cannot lose its country just by being re-saved.
+									$law_inv_country   = (string) $law_value( 'invoice_country' );
+									$law_inv_countries = law_registration_country_choices();
+									if ( $law_inv_countries && '' !== $law_inv_country && ! in_array( $law_inv_country, $law_inv_countries, true ) ) {
+										$law_inv_countries[] = $law_inv_country;
+									}
+									?>
+									<?php if ( $law_inv_countries ) : ?>
+										<select id="law-inv-country" name="invoice_country" autocomplete="section-invoice billing country-name" <?php disabled( in_array( 'invoice', $law_locked, true ) ); ?>>
+											<option value="">Choose…</option>
+											<?php foreach ( $law_inv_countries as $law_inv_choice ) : ?>
+												<option value="<?php echo esc_attr( $law_inv_choice ); ?>" <?php selected( $law_inv_country, $law_inv_choice ); ?>><?php echo esc_html( $law_inv_choice ); ?></option>
+											<?php endforeach; ?>
+										</select>
+									<?php else : ?>
+										<input type="text" id="law-inv-country" name="invoice_country" autocomplete="section-invoice billing country-name" value="<?php echo esc_attr( $law_inv_country ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>>
+									<?php endif; ?>
 									<?php $law_error_message( 'invoice_country' ); ?></p>
 							</div>
 							<p class="law-form-field"><label for="law-inv-vat">VAT number (if applicable)</label>
-								<input type="text" id="law-inv-vat" name="vat_number" value="<?php echo esc_attr( $law_value( 'vat_number' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
+								<input type="text" id="law-inv-vat" name="vat_number" autocomplete="off" value="<?php echo esc_attr( $law_value( 'vat_number' ) ); ?>" <?php echo in_array( 'invoice', $law_locked, true ) ? 'readonly' : ''; ?>></p>
 						</div>
 					</fieldset>
 
 					<fieldset id="law-section-agenda">
 						<legend>Session agenda (optional)</legend>
-						<p class="law-form-hint">For content-heavy events, break the running order into sessions. List each session's speakers by name, separated by commas; they must also appear in the Speakers section above.</p>
+						<p class="law-form-hint">For content-heavy events, break the running order into sessions, then tick which of the event's speakers appear in each one. The list follows the Speakers section above.</p>
+						<?php
+						// The speaker names this event currently has, from the same values
+						// the Speakers repeater renders. Sessions choose from THIS list
+						// (form 9 field 6 Speakers was a multiselect populated from the
+						// form 8 entries, never free text), and event-form.js keeps the
+						// list in step as speaker rows are typed, added or removed.
+						$law_session_speaker_names = array();
+						foreach ( (array) $law_value( 'speakers', array() ) as $law_sp_row ) {
+							$law_sp_name = trim( (string) ( $law_sp_row['name'] ?? '' ) );
+							if ( '' !== $law_sp_name && ! in_array( $law_sp_name, $law_session_speaker_names, true ) ) {
+								$law_session_speaker_names[] = $law_sp_name;
+							}
+						}
+						?>
 						<div class="law-rows" data-law-rows-group="sessions">
 							<?php
 							$law_session_rows   = (array) $law_value( 'sessions', array() );
@@ -333,31 +391,65 @@ $law_sections = array(
 								<div class="law-row" <?php echo $law_is_template ? 'data-law-row-template hidden' : ''; ?>>
 									<button type="button" class="law-row-remove" aria-label="Remove session">×</button>
 									<div class="law-row-grid">
-										<label class="law-row-wide">Session title<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][title]" value="<?php echo esc_attr( (string) ( $law_row['title'] ?? '' ) ); ?>"></label>
-										<label>Start time<input type="time" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][start]" value="<?php echo esc_attr( (string) ( $law_row['start'] ?? '' ) ); ?>"></label>
+										<label class="law-row-wide">Session title *<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][title]" value="<?php echo esc_attr( (string) ( $law_row['title'] ?? '' ) ); ?>"></label>
+										<label>Start time *<input type="time" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][start]" value="<?php echo esc_attr( (string) ( $law_row['start'] ?? '' ) ); ?>"></label>
 										<label>End time<input type="time" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][end]" value="<?php echo esc_attr( (string) ( $law_row['end'] ?? '' ) ); ?>"></label>
-										<label class="law-row-wide">Description<textarea rows="3" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][description]"><?php echo esc_textarea( (string) ( $law_row['description'] ?? '' ) ); ?></textarea></label>
-										<label class="law-row-wide">Speakers (names, comma separated)<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][speakers]" value="<?php echo esc_attr( (string) ( $law_row['speakers'] ?? '' ) ); ?>"></label>
+										<label class="law-row-wide">Description *<textarea rows="3" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][description]"><?php echo esc_textarea( (string) ( $law_row['description'] ?? '' ) ); ?></textarea></label>
+										<?php
+										// Stored as a comma-separated string (that is what the
+										// session row exposes), so split it back into names.
+										$law_row_speakers = array_filter( array_map( 'trim', explode( ',', (string) ( $law_row['speakers'] ?? '' ) ) ) );
+										?>
+										<div class="law-row-wide law-session-speakers" data-law-session-speakers>
+											<span class="law-form-label">Speakers</span>
+											<div class="law-choices" data-law-session-speaker-list>
+												<?php foreach ( $law_session_speaker_names as $law_sp_name ) : ?>
+													<label><input type="checkbox"
+														<?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][speakers][]"
+														value="<?php echo esc_attr( $law_sp_name ); ?>"
+														<?php checked( in_array( $law_sp_name, $law_row_speakers, true ) ); ?>>
+														<?php echo esc_html( $law_sp_name ); ?></label>
+												<?php endforeach; ?>
+											</div>
+											<p class="law-form-hint" data-law-session-speakers-empty <?php echo $law_session_speaker_names ? 'hidden' : ''; ?>>Add speakers in the Speakers section above and they will appear here.</p>
+										</div>
 									</div>
 								</div>
 							<?php endforeach; ?>
 						</div>
+						<?php $law_error_message( 'sessions' ); ?>
 						<button type="button" class="button law-row-add" data-law-add="sessions">Add a session</button>
 					</fieldset>
 
 					<fieldset id="law-section-finish">
 						<legend>Finish</legend>
+						<?php
+						// The consent is captured once, at submission: form 2 field 69
+						// (Terms & conditions) was not in the host edit view (view 386,
+						// "Events (hosts)"), so an approved event's host never re-agreed.
+						// On edit we show what was recorded instead of an empty section.
+						$law_consent = $law_post ? law_event_meta( $law_post->ID, '_law_terms_consent' ) : array();
+						?>
 						<?php if ( ! $law_post || 'law-draft' === $law_post->post_status ) : ?>
 							<p class="law-form-field law-terms">
 								<label><input type="checkbox" name="terms" value="1" <?php checked( (bool) $law_value( 'terms' ) ); ?>>
-									I accept the <a href="<?php echo esc_url( home_url( '/terms-conditions/' ) ); ?>" target="_blank" rel="noopener">terms &amp; conditions</a> *</label>
+									I accept the <a href="<?php echo esc_url( law_events_terms_url() ); ?>" target="_blank" rel="noopener">terms &amp; conditions for event hosts</a> *</label>
 								<?php $law_error_message( 'terms' ); ?>
+							</p>
+						<?php elseif ( ! empty( $law_consent['accepted'] ) ) : ?>
+							<p class="law-form-status">
+								You accepted the
+								<a href="<?php echo esc_url( law_events_terms_url() ); ?>" target="_blank" rel="noopener">terms &amp; conditions for event hosts</a>
+								<?php if ( ! empty( $law_consent['at'] ) ) : ?>
+									on <strong><?php echo esc_html( date_i18n( get_option( 'date_format' ), strtotime( (string) $law_consent['at'] ) ) ); ?></strong>
+								<?php endif; ?>
+								when this event was submitted.
 							</p>
 						<?php endif; ?>
 
 						<p class="law-form-buttons">
 							<?php if ( ! $law_post || in_array( $law_post->post_status, array( 'law-draft' ), true ) ) : ?>
-								<button type="submit" name="law_form_action" value="draft" class="button">Save draft</button>
+								<button type="submit" name="law_form_action" value="draft" class="button" formnovalidate>Save draft</button>
 								<button type="submit" name="law_form_action" value="submit" class="button orange">Submit event</button>
 							<?php elseif ( 'law-sent-back' === $law_post->post_status ) : ?>
 								<button type="submit" name="law_form_action" value="submit" class="button orange">Save &amp; resubmit to the committee</button>

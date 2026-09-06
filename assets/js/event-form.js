@@ -30,16 +30,80 @@
 			row.querySelectorAll('[data-name]').forEach(function (field) {
 				field.name = field.getAttribute('data-name').replace('__i__', String(index));
 				field.removeAttribute('data-name');
-				if (field.tagName === 'TEXTAREA') { field.value = ''; } else if (field.type !== 'file') { field.value = ''; }
+				if (field.type === 'checkbox' || field.type === 'radio') {
+					field.checked = false; // Its value is the choice itself; only the state resets.
+				} else if (field.type !== 'file') {
+					field.value = '';
+				}
 			});
 			wrap.insertBefore(row, template);
+			syncSessionSpeakers();
 			var first = row.querySelector('input, textarea');
 			if (first) { first.focus(); }
 		});
 	});
 
+	/* Session speakers: each session picks from the event's own speaker rows,
+	   the way form 9 field 6 (Speakers) was a multiselect populated from the
+	   form 8 (Event > speaker) entries. Free text was the wrong shape for it:
+	   a name that didn't match a speaker exactly was silently dropped on save.
+	   The list is rebuilt from the Speakers section whenever it changes, with
+	   ticked names preserved so editing a speaker doesn't lose the session. */
+	function speakerNames() {
+		var names = [];
+		document.querySelectorAll('[data-law-rows-group="speakers"] .law-row:not([data-law-row-template]) input[name$="[name]"]').forEach(function (input) {
+			var name = input.value.trim();
+			if (name && names.indexOf(name) === -1) { names.push(name); }
+		});
+		return names;
+	}
+
+	function syncSessionSpeakers() {
+		var names = speakerNames();
+		document.querySelectorAll('[data-law-session-speakers]').forEach(function (wrap) {
+			var list = wrap.querySelector('[data-law-session-speaker-list]');
+			var empty = wrap.querySelector('[data-law-session-speakers-empty]');
+			if (!list) { return; }
+			// Whether this row is still the hidden template decides name vs data-name,
+			// so a cloned row keeps posting and the template keeps not posting.
+			var isTemplate = !!wrap.closest('[data-law-row-template]');
+			var existing = list.querySelector('input[type="checkbox"]');
+			var fieldName = existing ? (existing.getAttribute('name') || existing.getAttribute('data-name')) : null;
+			if (!fieldName) {
+				var row = wrap.closest('.law-row');
+				var sibling = row ? row.querySelector('[name^="sessions["], [data-name^="sessions["]') : null;
+				var source = sibling ? (sibling.getAttribute('name') || sibling.getAttribute('data-name')) : null;
+				if (!source) { return; }
+				fieldName = source.replace(/\[[a-z_]+\]$/, '[speakers][]');
+			}
+			var checked = {};
+			list.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
+				if (box.checked) { checked[box.value] = true; }
+			});
+			list.textContent = '';
+			names.forEach(function (name) {
+				var label = document.createElement('label');
+				var box = document.createElement('input');
+				box.type = 'checkbox';
+				box.setAttribute(isTemplate ? 'data-name' : 'name', fieldName);
+				box.value = name;
+				box.checked = !!checked[name];
+				label.appendChild(box);
+				label.appendChild(document.createTextNode(' ' + name));
+				list.appendChild(label);
+			});
+			if (empty) { empty.hidden = names.length > 0; }
+		});
+	}
+
+	document.addEventListener('input', function (event) {
+		if (event.target.name && /^speakers\[\d+\]\[name\]$/.test(event.target.name)) { syncSessionSpeakers(); }
+	});
+	syncSessionSpeakers();
+
 	document.addEventListener('click', function (event) {
 		if (event.target.classList && event.target.classList.contains('law-row-remove')) {
+			setTimeout(syncSessionSpeakers, 0);
 			event.target.closest('.law-row').remove();
 		}
 	});
@@ -75,6 +139,20 @@
 				if (sib !== box) { sib.addEventListener('change', sync); }
 			});
 		}
+	});
+
+	/* The same idea from the other end: an element carrying data-law-toggle-for
+	   names the checkbox that reveals it (the committee dashboard's override
+	   amount). The wrapper's initial hidden state is rendered server-side, so
+	   this only has to keep it in step from here on. The value is deliberately
+	   never cleared: the field must keep posting even while hidden, because the
+	   committee handler keys off isset( $_POST['law_fee_override_amount'] ). */
+	document.querySelectorAll('[data-law-toggle-for]').forEach(function (target) {
+		var box = document.getElementById(target.getAttribute('data-law-toggle-for'));
+		if (!box) { return; }
+		var sync = function () { target.hidden = !box.checked; };
+		box.addEventListener('change', sync);
+		sync();
 	});
 
 	/* Photo upload: reveal a Clear button once a file is chosen, and reset the
@@ -128,6 +206,43 @@
 		if (confirmField) { confirmField.addEventListener('input', update); }
 	}
 
+	/* Tickets available can never exceed the chosen venue capacity band: keep the
+	   number field's max in step with the select, and trim a value that no longer
+	   fits so the host sees the ceiling before they submit. The server checks the
+	   same rule (a locked band is read from the saved event, not this select). */
+	(function () {
+		var capacity = document.querySelector('[data-law-capacity]');
+		var tickets = document.querySelector('[data-law-tickets]');
+		if (!capacity || !tickets) { return; }
+		capacity.addEventListener('change', function () {
+			var option = capacity.options[capacity.selectedIndex];
+			var max = option ? option.getAttribute('data-law-max') : '';
+			if (max) {
+				tickets.max = max;
+				if (tickets.value && parseInt(tickets.value, 10) > parseInt(max, 10)) {
+					tickets.value = max;
+				}
+			} else {
+				tickets.removeAttribute('max');
+			}
+		});
+	})();
+
+	/* Invalid fields: the red border comes off as soon as the host touches the
+	   control, so a field they are already fixing stops being flagged. The
+	   message itself stays until the form is submitted again, so they can still
+	   read what was wrong while they type. Delegated, so it also covers fields
+	   inside repeater rows added after load. */
+	['input', 'change'].forEach(function (type) {
+		document.addEventListener(type, function (event) {
+			var field = event.target.closest ? event.target.closest('.law-form-field') : null;
+			if (!field || field.classList.contains('is-touched')) { return; }
+			if (field.classList.contains('is-invalid') || field.querySelector('.law-form-error')) {
+				field.classList.add('is-touched');
+			}
+		}, true);
+	});
+
 	/* Section nav: smooth scroll + highlight. */
 	document.querySelectorAll('.law-form-nav a').forEach(function (link) {
 		link.addEventListener('click', function (event) {
@@ -136,6 +251,88 @@
 				event.preventDefault();
 				target.scrollIntoView({ behavior: 'smooth', block: 'start' });
 			}
+		});
+	});
+
+	/* Thread reply without a reload: post via fetch (law_ajax=1 makes the
+	   handler answer JSON), append the returned bubble to the thread and
+	   confirm or report the error inline below the button. If fetch is
+	   unavailable or the script fails, the form still posts the classic
+	   redirect-with-notice way. */
+	document.querySelectorAll('.law-thread-reply').forEach(function (form) {
+		var button = form.querySelector('button[type="submit"]');
+		var textarea = form.querySelector('textarea[name="comment"]');
+		if (!button || !textarea || !window.fetch) { return; }
+
+		var view = form.closest('.law-thread-view');
+		var status = document.createElement('div');
+		status.className = 'law-form-notice law-thread-reply__status';
+		status.hidden = true;
+		form.appendChild(status);
+
+		function notice(text, isError) {
+			status.textContent = text;
+			status.classList.toggle('is-error', !!isError);
+			status.setAttribute('role', isError ? 'alert' : 'status');
+			status.hidden = false;
+		}
+
+		form.addEventListener('submit', function (event) {
+			event.preventDefault();
+			if (!textarea.value.trim()) {
+				notice('Please enter your message.', true);
+				return;
+			}
+
+			var data = new FormData(form);
+			data.append('law_ajax', '1');
+			var label = button.textContent;
+			button.disabled = true;
+			button.textContent = 'Sending…';
+			status.hidden = true;
+
+			// getAttribute, not form.action: the hidden name="action" input every
+			// admin-post form carries shadows the property and returns the element.
+			fetch(form.getAttribute('action'), { method: 'POST', body: data, credentials: 'same-origin' })
+				.then(function (response) { return response.json(); })
+				.then(function (response) {
+					var payload = response.data || {};
+					if (!response.success) {
+						notice(payload.message || 'Sorry, your message could not be sent. Please try again.', true);
+						button.textContent = label;
+						return;
+					}
+					if (payload.bubble && view) {
+						var list = view.querySelector('.law-thread-list');
+						if (!list) {
+							// First message: swap the empty-state sentence for the list.
+							list = document.createElement('ol');
+							list.className = 'law-thread-list';
+							var empty = view.querySelector('.law-thread-empty');
+							if (empty) { empty.replaceWith(list); } else { form.before(list); }
+						}
+						list.insertAdjacentHTML('beforeend', payload.bubble);
+					}
+					textarea.value = '';
+					notice(payload.message || 'Comment sent.', false);
+					if (payload.status && view) {
+						var strong = view.querySelector('.law-thread-view__header strong');
+						if (strong) { strong.textContent = payload.status; }
+					}
+					button.textContent = payload.button_label || label;
+					if (payload.button_label && payload.button_label !== label) {
+						// A resubmit just happened: the explanatory note no longer applies.
+						var note = form.querySelector('.law-thread-reply__note');
+						if (note) { note.remove(); }
+					}
+				})
+				.catch(function () {
+					notice('Sorry, your message could not be sent. Please reload the page and try again.', true);
+					button.textContent = label;
+				})
+				.then(function () {
+					button.disabled = false;
+				});
 		});
 	});
 })();

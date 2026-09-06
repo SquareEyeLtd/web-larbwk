@@ -88,11 +88,28 @@ function law_event_comment_is_committee( $comment ) {
 
 add_action( 'admin_post_law_event_comment_reply', 'law_event_handle_comment_reply' );
 add_action( 'admin_post_nopriv_law_event_comment_reply', function () {
+	// An AJAX post from a page whose user has since logged out lands here;
+	// a redirect would be unparseable to the script, so answer JSON.
+	if ( ! empty( $_POST['law_ajax'] ) ) {
+		wp_send_json_error( array( 'message' => 'You have been signed out. Please reload the page and sign in again.' ), 401 );
+	}
 	wp_safe_redirect( wp_login_url() );
 	exit;
 } );
 
 function law_event_handle_comment_reply() {
+	// The front-end form posts via fetch with law_ajax=1 and gets JSON back;
+	// without the flag (script failed, or another caller) the redirect-with-
+	// notice flow below still works unchanged.
+	$is_ajax = ! empty( $_POST['law_ajax'] );
+
+	// An AJAX caller must get JSON even on a bad nonce — check_admin_referer
+	// would die with an HTML page the script cannot parse. A stale nonce here
+	// usually means the session changed under the page (logged out, or
+	// switched user in another tab), so "reload" is the honest advice.
+	if ( $is_ajax && ! wp_verify_nonce( (string) ( $_POST['_wpnonce'] ?? '' ), 'law_event_comment_reply' ) ) {
+		wp_send_json_error( array( 'message' => 'Your session has changed since this page was opened. Please reload the page and try again.' ), 403 );
+	}
 	check_admin_referer( 'law_event_comment_reply' );
 
 	$event_id = absint( $_POST['event_id'] ?? 0 );
@@ -100,19 +117,32 @@ function law_event_handle_comment_reply() {
 	$user_id  = get_current_user_id();
 
 	if ( ! law_user_can_manage_event( $user_id, $event_id ) ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Sorry, you are not allowed to comment on this event.' ), 403 );
+		}
 		wp_die( 'Sorry, you are not allowed to comment on this event.' );
 	}
 	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
-		law_events_redirect_back( array( 'law_notice' => 'comment-added' ) ); // Honeypot: pretend success.
+		// Honeypot: pretend success (no bubble — nothing was saved).
+		if ( $is_ajax ) {
+			wp_send_json_success( array( 'message' => 'Comment sent.' ) );
+		}
+		law_events_redirect_back( array( 'law_notice' => 'comment-added' ) );
 	}
 	if ( '' === $text ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Please enter your message.' ) );
+		}
 		law_events_redirect_back( array( 'law_notice' => 'comment-empty' ) );
 	}
 	if ( ! law_events_rate_limit_ok( 'comment', $user_id ) ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Too many comments in a short time; please wait a moment.' ), 429 );
+		}
 		law_events_redirect_back( array( 'law_notice' => 'rate-limited' ) );
 	}
 
-	law_event_add_comment( $event_id, $text, $user_id );
+	$comment_id = law_event_add_comment( $event_id, $text, $user_id );
 
 	$is_committee = law_user_is_committee( $user_id );
 	$post         = get_post( $event_id );
@@ -124,6 +154,25 @@ function law_event_handle_comment_reply() {
 		law_events_send( 'user_new_comment', $event_id );
 	} else {
 		law_events_send( 'committee_new_comment', $event_id );
+	}
+
+	if ( $is_ajax ) {
+		// Re-read: the resubmit transition above may have changed the status.
+		$status = law_event_status_label( get_post( $event_id ) );
+		ob_start();
+		get_template_part( 'parts/events/thread-bubble', null, array( 'comment' => get_comment( $comment_id ) ) );
+		wp_send_json_success(
+			array(
+				'message'      => 'Comment sent.',
+				'bubble'       => ob_get_clean(),
+				'status'       => $status,
+				// Mirrors the template's button logic so the label stays right
+				// after a resubmit flips Sent back → Proposed.
+				'button_label' => ( ! $is_committee && 'Sent back' === $status )
+					? 'Reply & resubmit to the committee'
+					: 'Send reply',
+			)
+		);
 	}
 
 	law_events_redirect_back( array( 'law_notice' => 'comment-added' ) );

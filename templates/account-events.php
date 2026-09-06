@@ -72,10 +72,12 @@ get_header();
 							echo '<div class="law-form-notice" role="status">' . esc_html( $law_notice_text[ $law_notice ] ) . '</div>';
 						}
 						$law_is_committee = function_exists( 'law_user_is_committee' ) && law_user_is_committee();
-						if ( $law_submit_url || $law_is_committee ) :
+						// With no events to list, the submit call to action lives in the empty-state sentence instead.
+						$law_show_submit_button = $law_submit_url && $law_items;
+						if ( $law_show_submit_button || $law_is_committee ) :
 						?>
 							<div class="law-account-events__toolbar">
-								<?php if ( $law_submit_url ) : ?>
+								<?php if ( $law_show_submit_button ) : ?>
 									<a class="button orange" href="<?php echo esc_url( $law_submit_url ); ?>"><?php esc_html_e( 'Submit an event', 'law' ); ?></a>
 								<?php endif; ?>
 								<?php if ( $law_is_committee ) : ?>
@@ -86,7 +88,19 @@ get_header();
 
 						<?php if ( ! $law_items ) : ?>
 
-							<p class="law-cal__empty"><?php esc_html_e( 'You have not submitted any events yet.', 'law' ); ?></p>
+							<p class="law-cal__empty">
+								<?php
+								if ( $law_submit_url ) {
+									printf(
+										/* translators: %s: link to the submit an event form. */
+										esc_html__( 'You have not submitted any events yet. %s', 'law' ),
+										'<a href="' . esc_url( $law_submit_url ) . '">' . esc_html__( 'Submit an event', 'law' ) . '</a>'
+									);
+								} else {
+									esc_html_e( 'You have not submitted any events yet.', 'law' );
+								}
+								?>
+							</p>
 
 						<?php else : ?>
 

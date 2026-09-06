@@ -8,6 +8,7 @@
 $law_group = (string) ( $args['group'] ?? '' );
 $law_label = (string) ( $args['label'] ?? '' );
 $law_rows  = (array) ( $args['rows'] ?? array() );
+$law_error = (string) ( $args['error'] ?? '' );
 if ( '' === $law_group ) {
 	return;
 }
@@ -24,12 +25,15 @@ $law_rows[] = array(); // Blank template row.
 			<div class="law-row" <?php echo $law_is_template ? 'data-law-row-template hidden' : ''; ?>>
 				<button type="button" class="law-row-remove" aria-label="Remove row">×</button>
 				<div class="law-row-grid law-row-grid--three">
-					<label>Name<input type="text" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][name]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row['name'] ?? '' ) ); ?>"></label>
-					<label>Organisation<input type="text" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][organisation]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
-					<label>Email<input type="email" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][email]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row['email'] ?? '' ) ); ?>"></label>
+					<label>Name *<input type="text" autocomplete="off" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][name]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row['name'] ?? '' ) ); ?>"></label>
+					<label>Organisation *<input type="text" autocomplete="off" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][organisation]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
+					<label>Email *<input type="email" autocomplete="off" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][email]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row['email'] ?? '' ) ); ?>"></label>
 				</div>
 			</div>
 		<?php endforeach; ?>
 	</div>
+	<?php if ( '' !== $law_error ) : ?>
+		<span class="law-form-error" role="alert"><?php echo esc_html( $law_error ); ?></span>
+	<?php endif; ?>
 	<button type="button" class="button law-row-add" data-law-add="<?php echo esc_attr( $law_group ); ?>">Add row</button>
 </div>
