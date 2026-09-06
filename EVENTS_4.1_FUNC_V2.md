@@ -354,7 +354,11 @@ screens, columns, emails) → migration (report, runner, page).
   and `law_events_test_mode_duration_label()` /
   `law_events_test_mode_expiry_label()` are the single source for the "2 hours"
   and "today at 14:30" wording in the card, the save notice and the standing
-  admin notice); `law_events_test_mode_admin_notice()` puts a
+  admin notice). A **"keep on until I switch it off" checkbox** on the card
+  (`no_expiry` in the stored setting) deliberately disables that auto-expiry,
+  for a testing environment that should sit in test mode for days — the other
+  two guards still apply, so what remains is a human one.
+  `law_events_test_mode_admin_notice()` puts a
   standing warning on **every** admin screen while it is on; and
   `law_events_is_production()` (`wp_get_environment_type()`, filterable) makes
   enabling it on the live site require a second confirmation tick. Set

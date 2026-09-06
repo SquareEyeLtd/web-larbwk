@@ -196,7 +196,7 @@ function law_events_emails_test_mode_card() {
 					<strong>Enable test mode</strong>
 				</label>
 				<?php if ( $active ) : ?>
-					<span class="law-badge law-badge--warning">On until <?php echo esc_html( law_events_test_mode_expiry_label( $settings['expires_at'] ) ); ?>: all email goes to <?php echo esc_html( $settings['email'] ); ?></span>
+					<span class="law-badge law-badge--warning">On until <?php echo esc_html( $settings['no_expiry'] ? 'switched off' : law_events_test_mode_expiry_label( $settings['expires_at'] ) ); ?>: all email goes to <?php echo esc_html( $settings['email'] ); ?></span>
 				<?php endif; ?>
 			</p>
 			<div class="law-test-mode__fields" <?php echo $settings['enabled'] ? '' : 'hidden'; ?> data-law-test-fields>
@@ -207,6 +207,13 @@ function law_events_emails_test_mode_card() {
 				</p>
 				<p class="description">
 					While test mode is on, <strong>every</strong> email this site sends (events notifications, account and password emails, and the contact form) is delivered to this address instead of its real recipients. Subjects are prefixed <code>[TEST MODE]</code> and the intended recipients are listed at the top of the message. It switches itself off automatically after <?php echo esc_html( law_events_test_mode_duration_label() ); ?>, and a warning appears on every admin screen while it is on. Saving this card again restarts the <?php echo esc_html( law_events_test_mode_duration_label() ); ?> if you need longer.
+				</p>
+				<p class="law-test-mode__no-expiry">
+					<label>
+						<input type="checkbox" name="test_mode_no_expiry" value="1" <?php checked( $settings['no_expiry'] ); ?>>
+						Keep test mode on until I switch it off (disable the <?php echo esc_html( law_events_test_mode_duration_label() ); ?> auto-expiry)
+					</label><br>
+					<span class="description">For a testing environment that should stay in test mode for days. Remember: password resets for <strong>every</strong> account keep landing at the address above the whole time, so leave this unticked for a live-site rehearsal.</span>
 				</p>
 				<?php if ( law_events_is_production() ) : ?>
 					<p class="law-test-mode__confirm">
@@ -254,9 +261,10 @@ function law_events_emails_handle_test_mode_post() {
 			return;
 		}
 
+		$no_expiry = ! empty( $_POST['test_mode_no_expiry'] );
 		update_option(
 			LAW_EVENTS_TEST_MODE_OPTION,
-			array( 'enabled' => true, 'email' => sanitize_email( $email ), 'enabled_at' => time() ),
+			array( 'enabled' => true, 'email' => sanitize_email( $email ), 'enabled_at' => time(), 'no_expiry' => $no_expiry ),
 			false
 		);
 		$settings = law_events_test_mode();
@@ -264,9 +272,11 @@ function law_events_emails_handle_test_mode_post() {
 			array(
 				'type' => 'warning',
 				'text' => sprintf(
-					'Test mode is ON. Every email the site sends now goes to %s, and it switches itself off %s. %s',
+					'Test mode is ON. Every email the site sends now goes to %s, and it %s. %s',
 					sanitize_email( $email ),
-					law_events_test_mode_expiry_label( $settings['expires_at'] ),
+					$no_expiry
+						? 'stays on until you switch it off (auto-expiry disabled)'
+						: 'switches itself off ' . law_events_test_mode_expiry_label( $settings['expires_at'] ),
 					$check['message']
 				),
 			)

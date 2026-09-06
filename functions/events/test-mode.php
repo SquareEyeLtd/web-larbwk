@@ -33,7 +33,13 @@ const LAW_EVENTS_TEST_MODE_MAX_HOURS = 2;
 /**
  * Stored test-mode settings.
  *
- * @return array{enabled:bool,email:string,enabled_at:int,expires_at:int,expired:bool}
+ * `no_expiry` is the deliberate opt-out of the auto-off window (for a staging
+ * environment that should stay in test mode for days): expires_at becomes 0
+ * and the mode runs until someone switches it off. The standing admin notice
+ * on every screen still shows, and enabling on production still requires the
+ * confirmation tick, so the guard that remains is a human one.
+ *
+ * @return array{enabled:bool,email:string,enabled_at:int,expires_at:int,expired:bool,no_expiry:bool}
  */
 function law_events_test_mode() {
 	$saved = get_option( LAW_EVENTS_TEST_MODE_OPTION, array() );
@@ -42,11 +48,12 @@ function law_events_test_mode() {
 	}
 
 	$enabled    = ! empty( $saved['enabled'] );
+	$no_expiry  = ! empty( $saved['no_expiry'] );
 	$enabled_at = (int) ( $saved['enabled_at'] ?? 0 );
 	// A row saved before the expiry existed has no timestamp: treat it as
 	// starting now rather than as instantly expired, so an upgrade mid-rehearsal
 	// does not silently change behaviour.
-	$expires_at = $enabled ? ( $enabled_at ?: time() ) + LAW_EVENTS_TEST_MODE_MAX_HOURS * HOUR_IN_SECONDS : 0;
+	$expires_at = ( $enabled && ! $no_expiry ) ? ( $enabled_at ?: time() ) + LAW_EVENTS_TEST_MODE_MAX_HOURS * HOUR_IN_SECONDS : 0;
 
 	return array(
 		'enabled'    => $enabled,
@@ -54,6 +61,7 @@ function law_events_test_mode() {
 		'enabled_at' => $enabled_at,
 		'expires_at' => $expires_at,
 		'expired'    => $enabled && $expires_at > 0 && time() > $expires_at,
+		'no_expiry'  => $no_expiry,
 	);
 }
 
@@ -153,9 +161,13 @@ function law_events_test_mode_admin_notice() {
 	}
 	$settings = law_events_test_mode();
 	printf(
-		'<div class="notice notice-warning"><p><strong>Email test mode is ON.</strong> Every email this site sends, including password resets and new-account notifications, is being delivered to <code>%1$s</code> instead of its real recipients. It switches itself off %2$s. <a href="%3$s">Turn it off now</a>.</p></div>',
+		'<div class="notice notice-warning"><p><strong>Email test mode is ON.</strong> Every email this site sends, including password resets and new-account notifications, is being delivered to <code>%1$s</code> instead of its real recipients. %2$s <a href="%3$s">Turn it off now</a>.</p></div>',
 		esc_html( $settings['email'] ),
-		esc_html( law_events_test_mode_expiry_label( $settings['expires_at'] ) ),
+		esc_html(
+			$settings['no_expiry']
+				? 'It stays on until someone switches it off (the auto-expiry is disabled).'
+				: 'It switches itself off ' . law_events_test_mode_expiry_label( $settings['expires_at'] ) . '.'
+		),
 		esc_url( add_query_arg( array( 'page' => 'law-events-emails' ), admin_url( 'admin.php' ) ) )
 	);
 }
