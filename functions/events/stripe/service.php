@@ -186,13 +186,6 @@ function law_stripe_invoice_steps( $event_id, WP_Post $post, $fee ) {
 }
 
 /**
- * Upsert the Stripe customer: stored ID first, then exact email search,
- * else create. Names are mapped properly (fixing the live empty-name defect):
- * name = invoice contact, business_name = host organisation(s).
- *
- * @return array|WP_Error Customer object.
- */
-/**
  * The metadata block attached to both the Stripe customer and invoice, so the
  * two objects always carry the same identifiers back to us on webhooks.
  *
@@ -209,22 +202,25 @@ function law_stripe_event_metadata( $event_id ) {
 	);
 }
 
-function law_stripe_upsert_customer( $event_id, WP_Post $post ) {
-	// Lowercased: Stripe's ?email= filter is an exact, case-sensitive match,
-	// and a casing mismatch would create a duplicate customer.
-	$email = mb_strtolower( (string) law_event_meta( $event_id, '_law_invoice_email' ) );
-	if ( ! is_email( $email ) ) {
-		return new WP_Error( 'law_no_invoice_email', 'The event has no valid invoice contact email.' );
-	}
-
+/**
+ * The customer payload for an event. Names are mapped properly (fixing the
+ * live empty-name defect): name = invoice contact, business_name = host
+ * organisation(s).
+ *
+ * @param int $event_id law_event post ID.
+ * @return array
+ */
+function law_stripe_customer_body( $event_id ) {
 	$address = law_event_meta( $event_id, '_law_invoice_address' );
 	$iso     = (string) law_event_meta( $event_id, '_law_country_iso' );
 	$name    = (string) law_event_meta( $event_id, '_law_invoice_name' );
 	$org     = (string) law_event_meta( $event_id, '_law_host_organisations' );
 
-	$body = array(
+	return array(
+		// Lowercased: Stripe's ?email= filter is an exact, case-sensitive match,
+		// and a casing mismatch would create a duplicate customer.
+		'email'           => mb_strtolower( (string) law_event_meta( $event_id, '_law_invoice_email' ) ),
 		'name'            => $name,
-		'email'           => $email,
 		'business_name'   => $org,
 		'individual_name' => $name,
 		'address'         => array_filter(
@@ -239,21 +235,122 @@ function law_stripe_upsert_customer( $event_id, WP_Post $post ) {
 		),
 		'metadata'        => law_stripe_event_metadata( $event_id ),
 	);
+}
 
-	$customer_id = (string) law_event_meta( $event_id, '_law_stripe_customer_id' );
-	if ( '' === $customer_id ) {
-		$found = law_stripe_request( 'GET', '/v1/customers', array( 'email' => $email, 'limit' => 1 ) );
-		if ( ! is_wp_error( $found ) && ! empty( $found['data'][0]['id'] ) ) {
-			$customer_id = (string) $found['data'][0]['id'];
+/**
+ * Whose event a Stripe customer belongs to, read from the metadata this module
+ * (and the retired Make scenario) stamps on every customer it touches.
+ *
+ * @param array $customer Stripe customer object.
+ * @param int   $event_id law_event post ID we are invoicing for.
+ * @return string 'mine' | 'other' | 'unclaimed'
+ */
+function law_stripe_customer_ownership( array $customer, $event_id ) {
+	$meta        = (array) ( $customer['metadata'] ?? array() );
+	$their_event = trim( (string) ( $meta['law_event_id'] ?? '' ) );
+	$their_entry = trim( (string) ( $meta['gf_entry_id'] ?? '' ) );
+	$our_entry   = trim( (string) law_event_meta( $event_id, '_law_gf_entry_id' ) );
+
+	if ( '' !== $their_event ) {
+		return (int) $their_event === (int) $event_id ? 'mine' : 'other';
+	}
+	if ( '' !== $their_entry ) {
+		return ( '' !== $our_entry && (int) $their_entry === (int) $our_entry ) ? 'mine' : 'other';
+	}
+	return 'unclaimed';
+}
+
+/**
+ * A conservative patch for a customer that merely shares the invoice email:
+ * our metadata, plus only the fields the customer does not already have. An
+ * address is all-or-nothing because Stripe replaces the whole address hash on
+ * update, so a partial patch would blank the parts we left out.
+ *
+ * @param array $customer Existing Stripe customer object.
+ * @param array $body     law_stripe_customer_body() payload.
+ * @return array
+ */
+function law_stripe_customer_fill_blanks( array $customer, array $body ) {
+	$patch = array( 'metadata' => $body['metadata'] );
+
+	foreach ( array( 'name', 'business_name', 'individual_name' ) as $key ) {
+		if ( '' === trim( (string) ( $customer[ $key ] ?? '' ) ) && '' !== trim( (string) ( $body[ $key ] ?? '' ) ) ) {
+			$patch[ $key ] = $body[ $key ];
 		}
 	}
 
+	$existing = array_filter( array_map( 'strval', (array) ( $customer['address'] ?? array() ) ), 'strlen' );
+	if ( ! $existing && ! empty( $body['address'] ) ) {
+		$patch['address'] = $body['address'];
+	}
+
+	return $patch;
+}
+
+/**
+ * Upsert the Stripe customer: the ID stored on this event first, then an exact
+ * email search, else create.
+ *
+ * The invoice email is host-supplied and never verified, so an email match is
+ * NOT proof the customer is ours. Blindly POSTing our payload over a match
+ * would let a host point their invoice email at another organisation's billing
+ * address and overwrite that customer's name, address, VAT ID and metadata —
+ * and then send them our invoice. A match is therefore adopted only when its
+ * metadata binds it to this event (full update) or to no event at all
+ * (blank-filling update); a customer already bound to a DIFFERENT event is left
+ * untouched and a fresh customer is created instead.
+ *
+ * @param int     $event_id law_event post ID.
+ * @param WP_Post $post     The event (kept for signature parity with callers).
+ * @return array|WP_Error Customer object.
+ */
+function law_stripe_upsert_customer( $event_id, WP_Post $post ) {
+	$body  = law_stripe_customer_body( $event_id );
+	$email = (string) $body['email'];
+	if ( ! is_email( $email ) ) {
+		return new WP_Error( 'law_no_invoice_email', 'The event has no valid invoice contact email.' );
+	}
+
+	// A customer ID stored on THIS event was created for this event: ours to
+	// overwrite in full.
+	$customer_id = (string) law_event_meta( $event_id, '_law_stripe_customer_id' );
 	if ( '' !== $customer_id ) {
 		$updated = law_stripe_request( 'POST', '/v1/customers/' . rawurlencode( $customer_id ), $body );
 		if ( ! is_wp_error( $updated ) ) {
 			return $updated;
 		}
-		// The stored ID may be stale (deleted customer / other mode): fall through to create.
+		// The stored ID may be stale (deleted customer / other mode): fall through.
+	}
+
+	$found = law_stripe_request( 'GET', '/v1/customers', array( 'email' => $email, 'limit' => 1 ) );
+	$match = ( ! is_wp_error( $found ) && ! empty( $found['data'][0]['id'] ) ) ? (array) $found['data'][0] : array();
+
+	if ( $match ) {
+		$ownership = law_stripe_customer_ownership( $match, $event_id );
+
+		if ( 'other' === $ownership ) {
+			law_event_log(
+				$event_id,
+				sprintf(
+					'Stripe customer %s already shares this invoice email but belongs to another event; a separate customer was created rather than overwriting it.',
+					(string) $match['id']
+				),
+				array( 'action' => 'customer_not_reused', 'customer' => (string) $match['id'], 'source' => 'stripe' )
+			);
+		} else {
+			$patch   = 'mine' === $ownership ? $body : law_stripe_customer_fill_blanks( $match, $body );
+			$updated = law_stripe_request( 'POST', '/v1/customers/' . rawurlencode( (string) $match['id'] ), $patch );
+			if ( ! is_wp_error( $updated ) ) {
+				if ( 'unclaimed' === $ownership ) {
+					law_event_log(
+						$event_id,
+						sprintf( 'Existing Stripe customer %s adopted by invoice email; only empty fields were filled.', (string) $match['id'] ),
+						array( 'action' => 'customer_adopted', 'customer' => (string) $match['id'], 'source' => 'stripe' )
+					);
+				}
+				return $updated;
+			}
+		}
 	}
 
 	return law_stripe_request( 'POST', '/v1/customers', $body );
