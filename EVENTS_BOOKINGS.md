@@ -737,6 +737,19 @@ review. Fixes applied from them:
   bookings list and export; dead grouped-list CSS removed; the modal-opener preventDefault
   is scoped to the booking modal. 87 PHPUnit tests green after the round.
 
+Four review questions put to Denis after the independent-review round, all settled
+(7 September 2026) as accepted with no code change:
+
+- **No rollback to the legacy source once cutover is done.** The half-state a `gf` flip
+  would leave bookings in (hidden UI, handlers still live) is moot: the source will not be
+  flipped back after the custom module goes live, so no freeze is built.
+- **Host-user deletion behaviour stays as WordPress default** (`delete_with_user` on events
+  unchanged); the trash/delete sweep already cancels and emails any bookings caught by it.
+- **A colleague whose account creation fails stays seated with no email** — accepted; the
+  booker's confirmation lists every attendee email, so the owner can spot and re-add.
+- **Untrashing a trashed active booking restores it active** without a capacity/duplicate
+  re-check (admin-only sequence) — accepted.
+
 Recorded follow-ups (defaults chosen, no build now):
 
 - **Event detail changes after booking** (date, venue): attendees are not notified and their
