@@ -80,15 +80,21 @@ function law_event_available_ui_actions( $event ) {
 add_filter(
 	'wp_insert_post_data',
 	function ( $data, $postarr ) {
-		if ( LAW_EVENT_CPT !== ( $data['post_type'] ?? '' ) ) {
+		$post_type = (string) ( $data['post_type'] ?? '' );
+		// Bookings get the same protection: their only transition is cancel,
+		// via law_booking_cancel(), behind its own flag. Without this, quick
+		// edit could flip a cancelled booking back to publish, silently
+		// re-consuming places behind the recount's back.
+		if ( ! in_array( $post_type, array( LAW_EVENT_CPT, LAW_BOOKING_CPT ), true ) ) {
 			return $data;
 		}
 		$post_id = (int) ( $postarr['ID'] ?? 0 );
 		if ( ! $post_id ) {
 			return $data; // New insert: the caller's status stands.
 		}
-		if ( ! empty( $GLOBALS['law_workflow_transitioning'] ) ) {
-			return $data; // The workflow engine is moving the status.
+		$flag = LAW_BOOKING_CPT === $post_type ? 'law_booking_transitioning' : 'law_workflow_transitioning';
+		if ( ! empty( $GLOBALS[ $flag ] ) ) {
+			return $data; // The engine is moving the status.
 		}
 		$current = get_post_field( 'post_status', $post_id );
 		if ( 'trash' === $current ) {
@@ -104,16 +110,22 @@ add_filter(
 );
 
 /**
- * Untrash restores the status the event was trashed with (core would restore
- * to `draft`, a status the module never uses).
+ * Untrash restores the status the post was trashed with (core would restore
+ * to `draft`, a status the module never uses). Bookings are constrained to
+ * their two statuses; anything else restores as cancelled, the safe side
+ * (an active booking appearing from nowhere would consume places).
  */
 add_filter(
 	'wp_untrash_post_status',
 	function ( $new_status, $post_id ) {
-		if ( get_post_type( $post_id ) !== LAW_EVENT_CPT ) {
+		$post_type = get_post_type( $post_id );
+		$previous  = (string) get_post_meta( $post_id, '_wp_trash_meta_status', true );
+		if ( LAW_BOOKING_CPT === $post_type ) {
+			return in_array( $previous, array( 'publish', 'law-cancelled' ), true ) ? $previous : 'law-cancelled';
+		}
+		if ( LAW_EVENT_CPT !== $post_type ) {
 			return $new_status;
 		}
-		$previous = (string) get_post_meta( $post_id, '_wp_trash_meta_status', true );
 		return array_key_exists( $previous, law_event_statuses() ) ? $previous : 'law-proposed';
 	},
 	10,
@@ -329,6 +341,9 @@ function law_event_workflow_side_effects( $event_id, $action, array $args, $acto
 			if ( 'paid' === (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
 				law_events_send( 'committee_cancelled_paid', $event_id );
 			}
+			// A Confirmed event may hold attendee bookings: cancel them all and
+			// email every attendee (EVENTS_BOOKINGS.md; settled decision).
+			law_bookings_cancel_all_for_event( $event_id, $actor, $source );
 			break;
 
 		case 'withdraw':

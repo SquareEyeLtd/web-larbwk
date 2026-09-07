@@ -147,13 +147,16 @@ function law_events_csv_guard( $value ) {
 	return $value;
 }
 
-/** Stream a CSV download and exit. */
-function law_events_send_csv( array $columns, array $rows, string $filename ) {
+/** Stream a CSV download and exit. An optional title line precedes the header. */
+function law_events_send_csv( array $columns, array $rows, string $filename, string $title = '' ) {
 	header( 'Content-Type: text/csv; charset=utf-8' );
 	header( 'Content-Disposition: attachment; filename=' . $filename );
 	$out = fopen( 'php://output', 'w' );
 	// Without a BOM, Excel guesses the encoding and renders £ as Â£.
 	fwrite( $out, "\xEF\xBB\xBF" );
+	if ( '' !== $title ) {
+		fputcsv( $out, array( law_events_csv_guard( $title ) ) );
+	}
 	fputcsv( $out, $columns );
 	foreach ( $rows as $row ) {
 		fputcsv( $out, array_map( 'law_events_csv_guard', $row ) );
@@ -166,7 +169,7 @@ function law_events_send_csv( array $columns, array $rows, string $filename ) {
  * ZipArchive (five parts, inline strings) so the theme ships no spreadsheet
  * library; Excel, LibreOffice and Numbers all open it.
  */
-function law_events_send_xlsx( array $columns, array $rows, string $filename ) {
+function law_events_send_xlsx( array $columns, array $rows, string $filename, string $title = '' ) {
 	$file = wp_tempnam( $filename );
 	$zip  = new ZipArchive();
 	if ( true !== $zip->open( $file, ZipArchive::OVERWRITE ) ) {
@@ -204,7 +207,7 @@ function law_events_send_xlsx( array $columns, array $rows, string $filename ) {
 		. '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
 		. '</Relationships>'
 	);
-	$zip->addFromString( 'xl/worksheets/sheet1.xml', law_events_xlsx_sheet_xml( $columns, $rows ) );
+	$zip->addFromString( 'xl/worksheets/sheet1.xml', law_events_xlsx_sheet_xml( $columns, $rows, $title ) );
 	$zip->close();
 
 	header( 'Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' );
@@ -220,10 +223,14 @@ function law_events_send_xlsx( array $columns, array $rows, string $filename ) {
  * inert in Excel, which also settles XLSX formula injection. Ints and floats
  * go out as numbers so ID and ticket columns sort numerically.
  */
-function law_events_xlsx_sheet_xml( array $columns, array $rows ) {
+function law_events_xlsx_sheet_xml( array $columns, array $rows, string $title = '' ) {
 	$xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 		. '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
 	array_unshift( $rows, $columns );
+	if ( '' !== $title ) {
+		// The optional title line sits above the header row (one cell).
+		array_unshift( $rows, array( $title ) );
+	}
 	foreach ( $rows as $r => $row ) {
 		$xml .= '<row r="' . ( $r + 1 ) . '">';
 		// Explicit r= cell refs: some readers misplace ref-less cells.

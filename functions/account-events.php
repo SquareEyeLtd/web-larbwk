@@ -234,6 +234,16 @@ function law_account_event_actions( $event, $entry ) {
 		);
 	}
 
+	// Bookings (n): the per-event attendee list, n = total attendees across
+	// active bookings, not the booking count (EVENTS_BOOKINGS.md §7.4).
+	// Confirmed events only — nothing else can hold a booking.
+	if ( 'cpt' === law_events_source() && 'Confirmed' === $event['status'] && function_exists( 'law_booking_list_url' ) ) {
+		$actions[] = array(
+			'label' => sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( (int) $event['id'] ) ) ),
+			'url'   => law_booking_list_url( (int) $event['id'] ),
+		);
+	}
+
 	// Pre-approval events can be withdrawn by their host (CPT mode only): a
 	// form-shaped action the card renders as a nonce'd POST behind a confirm
 	// modal. Approved/Confirmed events go through the committee's Cancel

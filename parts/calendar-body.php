@@ -25,6 +25,19 @@ $days = $calendar_blocked ? array() : law_calendar_week_days();
 
 if ( $event ) {
 	$host_list = $event['host'] ? array_filter( array_map( 'trim', preg_split( '/;/', $event['host'] ) ) ) : array();
+
+	// Bookings (CPT mode): the hero shows places REMAINING, not the raw ticket
+	// number — "places", never "tickets", the events are free (EVENTS_BOOKINGS.md).
+	if ( 'cpt' === law_events_source() && function_exists( 'law_event_tickets_remaining' ) ) {
+		$law_remaining   = law_event_tickets_remaining( $event['id'] );
+		$law_places_meta = array(
+			'label' => 'Places remaining',
+			'value' => null === $law_remaining ? '' : number_format_i18n( $law_remaining ),
+		);
+	} else {
+		$law_places_meta = array( 'label' => 'Available tickets', 'value' => $event['tickets'] ? number_format_i18n( $event['tickets'] ) : '' );
+	}
+
 	$hero_args = array(
 		'title'   => $event['title'],
 		'classes' => 'law-event-hero',
@@ -35,7 +48,7 @@ if ( $event ) {
 			array( 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
 			array( 'label' => 'Type', 'value' => $event['type'] ),
 			array( 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
-			array( 'label' => 'Available tickets', 'value' => $event['tickets'] ? number_format_i18n( $event['tickets'] ) : '' ),
+			$law_places_meta,
 		),
 	);
 } else {
@@ -205,12 +218,17 @@ if ( $event ) {
 									</ul>
 								</section>
 							<?php endif; ?>
-							<div class="law-cal-detail__actions">
-								<?php /* Registration is not wired up yet; the button is a placeholder. */ ?>
-								<a class="button orange law-event-card__button--register" href="#" aria-disabled="true">
-									<?php esc_html_e( 'Register', 'law' ); ?>
-									<svg class="law-event-card__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3h7v7"/><path d="M10 14 21 3"/></svg>
-								</a>
+							<div class="law-cal-detail__actions law-booking-actions">
+								<?php
+								// The five-state booking control (Book now / waitlist /
+								// open soon / closed / you're booked) and, on ?law_book=1,
+								// the inline no-JS booking form. Renders nothing on the
+								// legacy source. No arrow on Book now: it opens a modal on
+								// this page, and the arrow SVG means "leaves this page".
+								if ( function_exists( 'law_booking_render_action' ) ) {
+									law_booking_render_action( $event );
+								}
+								?>
 								<a class="button" href="<?php echo esc_url( law_calendar_url() ); ?>"><?php esc_html_e( 'Back to events calendar', 'law' ); ?></a>
 							</div>
 						</div>

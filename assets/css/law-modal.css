@@ -81,3 +81,13 @@ body.law-modal-open { overflow: hidden; }
 	.law-modal { animation: none; }
 	.law-modal textarea { transition: none; }
 }
+
+/* Bookings: the booking dialog (parts/events/booking-modal.php) is a form, not
+   a one-field confirmation, so it gets more room; the repeater grid inside
+   still collapses at the shared mobile breakpoint (event-form.css). */
+.law-modal__dialog--wide { max-width: 44rem; }
+/* Links inside dialog copy: .law-cal strips anchor colour and underline
+   site-wide, which leaves modal links unrecognisable as links. */
+.law-modal a:not(.button) { color: #ef7d05; text-decoration: underline; }
+/* The logged-out state's two buttons sit at the start, like form actions. */
+.law-modal .law-booking-auth { justify-content: flex-start; }

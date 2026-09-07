@@ -221,6 +221,105 @@ function law_events_email_registry() {
 			'subject' => 'ACTION NEEDED: Stripe invoice failed for {event_title}',
 			'body'    => "Creating the Stripe invoice for {event_title} ({law_reference}) failed:\n\n{stripe_error}\n\nThe event is held at Approved. Retry from the event screen in wp-admin; the committee dashboard also shows a Retry button.",
 		),
+
+		/* Bookings (EVENTS_BOOKINGS.md §9) _________________________________ */
+
+		'user_booking_confirmed' => array(
+			'name'    => 'Email to attendee > booking confirmed',
+			'trigger' => 'booking created',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your booking is confirmed: {event_title}',
+			'body'    => "Dear {attendee_name},\n\nYour booking (Booking #{booking_number}) for {event_title} is confirmed.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWho is coming:\n{attendee_list}\n\nAccounts will be created for any colleagues who do not already have one. Each of them has been emailed an invitation with a link to set their password and to add any dietary or accessibility requirements to their profile.\n\nA calendar invitation is attached. You can view and manage your booking under Your bookings: {bookings_link}",
+		),
+		'host_booking_received' => array(
+			'name'    => 'Email to host > new booking',
+			'trigger' => 'booking created',
+			'to'      => 'host',
+			'active'  => true,
+			'subject' => 'New booking for your event: {event_title}',
+			'body'    => "Dear {host_name},\n\nA new booking (Booking #{booking_number}) has been made for {event_title}.\n\nAttendees:\n{attendee_list}\n\nPlaces remaining: {tickets_remaining} of {tickets_available}.\n\nYou can see all bookings for your event from your events dashboard: {dashboard_link}",
+		),
+		'committee_booking_received' => array(
+			'name'    => 'Email to committee > new booking',
+			'trigger' => 'booking created (sent to the event assignee when one is set)',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'New booking: {event_title} ({law_reference})',
+			'body'    => "A new booking (Booking #{booking_number}) has been made for {event_title} ({law_reference}).\n\nAttendees:\n{attendee_list}\n\nPlaces remaining: {tickets_remaining} of {tickets_available}.\n\nView the event on the committee dashboard: {committee_link}",
+		),
+		'user_attendee_invited' => array(
+			'name'    => 'Email to attendee > invited to an event (new account)',
+			'trigger' => 'booking attendee account created',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'You have been booked onto {event_title}',
+			'body'    => "Dear {attendee_name},\n\nYou have been added to a booking for {event_title}, part of London Arbitration Week.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have created an account for you. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address. If that link has expired, you can request a new one here: {forgot_link}\n\nOnce signed in, please add any dietary or accessibility requirements to your profile, so the organisers can look after you on the day: {profile_link}\n\nThe events you are booked onto are listed under Your bookings: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+		),
+		'user_attendee_added' => array(
+			'name'    => 'Email to attendee > added to a booking (existing account)',
+			'trigger' => 'booking attendee linked to an existing account',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'You have been booked onto {event_title}',
+			'body'    => "Dear {attendee_name},\n\nYou have been added to a booking for {event_title}, part of London Arbitration Week.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the event will be listed under Your bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+		),
+		'user_attendee_rejected' => array(
+			'name'    => 'Email to attendee > place cancelled by the host',
+			'trigger' => 'host or committee rejects an attendee',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title} has been cancelled',
+			'body'    => "Dear {attendee_name},\n\nThe event host has cancelled your place at {event_title} ({event_date}, {event_time}).\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
+		),
+		'user_attendee_removed' => array(
+			'name'    => 'Email to attendee > removed from a booking',
+			'trigger' => 'booking owner removes a colleague',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title} has been removed',
+			'body'    => "Dear {attendee_name},\n\nThe person who booked your place at {event_title} ({event_date}, {event_time}) has removed you from their booking, so you are no longer registered for this event.\n\nIf you think this is a mistake, please speak to the colleague who booked for you, or contact the host at {host_email}.",
+		),
+		'user_attendee_removed_self' => array(
+			'name'    => 'Email to attendee > self-removal confirmed',
+			'trigger' => 'attendee removes themselves',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'You have left {event_title}',
+			'body'    => "Dear {attendee_name},\n\nThis confirms that you have removed yourself from a booking for {event_title} ({event_date}, {event_time}). Your place has been freed for someone else.\n\nIf you change your mind and places are still available, you can book again from the event page.",
+		),
+		'user_booking_cancelled_attendee' => array(
+			'name'    => 'Email to attendee > booking cancelled by its owner',
+			'trigger' => 'booking owner cancels the whole booking',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Booking cancelled: {event_title}',
+			'body'    => "Dear {attendee_name},\n\nBooking #{booking_number} for {event_title} ({event_date}, {event_time}) has been cancelled by the person who made it, so you are no longer registered for this event.\n\nIf places are still available, you can book again from the event page.",
+		),
+		'user_booking_event_cancelled' => array(
+			'name'    => 'Email to attendee > event cancelled',
+			'trigger' => 'event cancelled with active bookings',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Event cancelled: {event_title}',
+			'body'    => "Dear {attendee_name},\n\nWe are sorry to let you know that {event_title}, which you were booked onto for {event_date}, has been cancelled by the organisers. Your booking has been cancelled with it, and there is nothing you need to do.\n\nWe hope to see you at other London Arbitration Week events.",
+		),
+		'user_welcome_registered' => array(
+			'name'    => 'Email to user > welcome after registration',
+			'trigger' => 'user registration',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Welcome to {site_name}',
+			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nYour events and bookings live here: {bookings_link}",
+		),
+		'host_capacity_warning' => array(
+			'name'    => 'Email to host > event nearly full',
+			'trigger' => '5 or fewer places remaining',
+			'to'      => 'host',
+			'active'  => true,
+			'subject' => 'Your event is nearly full: {event_title}',
+			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places by editing your event's ticket allocation from your events dashboard: {dashboard_link}\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
+		),
 	);
 }
 
@@ -296,7 +395,27 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{co_owner_name}'    => '',
 		'{username}'         => '',
 		'{set_password_link}' => '',
+		// Event date/time, from the confirmed slot (empty until one is set).
+		'{event_date}'       => '',
+		'{event_time}'       => '',
+		// Bookings emails (filled via the send call's placeholders; the two
+		// links are real defaults so the welcome email works with no event).
+		'{attendee_name}'     => '',
+		'{attendee_list}'     => '',
+		'{booking_number}'    => '',
+		'{tickets_available}' => '',
+		'{tickets_remaining}' => '',
+		'{removal_reason}'    => '',
+		'{bookings_link}'     => home_url( '/account/events/' ),
+		'{profile_link}'      => home_url( '/account/profile/' ),
 	);
+
+	$start = (string) law_event_meta( $event_id, '_law_start' );
+	if ( '' !== $start ) {
+		$end                          = (string) law_event_meta( $event_id, '_law_end' );
+		$placeholders['{event_date}'] = date_i18n( 'l j F Y', strtotime( $start ) );
+		$placeholders['{event_time}'] = substr( $start, 11, 5 ) . ( '' !== $end ? ' to ' . substr( $end, 11, 5 ) : '' );
+	}
 
 	$latest = law_event_latest_comment( $event_id );
 	if ( $latest ) {
@@ -365,6 +484,14 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 		// In test mode an unconfigured audience (an empty committee list, say)
 		// must not silently swallow the email: the whole point is to see it.
 		if ( '' === $test_mode ) {
+			// Never a silent drop (the module's exhaustive-logging rule): a
+			// deleted host account or an unconfigured committee list must
+			// leave a trace on the event.
+			law_event_log(
+				$event_id,
+				sprintf( 'Email NOT sent (no recipients): %s.', $definition['name'] ),
+				array( 'action' => 'email', 'slug' => $slug, 'to' => array(), 'sent' => false, 'source' => 'notifications' )
+			);
 			return false;
 		}
 		$recipients = array( $test_mode );
@@ -376,13 +503,32 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 	// Re-linkify escaped URLs so invoice/dashboard links stay clickable.
 	$body = make_clickable( $body );
 
+	// Optional file attachments (the bookings .ics calendar invites). wp_mail
+	// is synchronous, so a caller may delete its temp file right after this
+	// returns. The test-mode redirect (wp_mail filter, 99) and the Email
+	// Templates wrapper (100) touch recipients and body only.
+	$attachments = array_filter( array_map( 'strval', (array) ( $extra['attachments'] ?? array() ) ), 'file_exists' );
+
 	$sent = wp_mail(
 		$recipients,
 		$subject,
 		$body,
-		array( 'Content-Type: text/html; charset=UTF-8' )
+		array( 'Content-Type: text/html; charset=UTF-8' ),
+		$attachments
 	);
 
+	$context = array(
+		'action'    => 'email',
+		'slug'      => $slug,
+		'to'        => $recipients,
+		'subject'   => $subject,
+		'sent'      => (bool) $sent,
+		'source'    => 'notifications',
+		'test_mode' => '' !== $test_mode ? $test_mode : false,
+	);
+	if ( $attachments ) {
+		$context['attachments'] = array_map( 'basename', $attachments );
+	}
 	law_event_log(
 		$event_id,
 		sprintf(
@@ -392,15 +538,7 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 			implode( ', ', $recipients ),
 			'' !== $test_mode ? ' TEST MODE: delivered to ' . $test_mode . ' instead.' : ''
 		),
-		array(
-			'action'    => 'email',
-			'slug'      => $slug,
-			'to'        => $recipients,
-			'subject'   => $subject,
-			'sent'      => (bool) $sent,
-			'source'    => 'notifications',
-			'test_mode' => '' !== $test_mode ? $test_mode : false,
-		)
+		$context
 	);
 
 	return (bool) $sent;

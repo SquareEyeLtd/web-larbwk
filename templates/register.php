@@ -14,6 +14,16 @@ get_header();
 $law_reg_state  = function_exists( 'law_registration_state' ) ? law_registration_state() : array( 'errors' => array(), 'input' => array() );
 $law_reg_errors = (array) $law_reg_state['errors'];
 $law_reg_values = (array) $law_reg_state['input'];
+
+// The booking modal's register link: ?role=attendee locks the role (the Role
+// section is hidden and a hidden input posts it) and ?redirect_to= returns the
+// new user to the event page they came from. Both survive an error round trip
+// (the handler carries them back onto this URL).
+$law_reg_locked_role = sanitize_key( (string) ( $_GET['role'] ?? '' ) );
+if ( ! function_exists( 'law_registration_roles' ) || ! isset( law_registration_roles()[ $law_reg_locked_role ] ) ) {
+	$law_reg_locked_role = '';
+}
+$law_reg_redirect = wp_validate_redirect( wp_unslash( (string) ( $_GET['redirect_to'] ?? '' ) ), '' );
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
@@ -30,7 +40,8 @@ $law_reg_values = (array) $law_reg_state['input'];
 				<?php if ( is_user_logged_in() ) : ?>
 
 					<p>You are already signed in. Manage your details from your
-						<a href="<?php echo esc_url( home_url( '/account/profile/' ) ); ?>">profile</a>.</p>
+						<a href="<?php echo esc_url( home_url( '/account/profile/' ) ); ?>">profile</a>.<?php if ( '' !== $law_reg_redirect ) : ?>
+						You can <a href="<?php echo esc_url( $law_reg_redirect ); ?>">return to the page you came from</a>.<?php endif; ?></p>
 
 				<?php else : ?>
 
@@ -42,8 +53,15 @@ $law_reg_values = (array) $law_reg_state['input'];
 						<input type="hidden" name="action" value="law_register">
 						<?php wp_nonce_field( 'law_register' ); ?>
 						<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+						<?php if ( '' !== $law_reg_locked_role ) : ?>
+							<input type="hidden" name="roles[]" value="<?php echo esc_attr( $law_reg_locked_role ); ?>">
+							<input type="hidden" name="locked_role" value="<?php echo esc_attr( $law_reg_locked_role ); ?>">
+						<?php endif; ?>
+						<?php if ( '' !== $law_reg_redirect ) : ?>
+							<input type="hidden" name="redirect_to" value="<?php echo esc_attr( $law_reg_redirect ); ?>">
+						<?php endif; ?>
 
-						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_reg_values, 'errors' => $law_reg_errors, 'registration' => true ) ); ?>
+						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_reg_values, 'errors' => $law_reg_errors, 'registration' => true, 'locked_role' => $law_reg_locked_role ) ); ?>
 
 						<fieldset>
 							<legend>Login details</legend>

@@ -3,7 +3,10 @@
  * Shared registration/profile fields (name, email, organisation, job title,
  * country, roles, accessibility, dietary), rendered inside the auth-hero.
  *
- * Args: values (array), errors (array of field => [messages]).
+ * Args: values (array), errors (array of field => [messages]), registration
+ * (bool), locked_role (a law_registration_roles() key — the Role section is
+ * hidden and the caller posts the role via a hidden input; the booking modal's
+ * register link uses it to pre-select attendee).
  */
 
 $law_values = (array) ( $args['values'] ?? array() );
@@ -63,6 +66,7 @@ $law_countries = law_registration_country_choices();
 		<?php $law_pf_error( 'country' ); ?></p>
 </div>
 
+<?php if ( empty( $args['locked_role'] ) ) : ?>
 <div class="law-form-field<?php echo esc_attr( $law_pf_class( 'roles' ) ); ?>">
 	<span class="law-form-label">Role<?php echo $law_registration_mode ? ' *' : ''; ?></span>
 	<div class="law-choices">
@@ -76,6 +80,7 @@ $law_countries = law_registration_country_choices();
 	</div>
 	<?php $law_pf_error( 'roles' ); ?>
 </div>
+<?php endif; ?>
 
 <fieldset>
 	<legend>Requirements</legend>

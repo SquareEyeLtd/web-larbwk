@@ -104,6 +104,10 @@ function law_events_map_post( $post, $allowed = null ) {
 		'host'         => (string) law_event_meta( $post->ID, '_law_host_organisations' ),
 		'venue'        => (string) law_event_meta( $post->ID, '_law_venue' ),
 		'tickets'      => $tickets > 0 ? $tickets : 0,
+		// The booking control reads these two, never 'tickets' (whose 0 means
+		// "unset"): remaining is null when the event is not open for booking.
+		'tickets_sold'      => law_event_attendee_total( $post->ID ),
+		'tickets_remaining' => law_event_tickets_remaining( $post->ID ),
 		'type'         => $type,
 		'sectors'      => law_events_post_term_names( $post->ID, 'law_sector' ),
 		'speakers'     => array(), // Hydrated on the single listing only.

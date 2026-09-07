@@ -15,7 +15,7 @@
  *                             // confirm modal: { label, form: { action, nonce,
  *                             // event_id, modal (parts/layout/modal.php args,
  *                             // with a page-unique id) } }.
- *                             // Defaults to Event details + the Register placeholder.
+ *                             // Defaults to an Event details link only.
  * ) );
  */
 
@@ -37,17 +37,12 @@ $law_meta_lines   = isset( $args['meta_lines'] ) && is_array( $args['meta_lines'
 
 $law_actions = isset( $args['actions'] ) && is_array( $args['actions'] ) ? $args['actions'] : array();
 if ( ! $law_actions ) {
+	// Booking lives on the single event page only (EVENTS_BOOKINGS.md §7.1):
+	// the programme card deliberately carries no booking button.
 	$law_actions = array(
 		array(
 			'label' => __( 'Event details', 'law' ),
 			'url'   => $law_event_url,
-		),
-		// Registration is not wired up yet; the button is a placeholder.
-		array(
-			'label'    => __( 'Register', 'law' ),
-			'url'      => '#',
-			'arrow'    => true,
-			'disabled' => true,
 		),
 	);
 }

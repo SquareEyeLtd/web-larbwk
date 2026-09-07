@@ -19,8 +19,49 @@ get_header();
 	<div class="grid-container">
 		<div class="law-cal law-account-events">
 
-			<?php $law_thread_id = absint( $_GET['law_thread'] ?? 0 ); ?>
-			<?php if ( $law_thread_id && 'cpt' === law_events_source() ) : ?>
+			<?php
+			$law_thread_id        = absint( $_GET['law_thread'] ?? 0 );
+			$law_booking_id       = absint( $_GET['law_booking'] ?? 0 );
+			$law_bookings_list_id = absint( $_GET['law_event_bookings'] ?? 0 );
+			?>
+			<?php if ( $law_bookings_list_id && 'cpt' === law_events_source() ) : ?>
+
+				<?php
+				// The list serves two audiences: a committee member arrives from
+				// the dashboard and goes back there ("all events"); a host came
+				// from, and returns to, their own My events list.
+				$law_bl_committee = function_exists( 'law_user_is_committee' ) && law_user_is_committee();
+				get_template_part(
+					'parts/layout/back-link',
+					null,
+					array(
+						'url'   => $law_bl_committee ? home_url( '/account/dashboard/' ) : get_permalink(),
+						'label' => $law_bl_committee ? __( 'Back to all events', 'law' ) : __( 'Back to my events', 'law' ),
+					)
+				);
+				?>
+				<?php // .law-dashboard: the table/badge light-section colour resets are scoped to it. ?>
+				<div class="law-dashboard law-booking-manage">
+					<?php get_template_part( 'parts/events/booking-list', null, array( 'event_id' => $law_bookings_list_id ) ); ?>
+				</div>
+
+			<?php elseif ( $law_booking_id && 'cpt' === law_events_source() ) : ?>
+
+				<?php
+				get_template_part(
+					'parts/layout/back-link',
+					null,
+					array(
+						'url'   => get_permalink(),
+						'label' => __( 'Back to my events', 'law' ),
+					)
+				);
+				?>
+				<div class="law-booking-manage">
+					<?php get_template_part( 'parts/events/booking-manage', null, array( 'booking_id' => $law_booking_id ) ); ?>
+				</div>
+
+			<?php elseif ( $law_thread_id && 'cpt' === law_events_source() ) : ?>
 
 				<?php
 				get_template_part(
@@ -71,13 +112,87 @@ get_header();
 							'event-not-editable' => __( 'This event can no longer be edited.', 'law' ),
 							'withdraw-failed' => __( 'Sorry, this event could not be withdrawn. Please reload the page and try again.', 'law' ),
 							'rate-limited'    => __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ),
+							'booking-created'  => __( 'Your booking is confirmed. A confirmation with a calendar invitation is on its way to you.', 'law' ),
+							'booking-cancelled' => __( 'The booking has been cancelled and everyone on it has been emailed.', 'law' ),
+							'attendee-added'   => __( 'The attendee has been added and emailed the event details.', 'law' ),
+							'attendee-removed' => __( 'The attendee has been removed and their place freed.', 'law' ),
+							'booking-failed'   => __( 'Sorry, that booking change could not be made.', 'law' ),
 						);
 						if ( isset( $law_notice_text[ $law_notice ] ) ) {
 							echo '<div class="law-form-notice" role="status">' . esc_html( $law_notice_text[ $law_notice ] ) . '</div>';
 						}
+
+						// Your bookings (EVENTS_BOOKINGS.md §7.3): the attendee side of
+						// this page, above the host list. The page serves two audiences
+						// now, so the host section only renders for host-like users (or
+						// anyone who actually has events); a pure attendee is never
+						// invited to "Submit an event" under their bookings.
+						$law_bookings     = function_exists( 'law_account_bookings' ) ? law_account_bookings() : array();
+						$law_is_host_like = function_exists( 'law_account_user_is_host_like' ) && law_account_user_is_host_like();
+						$law_show_host    = $law_is_host_like || $law_items;
+						$law_show_bookings = 'cpt' === law_events_source() && ( $law_bookings || ! $law_show_host );
+						?>
+
+						<?php if ( $law_show_bookings ) : ?>
+							<h2 class="law-account-events__heading"><?php esc_html_e( 'Your bookings', 'law' ); ?></h2>
+							<?php if ( ! $law_bookings ) : ?>
+								<p class="law-cal__empty">
+									<?php
+									// The Programme page by path, not law_calendar_url():
+									// off the calendar templates that helper falls back to
+									// the CURRENT page's permalink, which here would link
+									// this page to itself.
+									$law_programme      = get_page_by_path( 'programme' );
+									$law_programme_url  = $law_programme ? get_permalink( $law_programme ) : home_url( '/programme/' );
+									printf(
+										/* translators: %s: link to the events programme. */
+										esc_html__( 'You have no bookings yet. %s', 'law' ),
+										'<a href="' . esc_url( $law_programme_url ) . '">' . esc_html__( 'Browse the programme', 'law' ) . '</a>'
+									);
+									?>
+								</p>
+							<?php else : ?>
+								<?php foreach ( $law_bookings as $law_bk_item ) : ?>
+									<?php
+									get_template_part(
+										'parts/loop/event',
+										null,
+										array(
+											'event'      => $law_bk_item['event'],
+											'url'        => $law_bk_item['event']['url'],
+											'show_date'  => true,
+											'meta_lines' => array_filter( array(
+												$law_bk_item['is_owner']
+													? sprintf( _n( 'You + %d guest', 'You + %d guests', $law_bk_item['guests'], 'law' ), $law_bk_item['guests'] )
+													: sprintf( __( 'Booked by %s', 'law' ), $law_bk_item['owner_name'] ),
+											) ),
+											'actions'    => array(
+												array(
+													'label'    => __( 'View event', 'law' ),
+													'url'      => $law_bk_item['event']['url'],
+													'external' => true,
+													'arrow'    => true,
+												),
+												array(
+													'label' => $law_bk_item['is_owner'] ? __( 'Manage', 'law' ) : __( 'View booking', 'law' ),
+													'url'   => law_booking_manage_url( $law_bk_item['booking']->ID ),
+												),
+											),
+										)
+									);
+									?>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						<?php endif; ?>
+
+						<?php if ( $law_show_bookings && $law_show_host ) : ?>
+							<h2 class="law-account-events__heading"><?php esc_html_e( 'Your events', 'law' ); ?></h2>
+						<?php endif; ?>
+
+						<?php
 						$law_is_committee = function_exists( 'law_user_is_committee' ) && law_user_is_committee();
 						// With no events to list, the submit call to action lives in the empty-state sentence instead.
-						$law_show_submit_button = $law_submit_url && $law_items;
+						$law_show_submit_button = $law_show_host && $law_submit_url && $law_items;
 						if ( $law_show_submit_button || $law_is_committee ) :
 						?>
 							<div class="law-account-events__toolbar">
@@ -90,7 +205,7 @@ get_header();
 							</div>
 						<?php endif; ?>
 
-						<?php if ( ! $law_items ) : ?>
+						<?php if ( $law_show_host && ! $law_items ) : ?>
 
 							<p class="law-cal__empty">
 								<?php
@@ -106,7 +221,7 @@ get_header();
 								?>
 							</p>
 
-						<?php else : ?>
+						<?php elseif ( $law_show_host ) : ?>
 
 							<?php
 							// One success dialog for the withdraw cards' AJAX flow

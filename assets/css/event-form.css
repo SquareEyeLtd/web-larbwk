@@ -465,3 +465,49 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard .law-form-nav a:focus,
 .law-dashboard .law-form-nav a:active { color: #1a1a3d; border-bottom-color: #e3e3ec; }
 .law-dashboard .law-form-nav a:hover { color: #ef7d05; }
+
+/* Bookings (EVENTS_BOOKINGS.md §7.2): the booking form's own bits, shared by
+   the modal and the inline (?law_book=1) contexts. */
+.law-booking-summary { margin: 0 0 .5rem; }
+.law-booking-note { font-size: .875rem; margin: .75rem 0 1rem; }
+.law-event-form--light .law-booking-summary,
+.law-event-form--light .law-booking-substate,
+.law-event-form--light .law-booking-note { color: #1a1a3d; }
+/* A success notice variant (the base and light notices only defined error). */
+.law-form-notice.is-success { border-left-color: #4caf50; }
+.law-dashboard .law-form-notice.is-success, .law-thread-view .law-form-notice.is-success,
+.law-cal .law-form-notice.is-success { border-left-color: #2e7d32; background: #eef7ee; }
+/* Invalid repeater fields: the booking form marks the label wrapping the
+   offending input (row-level errors, not one line at the bottom). */
+.law-booking-form label.is-invalid input { outline: 2px solid #b32d2e; outline-offset: 1px; }
+/* Manage-booking view (?law_booking=) and the account section headings. */
+.law-account-events__heading { color: #1a1a3d; font-size: 1.4rem; margin: 0 0 1rem; }
+.law-account-events__heading + .law-account-events__heading,
+.law-event-card + .law-account-events__heading { margin-top: 2rem; }
+.law-booking-manage .law-booking-manage__title,
+.law-booking-manage .law-booking-manage__subtitle,
+.law-booking-manage .law-booking-summary,
+.law-booking-manage .law-booking-note,
+.law-booking-manage .law-booking-manage__person { color: #1a1a3d; }
+.law-booking-manage__title { font-size: 1.5rem; margin: 0 0 .75rem; }
+.law-booking-manage__title .law-cal-card__badge { position: static; display: inline-block; vertical-align: middle; margin-left: .5rem; }
+.law-booking-manage__subtitle { font-size: 1.15rem; margin: 1.75rem 0 .75rem; }
+.law-booking-manage__people li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .6rem 0; border-bottom: 1px solid #ececf1; list-style: none; }
+.law-booking-manage__people { margin-left: 0; }
+.law-booking-manage__action { margin: 0; }
+.law-booking-manage__action .button { width: auto; margin: 0; }
+.law-booking-manage__owner-flag { font-size: .85em; color: #5a5a7a; }
+.law-booking-actions-start { justify-content: flex-start; }
+.law-booking-manage a:not(.button) { color: #ef7d05; text-decoration: underline; }
+/* The per-event bookings list (?law_event_bookings=). */
+.law-booking-cancelled { margin-top: 2rem; }
+.law-booking-cancelled > summary { cursor: pointer; color: #5a5a7a; margin-bottom: 1rem; }
+.law-dashboard .law-cal-export { margin: 0 0 1.5rem; }
+.law-dashboard__row-actions { white-space: nowrap; }
+.law-dashboard__row-actions .button { margin-right: .35rem; }
+/* The bookings table (Denis: flat and compact, booking number as a column). */
+.law-booking-table__booking small { color: #5a5a7a; }
+.law-booking-table__req { white-space: normal; min-width: 11rem; }
+/* A subtle rule between bookings replaces the old group header rows. */
+.law-booking-table tbody tr.law-booking-table__first td { border-top: 2px solid #d9d9e3; }
+.law-booking-table .law-booking-manage__action { margin: 0; }

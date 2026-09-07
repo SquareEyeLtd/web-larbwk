@@ -24,6 +24,8 @@ function law_event_meta_schema() {
 		'_law_venue_needed'         => 'text',
 		'_law_venue_capacity'       => 'text',
 		'_law_tickets_available'    => 'int',
+		'_law_tickets_sold'         => 'int',  // Recalculated by law_event_recount_attendees().
+		'_law_capacity_warned'      => 'flag', // One-shot host capacity-warning latch.
 		'_law_host_organisations'   => 'text',
 		'_law_organisation_ids'     => 'int_array',
 		'_law_fee_tier'             => 'fee_tier',
@@ -80,11 +82,26 @@ function law_session_meta_schema() {
 	);
 }
 
+/**
+ * law_booking meta schema (EVENTS_BOOKINGS.md §3.3). The flat per-attendee
+ * index rows (_law_booking_attendee, one row per user ID) deliberately stay
+ * OUT of this schema, exactly like _law_co_owner: registering the key would
+ * force single => true onto a multi-row key. They are written only by
+ * law_booking_set_attendee_rows().
+ */
+function law_booking_meta_schema() {
+	return array(
+		'_law_booking_number' => 'int',
+		'_law_attendee_rows'  => 'attendee_rows',
+	);
+}
+
 function law_events_register_meta() {
 	$types = array(
 		LAW_EVENT_CPT   => law_event_meta_schema(),
 		LAW_SPEAKER_CPT => law_speaker_meta_schema(),
 		LAW_SESSION_CPT => law_session_meta_schema(),
+		LAW_BOOKING_CPT => law_booking_meta_schema(),
 	);
 	foreach ( $types as $post_type => $schema ) {
 		foreach ( $schema as $key => $type ) {
@@ -160,6 +177,38 @@ function law_events_sanitize_value( $value, $type ) {
 				$out[ $part ] = sanitize_text_field( (string) ( $value[ $part ] ?? '' ) );
 			}
 			return $out;
+		case 'attendee_rows':
+			// Booking attendee rows: the owner is row 0 (is_owner = 1); the
+			// name/email/organisation/job title are the display snapshot as
+			// entered at booking, while dietary/accessibility always read live
+			// from the linked user's profile. Defence in depth (security
+			// review, 7 September 2026): the schema itself caps the row count
+			// at owner + the additional cap and allows one owner row, so a
+			// future write path cannot slip an oversized or two-owner array
+			// past the engine's own checks.
+			$rows      = array();
+			$max_rows  = ( function_exists( 'law_booking_max_additional' ) ? law_booking_max_additional() : 3 ) + 1;
+			$has_owner = false;
+			foreach ( (array) $value as $row ) {
+				if ( ! is_array( $row ) || count( $rows ) >= $max_rows ) {
+					continue;
+				}
+				$email    = sanitize_email( (string) ( $row['email'] ?? '' ) );
+				$is_owner = ! empty( $row['is_owner'] ) && ! $has_owner ? 1 : 0;
+				$clean    = array(
+					'user_id'      => absint( $row['user_id'] ?? 0 ),
+					'name'         => sanitize_text_field( (string) ( $row['name'] ?? '' ) ),
+					'email'        => is_email( $email ) ? $email : '',
+					'organisation' => sanitize_text_field( (string) ( $row['organisation'] ?? '' ) ),
+					'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
+					'is_owner'     => $is_owner,
+				);
+				if ( $clean['user_id'] || '' !== $clean['email'] ) {
+					$rows[]     = $clean;
+					$has_owner  = $has_owner || (bool) $is_owner;
+				}
+			}
+			return $rows;
 		case 'people_rows':
 			$rows = array();
 			foreach ( (array) $value as $row ) {
@@ -244,7 +293,7 @@ function law_events_address_parts() {
 function law_events_all_meta_schemas() {
 	static $schemas = null;
 	if ( null === $schemas ) {
-		$schemas = array_merge( law_event_meta_schema(), law_speaker_meta_schema(), law_session_meta_schema() );
+		$schemas = array_merge( law_event_meta_schema(), law_speaker_meta_schema(), law_session_meta_schema(), law_booking_meta_schema() );
 	}
 	return $schemas;
 }
@@ -271,7 +320,7 @@ function law_event_meta( $post_id, $key ) {
 	$value   = get_post_meta( $post_id, $key, true );
 	$schemas = law_events_all_meta_schemas();
 	$type    = $schemas[ $key ] ?? 'text';
-	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows' ), true ) ) {
+	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows', 'attendee_rows' ), true ) ) {
 		return is_array( $value ) ? $value : array();
 	}
 	if ( in_array( $type, array( 'address', 'consent' ), true ) ) {
@@ -284,14 +333,42 @@ function law_event_meta( $post_id, $key ) {
 }
 
 /**
+ * Bump a counter option atomically and return the new value. One
+ * INSERT … ON DUPLICATE KEY UPDATE with the LAST_INSERT_ID() trick, so two
+ * genuinely simultaneous callers can never mint the same number — booking
+ * numbers are user-facing identifiers in emails and the host list, where the
+ * old get/increment/update race would confuse (adversarial review,
+ * 7 September 2026; the LAW reference counter rides the same fix).
+ *
+ * @param string $option Counter option name.
+ * @return int The incremented counter.
+ */
+function law_events_bump_counter( $option ) {
+	global $wpdb;
+	$wpdb->query(
+		$wpdb->prepare(
+			"INSERT INTO {$wpdb->options} (option_name, option_value, autoload)
+			 VALUES (%s, LAST_INSERT_ID(1), 'no')
+			 ON DUPLICATE KEY UPDATE option_value = LAST_INSERT_ID(option_value + 1)",
+			$option
+		)
+	);
+	$counter = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' );
+	// The raw write bypassed the options API: drop the cached copy so a
+	// later get_option() (a seeded starting value, say) reads the real row.
+	wp_cache_delete( $option, 'options' );
+	wp_cache_delete( 'alloptions', 'options' );
+	wp_cache_delete( 'notoptions', 'options' );
+	return $counter;
+}
+
+/**
  * Generate the next LAW reference, continuing the GP Unique ID sequence
  * (format LAW<yy>-<5 digits>, e.g. LAW26-00207). The counter option is
  * seeded by the migrator from wp_gpui_sequence.
  */
 function law_events_next_reference() {
-	$counter = (int) get_option( 'law_events_reference_counter', 0 );
-	$counter++;
-	update_option( 'law_events_reference_counter', $counter, false );
-	$year = (int) law_events_setting( 'year', (int) gmdate( 'Y' ) );
+	$counter = law_events_bump_counter( 'law_events_reference_counter' );
+	$year    = (int) law_events_setting( 'year', (int) gmdate( 'Y' ) );
 	return sprintf( 'LAW%02d-%05d', $year % 100, $counter );
 }

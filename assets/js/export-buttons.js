@@ -13,10 +13,13 @@
 	'use strict';
 
 	var box = document.querySelector('[data-law-export]');
-	var form = document.getElementById('law-cal-filter-form');
-	if (!box || !form) {
+	if (!box) {
 		return;
 	}
+	// The dashboard has a live filter bar whose values ride along; the
+	// bookings list (and any future export surface) has none, and the baked
+	// hrefs are already complete.
+	var form = document.getElementById('law-cal-filter-form');
 
 	var exportUrl = box.getAttribute('data-export-url');
 
@@ -24,12 +27,14 @@
 	// filter set, read generically at the moment of use.
 	function filterParams() {
 		var params = new URLSearchParams();
-		form.querySelectorAll('input[name], select[name]').forEach(function (field) {
-			var value = field.value.trim();
-			if (value !== '') {
-				params.set(field.name, value);
-			}
-		});
+		if (form) {
+			form.querySelectorAll('input[name], select[name]').forEach(function (field) {
+				var value = field.value.trim();
+				if (value !== '') {
+					params.set(field.name, value);
+				}
+			});
+		}
 		return params;
 	}
 
@@ -78,9 +83,10 @@
 				}));
 
 				window.pdfMake.createPdf({
-					// 17 columns: A3 landscape keeps them legible and still
-					// prints on A4 with "fit to page".
-					pageSize: 'A3',
+					// The dashboard's 17 columns need A3 landscape to stay
+					// legible (it still prints on A4 with "fit to page"); the
+					// narrower bookings export sits comfortably on A4.
+					pageSize: d.columns.length > 10 ? 'A3' : 'A4',
 					pageOrientation: 'landscape',
 					pageMargins: [20, 24, 20, 28],
 					defaultStyle: { fontSize: 7 },

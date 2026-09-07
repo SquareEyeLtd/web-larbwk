@@ -96,6 +96,8 @@ function law_setup_account_pages() {
 	// renders the sign-in / forgot / reset forms itself; the shortcode would
 	// only render an empty string there, but removing it keeps the editor
 	// content honest.
+	$report[] = 'ACCESS   /account/events/ attendee role: ' . law_setup_account_events_attendee_access();
+
 	$login_page = get_page_by_path( 'login' );
 	if ( $login_page instanceof WP_Post ) {
 		$block   = "<!-- wp:shortcode -->\n[law_login]\n<!-- /wp:shortcode -->";
@@ -118,6 +120,32 @@ function law_setup_account_pages() {
 	}
 
 	return $report;
+}
+
+/**
+ * The bookings build (EVENTS_BOOKINGS.md): /account/events/ hosts the
+ * "Your bookings" section, and its Members restriction predates the attendee
+ * audience — without this, pure attendees are blocked from their own
+ * bookings. The restriction is database state, so both this setup helper and
+ * migration step 10 apply it on every environment; nothing is scripted only
+ * as a local click.
+ *
+ * @return string ok | updated | unrestricted | missing.
+ */
+function law_setup_account_events_attendee_access() {
+	$page = get_page_by_path( 'account/events' );
+	if ( ! $page instanceof WP_Post ) {
+		return 'missing';
+	}
+	$roles = get_post_meta( $page->ID, '_members_access_role' );
+	if ( ! $roles ) {
+		return 'unrestricted'; // No Members restriction on this environment.
+	}
+	if ( in_array( 'attendee', $roles, true ) ) {
+		return 'ok';
+	}
+	add_post_meta( $page->ID, '_members_access_role', 'attendee' );
+	return 'updated';
 }
 
 /**

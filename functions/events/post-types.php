@@ -14,6 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 const LAW_EVENT_CPT   = 'law_event';
 const LAW_SPEAKER_CPT = 'law_speaker';
 const LAW_SESSION_CPT = 'law_session';
+const LAW_BOOKING_CPT = 'law_booking';
 
 function law_events_capability_args() {
 	return array(
@@ -98,6 +99,32 @@ function law_events_register_post_types() {
 				'show_in_rest'       => false,
 				'rewrite'            => false,
 				'supports'           => array( 'title', 'editor' ),
+			)
+		)
+	);
+
+	register_post_type(
+		LAW_BOOKING_CPT,
+		array_merge(
+			law_events_capability_args(),
+			array(
+				'labels'        => array(
+					'name'          => 'Bookings',
+					'singular_name' => 'Booking',
+					'edit_item'     => 'Booking',
+				),
+				'public'             => false,
+				'publicly_queryable' => false,
+				'show_ui'            => true,
+				'show_in_menu'       => 'edit.php?post_type=' . LAW_EVENT_CPT,
+				'show_in_rest'       => false,
+				'rewrite'            => false,
+				'supports'           => array( 'title' ),
+				// Bookings are only ever created by the engine
+				// (law_booking_create()), so the capacity, duplicate and clash
+				// guards and the seat recount can never be bypassed from
+				// wp-admin. The admin screen is read-only inspection.
+				'capabilities'       => array( 'create_posts' => 'do_not_allow' ),
 			)
 		)
 	);

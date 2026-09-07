@@ -91,6 +91,28 @@ abstract class LAW_Test_Case extends TestCase {
 		return $this->make_user( 'events_committee' );
 	}
 
+	/**
+	 * Create a booking through the engine, tracking the booking post AND the
+	 * accounts the engine creates for additional attendees — tearDown only
+	 * deletes tracked entities, and the engine creates things the fixtures
+	 * didn't.
+	 *
+	 * @return int|WP_Error law_booking_create()'s result.
+	 */
+	protected function make_booking( int $event_id, int $owner_id, array $additional = array() ) {
+		$result = law_booking_create( $event_id, $owner_id, $additional );
+		if ( ! is_wp_error( $result ) ) {
+			$this->posts[] = (int) $result;
+		}
+		foreach ( $additional as $row ) {
+			$user = get_user_by( 'email', (string) ( $row['email'] ?? '' ) );
+			if ( $user && ! in_array( (int) $user->ID, $this->users, true ) ) {
+				$this->users[] = (int) $user->ID;
+			}
+		}
+		return $result;
+	}
+
 	/** Queue Stripe responses for the happy invoice path. */
 	protected function queue_invoice_success( $customer = 'cus_test1', $invoice = 'in_test1' ): void {
 		$GLOBALS['law_test_stripe_queue'] = array(

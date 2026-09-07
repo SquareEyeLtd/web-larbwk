@@ -9,3 +9,4 @@
 - [Committee dashboard filter bar pass 2026-09-05](committee-dashboard-filter-bar-pass-2026-09-05.md) — all AJAX filter/skeleton/mobile-modal/hover-colour checks passed; 1 pre-existing sitewide fixed-nav overlap on mobile (not a regression)
 - [Committee detail view sections pass 2026-09-05](committee-detail-view-sections-pass-2026-09-05.md) — new Speakers/Sessions/Owners/Invoice sections all correct; REAL mobile overflow bug in `.law-dashboard__facts` grid (fixed 180px col + no min-width:0)
 - [Thread reply AJAX pass 2026-09-05](thread-reply-ajax-pass-2026-09-05.md) — found form.action/named-input root cause of reply failures, confirmed fix; found remaining gap in full-logout stale-session error path
+- [Bookings phase 8 E2E pass 2026-09-07](bookings-phase8-e2e-pass-2026-09-07.md) — 9/9 flows pass overall; 4 real cosmetic bugs (missing AJAX notices, broken "Browse the programme" link, 2 wording/pluralisation nits); 1 gate-vs-spec conflict flagged

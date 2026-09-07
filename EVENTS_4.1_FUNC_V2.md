@@ -22,7 +22,56 @@ the AJAX layer on the committee dashboard's workflow actions, and the
 cancel/withdraw/delete round: the seventh status `law-cancelled`, the
 committee Cancel and host Withdraw actions, the dashboard Delete-to-trash,
 the Stripe invoice-void helper (`law_stripe_void_invoice()`) and three new
-emails (25 total).
+emails (25 total). Updated again 7 September 2026 for **bookings phase 1**
+(EVENTS_BOOKINGS.md is that feature's design contract): the fourth CPT
+`law_booking`, the bookings engine (`bookings.php`), the shared request
+plumbing (`request.php`, where `law_events_redirect_back()` and
+`law_events_rate_limit_ok()` moved from comments.php), the booking meta
+schema plus the `_law_tickets_sold` / `_law_capacity_warned` event keys, the
+status guard and untrash filter extended to bookings, and the parameterised
+`law_events_create_host_user()` + extracted
+`law_events_password_setup_link()` in co-owners.php. Bookings phase 2 landed
+the same day: the twelve bookings/welcome emails (37 total), the
+`$extra['attachments']` extension to `law_events_send()`, the `.ics`
+generator (`ics.php`), the `{event_date}`/`{event_time}` placeholders and
+the registration welcome email. Bookings phase 3 (same day): the booking
+surface — the five admin-post handlers on the shared request guard, the
+five-state booking control (`functions/account-bookings.php`), the booking
+modal and attendee repeater partials, `assets/js/booking-form.js`, the
+programme card's placeholder Register action removed, the hero's
+"Places remaining" fact, and the registration form's locked-role +
+`redirect_to` round trip for the modal's register link. Phases 4–6 (same
+day): the account area (the "Your bookings" section and audience split on
+My events, the `?law_booking=` manage view, the page 292 (My events)
+attendee-access fix scripted in `law_setup_account_events_attendee_access()`
++ migration step 10), the host/committee `?law_event_bookings=` list with
+per-attendee Reject and the CSV/Excel/PDF export trio
+(`law_booking_export`, reusing export.php with a new optional title line),
+the read-only wp-admin booking screen (`admin/booking-screen.php`) and the
+events list's Booked column, and the event-cancel sweep
+(`law_bookings_cancel_all_for_event()`, called from the workflow's cancel
+side effects). The phase 7 security review (no critical/high findings) led
+to: all booking guards moved inside the event lock and the lock extended to
+remove/cancel; a row/owner cap inside the `attendee_rows` sanitiser; the
+.ics temp file deleted in a `finally`; and a locked registration role
+enforced server-side. Accepted info-level items (wp-admin trash of bookings
+bypassing the engine, unescaped email subjects) are recorded in
+EVENTS_BOOKINGS.md §14. A further round of three independent reviews
+(plan-conformance, adversarial correctness, performance) then landed:
+account creation and attendee emails moved OUTSIDE the lock (seats written
+under it, IDs backfilled after); the last-row auto-cancel re-checks rows
+under its own lock; events trashed/hard-deleted outside the workflow
+sweep-cancel their bookings (`wp_trash_post`/`before_delete_post`), and the
+sweep is time-boxed with a `law_bookings_resume_cancel_sweep` cron
+continuation; `law_events_bump_counter()` is atomic
+(`ON DUPLICATE KEY UPDATE` + `LAST_INSERT_ID()`), which also hardens the
+LAW reference counter; `law_events_rate_limit_ok()` gained an optional
+larger per-IP budget (booking surfaces pass 100/150 against shared-NAT
+offices); self-removal matches the row's linked user ID; an inverted
+`_law_end` falls back like a missing one in the clash guard
+(`law_booking_clash_end()`) and the .ics; recount/export fetch all bookings
+(-1); a no-recipient send logs "Email NOT sent"; `cache_users()` primes the
+bookings list and export. EVENTS_BOOKINGS.md §14 carries the full list.
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.
 
@@ -38,13 +87,13 @@ migrator reads them or where the legacy source path still branches on them.
 
 ## 1. Where the feature lives
 
-1. **The events module** (`functions/events/`): a self-contained package of 31
-   files (19 top level, 6 `admin/`, 3 `stripe/`, 3 `migration/`) loaded by one
+1. **The events module** (`functions/events/`): a self-contained package of 34
+   files (22 top level, 6 `admin/`, 3 `stripe/`, 3 `migration/`) loaded by one
    loader, `functions/events/_load.php`, which is required from
    `functions.php:30`. Everything new lives here: the custom post types, the
-   workflow engine, direct Stripe invoicing, the migration tooling, the custom
-   registration/profile/submission forms, the committee dashboard and the
-   site-wide email test mode.
+   workflow engine, the bookings engine, direct Stripe invoicing, the migration
+   tooling, the custom registration/profile/submission forms, the committee
+   dashboard and the site-wide email test mode.
 2. **Shared front-end files** (`functions/`): `calendar.php`, `speakers.php`,
    `account-events.php` and `auth.php` predate the rebuild and now branch on
    `law_events_source()` so they read either the legacy Gravity Forms entries
@@ -66,7 +115,8 @@ back. `law_events_source()` is defined at the bottom of `_load.php`.
 ## 2. The events module (`functions/events/`)
 
 Load order is set in `_load.php`: settings → post types → statuses → meta →
-countries → capabilities → fees → log → workflow → comments → unread → co-owners →
+countries → capabilities → fees → log → **request** → workflow → comments → unread →
+co-owners → **ics** → **bookings** →
 **test-mode** → notifications → speakers → source → submission-form → registration → committee
 → Stripe (client, service, webhook) → admin (fields, event/speaker/session
 screens, columns, emails) → migration (report, runner, page).
@@ -109,15 +159,22 @@ screens, columns, emails) → migration (report, runner, page).
   editable here**; only the derived mode ('live' / 'test' / 'unconfigured') is
   displayed, and the keys stay `wp-config.php` constants.
 
-### `post-types.php`: the three custom post types
+### `post-types.php`: the four custom post types
 
 - Constants `LAW_EVENT_CPT = 'law_event'`, `LAW_SPEAKER_CPT = 'law_speaker'`,
-  `LAW_SESSION_CPT = 'law_session'`.
+  `LAW_SESSION_CPT = 'law_session'`, `LAW_BOOKING_CPT = 'law_booking'`.
 - `law_events_register_post_types()` (on `init` priority 5): registers the
-  three CPTs with a custom `capability_type` (`law_event`/`law_events`), no
+  four CPTs with a custom `capability_type` (`law_event`/`law_events`), no
   front-end archive of their own, `show_in_rest => false` (deliberate — nothing
   about a submitted event should reach the public REST API), and sessions
   hierarchical-by-`post_parent` under their event.
+- `law_booking` (bookings phase 1, EVENTS_BOOKINGS.md): private, no rewrite,
+  `supports => title` only, a submenu of Events like speakers/sessions, and
+  `create_posts => do_not_allow` on top of the shared capability set — bookings
+  are only ever created by the engine (`law_booking_create()`), so the
+  capacity/duplicate/clash guards and the seat recount cannot be bypassed from
+  wp-admin. Event = `post_parent`, owner = `post_author`, status `publish`
+  (active) or `law-cancelled`.
 - `law_events_register_taxonomies()`: `law_event_type`, `law_sector` and
   `law_event_category` on events, plus `law_year` on events and speakers (the
   programme-year filter that keeps a 2026 event from re-filing into 2027).
@@ -144,11 +201,16 @@ screens, columns, emails) → migration (report, runner, page).
 ### `meta.php`: the meta schema and the single read/write path
 
 - `law_event_meta_schema()`, `law_speaker_meta_schema()`,
-  `law_session_meta_schema()`: the ~45 meta keys and their types (text,
-  `text_array`, `int_array`, `address`, `people_rows`, `speaker_rows`,
-  `consent`, `stripe_error`, etc.). Every key is registered via
-  `register_post_meta` in `law_events_register_meta()` (on `init` priority 7)
-  with a per-type sanitiser and an auth callback.
+  `law_session_meta_schema()`, `law_booking_meta_schema()`: the ~50 meta keys
+  and their types (text, `text_array`, `int_array`, `address`, `people_rows`,
+  `speaker_rows`, `attendee_rows`, `consent`, `stripe_error`, etc.). Every key
+  is registered via `register_post_meta` in `law_events_register_meta()` (on
+  `init` priority 7) with a per-type sanitiser and an auth callback. Bookings
+  phase 1 added `_law_tickets_sold` (the recalculated seat counter) and
+  `_law_capacity_warned` (the one-shot host warning latch) to the event
+  schema, and `_law_booking_number` + `_law_attendee_rows` on bookings; the
+  flat `_law_booking_attendee` index rows stay OUT of the schema, exactly like
+  `_law_co_owner`.
 - `law_events_sanitize_value()`: the one sanitiser, switched on type. The row
   types (`people_rows` for co-owners/contacts, `speaker_rows` for the
   event→speaker relationship) clean each subfield and drop empty rows — so the
@@ -164,12 +226,13 @@ screens, columns, emails) → migration (report, runner, page).
   path** shared by the forms, the admin screens and the migrator. Writing an
   empty value deletes the meta; reads return schema-shaped fallbacks for array
   types.
-- `law_events_next_reference()`: the LAW reference counter (e.g.
-  `LAW26-00212`), seeded from the legacy max at migration. It is a plain
-  `get_option` → increment → `update_option`, **not atomic** — two genuinely
-  simultaneous submissions could read the same counter and mint the same
-  reference. Known, accepted at current volumes; if that changes, move the
-  counter to a locked/`ON DUPLICATE KEY UPDATE` write.
+- `law_events_bump_counter( $option )` and `law_events_next_reference()`: the
+  shared counter helper (get → increment → `update_option`, **not atomic** —
+  two genuinely simultaneous callers could mint the same number; known,
+  accepted at current volumes) and the LAW reference built on it (e.g.
+  `LAW26-00212`, seeded from the legacy max at migration).
+  `law_bookings_next_number()` (bookings.php) uses the same helper for the
+  `law_bookings_counter` option behind "Booking #N".
 
 ### `countries.php`: country name → ISO 3166-1 alpha-2
 
@@ -245,6 +308,21 @@ screens, columns, emails) → migration (report, runner, page).
   type) from public comment queries and feeds, so log lines and the private
   committee thread never surface anywhere public.
 
+### `request.php`: shared handler plumbing (bookings phase 1)
+
+- `law_events_redirect_back()` and `law_events_rate_limit_ok()` moved here
+  from comments.php (a pure move — they were always module-wide helpers).
+- `law_events_guard_post( $nonce_action, $args )`: the guard sequence every
+  NEW admin-post handler starts with — the AJAX-nonce-JSON-403 before
+  `check_admin_referer`, the `law_website_url` honeypot (pretend success, the
+  payload supplied per handler), and the rate limit — returning `$is_ajax`.
+- `law_events_respond( $is_ajax, $ok, $payload, $notice )`: the JSON-versus-
+  redirect-with-notice tail; `law_events_nopriv_json()`: the named signed-out
+  answer for `admin_post_nopriv_*` registrations.
+- The six older handlers (comments, withdraw, committee, export, submission,
+  registration) predate these and still carry the sequence inline; they
+  migrate opportunistically.
+
 ### `workflow.php`: the state machine
 
 - `law_event_workflow_actions()`: the transition table — `submit`
@@ -263,7 +341,12 @@ screens, columns, emails) → migration (report, runner, page).
   Publish / Save Draft from confirming an unapproved event or parking it in a
   core status no dashboard shows. New inserts (form, migration, tests) pass
   through untouched. A second filter keeps the custom statuses out of the
-  quick-edit dropdown.
+  quick-edit dropdown. **Since bookings phase 1 the guard also covers
+  `law_booking`** (its own flag, `law_booking_transitioning`, raised only by
+  `law_booking_cancel()`), so quick edit cannot resurrect a cancelled booking;
+  the `wp_untrash_post_status` filter likewise restores a booking to its
+  pre-trash status, constrained to publish/law-cancelled (anything else
+  restores as cancelled, the safe side).
 - `law_event_ui_actions()`: the five actions the two committee UIs offer
   (approve, send_back, reject, mark_paid, cancel), the shared list both the
   dashboard handler and the wp-admin event screen check a posted action
@@ -331,10 +414,10 @@ screens, columns, emails) → migration (report, runner, page).
   label and the matching button label — instead of redirecting; without the
   flag the classic redirect-with-notice flow is unchanged, so no-JS
   submissions still work.
-- `law_events_redirect_back()`, `law_events_rate_limit_ok()`: the shared
-  redirect-with-notice helper and the per-IP/per-user rate limiter (transient
-  keyed on surface + IP or user; keys on `REMOTE_ADDR`, so `X-Forwarded-For`
-  spoofing does nothing).
+- `law_events_redirect_back()` and `law_events_rate_limit_ok()` (the shared
+  redirect-with-notice helper and the per-IP/per-user rate limiter, keyed on
+  `REMOTE_ADDR` so `X-Forwarded-For` spoofing does nothing) **moved to
+  `request.php`** in bookings phase 1.
 
 ### `unread.php`: unread-message toasts for hosts
 
@@ -372,9 +455,14 @@ screens, columns, emails) → migration (report, runner, page).
 - `law_event_set_co_owner_ids()`: the single write path for `_law_co_owner_ids`
   (the array the module reads) plus one flat `_law_co_owner` meta row per ID
   (what the dashboard's owned-events query matches).
-- `law_events_create_host_user()`: creates the account (username = email,
-  random password, `event_host` role) and sends **nothing** — the welcome is
-  the caller's job so it can carry the event's context. It deliberately does
+- `law_events_create_host_user( $email, $name, $organisation, $args )`:
+  creates the account (username = email, random password; `$args` carries
+  `role`, default `event_host`, and an optional `job_title` — the bookings
+  engine passes `attendee`) and sends **nothing** — the welcome is
+  the caller's job so it can carry the event's context.
+  `law_events_password_setup_link( $user, $event_id, $log_action )` mints the
+  branded set-password link (with the forgot-password fallback and failure
+  log), shared by the co-owner welcome and the bookings invite. It deliberately does
   not use core's new-user notification: BNFW (Better Notifications for WP)
   overrides the pluggable `wp_new_user_notification()` and its user branch
   never applies the `wp_new_user_notification_email` filter, so the branded
@@ -386,6 +474,139 @@ screens, columns, emails) → migration (report, runner, page).
   click time by the `login_init` redirect, not rewritten in the message.
 - `law_events_owned_event_ids()`: events a user owns or co-owns, for the host
   dashboard.
+
+### `bookings.php`: the bookings engine (phases 1–6; EVENTS_BOOKINGS.md is the contract)
+
+- **Front-end surfaces** (phases 4–5): `functions/account-bookings.php`
+  (the control, `law_account_bookings()`, the audience split helper, the
+  form-state transients, the enqueues), `parts/events/booking-modal.php` /
+  `attendee-repeater.php` / `booking-manage.php` (`?law_booking=`, owner or
+  seated attendee; remove/add/cancel behind confirm modals with the specified
+  copy and close labels) / `booking-list.php` (`?law_event_bookings=`,
+  `law_user_can_manage_event()`; a flat dashboard-idiom table whose leading
+  Booking column repeats the number per attendee row — Denis, 7 September
+  2026, superseding the grouped-blocks design — with live
+  dietary/accessibility from `law_profile_values()` in wrapping columns,
+  per-attendee Reject with optional reason, cancelled bookings collapsed with
+  the cancelled badge, and the CSV/Excel/PDF export trio). Hosts get "Bookings (n)" on Confirmed cards
+  (`law_account_event_actions()`); the committee dashboard rows link the same
+  URL. `law_booking_export` (GET, format=csv|xlsx|json) reuses
+  `law_events_send_csv()`/`law_events_send_xlsx()` (both grew an optional
+  title line) and export-buttons.js/pdfmake (generalised: the filter form is
+  optional, page size follows column count).
+- **The event-cancel sweep** (phase 6): `law_bookings_cancel_all_for_event()`,
+  a direct call from the workflow's `cancel` side effects — every active
+  booking cancelled, every attendee sent `user_booking_event_cancelled`,
+  one summary log line.
+
+- A booking = a `law_booking` post (event = `post_parent`, owner =
+  `post_author`, `publish` active / `law-cancelled`) carrying
+  `_law_attendee_rows`, an ordered array where **row 0 is the owner**
+  (snapshot: user_id, name, email, organisation, job_title, is_owner), plus
+  one flat `_law_booking_attendee` postmeta row per linked user (the
+  `_law_co_owner` query pattern), all written by the single path
+  `law_booking_set_attendee_rows()`.
+- Mutations, all logging to the parent EVENT's activity log with
+  `source => 'bookings'` and `booking => <id>` (refusals too,
+  `booking_guard_refused`): `law_booking_create()` (guards → attendee-role
+  auto-grant → insert → accounts → rows → recount → emails → capacity check),
+  `law_booking_add_attendee()`, `law_booking_remove_attendee()` (contexts
+  owner / self / host_reject pick the notification template; the last removed
+  row auto-cancels), `law_booking_cancel()` (idempotent; context owner /
+  event_cancelled / last_attendee_removed picks who is emailed).
+- Guards: `law_booking_guard_open()` (Confirmed + CPT source + ticket number
+  set + not started — no ticket number means "Bookings open soon", NOT
+  unlimited), `law_booking_guard_duplicates()` (an email holds one place per
+  event, across active bookings and within a submission),
+  `law_booking_guard_capacity()`, `law_booking_guard_clash()` (overlap on
+  `_law_start`/`_law_end`, missing end = 23:59 of the start date, message
+  names the conflict), `law_booking_clean_additional_rows()` (cap 3, name +
+  valid email required, errors carry row/field data).
+- Places: `_law_tickets_sold` is stored and recalculated by
+  `law_event_recount_attendees()` after every mutation (the programme render
+  is the hot path, so no live counting); `law_event_tickets_remaining()`
+  returns null for "not open"; a `GET_LOCK('law_booking_event_<id>', 3)`
+  serialises the mutations — since the phase 7 security review EVERY
+  shared-state read runs inside it (the duplicate, own-booking, clash,
+  additional-cap and capacity guards on create/add, and the row
+  read-modify-write on remove/reject/cancel; the lock is re-entrant per
+  session, so remove's last-row auto-cancel taking it again is fine), so two
+  parallel submits can no longer both pass the pre-checks; two backstop
+  hooks (`transition_post_status`, `deleted_post`) recount after wp-admin
+  trash/untrash/delete, which never touch the engine.
+- Accounts: `law_booking_ensure_attendee_user()` links an existing account by
+  email (granting the `attendee` role) or creates one via the parameterised
+  `law_events_create_host_user()`; an account failure keeps the seat
+  (snapshot counts) and logs `booking_attendee_error`.
+- `law_booking_maybe_capacity_warning()`: one-shot host warning at ≤ 5 places
+  remaining (`_law_capacity_warned`), re-armed by the recount when removals
+  lift remaining above 5.
+- Emails (phase 2): `user_booking_confirmed`, `host_booking_received`,
+  `committee_booking_received` (assignee-first via `$extra['to']`, falling
+  back to the committee list), `user_attendee_invited` / `_added` /
+  `_rejected` / `_removed` / `_removed_self`,
+  `user_booking_cancelled_attendee`, `user_booking_event_cancelled` (the
+  phase 6 event-cancel sweep will send it) and `host_capacity_warning` — all
+  in the registry, editable on the Emails screen, every send logged. The
+  confirmation and both attendee-added emails attach the event's `.ics`
+  invite via `law_booking_send_with_ics()` (tempfile deleted after the
+  synchronous send). One removal template per context, because a single
+  "you have been removed" would mis-describe most of them.
+- Handlers (phase 3), all on `law_events_guard_post()` (request.php):
+  `law_booking_create` (any signed-in user; role auto-granted; 10/600s on the
+  `booking` surface), `law_booking_add_attendee` / `law_booking_cancel`
+  (booking owner), `law_booking_remove_attendee` (owner, or the row's own
+  user — the context picks the email), `law_booking_reject_attendee`
+  (`law_user_can_manage_event()` on `post_parent`; posted event IDs are never
+  trusted), all 15/600s on `booking_edit`. Error payloads carry the engine's
+  row/field data so booking-form.js can mark the offending input; the no-JS
+  path stores `law_booking_store_form_state()` (account-bookings.php) and the
+  inline form re-renders with the typed rows. One rule beyond the guards:
+  **one active booking per person per event** — even a seatless owner is
+  refused a second booking and manages their existing one instead.
+- Front end (phase 3): `functions/account-bookings.php` renders the
+  five-state control (`law_booking_render_action()`: You're booked with a
+  Manage/View link → Bookings open soon → Book now + "N places left" →
+  sold-out disabled "Join waitlist" placeholder → "This event has taken
+  place") in `parts/calendar-body.php`'s action row, whose hero fact is now
+  "Places remaining" in CPT mode; the programme card's disabled Register
+  default action is gone (`parts/loop/event.php`). The Book now opener is a
+  real link to the inline `?law_book=1` form (the no-JS path);
+  `assets/js/booking-form.js` upgrades it to open
+  `parts/events/booking-modal.php` (the `.law-modal` skeleton with a `--wide`
+  dialog, NOT parts/layout/modal.php, whose args are single-field), wrapped
+  `law-event-form--light` so the dark-hero-first form styles do not vanish on
+  the white dialog. `parts/events/attendee-repeater.php` starts at zero rows
+  ("Add a colleague", cap `min(3, places remaining − 1)`) on its own
+  `data-law-booking-*` hooks so event-form.js's repeaters cannot double-fire.
+  Fetch errors are row/field-marked in place; success opens the locked
+  `law-booking-success` dialog whose two links (Close / View my bookings) are
+  the only exits — no 3-second auto-reload. Assets (event-form.css, the modal
+  pair, booking-form.js) enqueue at head time on the single event view.
+  `law_events_map_post()` now carries `tickets_sold`/`tickets_remaining`; the
+  front end never reads the legacy `tickets` key (its 0 means "unset").
+- Registration (phase 3): `?role=attendee&redirect_to=…` on `/register/`
+  hides the Role section (a hidden input posts the whitelisted role) and both
+  values survive the error round trip; the handler redirects a successful
+  registration back to the validated `redirect_to`, so the modal's register
+  link returns the new attendee to the event they were booking.
+- Tests: `tests/BookingsTest.php` (15 tests: creation, guards, mutations, the
+  status-guard/untrash extensions, the recount backstops) and
+  `tests/BookingEmailsTest.php` (9 tests: .ics UTC/folding/escaping,
+  attachments reaching `wp_mail`, per-context removal templates,
+  assignee-first committee routing, the capacity warning latch, the welcome
+  email); `LAW_Test_Case::make_booking()` tracks engine-created bookings and
+  users so teardown stays clean.
+
+### `ics.php`: calendar invites (bookings phase 2)
+
+- `law_event_ics()` / `law_event_ics_tempfile()`: the VCALENDAR text and the
+  temp file `law_booking_send_with_ics()` attaches. Naive site-local
+  `_law_start`/`_law_end` strings are converted from `wp_timezone()` to UTC
+  `DTSTART:…Z` (no VTIMEZONE; correct across the BST/GMT boundary); a missing
+  end defaults to start + 2 hours; no start means no invite ('' returned).
+- `law_events_ics_escape()` / `law_events_ics_fold()` / `law_events_ics_utc()`:
+  RFC 5545 escaping, 75-octet folding (multibyte-safe) and the UTC conversion.
 
 ### `test-mode.php`: site-wide email test mode
 
@@ -431,7 +652,7 @@ screens, columns, emails) → migration (report, runner, page).
 
 ### `notifications.php`: the email registry
 
-- `law_events_email_registry()`: all 25 module emails as definitions (slug →
+- `law_events_email_registry()`: all 37 module emails as definitions (slug →
   recipients, subject, body with `{placeholders}`, trigger, active flag).
   - **Host**: `user_submitted`, `user_sent_back`, `user_payment_due`,
     `user_confirmed_paid`, `user_confirmed_free`, `user_rejected`,
@@ -452,6 +673,15 @@ screens, columns, emails) → migration (report, runner, page).
   - **Admin / Square Eye**: `admins_user_registered`, `admin_stripe_error`, and
     the three inactive-by-default Square Eye copies `squareeye_submitted`,
     `squareeye_event_updated`, `squareeye_user_registered`.
+  - **Bookings** (phase 2, all `dynamic` unless noted): `user_booking_confirmed`
+    (.ics attached), `host_booking_received` (to `host`),
+    `committee_booking_received` (to `committee`, assignee-first via the send
+    call), `user_attendee_invited` / `user_attendee_added` (.ics attached),
+    the per-context removal family `user_attendee_rejected` /
+    `user_attendee_removed` / `user_attendee_removed_self` /
+    `user_booking_cancelled_attendee` / `user_booking_event_cancelled`,
+    `user_welcome_registered` (registration; event-less, so unlogged) and
+    `host_capacity_warning` (to `host`, one-shot latch).
 - `law_events_email()`: the registry entry with any admin override merged in
   (overrides live in one option, editable on the Emails screen).
 - `law_events_email_placeholders()`: builds the merge values for an event
@@ -823,6 +1053,13 @@ event status by the rebuild) plus "Reference".
   meta boxes and their saves.
 - **`columns.php`**: admin list columns (status, host, slot, payment), a status
   filter dropdown, and the `pre_get_posts` wiring for it.
+- **`booking-screen.php`** (bookings phase 6): the read-only `law_booking`
+  screen — Booking facts (number, status, the parent event linked both ways),
+  Attendees (snapshot rows with `get_edit_user_link()`), Activity (the parent
+  event's log filtered to this booking's context) — plus the bookings list
+  columns and the events list's "Booked" column (`sold / available`, red when
+  the committee lowered the ticket number below sold). Mutations stay
+  front-end-only so the engine's guards always run.
 - **`emails-screen.php`**: the Emails screen (its own top-level menu at
   position 7, directly under the Events menu at 6; formerly LAW > Emails, same
   `law-events-emails` slug and URL) — list, edit, send-test and

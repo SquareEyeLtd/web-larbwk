@@ -178,39 +178,8 @@ function law_event_handle_comment_reply() {
 	law_events_redirect_back( array( 'law_notice' => 'comment-added' ) );
 }
 
-/** Redirect back to the referring page with a query flag. */
-function law_events_redirect_back( array $args = array() ) {
-	$back = wp_get_referer();
-	if ( ! $back ) {
-		$back = home_url( '/account/events/' );
-	}
-	wp_safe_redirect( add_query_arg( array_map( 'rawurlencode', $args ), $back ) );
-	exit;
-}
-
-/**
- * Cheap per-user/IP rate limit for public write surfaces
- * (EVENTS_4.1_REBUILD.md §3.11).
- *
- * @param string $surface Surface key (comment / submit / register).
- * @param int    $user_id Current user (0 for anonymous).
- * @param int    $max     Allowed actions per window.
- * @param int    $window  Window in seconds.
+/*
+ * law_events_redirect_back() and law_events_rate_limit_ok() moved to
+ * functions/events/request.php with the shared handler guard (they were
+ * always module-wide helpers, not thread-specific ones).
  */
-function law_events_rate_limit_ok( $surface, $user_id = 0, $max = 10, $window = 300 ) {
-	// Per-IP AND per-user: many fresh accounts behind one IP share the IP
-	// budget, and one account hopping IPs shares the user budget.
-	$keys   = array( 'law_rl_' . $surface . '_ip' . md5( (string) ( $_SERVER['REMOTE_ADDR'] ?? '' ) ) );
-	if ( $user_id ) {
-		$keys[] = 'law_rl_' . $surface . '_u' . (int) $user_id;
-	}
-	foreach ( $keys as $key ) {
-		if ( (int) get_transient( $key ) >= $max ) {
-			return false;
-		}
-	}
-	foreach ( $keys as $key ) {
-		set_transient( $key, (int) get_transient( $key ) + 1, $window );
-	}
-	return true;
-}

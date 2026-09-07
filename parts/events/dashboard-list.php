@@ -31,7 +31,11 @@ $law_events = law_committee_events();
 					<td><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_slot_label' ) ?: '—' ); ?></td>
 					<td><span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( law_calendar_status_slug( $law_row_status ) ); ?>"><?php echo esc_html( $law_row_status ); ?></span></td>
 					<td><?php echo esc_html( ucfirst( (string) law_event_meta( $law_row->ID, '_law_payment_status' ) ) ?: '—' ); ?></td>
-					<td><a class="button" href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, get_permalink() ) ); ?>">Review</a></td>
+					<td class="law-dashboard__row-actions"><a class="button" href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, get_permalink() ) ); ?>">Review</a>
+					<?php if ( 'publish' === $law_row->post_status && function_exists( 'law_booking_list_url' ) ) : ?>
+						<?php // The same bookings list the host sees: one view, one gate. ?>
+						<a class="button" href="<?php echo esc_url( law_booking_list_url( $law_row->ID ) ); ?>"><?php echo esc_html( sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $law_row->ID ) ) ) ); ?></a>
+					<?php endif; ?></td>
 				</tr>
 			<?php endforeach; ?>
 			</tbody>

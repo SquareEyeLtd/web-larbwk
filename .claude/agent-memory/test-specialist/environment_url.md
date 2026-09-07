@@ -5,7 +5,7 @@ metadata:
   type: project
 ---
 
-As of 2026-09-04, `http://law.localhost` serves only a bare directory index (Apache `Index of /`), NOT the WordPress app. The real working local install is at `http://localhost/law/` (path-based, not a vhost) — `/law/login/`, `/law/wp-admin/`, etc. all resolve correctly there.
+As of 2026-09-04, `http://law.localhost` serves only a bare directory index (Apache `Index of /`), NOT the WordPress app. The real working local install is at `http://localhost/law/` (path-based, not a vhost) — `/law/login/`, `/law/wp-admin/`, etc. all resolve correctly there. Still true as of 2026-09-07 (confirmed again via `get_option('home')`).
 
 **Why:** the local Apache vhost setup changed at some point after the agent instructions were written; `law.localhost` is stale.
 

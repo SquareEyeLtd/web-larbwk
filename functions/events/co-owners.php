@@ -137,24 +137,7 @@ function law_event_notify_co_owner_created( $event_id, $user_id ) {
 		return false;
 	}
 
-	$key  = get_password_reset_key( $user );
-	$link = is_wp_error( $key )
-		? law_auth_login_url( array( 'action' => 'forgot' ) )
-		: law_auth_login_url(
-			array(
-				'action' => 'reset',
-				'key'    => rawurlencode( $key ),
-				'login'  => rawurlencode( $user->user_login ),
-			)
-		);
-
-	if ( is_wp_error( $key ) ) {
-		law_event_log(
-			$event_id,
-			sprintf( 'Could not mint a set-password link for %s: %s. The welcome email points at the forgot-password form instead.', $user->user_email, $key->get_error_message() ),
-			array( 'action' => 'co_owner_error', 'user' => (int) $user->ID, 'source' => 'workflow' )
-		);
-	}
+	$link = law_events_password_setup_link( $user, $event_id, 'co_owner_error' );
 
 	return law_events_send(
 		'user_co_owner_created',
@@ -189,16 +172,23 @@ function law_event_set_co_owner_ids( $event_id, array $ids ) {
 }
 
 /**
- * Create an event_host user. Username = email (matching the form 1 feed).
+ * Create a module user account. Username = email (matching the form 1 feed).
+ * Defaults create an event_host (the co-owner path, untouched); the bookings
+ * engine passes role => attendee and a job title.
  *
  * Deliberately silent: the welcome email is the caller's job, so it can be sent
  * from the module's email registry with the event's context attached (see
  * law_event_notify_co_owner_created()). The migration creates accounts with no
  * email at all.
  *
+ * @param string $email        Email address (becomes the username).
+ * @param string $name         Full name, split on the first whitespace.
+ * @param string $organisation Organisation user meta.
+ * @param array  $args         Optional: role (default event_host), job_title.
  * @return int|WP_Error User ID.
  */
-function law_events_create_host_user( $email, $name = '', $organisation = '' ) {
+function law_events_create_host_user( $email, $name = '', $organisation = '', array $args = array() ) {
+	$args       = array_merge( array( 'role' => 'event_host', 'job_title' => '' ), $args );
 	$name_parts = preg_split( '/\s+/', trim( $name ), 2 );
 	$user_id    = wp_insert_user(
 		array(
@@ -208,7 +198,7 @@ function law_events_create_host_user( $email, $name = '', $organisation = '' ) {
 			'first_name'   => $name_parts[0] ?? '',
 			'last_name'    => $name_parts[1] ?? '',
 			'display_name' => trim( $name ) ?: $email,
-			'role'         => 'event_host',
+			'role'         => (string) $args['role'],
 		)
 	);
 
@@ -221,8 +211,43 @@ function law_events_create_host_user( $email, $name = '', $organisation = '' ) {
 		// mapping); phase D's profile form reads and writes the same key.
 		update_user_meta( $user_id, 'organisation', sanitize_text_field( $organisation ) );
 	}
+	if ( '' !== trim( (string) $args['job_title'] ) ) {
+		// Same key the registration/profile forms write.
+		update_user_meta( $user_id, 'job_title', sanitize_text_field( (string) $args['job_title'] ) );
+	}
 
 	return (int) $user_id;
+}
+
+/**
+ * Mint a branded set-password link for a freshly created account, falling back
+ * to the forgot-password form (with a logged note) when the key cannot be
+ * minted. The reset key expires (24 hours by default, the
+ * password_reset_expiration filter), which is why welcome emails also carry
+ * {forgot_link}. Shared by the co-owner welcome and the bookings invite.
+ *
+ * @param WP_User $user       The account.
+ * @param int     $event_id   Event for the failure log line.
+ * @param string  $log_action Log context action for the failure line.
+ * @return string URL.
+ */
+function law_events_password_setup_link( $user, $event_id, $log_action ) {
+	$key = get_password_reset_key( $user );
+	if ( is_wp_error( $key ) ) {
+		law_event_log(
+			$event_id,
+			sprintf( 'Could not mint a set-password link for %s: %s. The welcome email points at the forgot-password form instead.', $user->user_email, $key->get_error_message() ),
+			array( 'action' => $log_action, 'user' => (int) $user->ID, 'source' => 'workflow' )
+		);
+		return law_auth_login_url( array( 'action' => 'forgot' ) );
+	}
+	return law_auth_login_url(
+		array(
+			'action' => 'reset',
+			'key'    => rawurlencode( $key ),
+			'login'  => rawurlencode( $user->user_login ),
+		)
+	);
 }
 
 /**

@@ -172,9 +172,18 @@ add_action( 'admin_post_law_register', function () {
 function law_registration_handler() {
 	check_admin_referer( 'law_register' );
 
+	// The booking modal's register link arrives with a locked role and a
+	// return destination; both survive the whole round trip, error paths
+	// included, so the new attendee lands back on the event they were booking.
+	$redirect_to = wp_validate_redirect( wp_unslash( (string) ( $_POST['redirect_to'] ?? '' ) ), '' );
+	$locked_role = sanitize_key( (string) ( $_POST['locked_role'] ?? '' ) );
+	if ( ! isset( law_registration_roles()[ $locked_role ] ) ) {
+		$locked_role = '';
+	}
+
 	// Honeypot: pretend success.
 	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
-		wp_safe_redirect( home_url( '/account/?action=registered' ) );
+		wp_safe_redirect( '' !== $redirect_to ? $redirect_to : home_url( '/account/?action=registered' ) );
 		exit;
 	}
 	// Anonymous surface: per-IP limit. 20/hour absorbs a law-firm office or
@@ -243,11 +252,24 @@ function law_registration_handler() {
 		$safe_input = law_events_form_reusable_input( $input );
 		unset( $safe_input['password'], $safe_input['password_confirm'] );
 		law_registration_store_state( array( 'errors' => $errors->errors, 'input' => $safe_input ) );
-		wp_safe_redirect( add_query_arg( 'law_form_error', 1, home_url( '/register/' ) ) );
+		$back = add_query_arg( 'law_form_error', 1, home_url( '/register/' ) );
+		if ( '' !== $locked_role ) {
+			$back = add_query_arg( 'role', $locked_role, $back );
+		}
+		if ( '' !== $redirect_to ) {
+			$back = add_query_arg( 'redirect_to', rawurlencode( $redirect_to ), $back );
+		}
+		wp_safe_redirect( $back );
 		exit;
 	}
 
-	$roles   = array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) );
+	$roles = array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) );
+	// A locked role is enforced, not just hidden (security review, 7 September
+	// 2026): the booking modal's attendee-only entry point must not accept a
+	// tampered roles[] adding event_host/sponsor alongside it.
+	if ( '' !== $locked_role ) {
+		$roles = array( $locked_role );
+	}
 	$user_id = wp_insert_user(
 		array(
 			'user_login'   => $email,
@@ -283,13 +305,17 @@ function law_registration_handler() {
 	);
 	law_events_send( 'admins_user_registered', 0, array( 'placeholders' => $placeholders ) );
 	law_events_send( 'squareeye_user_registered', 0, array( 'placeholders' => $placeholders ) );
+	// The welcome to the new user (settled, EVENTS_BOOKINGS.md). Like the two
+	// admin notices above it has no event, so it is the one send the activity
+	// log cannot record (law_event_log() needs an event to attach to).
+	law_events_send( 'user_welcome_registered', 0, array( 'to' => array( $user->user_email ), 'placeholders' => $placeholders ) );
 
 	// Auto-login (replacing GW Auto Login) + the form 1 confirmation redirect.
 	wp_set_current_user( $user_id );
 	wp_set_auth_cookie( $user_id, true );
 	do_action( 'wp_login', $user->user_login, $user );
 
-	wp_safe_redirect( home_url( '/account/?action=registered' ) );
+	wp_safe_redirect( '' !== $redirect_to ? $redirect_to : home_url( '/account/?action=registered' ) );
 	exit;
 }
 

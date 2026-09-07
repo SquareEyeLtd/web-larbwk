@@ -1407,6 +1407,13 @@ function law_migration_run_pages( $dry ) {
 		law_migration_log( 'pages', 'created', $ref, sprintf( 'Created page %d "%s" with template %s.', $page_id, $config['title'], $config['template'] ) );
 	}
 
+	// The bookings build: attendees must be able to open /account/events/
+	// (the "Your bookings" section lives there). Shared helper with the
+	// setup-account-pages trigger, so the two cannot drift.
+	if ( ! $dry && function_exists( 'law_setup_account_events_attendee_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/events/', 'Attendee role access: ' . law_setup_account_events_attendee_access() . '.' );
+	}
+
 	return array( 'done' => true, 'summary' => sprintf( '%d templates assigned, %d pages created.', $updated, $created ) );
 }
 

@@ -1052,3 +1052,17 @@
 	border-color: #ef7d05;
 	color: #fff;
 }
+
+/* Bookings (EVENTS_BOOKINGS.md §7.1): the five-state control in the single
+   event view's action row. */
+/* The state line ("Bookings open soon", "This event has taken place",
+   "You're booked on this event") at the accordion-heading scale: the theme has
+   no bespoke display text, and this is its largest in-body idiom. */
+.law-booking-state { font-family: "Poppins", sans-serif; font-size: 1.4rem; font-weight: 600; color: #1a1a3d; margin: 0 0 .35rem; flex-basis: 100%; }
+.law-booking-substate { color: #1a1a3d; margin: 0 0 .75rem; flex-basis: 100%; }
+/* Disabled control (the Join waitlist placeholder; also fixes the old Register
+   placeholder look): visibly inert, no pointer, out of the interaction set. */
+.law-cal .button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; pointer-events: none; }
+/* The inline (?law_book=1) booking form replaces the action row's buttons. */
+.law-booking-inline { flex-basis: 100%; max-width: 44rem; margin-top: .5rem; }
+.law-booking-inline .law-modal__actions { justify-content: flex-start; }
