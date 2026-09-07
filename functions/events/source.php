@@ -150,6 +150,25 @@ function law_events_post_term_names( $post_id, $taxonomy ) {
 }
 
 /**
+ * "Sector: note; Sector" summary. The "please specify" answers render inline
+ * after their sector, mirroring the form's conditional fields.
+ */
+function law_event_sector_summary( $event_id ) {
+	$notes = array(
+		'Jurisdiction-specific'  => (string) law_event_meta( $event_id, '_law_sector_jurisdiction' ),
+		'Other / sector-neutral' => (string) law_event_meta( $event_id, '_law_sector_other' ),
+	);
+	$sectors = array_map(
+		function ( $sector ) use ( $notes ) {
+			$note = $notes[ $sector ] ?? '';
+			return '' !== $note ? $sector . ': ' . $note : $sector;
+		},
+		law_events_post_term_names( $event_id, 'law_sector' )
+	);
+	return implode( '; ', $sectors );
+}
+
+/**
  * Sponsored tag (parity with law_calendar_is_sponsored_event()): sponsor tier
  * or zero fee, a sponsor-category organisation, or a submitter with more than
  * one Approved/Confirmed event this year.

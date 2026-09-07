@@ -1,3 +1,4 @@
 - [Phase D review 2026-09-04](phase-d-review-2026-09-04.md) — registration/profile handlers reviewed; email-change P1 now fixed; what's already clean
 - [Phase B hostile review 2026-09-04](phase-b-hostile-review-2026-09-04.md) — full module attack-surface sweep: open P1/P2 findings plus a long confirmed-clean list, don't re-litigate the clean items
-- [Recurring patterns](recurring-patterns.md) — step-up auth pattern (now fixed), role-whitelist double-guard reference, email-match auto-link/backfill anti-pattern, GF inactive-form false positive, anonymous-nonce false positive
+- [Recurring patterns](recurring-patterns.md) — step-up auth pattern (now fixed), role-whitelist double-guard reference, email-match auto-link/backfill anti-pattern, GF inactive-form false positive, anonymous-nonce false positive, status-filter-more-restricted-than-role pattern
+- [Export feature review 2026-09-07](export-feature-review-2026-09-07.md) — committee CSV/XLSX/PDF export: open P2 draft-status leak via ?law_status=law-draft, everything else (secrets, injection, IDOR, pdfmake CVEs) confirmed clean

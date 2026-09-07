@@ -30,6 +30,7 @@ require_once __DIR__ . '/source.php';
 require_once __DIR__ . '/submission-form.php';
 require_once __DIR__ . '/registration.php';
 require_once __DIR__ . '/committee.php';
+require_once __DIR__ . '/export.php';
 require_once __DIR__ . '/stripe/client.php';
 require_once __DIR__ . '/stripe/service.php';
 require_once __DIR__ . '/stripe/webhook.php';

@@ -12,14 +12,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Events for the committee list, filtered by ?law_status= and ?law_kw=.
  *
+ * @param array $overrides Query overrides, e.g. the export passes
+ *                         posts_per_page -1 to escape the 300-row screen cap.
  * @return WP_Post[]
  */
-function law_committee_events() {
+function law_committee_events( array $overrides = array() ) {
 	$status = sanitize_key( $_GET['law_status'] ?? '' );
 	$known  = law_event_statuses();
+	// Drafts are owner-only (unsubmitted host data), so an explicit
+	// ?law_status=law-draft must not select them for the committee either.
 	$query  = array(
 		'post_type'      => LAW_EVENT_CPT,
-		'post_status'    => isset( $known[ $status ] ) ? $status : array_diff( law_event_all_status_keys(), array( 'law-draft' ) ),
+		'post_status'    => isset( $known[ $status ] ) && 'law-draft' !== $status ? $status : array_diff( law_event_all_status_keys(), array( 'law-draft' ) ),
 		'posts_per_page' => 300,
 		'orderby'        => 'modified',
 		'order'          => 'DESC',
@@ -28,7 +32,7 @@ function law_committee_events() {
 	if ( '' !== $keyword ) {
 		$query['s'] = $keyword;
 	}
-	return get_posts( $query );
+	return get_posts( array_merge( $query, $overrides ) );
 }
 
 /** Count per status for the dashboard filter chips. */

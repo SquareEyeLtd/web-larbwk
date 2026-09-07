@@ -488,6 +488,9 @@ screens, columns, emails) → migration (report, runner, page).
   the hydrate step for the single view — not for every event on the programme.
 - `law_events_event_url()`, `law_events_post_term_name(s)()`: permalink and
   taxonomy helpers.
+- `law_event_sector_summary()`: the "Sector: note; Sector" one-liner (the
+  "please specify" answers inline after their sector, mirroring the form's
+  conditional fields). Used by the dashboard detail view and the exports.
 - `law_events_post_is_sponsored()`: the "Sponsored" flag (sponsor tier, a
   sponsor-category organisation, or a repeat approved/confirmed host this year)
   — parity with the legacy calendar logic.
@@ -613,7 +616,15 @@ screens, columns, emails) → migration (report, runner, page).
 
 ### `committee.php`: the committee dashboard back end
 
-- `law_committee_events()`: the review queue query (status filter + search).
+- `law_committee_events( $overrides = array() )`: the review queue query
+  (status filter + search). The `$overrides` array is merged over the query
+  args; the dashboard export passes `posts_per_page => -1` through it to
+  escape the 300-row screen cap without duplicating the filter logic.
+  An explicit `?law_status=law-draft` is refused (falls back to the default
+  non-draft set): drafts are owner-only unsubmitted host data, and before
+  this guard a committee member could list — and once the export existed,
+  bulk-download — every host's drafts by editing the query string
+  (2026-09-07 security review finding).
 - `law_committee_status_counts()`: the filter-chip counts, via **one**
   `wp_count_posts()` call (not a capped per-status query).
 - `law_committee_requested_event()`: the event opened in the detail panel.
@@ -674,6 +685,66 @@ screens, columns, emails) → migration (report, runner, page).
   mechanism). It takes the post lock exactly like the host form; the
   read-only detail view never does. The sidebar's "Full editing in
   wp-admin" link stays — wp-admin remains the fee/invoice edit route.
+
+### `export.php`: the dashboard exports (CSV / Excel / PDF)
+
+Replaces the legacy GravityView view 419 (Events (committee - all))
+DataTables export buttons. Three buttons ("Export: CSV | Excel | PDF") sit
+under the dashboard filter bar (list view only) and export the full filtered
+event list — the legacy column set minus "Workflow step" (folded into the
+event status by the rebuild) plus "Reference".
+
+- **One row builder, three formats.** `law_committee_export_rows()` returns
+  `{columns, rows}` for every format, so they cannot drift. It calls
+  `law_committee_events( array( 'posts_per_page' => -1 ) )` — same
+  `?law_status=` / `?law_kw=` filters as the screen, but uncapped, because a
+  silently truncated download is worse than a truncated screen — and primes
+  the users cache once (`cache_users()`) for the host + assignee lookups.
+  Columns: ID, Reference, Title, Name, Email, Committee assignee, Preferred
+  date & time slots, Confirmed slot, Event status, Payment status, Submitted
+  (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Event fee,
+  Discounted fee, Venue capacity, Tickets available, Venue. The fee column
+  reads the `_law_fee_pence` approval snapshot but falls back to
+  `law_event_calculate_fee_pence()` when it is not set yet, so pre-approval
+  events export their live fee rather than £0.00.
+- **Endpoint**: GET `admin_post_law_committee_export` with
+  `format=csv|xlsx|json`, nonce `law_committee_export` in the URL
+  (`wp_nonce_url()`, like the migration report export) +
+  `law_user_is_committee()` (committee members lack `manage_options`, so the
+  migration gate could not be copied). `format=json` verifies the nonce
+  manually first and answers failures with `wp_send_json_error( …, 403 )`
+  (the `law_ajax=1` reasoning from the action handler); no `_nopriv` twin —
+  logged-out hits get core's default 400. Filenames:
+  `events-dashboard-Ymd-His.csv|.xlsx`.
+- **CSV** (`law_events_send_csv()`): the migration-report pattern plus a
+  UTF-8 BOM (Excel renders £ as Â£ without one) and
+  `law_events_csv_guard()`, the OWASP formula-injection prefix (a leading
+  `'` on cells starting `=`, `+`, `-`, `@`, tab or CR, tested past leading
+  whitespace since some imports trim the cell first).
+- **XLSX** (`law_events_send_xlsx()`): a hand-rolled minimal .xlsx via
+  ZipArchive — five parts (`[Content_Types].xml`, `_rels/.rels`,
+  `xl/workbook.xml` + its rels, `xl/worksheets/sheet1.xml`) — so the theme
+  ships no spreadsheet library (`vendor/` is dev-only and gitignored).
+  Inline strings (`t="inlineStr"`, typed text is inert in Excel, which also
+  settles XLSX injection), ints as `t="n"` so ID/tickets sort numerically,
+  explicit `r=` cell refs, `xml:space="preserve"`, and
+  `law_events_xml_text()` strips XML-1.0-forbidden C0 controls (Excel shows
+  a repair prompt otherwise). Written to `wp_tempnam()` (ZipArchive cannot
+  write to `php://memory`), streamed, unlinked.
+- **PDF**: client-side pdfmake (the legacy DataTables mechanism), built by
+  `assets/js/export-buttons.js` from the endpoint's `format=json` branch
+  (`{title, filename, columns, rows}`; the filename keeps the legacy
+  "Events dashboard London Arbitration Week.pdf"). A3 landscape, 7pt,
+  repeating header row. pdfmake 0.2.12 + vfs_fonts (Roboto) live in
+  `assets/js/vendor/`, enqueued footer-side on the dashboard list view only
+  and only for committee users (~3MB; other logged-in visitors of the page
+  just get its "committee only" notice and no export UI).
+- **No-JS**: the CSV/Excel buttons are plain links whose hrefs bake in the
+  server-rendered filters; export-buttons.js refreshes them with the live
+  filter values on `mousedown`/`keydown` (mirroring
+  `filterParams()` in calendar-filters.js) so exports follow AJAX filter
+  changes without a reload. The PDF button renders `hidden` and is only
+  unhidden by JS when `fetch` and `pdfMake` exist.
 
 ### Stripe (`stripe/client.php`, `stripe/service.php`, `stripe/webhook.php`)
 

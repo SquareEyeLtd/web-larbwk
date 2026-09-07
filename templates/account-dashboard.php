@@ -68,22 +68,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					?></dd>
 					<dt>Host organisation(s)</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_host_organisations' ) ?: '—' ); ?></dd>
 					<dt>Event type</dt><dd><?php echo esc_html( law_events_post_term_name( $law_id, 'law_event_type' ) ?: '—' ); ?></dd>
-					<dt>Sector</dt><dd><?php
-						// The "please specify" answers render inline after their sector,
-						// mirroring the form's conditional fields.
-						$law_sector_notes = array(
-							'Jurisdiction-specific'  => (string) law_event_meta( $law_id, '_law_sector_jurisdiction' ),
-							'Other / sector-neutral' => (string) law_event_meta( $law_id, '_law_sector_other' ),
-						);
-						$law_sectors = array_map(
-							function ( $law_sector ) use ( $law_sector_notes ) {
-								$law_note = $law_sector_notes[ $law_sector ] ?? '';
-								return '' !== $law_note ? $law_sector . ': ' . $law_note : $law_sector;
-							},
-							law_events_post_term_names( $law_id, 'law_sector' )
-						);
-						echo esc_html( implode( '; ', $law_sectors ) ?: '—' );
-					?></dd>
+					<dt>Sector</dt><dd><?php echo esc_html( law_event_sector_summary( $law_id ) ?: '—' ); ?></dd>
 					<dt>Slot</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_slot_label' ) ?: 'Not confirmed' ); ?></dd>
 					<dt>Preferred slots</dt><dd><?php echo esc_html( implode( '; ', law_event_meta( $law_id, '_law_preferred_slots' ) ) ?: '—' ); ?></dd>
 					<dt>Venue needed?</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_venue_needed' ) ?: '—' ); ?></dd>
@@ -585,6 +570,21 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 						</div>
 					</form>
 				</div>
+			</div>
+
+			<?php
+			// Export buttons (functions/events/export.php). The hrefs bake in
+			// the server-rendered filters as the no-JS fallback; JS refreshes
+			// them with the live values (assets/js/export-buttons.js). PDF is
+			// built client-side by pdfmake, so it only renders with JS.
+			$law_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_committee_export' ), 'law_committee_export' );
+			$law_export_args = array_filter( array( 'law_kw' => $law_kw, 'law_status' => $law_current ) );
+			?>
+			<div class="law-cal-export" data-law-export data-export-url="<?php echo esc_url( $law_export_base ); ?>">
+				<span class="law-cal-export__label"><?php esc_html_e( 'Export:', 'law' ); ?></span>
+				<a class="button second" data-format="csv" href="<?php echo esc_url( add_query_arg( $law_export_args + array( 'format' => 'csv' ), $law_export_base ) ); ?>">CSV</a>
+				<a class="button second" data-format="xlsx" href="<?php echo esc_url( add_query_arg( $law_export_args + array( 'format' => 'xlsx' ), $law_export_base ) ); ?>">Excel</a>
+				<button type="button" class="button second" data-format="pdf" hidden>PDF</button>
 			</div>
 		</div>
 
