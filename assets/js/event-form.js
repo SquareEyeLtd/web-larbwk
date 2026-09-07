@@ -335,4 +335,97 @@
 				});
 		});
 	});
+
+	/* Withdraw an event without a reload (templates/account-events.php): the
+	   card's form posts via fetch when confirmed from its modal (law_ajax=1
+	   makes law_event_handle_withdraw() answer JSON), mirroring the committee
+	   dashboard's committee-actions.js. Errors print inside the open modal;
+	   success swaps to the shared law-modal-withdraw-success dialog and reloads
+	   the page a few seconds later. Without JS (or without law-modal.js) the
+	   opener stays a plain submit and the classic redirect-with-notice flow
+	   does the job on its own. */
+	(function () {
+		var success = document.getElementById('law-modal-withdraw-success');
+		if (!success || !window.fetch || !window.lawModal) { return; }
+
+		function busyState(modal, button, on) {
+			modal.classList.toggle('law-modal--busy', on);
+			var dialog = modal.querySelector('.law-modal__dialog');
+			if (dialog) {
+				if (on) { dialog.setAttribute('aria-busy', 'true'); } else { dialog.removeAttribute('aria-busy'); }
+			}
+			button.disabled = on;
+			modal.querySelectorAll('.law-modal__actions [data-law-modal-close], .law-modal__close').forEach(function (control) {
+				control.disabled = on;
+			});
+		}
+
+		function showError(modal, message) {
+			var actions = modal.querySelector('.law-modal__actions');
+			var error = modal.querySelector('.law-modal__error');
+			if (!error) {
+				error = document.createElement('p');
+				error.className = 'law-modal__error';
+				error.setAttribute('role', 'alert');
+				if (actions) { actions.parentNode.insertBefore(error, actions); }
+			}
+			error.textContent = message;
+		}
+
+		document.querySelectorAll('.law-event-card__action-form').forEach(function (form) {
+			var modal = form.querySelector('.law-modal');
+			if (!modal) { return; }
+
+			form.addEventListener('submit', function (event) {
+				/* Only the modal's confirm goes over fetch; the opener never
+				   submits with JS on (law-modal.js preventDefaults it). */
+				var submitter = event.submitter;
+				if (!submitter || !submitter.closest('.law-modal')) { return; }
+				event.preventDefault();
+				if (submitter.disabled) { return; }
+
+				var data = new FormData(form);
+				data.append('law_ajax', '1');
+
+				var label = submitter.textContent;
+				submitter.textContent = submitter.getAttribute('data-law-modal-busy') || 'Working…';
+				busyState(modal, submitter, true);
+				var oldError = modal.querySelector('.law-modal__error');
+				if (oldError) { oldError.remove(); }
+
+				function fail(message) {
+					submitter.textContent = label;
+					busyState(modal, submitter, false);
+					showError(modal, message);
+				}
+
+				// getAttribute, not form.action: the hidden name="action" input every
+				// admin-post form carries shadows the property and returns the element.
+				fetch(form.getAttribute('action'), { method: 'POST', body: data, credentials: 'same-origin' })
+					.then(function (response) { return response.json(); })
+					.then(function (response) {
+						var payload = response.data || {};
+						if (!response.success) {
+							fail(payload.message || 'Sorry, that did not work. Please try again.');
+							return;
+						}
+						var title = success.querySelector('.law-modal__title');
+						var copy = success.querySelector('.law-modal__copy');
+						if (title && payload.title) { title.textContent = payload.title; }
+						if (copy && payload.message) { copy.textContent = payload.message; }
+						submitter.textContent = label;
+						busyState(modal, submitter, false);
+						window.lawModal.open('law-modal-withdraw-success');
+						/* replace, not assign: Back should not return to the stale
+						   pre-action page. */
+						window.setTimeout(function () {
+							window.location.replace(payload.redirect || window.location.href);
+						}, 3000);
+					})
+					.catch(function () {
+						fail('Sorry, that did not work. Please reload the page to check the event before trying again.');
+					});
+			});
+		});
+	})();
 })();

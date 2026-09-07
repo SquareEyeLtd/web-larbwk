@@ -50,6 +50,7 @@ function law_event_meta_schema() {
 		'_law_registration_state'   => 'registration_state',
 		'_law_gf_entry_id'          => 'int',
 		'_law_rejection_reason'     => 'multiline',
+		'_law_cancellation_reason'  => 'multiline',
 		'_law_sector_jurisdiction'  => 'text',
 		'_law_sector_other'         => 'text',
 		'_law_terms_consent'        => 'consent',

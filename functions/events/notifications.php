@@ -1,7 +1,7 @@
 <?php
 /**
  * Notifications (EVENTS_4.1_REBUILD.md §3.8). Code templates are the
- * always-present defaults; admin overrides (edited on LAW → Emails, or
+ * always-present defaults; admin overrides (edited on the Emails screen, or
  * imported by the migration) are stored per email in one option and take
  * precedence. Bodies are content only: the site-wide Email Templates plugin
  * wrapper provides the branding, exactly as it does for every other email.
@@ -124,6 +124,30 @@ function law_events_email_registry() {
 			'active'  => true,
 			'subject' => 'Your event submission: {event_title}',
 			'body'    => "Dear {host_name},\n\nThank you for submitting {event_title} ({law_reference}) to London Arbitration Week. Unfortunately the committee is unable to accept it this year.\n\n{rejection_reason}",
+		),
+		'user_cancelled' => array(
+			'name'    => 'Email to user > event cancelled',
+			'trigger' => 'cancel',
+			'to'      => 'host',
+			'active'  => true,
+			'subject' => 'Your event has been cancelled: {event_title}',
+			'body'    => "Dear {host_name},\n\n{event_title} ({law_reference}) has been cancelled by the London Arbitration Week committee.\n\n{cancellation_reason}\n\nIf an invoice for this event was outstanding, it has been cancelled and no payment is due. If you have already paid, the committee will contact you about a refund.\n\nYou can reply from your events dashboard: {comments_link}",
+		),
+		'committee_withdrawn' => array(
+			'name'    => 'Email to committee > event withdrawn by host',
+			'trigger' => 'withdraw',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'Event withdrawn: {event_title} ({law_reference})',
+			'body'    => "The host has withdrawn {event_title} ({law_reference}). The event is now Cancelled and needs no further review.\n\n{cancellation_reason}\n\nView it on the committee dashboard: {committee_link}",
+		),
+		'committee_cancelled_paid' => array(
+			'name'    => 'Email to committee > cancelled event had been paid',
+			'trigger' => 'cancel of a paid event / payment on a cancelled event',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'ACTION NEEDED: cancelled event was paid: {event_title} ({law_reference})',
+			'body'    => "{event_title} ({law_reference}) is cancelled, but its fee of {fee} has been paid. Refunds are never automatic: review the payment in Stripe and refund manually if appropriate.\n\n{committee_link}",
 		),
 		'committee_event_updated' => array(
 			'name'    => 'Email to committee > event updated',
@@ -254,6 +278,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{venue}'            => (string) law_event_meta( $event_id, '_law_venue' ),
 		'{slot}'             => (string) law_event_meta( $event_id, '_law_slot_label' ),
 		'{rejection_reason}' => (string) law_event_meta( $event_id, '_law_rejection_reason' ),
+		'{cancellation_reason}' => (string) law_event_meta( $event_id, '_law_cancellation_reason' ),
 		'{event_link}'       => $post && 'publish' === $post->post_status ? get_permalink( $post ) : '',
 		'{edit_link}'        => admin_url( 'post.php?post=' . (int) $event_id . '&action=edit' ),
 		'{dashboard_link}'   => $dashboard,

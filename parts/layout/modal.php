@@ -22,14 +22,20 @@
  *     'error'    => 'Please tell the host why.',
  *     'value'    => '',                    // Prefilled text. Optional.
  *   ),
- *   'confirm' => array(                    // The submit button in the dialog.
- *     'label' => 'Approve',                // Default 'Confirm'.
+ *   'confirm' => array(                    // The submit button in the dialog,
+ *     'label' => 'Approve',                // Default 'Confirm'.       or false
  *     'name'  => 'law_action',             // Optional; omitted if empty.
  *     'value' => 'approve',
  *     'class' => 'button orange',          // Default 'button'.
- *   ),
+ *     'busy'  => 'Approving…',             // Optional in-flight label, rendered
+ *   ),                                     // as data-law-modal-busy for a
+ *                                          // script that submits over fetch.
  *   'close'   => 'Close',                  // Secondary button. Default 'Cancel'.
  * ) );
+ *
+ * 'confirm' => false renders an informational dialog with no submit button at
+ * all (just the copy and the close controls), for a script-opened result
+ * message.
  *
  * The modal starts hidden and stays hidden without JavaScript, so the opener
  * button must work on its own as a plain submit as well.
@@ -59,12 +65,16 @@ $law_modal_copy = is_array( $law_modal_copy ) ? $law_modal_copy : array( $law_mo
 
 $law_modal_close = isset( $args['close'] ) && '' !== trim( (string) $args['close'] ) ? trim( (string) $args['close'] ) : 'Cancel';
 
+// false, exactly, means no submit button: an informational dialog.
+$law_modal_no_confirm = isset( $args['confirm'] ) && false === $args['confirm'];
+
 $law_modal_confirm = isset( $args['confirm'] ) && is_array( $args['confirm'] ) ? $args['confirm'] : array();
 $law_modal_confirm = array(
 	'label' => isset( $law_modal_confirm['label'] ) && '' !== trim( (string) $law_modal_confirm['label'] ) ? trim( (string) $law_modal_confirm['label'] ) : 'Confirm',
 	'name'  => isset( $law_modal_confirm['name'] ) ? trim( (string) $law_modal_confirm['name'] ) : '',
 	'value' => isset( $law_modal_confirm['value'] ) ? (string) $law_modal_confirm['value'] : '',
 	'class' => isset( $law_modal_confirm['class'] ) && '' !== trim( (string) $law_modal_confirm['class'] ) ? trim( (string) $law_modal_confirm['class'] ) : 'button',
+	'busy'  => isset( $law_modal_confirm['busy'] ) ? trim( (string) $law_modal_confirm['busy'] ) : '',
 );
 
 $law_modal_field = isset( $args['field'] ) && is_array( $args['field'] ) ? $args['field'] : array();
@@ -129,7 +139,9 @@ if ( $law_modal_field ) {
 		<?php endif; ?>
 		<p class="law-modal__actions">
 			<button type="button" class="button second" data-law-modal-close><?php echo esc_html( $law_modal_close ); ?></button>
-			<button type="submit"<?php if ( '' !== $law_modal_confirm['name'] ) : ?> name="<?php echo esc_attr( $law_modal_confirm['name'] ); ?>" value="<?php echo esc_attr( $law_modal_confirm['value'] ); ?>"<?php endif; ?> class="<?php echo esc_attr( $law_modal_confirm['class'] ); ?>"><?php echo esc_html( $law_modal_confirm['label'] ); ?></button>
+			<?php if ( ! $law_modal_no_confirm ) : ?>
+				<button type="submit"<?php if ( '' !== $law_modal_confirm['name'] ) : ?> name="<?php echo esc_attr( $law_modal_confirm['name'] ); ?>" value="<?php echo esc_attr( $law_modal_confirm['value'] ); ?>"<?php endif; ?><?php if ( '' !== $law_modal_confirm['busy'] ) : ?> data-law-modal-busy="<?php echo esc_attr( $law_modal_confirm['busy'] ); ?>"<?php endif; ?> class="<?php echo esc_attr( $law_modal_confirm['class'] ); ?>"><?php echo esc_html( $law_modal_confirm['label'] ); ?></button>
+			<?php endif; ?>
 		</p>
 	</div>
 </div>

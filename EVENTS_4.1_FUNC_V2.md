@@ -13,9 +13,17 @@ Working reference for the custom, CPT-backed events module that replaces the
 Gravity Forms / Gravity Flow / GravityView / Make stack described in
 EVENTS_4.1_FUNC.md. Verified against the codebase and the local database on
 5 September 2026, re-verified after the forms/payments security round and
-the additional-host email round the same day, and updated 6 September 2026
+the additional-host email round the same day, updated 6 September 2026
 for the pre-launch-gate host bypass, the new `404.php` and the time-boxed,
-batched migration history step. The companion EVENTS_4.1_REBUILD.md remains the design contract;
+batched migration history step, and updated 7 September 2026 for the
+module-owned country → ISO mapper (`countries.php`), the committee
+front-end edit view (with the resubmit-on-any-save fix that came with it),
+the AJAX layer on the committee dashboard's workflow actions, and the
+cancel/withdraw/delete round: the seventh status `law-cancelled`, the
+committee Cancel and host Withdraw actions, the dashboard Delete-to-trash,
+the Stripe invoice-void helper (`law_stripe_void_invoice()`) and three new
+emails (25 total).
+The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.
 
 Unlike EVENTS_4.1_FUNC.md, this file carries no secrets, so it is safe to
@@ -30,8 +38,8 @@ migrator reads them or where the legacy source path still branches on them.
 
 ## 1. Where the feature lives
 
-1. **The events module** (`functions/events/`): a self-contained package of 30
-   files (18 top level, 6 `admin/`, 3 `stripe/`, 3 `migration/`) loaded by one
+1. **The events module** (`functions/events/`): a self-contained package of 31
+   files (19 top level, 6 `admin/`, 3 `stripe/`, 3 `migration/`) loaded by one
    loader, `functions/events/_load.php`, which is required from
    `functions.php:30`. Everything new lives here: the custom post types, the
    workflow engine, direct Stripe invoicing, the migration tooling, the custom
@@ -58,7 +66,7 @@ back. `law_events_source()` is defined at the bottom of `_load.php`.
 ## 2. The events module (`functions/events/`)
 
 Load order is set in `_load.php`: settings → post types → statuses → meta →
-capabilities → fees → log → workflow → comments → unread → co-owners →
+countries → capabilities → fees → log → workflow → comments → unread → co-owners →
 **test-mode** → notifications → speakers → source → submission-form → registration → committee
 → Stripe (client, service, webhook) → admin (fields, event/speaker/session
 screens, columns, emails) → migration (report, runner, page).
@@ -119,10 +127,12 @@ screens, columns, emails) → migration (report, runner, page).
 
 ### `statuses.php`: the custom workflow statuses
 
-- `law_event_statuses()`: the six statuses and their labels — `law-draft`
+- `law_event_statuses()`: the seven statuses and their labels — `law-draft`
   (Draft), `law-proposed` (Proposed), `law-sent-back` (Sent back),
-  `law-approved` (Approved), `publish` (**Confirmed** — the only public one)
-  and `law-rejected` (Rejected).
+  `law-approved` (Approved), `publish` (**Confirmed** — the only public one),
+  `law-rejected` (Rejected) and `law-cancelled` (Cancelled — the shared
+  terminal state of the committee's `cancel` and the host's `withdraw`; there
+  is no un-cancel).
 - `law_events_register_statuses()` (on `init` priority 6): `register_post_status`
   for each, with count labels for the admin list.
 - `law_event_status_label()`: label for a status key or a post.
@@ -160,6 +170,31 @@ screens, columns, emails) → migration (report, runner, page).
   simultaneous submissions could read the same counter and mint the same
   reference. Known, accepted at current volumes; if that changes, move the
   counter to a locked/`ON DUPLICATE KEY UPDATE` write.
+
+### `countries.php`: country name → ISO 3166-1 alpha-2
+
+- `law_events_country_to_iso()`, `law_events_country_map()`,
+  `law_events_norm_country()`: the ~460-name map (official names, common names,
+  colloquial spellings — "UK", "England", "Holland") and the converter. Stripe
+  requires `address[country]` as an alpha-2 code, while the forms collect a
+  country name; the result is stored as `_law_country_iso` and sent in the
+  customer payload (`stripe/service.php`). An unmapped name returns '' (and is
+  error-logged), never a guess — an empty ISO is filtered out of the Stripe
+  payload, so the invoice just carries no country line.
+- Written on both save paths: the host form always derives it from the posted
+  billing country (a select constrained to the registration country list), and
+  the wp-admin event screen re-derives it from the country name on every save —
+  a mapped name **always wins over the Country ISO box**, so a stale manual
+  value cannot outlive a changed country; the box is only a fallback for a name
+  the map does not know.
+- History: this map is a copy of the one in the mu-plugin
+  `law-gf-country-iso.php`, which fills form 2 (Event > submit an event)
+  field 88 (Country ISO) from the country part of field 74 (Address) for the
+  legacy Make → Stripe path. The module no longer calls that mu-plugin
+  (deliberately left untouched), so the map is duplicated until cutover: an
+  unmapped spelling gets added **here**, and the mu-plugin is deleted wholesale
+  with the rest of the legacy stack, without breaking the module's ISO
+  derivation.
 
 ### `capabilities.php`: roles and per-event access
 
@@ -216,8 +251,12 @@ screens, columns, emails) → migration (report, runner, page).
   (draft → proposed, owner), `resubmit` (sent-back → proposed, owner),
   `approve` (proposed/sent-back → approved, committee), `send_back`
   (proposed → sent-back, committee), `reject` (proposed/sent-back → rejected,
-  committee), `confirm` (approved → publish, system) and `mark_paid`
-  (approved → publish, committee).
+  committee), `confirm` (approved → publish, system), `mark_paid`
+  (approved → publish, committee), `cancel` (approved/confirmed → cancelled,
+  committee, reason required) and `withdraw` (draft/proposed/sent-back →
+  cancelled, owner, reason optional — approved+ events go through the
+  committee's cancel instead, because money and programme slots are involved
+  by then).
 - **The status guard** (a `wp_insert_post_data` filter): an *existing*
   `law_event`'s status can only change through
   `law_event_workflow_transition()`. This is what stops the classic editor's
@@ -225,17 +264,21 @@ screens, columns, emails) → migration (report, runner, page).
   core status no dashboard shows. New inserts (form, migration, tests) pass
   through untouched. A second filter keeps the custom statuses out of the
   quick-edit dropdown.
-- `law_event_ui_actions()`: the four actions the two committee UIs offer, the
-  shared list both the dashboard handler and the wp-admin event screen check a
-  posted action against.
-- `law_event_available_ui_actions( $event )`: the subset of those four that is
+- `law_event_ui_actions()`: the five actions the two committee UIs offer
+  (approve, send_back, reject, mark_paid, cancel), the shared list both the
+  dashboard handler and the wp-admin event screen check a posted action
+  against. `withdraw` is deliberately NOT in this list: it is a host action
+  with its own handler, and this list is what renders committee buttons.
+- `law_event_available_ui_actions( $event )`: the subset of those five that is
   legal for the event's *current* status, read off the same from-lists the
   transition guard enforces. Both committee UIs (the dashboard detail view and
   the wp-admin Workflow box) render only these buttons/radios and their modals,
   so nobody is offered an action that would only bounce with "Cannot … an event
   that is Approved". Proposed offers Approve / Send back / Reject; Sent back
-  offers Approve / Reject; Approved offers Mark paid & confirm; Confirmed and
-  Rejected offer none (the dashboard still shows Save changes).
+  offers Approve / Reject; Approved offers Mark paid & confirm / Cancel;
+  Confirmed offers Cancel; Rejected and Cancelled offer none (the dashboard
+  still shows Save changes, and offers Delete — not a workflow action, see
+  `committee.php` below).
 - `law_event_workflow_transition()`: the single entry point. Validates the
   from-state and the actor's authority (`who`), flips the status, logs it, and
   fires side effects. **A `who => 'system'` action (`confirm`) is machine-only**:
@@ -252,6 +295,22 @@ screens, columns, emails) → migration (report, runner, page).
   Order matters on both: the comment and the reason meta are written *before*
   the send, because `{latest_comment}` and `{rejection_reason}` are built from
   them.
+  On cancel — the same reason-first ordering (`_law_cancellation_reason` +
+  thread comment), then `law_stripe_void_invoice()` **before** the
+  `user_cancelled` email so its "no payment is due" wording is true when read
+  (a failed void alerts and never blocks), and a `committee_cancelled_paid`
+  manual-refund alert when the payment status is already `paid` — a paid fee
+  is never refunded automatically. On withdraw — optional reason to the same
+  meta key and the thread, then `committee_withdrawn`, skipped when the event
+  was withdrawn from `law-draft` (the committee never saw it; the old status
+  is passed into the side effects for exactly this check).
+- `law_event_handle_withdraw()` (on `admin_post_law_event_withdraw`): the host
+  Withdraw handler, mirroring the comment-reply handler — nonce (verified with
+  `wp_verify_nonce` first on the AJAX path so a stale nonce gets JSON, not an
+  HTML die), honeypot, `law_user_can_manage_event()`, rate limit
+  (`'withdraw'` surface), then the `withdraw` transition. With `law_ajax=1` it
+  answers JSON on every path (event-form.js posts it); without, the classic
+  redirect-with-notice flow (`event-withdrawn` / `withdraw-failed`).
 - `law_event_confirm_side_effects()`, `law_event_set_payment_status()`,
   `law_event_log_fee_change()`, `law_event_maybe_notify_assignee()`: the
   confirm/publish path, the logged payment-status setter, fee-override logging
@@ -304,7 +363,7 @@ screens, columns, emails) → migration (report, runner, page).
 - `law_event_notify_co_owner_linked()` and
   `law_event_notify_co_owner_created()`: the two additional-host emails, both
   sent through the module's registry (`user_co_owner_linked` /
-  `user_co_owner_created`) so the copy is editable on LAW > Emails and every
+  `user_co_owner_created`) so the copy is editable on the Emails screen and every
   send lands in the event's activity log. An *existing* account is told it has
   been linked, so access is never granted silently; a *new* account gets the
   welcome with a branded `/login/?action=reset` set-password link minted here
@@ -372,10 +431,12 @@ screens, columns, emails) → migration (report, runner, page).
 
 ### `notifications.php`: the email registry
 
-- `law_events_email_registry()`: all 22 module emails as definitions (slug →
+- `law_events_email_registry()`: all 25 module emails as definitions (slug →
   recipients, subject, body with `{placeholders}`, trigger, active flag).
   - **Host**: `user_submitted`, `user_sent_back`, `user_payment_due`,
     `user_confirmed_paid`, `user_confirmed_free`, `user_rejected`,
+    `user_cancelled` (carries `{cancellation_reason}`; deliberately no
+    `{event_link}`, which resolves empty on an unpublished event),
     `user_new_comment`.
   - **Additional hosts** (co-owners, sent on approval, recipient passed in via
     the send call's `to`): `user_co_owner_created` (new account, carries
@@ -384,12 +445,15 @@ screens, columns, emails) → migration (report, runner, page).
   - **Committee**: `committee_submitted`, `committee_resubmitted`,
     `committee_approved`, `committee_payment_received`,
     `committee_event_updated`, `committee_assignee`, `committee_new_comment`,
-    `committee_refund`.
+    `committee_refund`, `committee_withdrawn` (host withdrew a submitted
+    event; skipped for drafts) and `committee_cancelled_paid` (the "ACTION
+    NEEDED" manual-refund alert — sent by cancel when the fee is already
+    paid, and by the webhook when a payment lands on a cancelled event).
   - **Admin / Square Eye**: `admins_user_registered`, `admin_stripe_error`, and
     the three inactive-by-default Square Eye copies `squareeye_submitted`,
     `squareeye_event_updated`, `squareeye_user_registered`.
 - `law_events_email()`: the registry entry with any admin override merged in
-  (overrides live in one option, editable on the LAW > Emails screen).
+  (overrides live in one option, editable on the Emails screen).
 - `law_events_email_placeholders()`: builds the merge values for an event
   (title, reference, host, fee, dashboard/committee/invoice links, etc.).
 - `law_events_email_recipients()`, `law_events_send()`: resolve recipients and
@@ -458,12 +522,18 @@ screens, columns, emails) → migration (report, runner, page).
 ### `submission-form.php`: the custom submission/edit form (replaces form 2)
 
 - `law_events_user_can_submit()`, `law_events_form_event_id()`,
-  `law_events_locked_fields()`: submission eligibility (committee, or the
-  `event_host`/`sponsor` roles), the edited event ID, and the per-status lock
-  list — title, type, preferred slots, fee tier, invoice block, sectors, host
-  organisations, venue capacity and `venue_needed` all freeze once the event
-  leaves draft/proposed/sent-back; description, speakers, venue, agenda, ticket
-  allocations, contacts and co-owners stay editable.
+  `law_events_locked_fields( $post, $user_id = 0 )`: submission eligibility
+  (committee, or the `event_host`/`sponsor` roles), the edited event ID, and
+  the per-status, per-user lock list. For hosts — title, type, preferred
+  slots, fee tier, invoice block, sectors, host organisations, venue capacity
+  and `venue_needed` all freeze once the event leaves
+  draft/proposed/sent-back; description, speakers, venue, agenda, ticket
+  allocations, contacts and co-owners stay editable. **Committee members
+  bypass every post-approval lock except `fee_tier` and `invoice`** (Denis,
+  7 September 2026): fee and invoice changes stay in the dashboard override
+  control and wp-admin. Pre-approval statuses are unlocked for everyone. The
+  user defaults to the current user, so the template render and the save-side
+  enforcement always agree.
 - `law_events_form_save()`: validation + persistence, with the required set
   mirroring form 2 (Event > submit an event) field for field. **On update it
   always carries the existing title forward** — `wp_insert_post` fills any
@@ -484,13 +554,28 @@ screens, columns, emails) → migration (report, runner, page).
   speakers/sessions and store the relationship rows.
 - `law_events_form_handler()` (on `admin_post_law_event_form`): nonce,
   honeypot, rate limit (15 per 10 minutes), `law_events_user_can_submit()`,
-  then `law_user_can_manage_event()` on an edit. Edit locking replaces
+  then `law_user_can_manage_event()` on an edit. **Cancelled and Rejected
+  events are read-only**: the template shows a "can no longer be edited" note
+  instead of save buttons, and the handler refuses a hand-made or stale POST
+  with the `event-not-editable` notice (the message thread stays open — only
+  edits are refused). Edit locking replaces
   GravityView entry locking: `wp_check_post_lock()` refuses the save with a
   named-editor message when someone else holds the lock, then
-  `wp_set_post_lock()` takes it. Saves, transitions (`submit` from draft,
-  `resubmit` from sent-back) and redirects with a notice (`event-updated`,
-  `draft-saved`) or to the page 372 confirmation. The `nopriv` variant
-  redirects to login.
+  `wp_set_post_lock()` takes it. A posted `law_form_context=committee` field
+  (honoured only for `law_user_is_committee()` users) marks a save from the
+  committee edit view: its failure and success redirects go back to
+  `/account/dashboard/?event=<id>&law_edit=1` / the dashboard detail view
+  instead of the host template. Saving then goes through
+  `law_events_form_result_redirect()`: the `submit` transition from draft and
+  the page 372 confirmation as before, but **`resubmit` from sent-back now
+  fires only on the host form's explicit "Save & resubmit" button
+  (`law_form_action=submit`) and never from the committee context** — before
+  7 September 2026 ANY save of a sent-back event resubmitted it, so a
+  committee detail edit would have resubmitted as though the host had acted.
+  Committee saves are logged ("Event details updated by the committee"), send
+  no `committee_event_updated`/`squareeye_event_updated` email (those remain
+  host-edit alerts), and still create accounts for newly added co-owners on
+  approved events. The `nopriv` variant redirects to login.
 - `law_events_form_state()`, `law_events_form_values()`,
   `law_events_form_reusable_input()`: transient-backed re-population of a failed
   submission (typed values win over stored values).
@@ -540,17 +625,55 @@ screens, columns, emails) → migration (report, runner, page).
   code, and a failure is a bare 403.
 - `law_committee_action_handler()` (on `admin_post_law_committee_action`):
   nonce + `law_user_is_committee()`, then the approve / send-back / reject /
-  assign / set-slot / mark-paid actions, each routed through the workflow
-  engine and logged, plus the fee override, event categories, linked
+  cancel / assign / set-slot / mark-paid actions, each routed through the
+  workflow engine and logged, plus the fee override, event categories, linked
   organisations and private notes. `law_event_apply_slot_label()` writes the
   confirmed slot. A `law_terms_present` sentinel distinguishes "cleared" from
   "not on the form" for the checkbox and multi-select controls.
   **The action is whitelisted** against `law_event_ui_actions()` (`approve`,
-  `send_back`, `reject`, `mark_paid`); anything else is logged as a refused
-  action and bounced with a dashboard error. An empty action is the plain
-  "Save changes" path and still falls through. The wp-admin event screen
+  `send_back`, `reject`, `mark_paid`, `cancel`); anything else is logged as a
+  refused action and bounced with a dashboard error. An empty action is the
+  plain "Save changes" path and still falls through. The wp-admin event screen
   applies the same list to its `law_workflow_action` radio, so the two
   committee UIs cannot drift.
+  **Delete is the one action handled here that is not a workflow transition**:
+  intercepted after the action is read but before the whitelist (or it would
+  be logged as refused), accepted only on a Cancelled or Rejected event —
+  trashing a live event would orphan an open Stripe invoice with no void and
+  no host email, so cancel/reject must come first — and then: activity-log
+  line first (the log lives in comments, so it survives trash and restore),
+  `wp_trash_post()`, redirect to the **list** view (the detail panel cannot
+  load a trashed post) with the `event-deleted` notice. Restore and permanent
+  deletion stay wp-admin jobs; untrash puts the status back via the
+  `wp_untrash_post_status` filter. Like the comment-reply handler, it answers
+  **JSON when `law_ajax=1` is posted** (committee-actions.js submits the
+  modal actions this way): the nonce is verified manually before
+  `check_admin_referer` so a stale session gets a parseable 403 instead of an
+  HTML die page, every failure path (`wp_die`, the refused action, a
+  `WP_Error` from the transition) has a `wp_send_json_error` twin, and AJAX
+  errors deliberately **skip the `law_dashboard_error_` transient** — the
+  message travels in the response, so a later page load is not owed one. An
+  empty action over AJAX is refused with a 400 rather than falling through to
+  the Save path, because for the fetch caller a missing `law_action` means the
+  submitter's value was lost, and "saved" would mask an action that never ran.
+  Success returns a per-action title, a "Reloading the page…" message and a
+  redirect URL **without `law_notice`** (the success dialog already confirmed
+  the action, so the reloaded page must not banner it again). The no-JS path
+  is byte-for-byte the old redirect flow.
+- **The committee edit view** (`?event=<id>&law_edit=1` on the dashboard
+  page, added 7 September 2026): full front-end editing of an event's
+  details, restoring the parity the legacy GravityView 419 (Events
+  (committee - all)) edit form provided. The detail view's "Edit event
+  details" button (after the Invoice details block, before the thread; not
+  offered on drafts) swaps the detail panel for
+  `parts/events/committee-event-form.php` — white background, a "< Back to
+  the event" link, the shared fieldsets with committee locks (everything
+  editable except fees/invoice, see `submission-form.php` above), a single
+  "Save changes" button posting the same `law_event_form` handler with
+  `law_form_context=committee`, and no `law_ec` field (first-save-only
+  mechanism). It takes the post lock exactly like the host form; the
+  read-only detail view never does. The sidebar's "Full editing in
+  wp-admin" link stays — wp-admin remains the fee/invoice edit route.
 
 ### Stripe (`stripe/client.php`, `stripe/service.php`, `stripe/webhook.php`)
 
@@ -585,14 +708,29 @@ screens, columns, emails) → migration (report, runner, page).
   reused" and "adopted" outcomes are written to the activity log.
 - `law_stripe_maybe_attach_vat_number()`, `law_stripe_record_failure()`, and
   `law_event_handle_retry_invoice()` (a committee "retry invoice" admin-post,
-  refused unless the event is Approved and still unpaid).
+  refused unless the event is Approved and still unpaid — which also keeps a
+  cancelled event out of the invoice path).
+- `law_stripe_void_invoice( $event_id, $actor )`: called by the cancel side
+  effects to stop a live invoice — a `draft` is deleted (the same rule the
+  resume path applies), an `open`/`uncollectible` invoice is voided (with an
+  idempotency key), a `paid` one is left strictly alone (refunds are a manual
+  committee decision; the cancel side effects send the alert), and `void`
+  logs "already void". **Never fatal**: every failure is logged
+  (`invoice_void_failed`) and alerted to admins + committee via
+  `admin_stripe_error` with a "void it manually" message, and the
+  cancellation completes regardless. The invoice ID/URL meta is kept for the
+  audit trail.
 - **`webhook.php`** — a REST route (`rest_api_init`) whose permission callback
   is `__return_true` (auth is the signature, verified on the raw body before
   decode). `law_stripe_webhook_handler()`: signature check → idempotency
   (processed-event list plus an atomic per-event lock against concurrent
   double-delivery) → dispatch. `law_stripe_handle_invoice_paid()` marks paid,
   reconciles the amount against the snapshot (via `law_events_vat_rate()`) and
-  confirms the event; `invoice.payment_failed`/`voided`/refund are logged and
+  confirms the event — and when the event is already **`law-cancelled`** (a
+  failed void, or the host paid in the race before the void landed) it logs
+  loudly and sends `committee_cancelled_paid` instead of confirming, because
+  money arriving for a cancelled event must never be silent;
+  `invoice.payment_failed`/`voided`/refund are logged and
   alerted (never auto-unpublished — a human decision).
   `law_stripe_resolve_event_id()` resolves the event via metadata, with the
   `_law_gf_entry_id` meta fallback.
@@ -614,7 +752,9 @@ screens, columns, emails) → migration (report, runner, page).
   meta boxes and their saves.
 - **`columns.php`**: admin list columns (status, host, slot, payment), a status
   filter dropdown, and the `pre_get_posts` wiring for it.
-- **`emails-screen.php`**: the LAW > Emails screen — list, edit, send-test and
+- **`emails-screen.php`**: the Emails screen (its own top-level menu at
+  position 7, directly under the Events menu at 6; formerly LAW > Emails, same
+  `law-events-emails` slug and URL) — list, edit, send-test and
   reset for the notification registry, overrides stored in one option, plus a
   "review tags" flag on any migrated body still carrying unresolvable Gravity
   Forms merge tags. It also hosts the **Enable test mode** card
@@ -676,11 +816,20 @@ These predate the rebuild and now branch on `law_events_source()`.
 - **`speakers.php`** (~532 lines): the speakers archive/profile routing and SEO.
   In `'cpt'` mode it reads the `law_speaker` posts via `source.php`; the
   `/speakers/<id>/` rewrite and single-profile rendering are shared.
-- **`account-events.php`** (~259 lines): the host "My events" listing. In
+- **`account-events.php`** (~300 lines): the host "My events" listing. In
   `'cpt'` mode it lists the user's owned/co-owned `law_event` posts, hosts the
   comment thread (`?law_thread=`), links to the custom edit form, shows a
   "Review queue" link to committee members and renders the save-confirmation
-  notice.
+  notice. `law_account_event_actions()` also appends a **Withdraw** action on
+  Draft/Proposed/Sent back events (CPT mode only): a *form-shaped* action
+  (`parts/loop/event.php` renders it as a nonce'd POST to
+  `law_event_handle_withdraw` with a honeypot, behind a
+  `parts/layout/modal.php` confirm dialog carrying an optional
+  `law_withdraw_reason`). Approved/Confirmed events have no Withdraw — the
+  committee's Cancel is the route once money and slots are involved. The
+  template renders one shared `law-modal-withdraw-success` dialog for the
+  AJAX flow, and its notice map carries `event-withdrawn`, `withdraw-failed`,
+  `event-not-editable` and `rate-limited`.
 - **`auth.php`** (~500 lines): the branded `/login/` (sign-in / forgot /
   reset) flow, delegating all credential handling to core (`wp_signon` via
   `wp-login.php`, `retrieve_password()`, `check_password_reset_key()`,
@@ -721,6 +870,10 @@ These predate the rebuild and now branch on `law_events_source()`.
   `modal.php`, the reusable confirmation dialog. Pass it an id, a title, copy
   paragraphs, an optional note field and the confirm button, and it renders the
   markup `law-modal.css` and `law-modal.js` expect and enqueues both itself.
+  The confirm array takes an optional `busy` label (rendered as
+  `data-law-modal-busy`, the in-flight text a fetch layer swaps in), and
+  `'confirm' => false` renders an informational dialog with no submit button —
+  what the dashboard's script-opened success dialog uses.
 - **Parts** (`parts/events/`): `profile-fields.php` (the shared
   registration/profile field block, with conditional "Other: please specify"
   inputs), `people-repeater.php` (the co-owner/contact repeater on the front
@@ -729,25 +882,55 @@ These predate the rebuild and now branch on `law_events_source()`.
   caller), `thread-bubble.php` (one message bubble, shared by the thread loop
   and the AJAX reply response so the two markups cannot drift),
   `dashboard-list.php` (the committee event table, rendered both
-  inline and as the `law_partial` AJAX response).
+  inline and as the `law_partial` AJAX response),
+  `event-form-fields.php` (the six shared submission-form fieldsets — Event
+  details, Speakers, Venue, Owners & contacts, Fees, Session agenda —
+  consumed by both the host form template and the committee edit view so the
+  two cannot drift; the Finish fieldset stays in each consumer, being the
+  part that differs) and `committee-event-form.php` (the committee edit
+  view, see `committee.php` above).
 - **Front-end assets**: `assets/js/event-form.js` (repeaters, conditional
   toggles, the WordPress-core `wp.passwordStrength` meter — score 5 = mismatch,
-  and the `data-law-toggle-for` show/hide used by the committee panel's
-  override amount) and
+  the `data-law-toggle-for` show/hide used by the committee panel's
+  override amount, and the **withdraw fetch layer** — the same
+  intercept-modal-confirms pattern as committee-actions.js, posting the card's
+  withdraw form with `law_ajax=1`, errors in the open dialog, success via the
+  shared `law-modal-withdraw-success` dialog then a reload) and
   `assets/css/event-form.css` (the form, the committee dashboard and the
   thread; includes the light-section colour resets the dark-hero theme needs,
-  the status-badge fix and the mobile bottom
-  clearance so the submit buttons clear the fixed header).
+  the status-badge fix, the mobile bottom
+  clearance so the submit buttons clear the fixed header, and the
+  `.law-event-form--light` variant the committee edit view uses — dark text
+  and bordered inputs, because the base form styles are dark-hero-first and
+  would be invisible on the dashboard's white background).
   `assets/css/law-modal.css` and `assets/js/law-modal.js` are the standalone
   confirmation-modal component (with `functions/modal.php` and
   `parts/layout/modal.php`): the JS hides and disables every
   `[data-law-modal-fallback]` block, turns each `[data-law-modal-open]` button
   into an opener, enables only the `[data-law-modal-field]` in the open dialog
-  and traps Tab inside it. The committee dashboard uses it for the four
-  actions, Approve, Send back, Reject and Mark paid & confirm, though only the
-  ones legal for the event's current status are rendered
-  (`law_event_available_ui_actions()`); every button stays a plain `law_action`
-  submit without JavaScript.
+  and traps Tab inside it. The committee dashboard uses it for the six
+  actions — Approve, Send back, Reject, Mark paid & confirm, Cancel event
+  (whose close button is relabelled "Keep the event", because the default
+  "Cancel" close label would read as the destructive action there) and Delete
+  event — though only the ones legal for the event's current status are
+  rendered (`law_event_available_ui_actions()`, plus the Cancelled/Rejected
+  guard for Delete); every button stays a plain `law_action`
+  submit without JavaScript. Two hooks exist for scripts: `window.lawModal`
+  (`open(id)` / `close()`, the programmatic surface) and the `law-modal--busy`
+  class, which marks a dialog mid-request so Escape and the close controls are
+  ignored until it is removed; `closeModal` also clears any `.law-modal__error`
+  a fetch layer injected.
+  `assets/js/committee-actions.js` is that fetch layer for the dashboard's
+  workflow actions: it intercepts only submits whose submitter sits inside a
+  `.law-modal` (so Save changes keeps the classic POST), appends the
+  submitter's `law_action` name/value to the FormData (which omits it by
+  default — losing it would silently run the Save path) plus `law_ajax=1`,
+  swaps the confirm label to its `data-law-modal-busy` text with all the
+  dialog's buttons disabled, and on success fills and opens the
+  `law-modal-success` dialog then `location.replace`s to the clean
+  `?event=<id>` URL after 3 seconds. Errors (JSON or not) re-enable the dialog
+  and show `.law-modal__error` in place; without JS or fetch nothing is
+  intercepted and the classic redirect flow runs.
   `assets/js/calendar-filters.js` and
   `assets/css/calendar.css` drive the shared filter bar used by both the
   programme calendar and the committee dashboard.
@@ -783,7 +966,14 @@ defects from those were fixed (title-wipe on edit, invisible committee status
 badges, an IDOR title/status leak, the committee-dashboard navigation gap, a
 mobile submit blocker, plus security hardening on the calendar capability
 check, the co-owner notification, the money-path resolver fallback, the
-migration DB-password handling and the rate-limit response).
+migration DB-password handling and the rate-limit response). One further
+defect was found and fixed on 7 September 2026 while building the committee
+edit view: **any save of a Sent back event fired the `resubmit` transition**,
+whatever button (or hand-made request) produced it, so an edit that was not
+the host's "Save & resubmit" — including a committee detail edit — resubmitted
+the event to the committee. `resubmit` now fires only on the host form's
+explicit `law_form_action=submit`, and never from the committee edit context
+(see `law_events_form_result_redirect()`).
 
 A second review, of the forms and payment path specifically (5 September 2026),
 found no injection, XSS, missing-nonce or broken-ownership-gate issues. Five
@@ -832,6 +1022,11 @@ The following are open **product decisions**, not bugs, left for Denis:
 5. Minor polish: a map-embed fallback state, the auto "Sponsored" badge on
    repeat *paying* hosts, and "Fee snapshot £0.00" showing on proposed events
    before approval.
+6. **`law-cancelled` is terminal** (7 September 2026): there is no un-cancel
+   transition, so a mistaken cancel or withdraw can only be corrected in the
+   database. Accepted for now; a committee "reinstate" action would be a 4.2
+   candidate. Related accepted behaviour: a cancelled formerly-Confirmed
+   event's permalink 404s (no tombstone or redirect).
 
 Open findings from the forms/payments security review, none of them blocking:
 

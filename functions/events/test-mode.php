@@ -1,6 +1,6 @@
 <?php
 /**
- * Email test mode (LAW → Emails). While it is on, every email the site tries
+ * Email test mode (the Emails screen). While it is on, every email the site tries
  * to send is delivered to one address instead of its real recipients, so the
  * committee can rehearse the whole workflow (submit → approve → pay →
  * publish) without a single message reaching a host or a committee member.
@@ -151,7 +151,7 @@ function law_events_test_mode_expire() {
 
 /**
  * A standing warning on EVERY admin screen while test mode is on. The card on
- * LAW → Emails is only seen by someone who goes looking; this is what stops it
+ * The Emails screen is only seen by someone who goes looking; this is what stops it
  * being left on unnoticed.
  */
 add_action( 'admin_notices', 'law_events_test_mode_admin_notice' );

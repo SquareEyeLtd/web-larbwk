@@ -1,6 +1,6 @@
 <?php
 /**
- * LAW → Emails: WooCommerce-style management of the module's notifications
+ * The Emails admin screen (top-level menu): WooCommerce-style management of the module's notifications
  * (EVENTS_4.1_REBUILD.md §3.8). Defaults live in code; edits are stored as
  * overrides and take precedence; Reset returns to the code default.
  * Scope: events-module emails only — form 7 (Contact) stays in the GF admin.
@@ -11,7 +11,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 add_action( 'admin_menu', function () {
-	law_events_register_law_subpage( 'law-events-emails', 'Emails', 'law_events_emails_page' );
+	// Top-level menu directly under Events (6). Same slug as the old
+	// LAW > Emails submenu, so admin.php?page=law-events-emails links survive.
+	add_menu_page( 'Events emails', 'Emails', 'manage_options', 'law-events-emails', 'law_events_emails_page', 'dashicons-email-alt', 7 );
 }, 999 );
 
 function law_events_emails_page() {

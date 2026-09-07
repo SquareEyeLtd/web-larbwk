@@ -556,6 +556,11 @@
 	color: #666;
 }
 
+.law-cal-card__badge--cancelled {
+	background: #fdeaea;
+	color: #a12622;
+}
+
 /* --- Edit link (admins/editors) ------------------------------------------ */
 
 .law-cal a.law-cal-edit,

@@ -234,6 +234,40 @@ function law_account_event_actions( $event, $entry ) {
 		);
 	}
 
+	// Pre-approval events can be withdrawn by their host (CPT mode only): a
+	// form-shaped action the card renders as a nonce'd POST behind a confirm
+	// modal. Approved/Confirmed events go through the committee's Cancel
+	// instead, because money and programme slots are involved by then.
+	if ( 'cpt' === law_events_source()
+		&& in_array( $event['status'], array( 'Draft', 'Proposed', 'Sent back' ), true ) ) {
+		$event_id  = (int) $event['id'];
+		$actions[] = array(
+			'label' => __( 'Withdraw', 'law' ),
+			'form'  => array(
+				'action'   => 'law_event_withdraw',
+				'nonce'    => 'law_event_withdraw',
+				'event_id' => $event_id,
+				'modal'    => array(
+					'id'      => 'law-modal-withdraw-' . $event_id,
+					'title'   => __( 'Withdraw this event', 'law' ),
+					'copy'    => array(
+						__( 'The event is cancelled and comes out of the committee\'s review. It cannot be resubmitted: if you change your mind later, you will need to submit a new event.', 'law' ),
+						__( 'The committee is notified of the withdrawal.', 'law' ),
+					),
+					'field'   => array(
+						'name'     => 'law_withdraw_reason',
+						'label'    => __( 'Why are you withdrawing? (optional)', 'law' ),
+						'help'     => __( 'Shared with the committee and posted to the event thread.', 'law' ),
+						'rows'     => 3,
+						'required' => false,
+					),
+					'confirm' => array( 'label' => __( 'Withdraw event', 'law' ), 'class' => 'button alert', 'busy' => __( 'Withdrawing…', 'law' ) ),
+					'close'   => __( 'Keep the event', 'law' ),
+				),
+			),
+		);
+	}
+
 	return $actions;
 }
 

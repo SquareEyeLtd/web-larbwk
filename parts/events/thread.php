@@ -19,15 +19,20 @@ if ( ! law_user_can_manage_event( get_current_user_id(), $law_thread_event ) ) {
 
 $law_thread_comments = law_event_comments( $law_thread_event );
 $law_thread_status   = law_event_status_label( $law_thread_post );
+$law_thread_context  = ( 'committee' === ( $args['context'] ?? '' ) ) ? 'committee' : 'host';
 $law_is_committee    = law_user_is_committee();
 $law_notice          = sanitize_key( $_GET['law_notice'] ?? '' );
 ?>
 <div class="law-thread-view">
-	<header class="law-thread-view__header">
-		<h2><?php echo esc_html( $law_thread_post->post_title ); ?></h2>
-		<p>Status: <strong><?php echo esc_html( $law_thread_status ); ?></strong>
-			· Reference: <code><?php echo esc_html( (string) law_event_meta( $law_thread_event, '_law_reference' ) ); ?></code></p>
-	</header>
+	<?php if ( 'committee' === $law_thread_context ) : ?>
+		<h2>Comments</h2>
+	<?php else : ?>
+		<header class="law-thread-view__header">
+			<h2><?php echo esc_html( $law_thread_post->post_title ); ?></h2>
+			<p>Status: <strong><?php echo esc_html( $law_thread_status ); ?></strong>
+				· Reference: <code><?php echo esc_html( (string) law_event_meta( $law_thread_event, '_law_reference' ) ); ?></code></p>
+		</header>
+	<?php endif; ?>
 
 	<?php if ( 'comment-added' === $law_notice ) : ?>
 		<div class="law-form-notice" role="status">Comment sent.</div>

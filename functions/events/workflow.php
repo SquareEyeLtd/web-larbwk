@@ -5,6 +5,10 @@
  *
  *   law-draft → law-proposed → law-approved → publish (Confirmed)
  *                    ↕ law-sent-back    ↘ law-rejected
+ *
+ * law-cancelled is the shared terminal state of the committee's `cancel`
+ * (approved/confirmed events) and the host's `withdraw` (pre-approval
+ * events). There is no un-cancel.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -23,6 +27,8 @@ function law_event_workflow_actions() {
 		'reject'    => array( 'from' => array( 'law-proposed', 'law-sent-back' ), 'to' => 'law-rejected', 'who' => 'committee' ),
 		'confirm'   => array( 'from' => array( 'law-approved' ), 'to' => 'publish', 'who' => 'system' ),
 		'mark_paid' => array( 'from' => array( 'law-approved' ), 'to' => 'publish', 'who' => 'committee' ),
+		'cancel'    => array( 'from' => array( 'law-approved', 'publish' ), 'to' => 'law-cancelled', 'who' => 'committee' ),
+		'withdraw'  => array( 'from' => array( 'law-draft', 'law-proposed', 'law-sent-back' ), 'to' => 'law-cancelled', 'who' => 'owner' ),
 	);
 }
 
@@ -36,7 +42,7 @@ function law_event_workflow_actions() {
  * @return string[]
  */
 function law_event_ui_actions() {
-	return array( 'approve', 'send_back', 'reject', 'mark_paid' );
+	return array( 'approve', 'send_back', 'reject', 'mark_paid', 'cancel' );
 }
 
 /**
@@ -173,6 +179,9 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 	if ( 'reject' === $action && '' === trim( (string) ( $args['reason'] ?? '' ) ) ) {
 		return new WP_Error( 'law_reason_required', 'Reject needs a reason.' );
 	}
+	if ( 'cancel' === $action && '' === trim( (string) ( $args['reason'] ?? '' ) ) ) {
+		return new WP_Error( 'law_reason_required', 'Cancel needs a reason for the host.' );
+	}
 
 	$old_status = $post->post_status;
 	$new_status = $config['to'];
@@ -207,7 +216,7 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 		array( 'user_id' => $actor )
 	);
 
-	law_event_workflow_side_effects( $event_id, $action, $args, $actor, $source );
+	law_event_workflow_side_effects( $event_id, $action, $args, $actor, $source, $old_status );
 
 	return true;
 }
@@ -215,7 +224,7 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 /**
  * Side effects per action. Runs after the status write and the log entry.
  */
-function law_event_workflow_side_effects( $event_id, $action, array $args, $actor, $source ) {
+function law_event_workflow_side_effects( $event_id, $action, array $args, $actor, $source, $old_status = '' ) {
 	switch ( $action ) {
 		case 'submit':
 			if ( ! law_event_meta( $event_id, '_law_reference' ) ) {
@@ -302,6 +311,39 @@ function law_event_workflow_side_effects( $event_id, $action, array $args, $acto
 		case 'confirm':
 			law_event_confirm_side_effects( $event_id );
 			break;
+
+		case 'cancel':
+			$reason = trim( (string) ( $args['reason'] ?? '' ) );
+			// Reason meta and thread comment BEFORE the sends, the way reject
+			// does: {cancellation_reason} and {latest_comment} are built from them.
+			update_post_meta( $event_id, '_law_cancellation_reason', sanitize_textarea_field( $reason ) );
+			if ( '' !== $reason ) {
+				law_event_add_comment( $event_id, $reason, $actor );
+			}
+			// Void any live invoice BEFORE the host email, so its "no payment is
+			// due" wording is true when read. A failed void logs and alerts the
+			// admins; it never blocks the cancellation.
+			law_stripe_void_invoice( $event_id, $actor );
+			law_events_send( 'user_cancelled', $event_id );
+			// A paid fee is never refunded automatically: the committee decides.
+			if ( 'paid' === (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
+				law_events_send( 'committee_cancelled_paid', $event_id );
+			}
+			break;
+
+		case 'withdraw':
+			$reason = trim( (string) ( $args['reason'] ?? '' ) );
+			if ( '' !== $reason ) {
+				update_post_meta( $event_id, '_law_cancellation_reason', sanitize_textarea_field( $reason ) );
+				law_event_add_comment( $event_id, $reason, $actor );
+			}
+			// No Stripe handling: invoices are only raised at approval, and
+			// withdraw stops at law-sent-back. The committee is told, except
+			// about drafts they never saw (committee_submitted fires at submit).
+			if ( 'law-draft' !== $old_status ) {
+				law_events_send( 'committee_withdrawn', $event_id );
+			}
+			break;
 	}
 }
 
@@ -363,6 +405,85 @@ function law_event_log_fee_change( $event_id, $before_override, $before_amount, 
 		),
 		array( 'user_id' => (int) $actor )
 	);
+}
+
+/* Host withdraw handler ______________________________________________________ */
+
+add_action( 'admin_post_law_event_withdraw', 'law_event_handle_withdraw' );
+add_action( 'admin_post_nopriv_law_event_withdraw', function () {
+	// An AJAX post from a page whose user has since logged out lands here;
+	// a redirect would be unparseable to the script, so answer JSON.
+	if ( ! empty( $_POST['law_ajax'] ) ) {
+		wp_send_json_error( array( 'message' => 'You have been signed out. Please reload the page and sign in again.' ), 401 );
+	}
+	wp_safe_redirect( wp_login_url() );
+	exit;
+} );
+
+/**
+ * The host "Withdraw" action on My events: a thin admin-post wrapper around
+ * the `withdraw` workflow transition. Mirrors law_event_handle_comment_reply()
+ * (nonce, honeypot, ownership, rate limit, AJAX/JSON branch).
+ */
+function law_event_handle_withdraw() {
+	$is_ajax = ! empty( $_POST['law_ajax'] );
+
+	// An AJAX caller must get JSON even on a bad nonce — check_admin_referer
+	// would die with an HTML page the script cannot parse.
+	if ( $is_ajax && ! wp_verify_nonce( (string) ( $_POST['_wpnonce'] ?? '' ), 'law_event_withdraw' ) ) {
+		wp_send_json_error( array( 'message' => 'Your session has changed since this page was opened. Please reload the page and try again.' ), 403 );
+	}
+	check_admin_referer( 'law_event_withdraw' );
+
+	$event_id = absint( $_POST['event_id'] ?? 0 );
+	$user_id  = get_current_user_id();
+
+	if ( ! law_user_can_manage_event( $user_id, $event_id ) ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Sorry, you are not allowed to withdraw this event.' ), 403 );
+		}
+		wp_die( 'Sorry, you are not allowed to withdraw this event.' );
+	}
+	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
+		// Honeypot: pretend success (nothing was changed).
+		if ( $is_ajax ) {
+			wp_send_json_success( array( 'title' => 'Event withdrawn', 'message' => 'Reloading the page…', 'redirect' => home_url( '/account/events/' ) ) );
+		}
+		law_events_redirect_back( array( 'law_notice' => 'event-withdrawn' ) );
+	}
+	if ( ! law_events_rate_limit_ok( 'withdraw', $user_id ) ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Too many actions in a short time; please wait a moment.' ), 429 );
+		}
+		law_events_redirect_back( array( 'law_notice' => 'rate-limited' ) );
+	}
+
+	$result = law_event_workflow_transition(
+		$event_id,
+		'withdraw',
+		array(
+			'reason'   => trim( (string) wp_unslash( $_POST['law_withdraw_reason'] ?? '' ) ),
+			'actor_id' => $user_id,
+		)
+	);
+
+	if ( is_wp_error( $result ) ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+		}
+		law_events_redirect_back( array( 'law_notice' => 'withdraw-failed' ) );
+	}
+
+	if ( $is_ajax ) {
+		wp_send_json_success(
+			array(
+				'title'    => 'Event withdrawn',
+				'message'  => 'Reloading the page…',
+				'redirect' => home_url( '/account/events/' ),
+			)
+		);
+	}
+	law_events_redirect_back( array( 'law_notice' => 'event-withdrawn' ) );
 }
 
 /**

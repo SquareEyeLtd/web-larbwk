@@ -19,6 +19,7 @@ function law_event_statuses() {
 		'law-approved'  => array( 'label' => 'Approved',  'public' => false ),
 		'publish'       => array( 'label' => 'Confirmed', 'public' => true ),
 		'law-rejected'  => array( 'label' => 'Rejected',  'public' => false ),
+		'law-cancelled' => array( 'label' => 'Cancelled', 'public' => false ),
 	);
 }
 

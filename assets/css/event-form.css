@@ -405,3 +405,63 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__log .law-log { list-style: none; max-height: 320px; overflow: auto; font-size: .85rem; }
 .law-dashboard__log .law-log li { padding: .3rem 0; border-bottom: 1px solid #eee; }
 .law-dashboard__log .law-log__date { color: #757575; margin-right: .4rem; }
+
+/* The committee edit view (--light): the form CSS above is dark-hero-first
+   (yellow legends/labels, borderless white inputs, white choice labels), all
+   of which is invisible or illegible on the dashboard's white background, so
+   the committee variant repaints text dark and gives controls a real border.
+   The orange hover/focus rings and the red invalid borders read fine on white
+   and are left alone. */
+.law-event-form--light legend { color: #1a1a3d; }
+.law-event-form--light .law-form-field label, .law-event-form--light .law-form-label { color: #1a1a3d; }
+/* Mirror the base rules' :has() selectors exactly: the dark-hero rule
+   `.law-event-form label:has(> input[type="checkbox"])` is 0,2,2, so a plain
+   `.law-choices label` override (0,2,1) loses to it whatever the source
+   order — the checkbox/radio overrides must carry the same :has() clause. */
+.law-event-form--light .law-choices label,
+.law-event-form--light label:has(> input[type="checkbox"]),
+.law-event-form--light label:has(> input[type="radio"]) { color: #1a1a3d; }
+.law-event-form--light input[type="text"], .law-event-form--light input[type="email"],
+.law-event-form--light input[type="url"], .law-event-form--light input[type="password"],
+.law-event-form--light input[type="number"], .law-event-form--light input[type="time"],
+.law-event-form--light select, .law-event-form--light textarea {
+	border: 1px solid #c8c8d4;
+}
+/* The base invalid/touched border rules (red 2px, cleared to transparent on
+   edit) tie my bordered-inputs rule above on specificity and sit earlier in
+   the file, so they must be restated for the light form or an invalid field
+   would never show its red border here. Touched restores the grey border
+   (not transparent — these inputs are bordered, unlike the hero's). */
+.law-event-form--light .law-form-field.is-invalid input,
+.law-event-form--light .law-form-field.is-invalid select,
+.law-event-form--light .law-form-field.is-invalid textarea,
+.law-event-form--light .law-form-field:has(> .law-form-error) input,
+.law-event-form--light .law-form-field:has(> .law-form-error) select,
+.law-event-form--light .law-form-field:has(> .law-form-error) textarea {
+	border: 2px solid #b32d2e;
+}
+.law-event-form--light .law-form-field.is-touched input,
+.law-event-form--light .law-form-field.is-touched select,
+.law-event-form--light .law-form-field.is-touched textarea {
+	border: 1px solid #c8c8d4;
+}
+.law-event-form--light .law-form-hint { color: #55556e; }
+.law-event-form--light .law-form-status { color: #55556e; }
+.law-event-form--light .law-form-status strong { color: #1a1a3d; }
+.law-event-form--light .law-locked-note { color: #6a6a80; }
+.law-event-form--light .law-form-error {
+	background: #fcf0f1; border-left-color: #b32d2e; color: #1a1a3d;
+}
+/* Repeater rows: translucent white on the hero, a pale card on white. */
+.law-event-form--light .law-row { background: #f7f7fb; border-color: #e3e3ec; }
+.law-event-form--light .law-row .law-row-grid > label,
+.law-event-form--light .law-row .law-session-speakers .law-form-label { color: #1a1a3d; }
+.law-event-form--light .law-row-remove { color: #b32d2e; }
+.law-event-form--light .law-row-remove:hover, .law-event-form--light .law-row-remove:focus { color: #ff5c4d; }
+.law-event-form--light .law-file-clear { color: #b32d2e; }
+/* The section nav next to the light form (same white context). */
+.law-dashboard .law-form-nav a,
+.law-dashboard .law-form-nav a:visited,
+.law-dashboard .law-form-nav a:focus,
+.law-dashboard .law-form-nav a:active { color: #1a1a3d; border-bottom-color: #e3e3ec; }
+.law-dashboard .law-form-nav a:hover { color: #ef7d05; }

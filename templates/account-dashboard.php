@@ -12,6 +12,10 @@ get_header();
 
 $law_detail = function_exists( 'law_committee_requested_event' ) ? law_committee_requested_event() : null;
 $law_can    = law_user_is_committee();
+// ?event=<id>&law_edit=1 swaps the detail view for the committee edit form
+// (parts/events/committee-event-form.php) on this same page, so the Members
+// gate and the committee check above cover it with no extra routing.
+$law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
@@ -22,6 +26,9 @@ $law_can    = law_user_is_committee();
 
 	<?php if ( ! $law_can ) : ?>
 		<p><?php esc_html_e( 'This dashboard is for the LAW committee.', 'law' ); ?></p>
+
+	<?php elseif ( $law_edit_mode ) : ?>
+		<?php get_template_part( 'parts/events/committee-event-form', null, array( 'post' => $law_detail ) ); ?>
 
 	<?php elseif ( $law_detail ) : ?>
 		<?php
@@ -212,6 +219,12 @@ $law_can    = law_user_is_committee();
 					</div>
 				<?php endif; ?>
 
+				<?php if ( 'law-draft' !== $law_detail->post_status ) : // Drafts are edited by their host. ?>
+					<p class="law-dashboard__edit">
+						<a class="button" href="<?php echo esc_url( add_query_arg( array( 'event' => $law_id, 'law_edit' => 1 ), get_permalink() ) ); ?>">Edit event details</a>
+					</p>
+				<?php endif; ?>
+
 				<?php get_template_part( 'parts/events/thread', null, array( 'event_id' => $law_id, 'context' => 'committee' ) ); ?>
 
 				<details class="law-dashboard__log">
@@ -301,14 +314,20 @@ $law_can    = law_user_is_committee();
 					// nobody is offered a Send back that would only bounce with an error.
 					$law_actions = law_event_available_ui_actions( $law_detail );
 
-					// The no-JS path for Send back and Reject: one inline comment box and the
-					// plain submit buttons below. With JS, law-modal.js hides and disables
-					// this field (that is what data-law-modal-fallback marks it as) and turns
-					// the action buttons into openers for the modals at the foot of the form,
-					// so a normal browser has one law_note textarea enabled at a time.
-					if ( in_array( 'send_back', $law_actions, true ) || in_array( 'reject', $law_actions, true ) ) :
+					// Delete (trash) is not a workflow action: it is only offered on a
+					// Cancelled or Rejected event (the handler enforces the same), so a
+					// live event with an open invoice must be cancelled first.
+					$law_can_delete = in_array( $law_detail->post_status, array( 'law-cancelled', 'law-rejected' ), true );
+
+					// The no-JS path for Send back, Reject and Cancel: one inline comment
+					// box and the plain submit buttons below. With JS, law-modal.js hides
+					// and disables this field (that is what data-law-modal-fallback marks
+					// it as) and turns the action buttons into openers for the modals at
+					// the foot of the form, so a normal browser has one law_note textarea
+					// enabled at a time.
+					if ( array_intersect( array( 'send_back', 'reject', 'cancel' ), $law_actions ) ) :
 						?>
-					<p class="law-form-field" id="law-dash-note-field" data-law-modal-fallback><label for="law-dash-note">Comment / reason<br><small>(required for Send back and Reject; the host sees it)</small></label>
+					<p class="law-form-field" id="law-dash-note-field" data-law-modal-fallback><label for="law-dash-note">Comment / reason<br><small>(required for Send back, Reject and Cancel; the host sees it)</small></label>
 						<textarea id="law-dash-note" name="law_note" rows="3"></textarea></p>
 					<?php endif; ?>
 
@@ -328,6 +347,12 @@ $law_can    = law_user_is_committee();
 						<?php endif; ?>
 						<?php if ( in_array( 'mark_paid', $law_actions, true ) ) : ?>
 							<button type="submit" name="law_action" value="mark_paid" class="button" data-law-modal-open="law-modal-mark-paid">Mark paid &amp; confirm</button>
+						<?php endif; ?>
+						<?php if ( in_array( 'cancel', $law_actions, true ) ) : ?>
+							<button type="submit" name="law_action" value="cancel" class="button alert" data-law-modal-open="law-modal-cancel">Cancel event</button>
+						<?php endif; ?>
+						<?php if ( $law_can_delete ) : ?>
+							<button type="submit" name="law_action" value="delete" class="button alert" data-law-modal-open="law-modal-delete">Delete event</button>
 						<?php endif; ?>
 					</p>
 
@@ -363,7 +388,7 @@ $law_can    = law_user_is_committee();
 										'Any additional event owners get an account on this event, and the committee is emailed to say it has been approved.',
 										'The event is then confirmed and published on the programme straight away. Everything else you have changed on this form is saved at the same time.',
 									),
-								'confirm' => array( 'label' => 'Approve', 'name' => 'law_action', 'value' => 'approve', 'class' => 'button orange' ),
+								'confirm' => array( 'label' => 'Approve', 'name' => 'law_action', 'value' => 'approve', 'class' => 'button orange', 'busy' => 'Approving…' ),
 								'close'   => 'Close',
 							)
 						);
@@ -384,7 +409,7 @@ $law_can    = law_user_is_committee();
 									'required' => true,
 									'error'    => 'Please tell the host why, so they know what to do next.',
 								),
-								'confirm' => array( 'label' => 'Send back', 'name' => 'law_action', 'value' => 'send_back', 'class' => 'button' ),
+								'confirm' => array( 'label' => 'Send back', 'name' => 'law_action', 'value' => 'send_back', 'class' => 'button', 'busy' => 'Sending back…' ),
 							)
 						);
 					}
@@ -405,7 +430,7 @@ $law_can    = law_user_is_committee();
 									'required' => true,
 									'error'    => 'Please tell the host why, so they know what to do next.',
 								),
-								'confirm' => array( 'label' => 'Reject event', 'name' => 'law_action', 'value' => 'reject', 'class' => 'button alert' ),
+								'confirm' => array( 'label' => 'Reject event', 'name' => 'law_action', 'value' => 'reject', 'class' => 'button alert', 'busy' => 'Rejecting…' ),
 							)
 						);
 					}
@@ -422,7 +447,78 @@ $law_can    = law_user_is_committee();
 									'The event is then published on the programme, the host is emailed to confirm, and the committee gets a payment received notice.',
 									'Everything else you have changed on this form is saved at the same time.',
 								),
-								'confirm' => array( 'label' => 'Mark paid and confirm', 'name' => 'law_action', 'value' => 'mark_paid', 'class' => 'button' ),
+								'confirm' => array( 'label' => 'Mark paid and confirm', 'name' => 'law_action', 'value' => 'mark_paid', 'class' => 'button', 'busy' => 'Confirming…' ),
+								'close'   => 'Close',
+							)
+						);
+					}
+
+					if ( in_array( 'cancel', $law_actions, true ) ) {
+						get_template_part(
+							'parts/layout/modal',
+							null,
+							array(
+								'id'      => 'law-modal-cancel',
+								'title'   => 'Cancel this event',
+								'copy'    => array(
+									'The host is emailed your reason and it is posted to the event\'s message thread. The event cannot be resubmitted.',
+									'publish' === $law_detail->post_status
+										? 'The event comes off the published programme.'
+										: 'The event will not be published.',
+									'unpaid' === (string) law_event_meta( $law_id, '_law_payment_status' ) && $law_fee > 0
+										? 'The outstanding Stripe invoice is cancelled (voided), so no payment is due.'
+										: 'A fee that has already been paid is never refunded automatically: the committee is alerted to review the payment in Stripe instead.',
+									'Everything else you have changed on this form is saved at the same time.',
+								),
+								'field'   => array(
+									'name'     => 'law_note',
+									'label'    => 'Reason for cancellation (required)',
+									'help'     => 'This is emailed to the host and posted to the event thread.',
+									'rows'     => 4,
+									'required' => true,
+									'error'    => 'Please tell the host why the event is being cancelled.',
+								),
+								'confirm' => array( 'label' => 'Cancel event', 'name' => 'law_action', 'value' => 'cancel', 'class' => 'button alert', 'busy' => 'Cancelling…' ),
+								// The default close label is "Cancel", which on this dialog
+								// would read as the destructive action.
+								'close'   => 'Keep the event',
+							)
+						);
+					}
+
+					if ( $law_can_delete ) {
+						get_template_part(
+							'parts/layout/modal',
+							null,
+							array(
+								'id'      => 'law-modal-delete',
+								'title'   => 'Delete this event',
+								'copy'    => array(
+									'The event is moved to the trash: it disappears from this dashboard and from the host\'s events list, and no one is emailed.',
+									'It can be restored from the wp-admin Events list (Trash) if this was a mistake; permanent deletion also happens there.',
+								),
+								'confirm' => array( 'label' => 'Delete event', 'name' => 'law_action', 'value' => 'delete', 'class' => 'button alert', 'busy' => 'Deleting…' ),
+								'close'   => 'Keep the event',
+							)
+						);
+					}
+
+					// The success dialog committee-actions.js opens once an AJAX
+					// action has gone through; the script overwrites the title
+					// and copy from the server's response, so these are only
+					// fallbacks. No confirm button: it is informational, and the
+					// page reloads itself a few seconds later. Delete is offered on
+					// statuses with no workflow actions (Cancelled/Rejected), so it
+					// needs the dialog too.
+					if ( ! empty( $law_actions ) || $law_can_delete ) {
+						get_template_part(
+							'parts/layout/modal',
+							null,
+							array(
+								'id'      => 'law-modal-success',
+								'title'   => 'Done',
+								'copy'    => 'Reloading the page…',
+								'confirm' => false,
 								'close'   => 'Close',
 							)
 						);
@@ -433,6 +529,9 @@ $law_can    = law_user_is_committee();
 		</div>
 
 	<?php else : ?>
+		<?php if ( 'event-deleted' === sanitize_key( $_GET['law_notice'] ?? '' ) ) : ?>
+			<div class="law-form-notice" role="status">Event moved to trash. It can be restored from the wp-admin Events list.</div>
+		<?php endif; ?>
 		<?php
 		// The filter bar reuses the programme page's markup, CSS and JS
 		// (parts/calendar-filters.php, assets/js/calendar-filters.js): keyword

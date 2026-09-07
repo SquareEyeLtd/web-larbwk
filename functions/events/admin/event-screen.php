@@ -44,6 +44,7 @@ function law_event_box_workflow( $post ) {
 		'send_back' => 'Send back',
 		'reject'    => 'Reject',
 		'mark_paid' => 'Mark paid & confirm',
+		'cancel'    => 'Cancel event',
 	);
 	$available = law_event_available_ui_actions( $post );
 	if ( ! $available ) {
@@ -60,7 +61,7 @@ function law_event_box_workflow( $post ) {
 		);
 	}
 	echo '</p>';
-	law_field_textarea( 'law_workflow_note', 'Comment / reason (required for Send back and Reject)', '', 3 );
+	law_field_textarea( 'law_workflow_note', 'Comment / reason (required for Send back, Reject and Cancel)', '', 3 );
 	echo '<p class="description">Choose an action and Update. Guards apply: an action illegal for the current status is refused with a notice.</p>';
 }
 
@@ -153,7 +154,7 @@ function law_event_box_invoice_contact( $post ) {
 	foreach ( array( 'line1' => 'Address line 1', 'line2' => 'Address line 2', 'city' => 'City', 'state' => 'County / state', 'postal_code' => 'Postcode', 'country' => 'Country' ) as $part => $label ) {
 		law_field_text( 'law_invoice_address_' . $part, $label, (string) ( $address[ $part ] ?? '' ) );
 	}
-	law_field_text( 'law_country_iso', 'Country ISO (derived from the country name on save)', (string) law_event_meta( $post->ID, '_law_country_iso' ), array( 'class' => 'small-text' ) );
+	law_field_text( 'law_country_iso', 'Country ISO (derived from the country name on save; only used when the name cannot be matched)', (string) law_event_meta( $post->ID, '_law_country_iso' ), array( 'class' => 'small-text' ) );
 	law_field_text( 'law_vat_number', 'VAT number', (string) law_event_meta( $post->ID, '_law_vat_number' ) );
 }
 
@@ -313,11 +314,12 @@ function law_event_admin_save( $post_id, $post ) {
 		$address[ $part ] = sanitize_text_field( wp_unslash( $_POST[ 'law_invoice_address_' . $part ] ?? '' ) );
 	}
 	law_event_update_meta( $post_id, '_law_invoice_address', $address );
-	$iso = sanitize_text_field( wp_unslash( $_POST['law_country_iso'] ?? '' ) );
-	if ( '' === $iso && '' !== $address['country'] && function_exists( 'sqe_law_country_to_iso' ) ) {
-		$iso = (string) sqe_law_country_to_iso( $address['country'] );
-	}
-	law_event_update_meta( $post_id, '_law_country_iso', $iso );
+	// The country name is the source of truth: a mapped name always wins, so a
+	// stale value left in the ISO box cannot outlive a changed country. The box
+	// is only a manual fallback for a name the map does not know.
+	$iso     = sanitize_text_field( wp_unslash( $_POST['law_country_iso'] ?? '' ) );
+	$derived = law_events_country_to_iso( $address['country'] );
+	law_event_update_meta( $post_id, '_law_country_iso', '' !== $derived ? $derived : $iso );
 
 	// Repeaters and relationships.
 	law_event_update_meta( $post_id, '_law_co_owner_rows', law_events_rows_from_post( 'law_co_owner_rows' ) );

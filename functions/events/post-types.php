@@ -44,7 +44,8 @@ function law_events_register_post_types() {
 				'show_ui'             => true,
 				'show_in_menu'        => true,
 				'menu_icon'           => 'dashicons-calendar-alt',
-				'menu_position'       => 26,
+				// Directly under Posts (5); the Emails menu takes 7.
+				'menu_position'       => 6,
 				'show_in_rest'        => false,
 				'has_archive'         => false,
 				'rewrite'             => array( 'slug' => 'events', 'with_front' => false ),

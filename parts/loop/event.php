@@ -10,7 +10,11 @@
  *   'show_date'   => false,   // Prefix the time with the full date, for cards shown outside the calendar.
  *   'meta_lines'  => array(), // Extra meta lines below the venue/host, e.g. payment status.
  *   'actions'     => array(), // Button overrides: array of
- *                             // { label, url, arrow (bool), external (bool) }.
+ *                             // { label, url, arrow (bool), external (bool) },
+ *                             // or a form-shaped action for a POST behind a
+ *                             // confirm modal: { label, form: { action, nonce,
+ *                             // event_id, modal (parts/layout/modal.php args,
+ *                             // with a page-unique id) } }.
  *                             // Defaults to Event details + the Register placeholder.
  * ) );
  */
@@ -81,6 +85,33 @@ if ( '' !== $law_time_label ) {
 	</div>
 	<div class="law-event-card__actions">
 		<?php foreach ( $law_actions as $law_action ) : ?>
+			<?php
+			// A form-shaped action posts to admin-post.php behind a confirm
+			// modal (rendered inside the form, so its submit carries the
+			// fields). Without JS the modal stays hidden and the opener is a
+			// plain submit, so the POST still works on its own.
+			$law_action_form = isset( $law_action['form'] ) && is_array( $law_action['form'] ) ? $law_action['form'] : array();
+			if ( $law_action_form && '' !== (string) ( $law_action['label'] ?? '' ) ) :
+				$law_form_modal = isset( $law_action_form['modal'] ) && is_array( $law_action_form['modal'] ) ? $law_action_form['modal'] : array();
+				?>
+				<form class="law-event-card__action-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="<?php echo esc_attr( (string) ( $law_action_form['action'] ?? '' ) ); ?>">
+					<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) (int) ( $law_action_form['event_id'] ?? 0 ) ); ?>">
+					<?php wp_nonce_field( (string) ( $law_action_form['nonce'] ?? '' ) ); ?>
+					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+					<button
+						type="submit"
+						class="button law-event-card__button"
+						<?php echo ! empty( $law_form_modal['id'] ) ? ' data-law-modal-open="' . esc_attr( (string) $law_form_modal['id'] ) . '"' : ''; ?>
+					><?php echo esc_html( $law_action['label'] ); ?></button>
+					<?php
+					if ( $law_form_modal ) {
+						get_template_part( 'parts/layout/modal', null, $law_form_modal );
+					}
+					?>
+				</form>
+				<?php continue; ?>
+			<?php endif; ?>
 			<?php
 			$law_action_url = (string) ( $law_action['url'] ?? '' );
 			if ( '' === $law_action_url || '' === (string) ( $law_action['label'] ?? '' ) ) {

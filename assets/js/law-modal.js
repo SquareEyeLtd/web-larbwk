@@ -15,6 +15,13 @@
  *
  * The modals render inside their caller's form, so everything else on that
  * form still posts with the action.
+ *
+ * Two hooks for scripts that submit a modal's action over fetch (see
+ * assets/js/committee-actions.js): window.lawModal.open(id) / .close() open
+ * and close a dialog programmatically (open switches dialogs, closing any
+ * current one first), and a modal carrying the law-modal--busy class is
+ * mid-request, so Escape and the close controls are ignored until the
+ * caller removes it.
  */
 (function () {
 	'use strict';
@@ -69,8 +76,9 @@
 		open = null;
 		opener = null;
 		fields(modal).forEach(function (field) { field.disabled = true; });
-		var error = modal.querySelector('.law-form-error');
-		if (error) { error.remove(); }
+		modal.querySelectorAll('.law-form-error, .law-modal__error').forEach(function (error) {
+			error.remove();
+		});
 		modal.hidden = true;
 		document.body.classList.remove('law-modal-open');
 		if (button) {
@@ -98,6 +106,7 @@
 		var target = event.target;
 		if (target && target.closest && target.closest('[data-law-modal-close]')) {
 			event.preventDefault();
+			if (open && open.classList.contains('law-modal--busy')) { return; }
 			closeModal();
 		}
 	});
@@ -106,6 +115,7 @@
 		if (!open) { return; }
 		if (event.key === 'Escape') {
 			event.preventDefault();
+			if (open.classList.contains('law-modal--busy')) { return; }
 			closeModal();
 			return;
 		}
@@ -146,4 +156,14 @@
 			input.focus();
 		});
 	});
+
+	/* The programmatic surface, for scripts that answer a modal's action over
+	   fetch and then need to swap to a result dialog. */
+	window.lawModal = {
+		open: function (id) {
+			var modal = document.getElementById(id);
+			if (modal) { openModal(modal, null); }
+		},
+		close: closeModal
+	};
 })();

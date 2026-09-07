@@ -89,20 +89,40 @@ function law_committee_maybe_render_partial() {
 
 add_action( 'admin_post_law_committee_action', 'law_committee_action_handler' );
 add_action( 'admin_post_nopriv_law_committee_action', function () {
+	// An AJAX post from a page whose user has since logged out lands here;
+	// a redirect would be unparseable to the script, so answer JSON.
+	if ( ! empty( $_POST['law_ajax'] ) ) {
+		wp_send_json_error( array( 'message' => 'You have been signed out. Please reload the page and sign in again.' ), 401 );
+	}
 	wp_safe_redirect( wp_login_url() );
 	exit;
 } );
 
 function law_committee_action_handler() {
+	$is_ajax = ! empty( $_POST['law_ajax'] );
+
+	// An AJAX caller must get JSON even on a bad nonce — check_admin_referer
+	// would die with an HTML page the script cannot parse. A stale nonce here
+	// usually means the session changed under the page (logged out, or
+	// switched user in another tab), so "reload" is the honest advice.
+	if ( $is_ajax && ! wp_verify_nonce( (string) ( $_POST['_wpnonce'] ?? '' ), 'law_committee_action' ) ) {
+		wp_send_json_error( array( 'message' => 'Your session has changed since this page was opened. Please reload the page and try again.' ), 403 );
+	}
 	check_admin_referer( 'law_committee_action' );
 
 	if ( ! law_user_is_committee() ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Sorry, this action is for the committee.' ), 403 );
+		}
 		wp_die( 'Sorry, this action is for the committee.' );
 	}
 
 	$event_id = absint( $_POST['event_id'] ?? 0 );
 	$post     = get_post( $event_id );
 	if ( ! $post || LAW_EVENT_CPT !== $post->post_type ) {
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'Event not found. Please reload the page.' ), 404 );
+		}
 		wp_die( 'Event not found.' );
 	}
 	$actor = get_current_user_id();
@@ -151,6 +171,62 @@ function law_committee_action_handler() {
 
 	$notice = 'saved';
 	$action = sanitize_key( $_POST['law_action'] ?? '' );
+
+	// The AJAX caller is always a modal action, so an empty action means the
+	// submitter's name/value never made it into the request body. Falling
+	// through to the "Save changes" path would look like success while the
+	// approval never happened, so refuse loudly instead. The field writes
+	// above have already run, hence the wording.
+	if ( $is_ajax && '' === $action ) {
+		wp_send_json_error( array( 'message' => 'Your other changes were saved, but the action itself was not received. Please reload the page and try again.' ), 400 );
+	}
+
+	// Delete (trash) is not a workflow transition, so it is handled here, before
+	// the workflow whitelist below would log it as a refused action. It is only
+	// offered — and only accepted — on a Cancelled or Rejected event: trashing a
+	// live event would orphan an open Stripe invoice with no void and no host
+	// email, so cancel/reject must come first.
+	if ( 'delete' === $action ) {
+		if ( ! in_array( $post->post_status, array( 'law-cancelled', 'law-rejected' ), true ) ) {
+			$message = 'Only a cancelled or rejected event can be deleted. Cancel or reject it first.';
+			if ( $is_ajax ) {
+				wp_send_json_error( array( 'message' => $message ), 403 );
+			}
+			set_transient( 'law_dashboard_error_' . $actor, $message, 60 );
+			wp_safe_redirect(
+				add_query_arg(
+					array( 'event' => $event_id, 'law_notice' => 'action-failed' ),
+					home_url( '/account/dashboard/' )
+				)
+			);
+			exit;
+		}
+
+		// The log line first: it must exist before the post leaves the dashboard.
+		// Trash keeps the log (it lives in comments), so it survives a restore.
+		law_event_log(
+			$event_id,
+			'Event moved to trash from the committee dashboard.',
+			array( 'action' => 'trash', 'source' => 'ui' ),
+			array( 'user_id' => $actor )
+		);
+		wp_trash_post( $event_id );
+
+		// Back to the LIST view (no event= arg): the detail panel cannot load a
+		// trashed post. Restoring and permanent deletion stay wp-admin jobs.
+		if ( $is_ajax ) {
+			wp_send_json_success(
+				array(
+					'title'    => 'Event deleted',
+					'message'  => 'It can be restored from the wp-admin Events list. Reloading the page…',
+					'redirect' => home_url( '/account/dashboard/' ),
+				)
+			);
+		}
+		wp_safe_redirect( add_query_arg( 'law_notice', 'event-deleted', home_url( '/account/dashboard/' ) ) );
+		exit;
+	}
+
 	// Only the actions this screen actually offers may come from this POST.
 	// Without the whitelist a hand-made request could run 'confirm' and publish
 	// an approved event whose invoice is still Unpaid (open finding 3 in
@@ -163,6 +239,11 @@ function law_committee_action_handler() {
 			array( 'action' => 'refused', 'attempted' => $action, 'source' => 'ui' ),
 			array( 'user_id' => $actor )
 		);
+		// On the AJAX path the message travels in the response; the transient
+		// would only be consumed by this same request's aftermath and lost.
+		if ( $is_ajax ) {
+			wp_send_json_error( array( 'message' => 'That action is not available from the dashboard.' ), 403 );
+		}
 		set_transient( 'law_dashboard_error_' . $actor, 'That action is not available from the dashboard.', 60 );
 		wp_safe_redirect(
 			add_query_arg(
@@ -180,11 +261,33 @@ function law_committee_action_handler() {
 			array( 'comment' => $note, 'reason' => $note, 'actor_id' => $actor )
 		);
 		if ( is_wp_error( $result ) ) {
+			if ( $is_ajax ) {
+				wp_send_json_error( array( 'message' => $result->get_error_message() ) );
+			}
 			set_transient( 'law_dashboard_error_' . $actor, $result->get_error_message(), 60 );
 			$notice = 'action-failed';
 		} else {
 			$notice = 'action-' . $action;
 		}
+	}
+
+	if ( $is_ajax ) {
+		$titles = array(
+			'approve'   => 'Event approved',
+			'send_back' => 'Event sent back to the host',
+			'reject'    => 'Event rejected',
+			'mark_paid' => 'Event marked as paid and confirmed',
+			'cancel'    => 'Event cancelled',
+		);
+		wp_send_json_success(
+			array(
+				'title'   => $titles[ $action ] ?? 'Done',
+				'message' => 'Reloading the page…',
+				// No law_notice: the success dialog has already confirmed the
+				// action, so the reloaded page should not banner it again.
+				'redirect' => add_query_arg( 'event', $event_id, home_url( '/account/dashboard/' ) ),
+			)
+		);
 	}
 
 	wp_safe_redirect(

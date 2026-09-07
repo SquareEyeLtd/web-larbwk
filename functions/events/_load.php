@@ -15,6 +15,7 @@ require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/post-types.php';
 require_once __DIR__ . '/statuses.php';
 require_once __DIR__ . '/meta.php';
+require_once __DIR__ . '/countries.php';
 require_once __DIR__ . '/capabilities.php';
 require_once __DIR__ . '/fees.php';
 require_once __DIR__ . '/log.php';

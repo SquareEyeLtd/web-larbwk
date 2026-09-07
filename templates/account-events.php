@@ -67,6 +67,10 @@ get_header();
 						$law_notice_text = array(
 							'event-updated'   => __( 'Your changes have been saved.', 'law' ),
 							'event-submitted' => __( 'Your event has been submitted to the committee.', 'law' ),
+							'event-withdrawn' => __( 'Your event has been withdrawn.', 'law' ),
+							'event-not-editable' => __( 'This event can no longer be edited.', 'law' ),
+							'withdraw-failed' => __( 'Sorry, this event could not be withdrawn. Please reload the page and try again.', 'law' ),
+							'rate-limited'    => __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ),
 						);
 						if ( isset( $law_notice_text[ $law_notice ] ) ) {
 							echo '<div class="law-form-notice" role="status">' . esc_html( $law_notice_text[ $law_notice ] ) . '</div>';
@@ -104,6 +108,19 @@ get_header();
 
 						<?php else : ?>
 
+							<?php
+							// One success dialog for the withdraw cards' AJAX flow
+							// (event-form.js overwrites its copy from the response).
+							$law_any_withdraw = false;
+							if ( 'cpt' === law_events_source() ) {
+								foreach ( $law_items as $law_item ) {
+									if ( in_array( $law_item['event']['status'], array( 'Draft', 'Proposed', 'Sent back' ), true ) ) {
+										$law_any_withdraw = true;
+										break;
+									}
+								}
+							}
+							?>
 							<?php foreach ( $law_items as $law_item ) : ?>
 								<?php
 								$law_event = $law_item['event'];
@@ -127,6 +144,22 @@ get_header();
 								);
 								?>
 							<?php endforeach; ?>
+
+							<?php
+							if ( $law_any_withdraw ) {
+								get_template_part(
+									'parts/layout/modal',
+									null,
+									array(
+										'id'      => 'law-modal-withdraw-success',
+										'title'   => __( 'Event withdrawn', 'law' ),
+										'copy'    => __( 'Reloading the page…', 'law' ),
+										'confirm' => false,
+										'close'   => __( 'Close', 'law' ),
+									)
+								);
+							}
+							?>
 
 						<?php endif; ?>
 

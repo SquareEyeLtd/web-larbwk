@@ -422,6 +422,114 @@ function law_stripe_record_failure( $event_id, WP_Error $error ) {
 	law_events_send( 'admin_stripe_error', $event_id, array( 'to' => law_events_committee_emails() ) );
 }
 
+/**
+ * Stop a live invoice when its event is cancelled: delete a draft, void an
+ * open (or uncollectible) one, leave a paid one strictly alone — refunds are
+ * a manual committee decision, alerted separately by the cancel side effects.
+ *
+ * NEVER fatal: cancellation must complete whatever Stripe says, so every
+ * failure here is logged and alerted (admins + committee, the invoice-failure
+ * precedent) rather than returned up as a blocker. The invoice ID/URL meta is
+ * kept for the audit trail; nothing can re-enter the invoice path from
+ * law-cancelled (the retry guard requires Approved, and approve's from-list
+ * excludes cancelled).
+ *
+ * @param int $event_id law_event post ID.
+ * @param int $actor    Acting user ID (0 = system), for the log lines.
+ * @return string 'none' | 'deleted' | 'voided' | 'already_void' | 'left_paid' | 'failed'
+ */
+function law_stripe_void_invoice( $event_id, $actor = 0 ) {
+	$event_id   = (int) $event_id;
+	$invoice_id = (string) law_event_meta( $event_id, '_law_stripe_invoice_id' );
+	$log_extra  = array( 'user_id' => (int) $actor );
+
+	if ( '' === $invoice_id ) {
+		law_event_log(
+			$event_id,
+			sprintf( 'Cancelled with no Stripe invoice on record (payment status: %s).', (string) law_event_meta( $event_id, '_law_payment_status' ) ?: '(none)' ),
+			array( 'action' => 'invoice_void_skipped', 'source' => 'stripe' ),
+			$log_extra
+		);
+		return 'none';
+	}
+
+	$fail = function ( $step, WP_Error $error ) use ( $event_id, $invoice_id, $log_extra ) {
+		law_event_log(
+			$event_id,
+			sprintf( 'Stripe invoice %s could not be %s after cancellation: %s. Void it manually in Stripe.', $invoice_id, $step, $error->get_error_message() ),
+			array( 'action' => 'invoice_void_failed', 'invoice_id' => $invoice_id, 'error' => $error->get_error_message(), 'source' => 'stripe' ),
+			$log_extra
+		);
+		$alert = array(
+			'placeholders' => array(
+				'stripe_error' => sprintf( 'Voiding invoice %s after cancellation failed: %s. The event is cancelled; void the invoice manually in Stripe.', $invoice_id, $error->get_error_message() ),
+			),
+		);
+		law_events_send( 'admin_stripe_error', $event_id, $alert );
+		law_events_send( 'admin_stripe_error', $event_id, $alert + array( 'to' => law_events_committee_emails() ) );
+		return 'failed';
+	};
+
+	$invoice = law_stripe_request( 'GET', '/v1/invoices/' . rawurlencode( $invoice_id ), array() );
+	if ( is_wp_error( $invoice ) ) {
+		return $fail( 'read', $invoice );
+	}
+
+	$status = (string) ( $invoice['status'] ?? '' );
+	switch ( $status ) {
+		case 'draft':
+			$deleted = law_stripe_request( 'DELETE', '/v1/invoices/' . rawurlencode( $invoice_id ), array() );
+			if ( is_wp_error( $deleted ) ) {
+				return $fail( 'deleted', $deleted );
+			}
+			law_event_log(
+				$event_id,
+				sprintf( 'Draft Stripe invoice %s deleted after cancellation.', $invoice_id ),
+				array( 'action' => 'invoice_deleted', 'invoice_id' => $invoice_id, 'source' => 'stripe' ),
+				$log_extra
+			);
+			return 'deleted';
+
+		case 'open':
+		case 'uncollectible':
+			$voided = law_stripe_request(
+				'POST',
+				'/v1/invoices/' . rawurlencode( $invoice_id ) . '/void',
+				array(),
+				sprintf( 'law-void-%d-%s', $event_id, $invoice_id )
+			);
+			if ( is_wp_error( $voided ) ) {
+				return $fail( 'voided', $voided );
+			}
+			law_event_log(
+				$event_id,
+				sprintf( 'Stripe invoice %s (%s) voided after cancellation; no payment is due.', $invoice_id, $status ),
+				array( 'action' => 'invoice_voided', 'invoice_id' => $invoice_id, 'old_status' => $status, 'source' => 'stripe' ),
+				$log_extra
+			);
+			return 'voided';
+
+		case 'void':
+			law_event_log(
+				$event_id,
+				sprintf( 'Stripe invoice %s is already void; nothing to do.', $invoice_id ),
+				array( 'action' => 'invoice_void_skipped', 'invoice_id' => $invoice_id, 'source' => 'stripe' ),
+				$log_extra
+			);
+			return 'already_void';
+
+		case 'paid':
+		default:
+			law_event_log(
+				$event_id,
+				sprintf( 'Stripe invoice %s is %s and was left untouched. Refunds are a manual committee decision.', $invoice_id, $status ?: 'in an unknown state' ),
+				array( 'action' => 'invoice_left_paid', 'invoice_id' => $invoice_id, 'status' => $status, 'source' => 'stripe' ),
+				$log_extra
+			);
+			return 'left_paid';
+	}
+}
+
 /* Retry (committee detail view + admin event screen) ________________________ */
 
 add_action( 'admin_post_law_event_retry_invoice', 'law_event_handle_retry_invoice' );

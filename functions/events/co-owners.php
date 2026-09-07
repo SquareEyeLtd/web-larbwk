@@ -92,7 +92,7 @@ function law_event_ensure_co_owner_users( $event_id, $actor = 0, $send_email = t
  * email match otherwise grants event access silently, and the notice gives the
  * person a route to flag it if it was unexpected.
  *
- * Sent through the module's own registry (LAW → Emails), so the copy is
+ * Sent through the module's own registry (the Emails screen), so the copy is
  * editable, branded by the Email Templates wrapper and written to the event's
  * activity log like every other module email.
  *
@@ -122,7 +122,7 @@ function law_event_notify_co_owner_linked( $event_id, $user ) {
  * its user branch never applies the wp_new_user_notification_email filter, so
  * the branded host welcome in mu-plugins/law-secondary-host-users.php never
  * fires and what actually goes out is BNFW's unbranded fallback. Sending from
- * the registry instead keeps the copy in LAW → Emails and in the activity log.
+ * the registry instead keeps the copy on the Emails screen and in the activity log.
  *
  * The reset key expires (24 hours by default, the password_reset_expiration
  * filter), which is why the body also carries {forgot_link}.

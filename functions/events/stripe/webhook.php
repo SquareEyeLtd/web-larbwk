@@ -175,6 +175,21 @@ function law_stripe_handle_invoice_paid( array $invoice, $stripe_event_id ) {
 	$post = get_post( $event_id );
 	if ( $post && 'law-approved' === $post->post_status ) {
 		law_event_workflow_transition( $event_id, 'confirm', array( 'source' => 'stripe_webhook', 'actor_id' => 0 ) );
+	} elseif ( $post && 'law-cancelled' === $post->post_status ) {
+		// Money arriving for a cancelled event (a failed void, or the host paid
+		// in the race before the void landed) must never be silent: the invoice
+		// should not have been payable, and only a human can decide the refund.
+		law_event_log(
+			$event_id,
+			sprintf(
+				'PAYMENT ON A CANCELLED EVENT: invoice %s was paid (%s) after cancellation. Review in Stripe and refund manually if appropriate.',
+				(string) ( $invoice['id'] ?? '?' ),
+				law_events_format_pence( $amount )
+			),
+			array( 'action' => 'paid_after_cancel', 'invoice_id' => (string) ( $invoice['id'] ?? '' ), 'amount_paid' => $amount, 'stripe_event' => $stripe_event_id, 'source' => 'stripe_webhook' ),
+			array( 'user_id' => 0 )
+		);
+		law_events_send( 'committee_cancelled_paid', $event_id );
 	}
 
 	return true;

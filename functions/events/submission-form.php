@@ -28,15 +28,25 @@ function law_events_form_event_id() {
 }
 
 /**
- * Fields locked for hosts once the event is approved/published, per the
- * 4.2 §4.2 rules: title, date/slots, fees, the approved capacity band and
+ * Fields locked once the event is approved/published, per the 4.2 §4.2
+ * rules: for hosts, title, date/slots, fees, the approved capacity band and
  * programme-grid facts (type, sectors, host organisations) freeze;
  * description, speakers, venue, agenda, TICKET ALLOCATIONS (within the
- * approved band), contacts and co-owners stay editable.
+ * approved band), contacts and co-owners stay editable. Committee members
+ * bypass every lock EXCEPT fees/invoice (Denis, 7 September 2026): fee
+ * changes stay in the dashboard override control and wp-admin, so the
+ * snapshot machinery has one front-end door fewer. Pre-approval statuses
+ * are fully unlocked for everyone — the fee is only snapshotted at
+ * approval, and locking the tier earlier would break validation for a
+ * committee member submitting their own event.
  */
-function law_events_locked_fields( $post ) {
+function law_events_locked_fields( $post, $user_id = 0 ) {
 	if ( ! $post || in_array( $post->post_status, array( 'law-draft', 'law-proposed', 'law-sent-back' ), true ) ) {
 		return array();
+	}
+	$user_id = $user_id ? (int) $user_id : get_current_user_id();
+	if ( law_user_is_committee( $user_id ) ) {
+		return array( 'fee_tier', 'invoice' );
 	}
 	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed' );
 }
@@ -52,7 +62,7 @@ function law_events_locked_fields( $post ) {
  */
 function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	$is_new = ! $post;
-	$locked = $post ? law_events_locked_fields( $post ) : array();
+	$locked = $post ? law_events_locked_fields( $post, $user_id ) : array();
 	$errors = new WP_Error();
 
 	$title       = sanitize_text_field( $input['event_title'] ?? '' );
@@ -309,10 +319,10 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		law_event_update_meta( $event_id, $key, $value );
 	}
 
-	// Country → ISO (parity with the mu-plugin behaviour).
+	// Country → ISO, for Stripe's address[country].
 	$country = (string) ( $input['invoice_country'] ?? '' );
-	if ( '' !== $country && function_exists( 'sqe_law_country_to_iso' ) ) {
-		law_event_update_meta( $event_id, '_law_country_iso', (string) sqe_law_country_to_iso( $country ) );
+	if ( '' !== $country ) {
+		law_event_update_meta( $event_id, '_law_country_iso', law_events_country_to_iso( $country ) );
 	}
 
 	// Terms consent (recorded once, kept forever).
@@ -330,8 +340,20 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	law_events_form_save_sessions( $event_id, (array) ( $input['sessions'] ?? array() ) );
 
 	// If the event is already approved/published and this saver is a host,
-	// the committee hears about the edit (host-only alert: staff edits are quiet).
-	if ( $post && in_array( $post->post_status, array( 'law-approved', 'publish' ), true ) && ! law_user_is_committee( $user_id ) ) {
+	// the committee hears about the edit (host-only alert: staff edits are
+	// quiet, but they do get a log line — the activity log records everything).
+	if ( $post && law_user_is_committee( $user_id ) ) {
+		law_event_log(
+			$event_id,
+			'Event details updated by the committee.',
+			array( 'action' => 'committee_edit', 'source' => 'committee_form' ),
+			array( 'user_id' => $user_id )
+		);
+		if ( in_array( $post->post_status, array( 'law-approved', 'publish' ), true ) ) {
+			// Newly added co-owners on an approved event get accounts straight away.
+			law_event_ensure_co_owner_users( $event_id, $user_id );
+		}
+	} elseif ( $post && in_array( $post->post_status, array( 'law-approved', 'publish' ), true ) ) {
 		law_event_log(
 			$event_id,
 			'Event updated by the host after approval.',
@@ -546,12 +568,24 @@ function law_events_form_handler() {
 		wp_die( 'Too many submissions in a short time. Please wait a few minutes and try again.' );
 	}
 
+	// The committee edit view posts law_form_context=committee so failures and
+	// the success redirect return to the dashboard, not the host template. A
+	// host spoofing the field fails the capability check and stays on the host
+	// routes; both targets are home_url()-built, so this is never an open redirect.
+	$is_committee_ctx = 'committee' === sanitize_key( $_POST['law_form_context'] ?? '' ) && law_user_is_committee( $user_id );
+
 	$event_id = absint( $_POST['law_event_id'] ?? 0 );
 	$post     = null;
 	if ( $event_id ) {
 		$post = get_post( $event_id );
 		if ( ! $post || LAW_EVENT_CPT !== $post->post_type || ! law_user_can_manage_event( $user_id, $event_id ) ) {
 			wp_die( 'Sorry, you are not allowed to edit this event.' );
+		}
+		// Cancelled and rejected events are read-only: the form renders no save
+		// buttons on them, so a POST here is hand-made or stale. The message
+		// thread stays open; only edits are refused.
+		if ( in_array( $post->post_status, array( 'law-cancelled', 'law-rejected' ), true ) ) {
+			law_events_redirect_back( array( 'law_notice' => 'event-not-editable' ) );
 		}
 		// Edit locking (replacing GravityView entry locking): refuse the save
 		// when someone else holds the lock, then take it.
@@ -564,7 +598,9 @@ function law_events_form_handler() {
 				array( 'errors' => array( 'locked' => array( sprintf( 'This event is currently being edited by %s. Your changes were not saved; try again shortly.', $editor ? $editor->display_name : 'another user' ) ) ), 'input' => array() ),
 				10 * MINUTE_IN_SECONDS
 			);
-			wp_safe_redirect( add_query_arg( array( 'law_event' => $event_id, 'law_form_error' => 1 ), law_account_events_submit_url() ) );
+			wp_safe_redirect( $is_committee_ctx
+				? add_query_arg( array( 'event' => $event_id, 'law_edit' => 1, 'law_form_error' => 1 ), home_url( '/account/dashboard/' ) )
+				: add_query_arg( array( 'law_event' => $event_id, 'law_form_error' => 1 ), law_account_events_submit_url() ) );
 			exit;
 		}
 		wp_set_post_lock( $event_id );
@@ -579,36 +615,62 @@ function law_events_form_handler() {
 			array( 'errors' => $result->errors, 'input' => law_events_form_reusable_input( $input ) ),
 			10 * MINUTE_IN_SECONDS
 		);
-		$back = $event_id
-			? add_query_arg( 'law_event', $event_id, law_account_events_submit_url() )
-			: law_account_events_submit_url();
+		if ( $is_committee_ctx && $event_id ) {
+			$back = add_query_arg( array( 'event' => $event_id, 'law_edit' => 1 ), home_url( '/account/dashboard/' ) );
+		} else {
+			$back = $event_id
+				? add_query_arg( 'law_event', $event_id, law_account_events_submit_url() )
+				: law_account_events_submit_url();
+		}
 		wp_safe_redirect( add_query_arg( 'law_form_error', 1, $back ) );
 		exit;
 	}
 
 	$saved_id = (int) $result;
 	$action   = sanitize_key( $input['law_form_action'] ?? 'submit' );
-	$status   = get_post_status( $saved_id );
+
+	wp_safe_redirect( law_events_form_result_redirect( $saved_id, $action, $user_id, $is_committee_ctx ) );
+	exit;
+}
+
+/**
+ * Post-save transitions and the redirect target for one successful save.
+ *
+ * The resubmit transition fires ONLY on the host form's explicit
+ * "Save & resubmit" button (law_form_action=submit) — never on a plain
+ * update. Before this gate, ANY save of a law-sent-back event resubmitted
+ * it to the committee, so a committee member editing details would have
+ * resubmitted as though the host had acted. The committee edit form posts
+ * 'update' and additionally passes $committee_context, so it can never
+ * resubmit even if its action value drifts.
+ *
+ * @param bool $committee_context True only when law_form_context=committee
+ *                                was posted AND the saver is committee
+ *                                (validated by the handler).
+ */
+function law_events_form_result_redirect( $saved_id, $action, $user_id, $committee_context = false ) {
+	$status = get_post_status( $saved_id );
 
 	if ( 'draft' === $action ) {
-		wp_safe_redirect( add_query_arg( array( 'law_event' => $saved_id, 'law_notice' => 'draft-saved' ), law_account_events_submit_url() ) );
-		exit;
+		return add_query_arg( array( 'law_event' => $saved_id, 'law_notice' => 'draft-saved' ), law_account_events_submit_url() );
 	}
 
 	if ( 'law-draft' === $status ) {
 		law_event_workflow_transition( $saved_id, 'submit', array( 'actor_id' => $user_id ) );
 		// The page 372 confirmation, exactly like the old form 2 confirmation.
 		$done = get_page_by_path( 'account/events/submit/done' );
-		wp_safe_redirect( $done ? get_permalink( $done ) : home_url( '/account/events/' ) );
-		exit;
+		return $done ? get_permalink( $done ) : home_url( '/account/events/' );
 	}
 
-	if ( 'law-sent-back' === $status ) {
+	if ( 'law-sent-back' === $status && 'submit' === $action && ! $committee_context ) {
 		law_event_workflow_transition( $saved_id, 'resubmit', array( 'actor_id' => $user_id ) );
 	}
 
-	wp_safe_redirect( add_query_arg( array( 'law_notice' => 'event-updated' ), home_url( '/account/events/' ) ) );
-	exit;
+	if ( $committee_context ) {
+		return add_query_arg( array( 'event' => $saved_id, 'law_notice' => 'saved' ), home_url( '/account/dashboard/' ) );
+	}
+
+	return add_query_arg( array( 'law_notice' => 'event-updated' ), home_url( '/account/events/' ) );
 }
 
 /** Strip files/nonces so the re-render transient stays small and safe. */
@@ -719,6 +781,10 @@ add_action( 'wp_enqueue_scripts', function () {
 	// so ask for them here and the stylesheet prints with the rest.
 	if ( is_page_template( 'templates/account-dashboard.php' ) ) {
 		law_modal_enqueue();
+		// The fetch layer over the workflow-action modals: submits the action in
+		// the background, shows the busy label, then the success dialog and a
+		// delayed reload. Depends on law-modal for the window.lawModal API.
+		wp_enqueue_script( 'law-committee-actions', get_theme_file_uri( 'assets/js/committee-actions.js' ), array( 'law-modal' ), filemtime( get_theme_file_path( 'assets/js/committee-actions.js' ) ), true );
 	}
 } );
 

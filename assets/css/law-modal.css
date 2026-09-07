@@ -55,6 +55,15 @@
 /* Lock the page behind the dialog so the background can't scroll under it, the
    same trick the calendar's mobile filter modal uses. */
 body.law-modal-open { overflow: hidden; }
+/* In-flight state, set by a script submitting the action over fetch
+   (committee-actions.js adds law-modal--busy and disables the buttons; the
+   close controls are inert while it is on, see law-modal.js). */
+.law-modal--busy .law-modal__dialog { cursor: wait; }
+.law-modal__actions .button[disabled], .law-modal__close[disabled] { opacity: .55; cursor: wait; }
+/* A request error, shown inside the dialog above the actions. The shared
+   .law-form-notice styles live in event-form.css and are coloured for the dark
+   form surfaces, so the light dialog carries its own. */
+.law-modal__error { color: #cc4b37; font-weight: 600; margin: 0 0 1rem; }
 @media screen and (max-width: 39.9375em) {
 	/* Near full width with a small inset, and pinned to the top so a tall dialog
 	   opens where the eye already is. */

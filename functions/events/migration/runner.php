@@ -1177,7 +1177,7 @@ function law_migration_run_notifications( $dry ) {
 		if ( '' === $slug ) {
 			// The two "Email to Square Eye > event updated" style extras have no
 			// module trigger of their own; report rather than silently drop.
-			law_migration_log( 'notifications', 'warning', $ref, 'No module slot for this notification; review manually on LAW → Emails.' );
+			law_migration_log( 'notifications', 'warning', $ref, 'No module slot for this notification; review manually on the Emails admin screen.' );
 			continue;
 		}
 
