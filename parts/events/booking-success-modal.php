@@ -42,7 +42,7 @@ $law_bks_title  = (string) ( $law_bks_event['title'] ?? '' );
 			<p class="law-modal__copy"><?php esc_html_e( 'You can leave the waitlist at any time from My bookings.', 'law' ); ?></p>
 		<?php else : ?>
 			<p class="law-modal__copy"><?php echo esc_html( sprintf( __( "You're booked onto %s. A confirmation email with your booking number and a calendar invitation is on its way to you.", 'law' ), $law_bks_title ) ); ?></p>
-			<p class="law-modal__copy"><?php esc_html_e( 'Each colleague you added has a booking of their own, with their own booking number, and is emailed an invitation to set up their account and add dietary or accessibility requirements to their profile.', 'law' ); ?></p>
+			<p class="law-modal__copy"><?php esc_html_e( 'Each colleague you added has a booking of their own, with their own booking number, and is emailed the event details. Those without an account are invited to set one up and add any dietary or accessibility requirements to their profile.', 'law' ); ?></p>
 		<?php endif; ?>
 		<p class="law-modal__actions">
 			<a class="button second" href="<?php echo esc_url( get_permalink( $law_bks_id ) ); ?>"><?php esc_html_e( 'Close', 'law' ); ?></a>

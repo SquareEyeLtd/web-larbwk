@@ -507,14 +507,30 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__row-actions .button { margin-right: .35rem; }
 /* The bookings table: one row per booking, which is one row per attendee
    (Denis, 8 September 2026 — flat, no grouping, just an "Invited by" tag). */
-.law-booking-table__booking small { color: #5a5a7a; }
+
 .law-booking-table__req { white-space: normal; min-width: 11rem; }
-.law-booking-table tbody tr.law-booking-table__first td { border-top: 2px solid #d9d9e3; }
+
 /* The waitlist's position cell: the number, then the three move buttons, which
    are separate one-field forms and would otherwise stack vertically. */
-.law-booking-table__position { white-space: nowrap; }
+/* The position cell is the table's first child, which carries a 220px min-width
+   and normal wrapping; without this the three move buttons wrap onto separate
+   lines inside an over-wide cell. */
+.law-booking-table td.law-booking-table__position { white-space: nowrap; min-width: 0; }
 .law-booking-table__position .law-booking-manage__action { display: inline-block; vertical-align: middle; margin: 0 0 0 .25rem; }
-.law-booking-table__move { padding: .25rem .5rem; font-size: .75rem; margin: 0; }
+.law-booking-table__move { padding: .25rem .5rem; font-size: .9rem; line-height: 1; margin: 0; }
+/* Foundation dims a disabled button to 0.25, which is a ghost at this size, and
+   the theme's own :hover rules out-specify its [disabled]:hover, so a dead
+   button lights up orange under the cursor. */
+.law-cal .button[disabled], .law-dashboard .button[disabled] { opacity: .45; }
+.law-cal .button[disabled]:hover, .law-cal .button[disabled]:focus,
+.law-dashboard .button[disabled]:hover, .law-dashboard .button[disabled]:focus {
+	background: #292459; border-color: #292459; color: #fff;
+}
+/* The manage view's rows are a <ul> inside .law-booking-manage, which matches
+   none of the position:static badge resets, so a row badge would fly to the
+   top-right corner of the PAGE (the card badge is absolutely positioned). */
+.law-booking-manage__people .law-cal-card__badge { position: static; display: inline-block; vertical-align: middle; margin-left: .35rem; }
+.law-booking-manage__number { color: #5a5a7a; font-size: .85rem; margin-left: .5rem; }
 .law-dashboard__row-actions .law-booking-manage__action { display: inline-block; vertical-align: middle; margin-right: .35rem; }
 .law-booking-table .law-booking-manage__action { margin: 0; }
 /* Inline badges inside table cells (Press, Active/Cancelled): the card badge

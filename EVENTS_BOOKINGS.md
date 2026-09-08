@@ -290,6 +290,12 @@ Existing handlers are left untouched and migrated opportunistically later.
 
 ## 5. The booking engine (`functions/events/bookings.php`)
 
+> **Superseded (8 September 2026): see WAITLIST.md §A2.** This section describes
+> the party model: one booking carrying an attendee rows array, with
+> `law_booking_remove_attendee()` and a last-row auto-cancel. There is now one
+> booking per attendee, and removal is `law_booking_cancel()` on that person's
+> own booking.
+
 All engine functions return `WP_Error` on refusal and log to the parent event's activity
 log (section 11).
 
@@ -352,6 +358,12 @@ log (section 11).
   sent-back, which can never hold bookings because the open guard requires `publish`.
 
 ## 6. Handlers and security
+
+> **Superseded in part (8 September 2026): see WAITLIST.md §A3, §B3.** The
+> contract (shared guard, nopriv JSON, IDOR rules, rate limits) still holds;
+> the handler table does not. `law_booking_remove_attendee` is gone,
+> `law_booking_cancel_party` and the three `law_waitlist_*` actions are new,
+> and add-attendee posts an event rather than a booking.
 
 Every handler is built on the shared guard (section 4) and follows the established contract
 (`law_event_handle_withdraw()` is the model): nopriv variant answering JSON 401 when
@@ -486,6 +498,10 @@ form-shaped modal action with the house plain-submit fallback.
 
 ### 7.3 Account area: Your bookings and the manage view
 
+> **Superseded (8 September 2026): see WAITLIST.md §A5.** The manage view now
+> shows the viewer's whole party on the event, one row per person with their
+> own booking number, and the section is headed "My bookings".
+
 Routing is GET-param sub-views on `/account/events/` (page 292, My events), the house
 pattern (`?law_thread=` precedent); no new pages, so no Members, `law_setup_account_pages()`
 or `law_migration_page_map()` churn. `?law_booking={id}` is the manage view;
@@ -531,6 +547,11 @@ Notices: the `$law_notice_text` map in account-events.php gains `booking-created
 
 ### 7.4 Host and committee bookings list
 
+> **Superseded (8 September 2026): see WAITLIST.md §A5, §B5.** The table is
+> flat, one row per booking (which is one row per attendee), with no grouping
+> and no repeated booking number: a colleague's row carries an "Invited by
+> {name}" tag and nothing else. It also gained a waitlist section.
+
 Host cards gain a "Bookings (n)" action (plain `button`; n is
 `law_event_attendee_total()`, total attendees, not booking count) linking to
 `?law_event_bookings={event_id}`. The committee dashboard list links the same URL from its
@@ -563,6 +584,9 @@ treatment). A booking whose owner row was rejected renders "by {owner} (not atte
 Booking column's sub-line; the owner keeps manage rights.
 
 ### 7.5 Exports
+
+> **Superseded in part (8 September 2026).** One row per booking, and the
+> column set gained "Invited by" and "Country".
 
 Buttons "Export: CSV | Excel | PDF" (`button second`, the `.law-cal-export` markup) at the
 top of the bookings list. One shared row builder, `law_booking_export_rows( $event_id )`:
@@ -635,6 +659,10 @@ needs exactly that export). Spec §7.5's "visible to LAW for customer service" i
 
 ## 9. Emails and .ics
 
+> **Superseded in part (8 September 2026): see WAITLIST.md §A4, §B4.** The
+> removal family was renamed to a cancellation family, the confirmations carry
+> each person's own booking number, and eleven waitlist templates were added.
+
 ### 9.1 New registry entries
 
 All in `law_events_email_registry()`, editable on the Emails screen, sent through
@@ -700,6 +728,10 @@ so a second approach warns again.
 
 ## 10. Admin UI (`functions/events/admin/booking-screen.php`)
 
+> **Superseded (8 September 2026): see WAITLIST.md §A6.** One booking is one
+> attendee, so there is no Attendees box; the facts box carries the attendee
+> and who invited them.
+
 Read-only in v1: every mutation goes through the engine so guards, recounts and emails
 always run; wp-admin's job is inspection. (If the committee later needs an admin cancel, a
 button posting the existing handler is the route.)
@@ -716,6 +748,9 @@ button posting the existing handler is the route.)
   `law_event_tickets_remaining()` clamps at 0).
 
 ## 11. Activity logging
+
+> **Superseded in part (8 September 2026).** The action names changed with the
+> model, and the waitlist adds its own under `source => 'waitlist'`.
 
 Everything logs to the parent **event's** stream via `law_event_log()`, with context
 `source => 'bookings'` and `booking => {id}` (no separate booking log: one stream per event
@@ -761,6 +796,9 @@ results are logged when the number changes, and every email send is logged by
    emails (with .ics) in Mailpit.
 
 ## 13. Tests and verification
+
+> **Superseded (8 September 2026): see WAITLIST.md §A8, §B6.** The suites were
+> rewritten for the per-attendee model and `tests/WaitlistTest.php` added.
 
 `tests/BookingsTest.php` on `LAW_Test_Case`, house style: call the engine functions
 directly, assert status, meta and log text. A `make_booking()` helper is added, and

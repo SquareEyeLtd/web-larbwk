@@ -40,9 +40,13 @@ $law_bk_permalink = get_permalink( $law_bk_id );
 $law_bk_remaining = law_event_tickets_remaining( $law_bk_id );
 // Booking is capped by the places actually left; the waitlist is not, since
 // nobody is taking a place yet.
+// What is left of the colleague cap after any this person already brought
+// here, so the form never offers a row the engine will refuse.
+$law_bk_held     = is_user_logged_in() ? law_booking_colleague_count( $law_bk_id, get_current_user_id() ) : 0;
+$law_bk_room     = max( 0, law_booking_max_additional() - $law_bk_held );
 $law_bk_max      = $law_bk_wait
-	? law_booking_max_additional()
-	: min( law_booking_max_additional(), max( 0, (int) $law_bk_remaining - 1 ) );
+	? $law_bk_room
+	: min( $law_bk_room, max( 0, (int) $law_bk_remaining - 1 ) );
 $law_bk_action   = $law_bk_wait ? 'law_waitlist_join' : 'law_booking_create';
 $law_bk_dialog   = $law_bk_wait ? 'law-waitlist-modal' : 'law-booking-modal';
 $law_bk_success  = $law_bk_wait ? 'law-waitlist-success' : 'law-booking-success';
@@ -119,7 +123,7 @@ else :
 
 		<p class="law-modal__actions">
 			<?php if ( 'modal' === $law_bk_ctx ) : ?>
-				<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Cancel', 'law' ); ?></button>
+				<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Close', 'law' ); ?></button>
 			<?php endif; ?>
 			<button type="submit" class="button orange" data-law-modal-busy="<?php echo esc_attr( $law_bk_busy ); ?>"><?php echo esc_html( $law_bk_submit ); ?></button>
 		</p>

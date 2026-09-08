@@ -206,7 +206,7 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 				<?php endforeach; ?>
 			</select></p>
 		<p class="law-form-field">
-			<label for="law-tickets">Tickets available</label>
+			<label for="law-tickets">Places available</label>
 			<?php
 			// max comes from the chosen capacity band and is kept in step by
 			// event-form.js; min is 1, as on form 2 field 54 (Tickets available).

@@ -152,7 +152,7 @@ function law_user_booking_ids( $user_id, $limit = 200 ) {
 		get_posts(
 			array(
 				'post_type'      => LAW_BOOKING_CPT,
-				'post_status'    => array( 'publish', 'law-waitlisted', 'law-cancelled' ),
+				'post_status'    => array_keys( law_booking_statuses() ),
 				'author'         => $user_id,
 				'fields'         => 'ids',
 				'posts_per_page' => (int) $limit,
@@ -177,7 +177,7 @@ function law_user_bookings_made_ids( $user_id, $limit = 200 ) {
 	$ids = get_posts(
 		array(
 			'post_type'      => LAW_BOOKING_CPT,
-			'post_status'    => array( 'publish', 'law-waitlisted', 'law-cancelled' ),
+			'post_status'    => array_keys( law_booking_statuses() ),
 			'author__not_in' => array( $user_id ),
 			'meta_key'       => '_law_booked_by',
 			'meta_value'     => $user_id,
@@ -285,6 +285,30 @@ function law_booking_invited_by_label( $booking ) {
 }
 
 /**
+ * The best deliverable address for a booking's attendee: their account's, or
+ * the snapshot taken at booking time, or nothing.
+ *
+ * One helper because there were five copies of this and they had already
+ * drifted — one had lost its `is_email()` on the account address, so a person
+ * with a malformed account email got no mail at all, where the others fell
+ * through to the snapshot and still reached them.
+ *
+ * @return string '' when there is no usable address.
+ */
+function law_booking_attendee_email( $booking ) {
+	$booking = get_post( $booking );
+	if ( ! $booking ) {
+		return '';
+	}
+	$user = get_user_by( 'id', (int) $booking->post_author );
+	if ( $user && is_email( $user->user_email ) ) {
+		return $user->user_email;
+	}
+	$snapshot = (string) law_event_meta( $booking->ID, '_law_attendee_email' );
+	return is_email( $snapshot ) ? $snapshot : '';
+}
+
+/**
  * The single write path for a booking's attendee snapshot and its booker.
  *
  * @param int   $person    user_id / name / email / organisation / job_title.
@@ -377,20 +401,24 @@ function law_booking_guard_open( $event_id ) {
  * @param string[] $statuses Booking statuses that count as holding a place;
  *                           the waitlist adds law-waitlisted, promotion checks
  *                           active bookings only.
+ * @param array|null $taken  A prebuilt law_booking_taken_index(), for a caller
+ *                           checking many people against the same event.
  * @return true|WP_Error
  */
-function law_booking_guard_duplicates( $event_id, array $people, array $statuses = array( 'publish' ) ) {
+function law_booking_guard_duplicates( $event_id, array $people, array $statuses = array( 'publish' ), ?array $taken = null ) {
 	$emails = array();
 	$users  = array();
-	foreach ( $people as $person ) {
+	$rows   = array();
+	foreach ( $people as $i => $person ) {
 		$email = strtolower( trim( (string) ( $person['email'] ?? '' ) ) );
 		$user  = (int) ( $person['user_id'] ?? 0 );
 		$name  = (string) ( $person['name'] ?? '' ) ?: $email;
+		$rows[ $name ] = $i > 0 ? $i - 1 : null; // Row 0 is the booker themselves.
 		if ( '' !== $email && isset( $emails[ $email ] ) ) {
-			return new WP_Error( 'law_booking_duplicate', sprintf( '%s is listed more than once.', $name ) );
+			return new WP_Error( 'law_booking_duplicate', sprintf( '%s is listed more than once.', $name ), array( 'row' => $i > 0 ? $i - 1 : null, 'field' => 'email' ) );
 		}
 		if ( $user && isset( $users[ $user ] ) ) {
-			return new WP_Error( 'law_booking_duplicate', sprintf( '%s is listed more than once.', $name ) );
+			return new WP_Error( 'law_booking_duplicate', sprintf( '%s is listed more than once.', $name ), array( 'row' => $i > 0 ? $i - 1 : null, 'field' => 'email' ) );
 		}
 		if ( '' !== $email ) {
 			$emails[ $email ] = $name;
@@ -400,46 +428,84 @@ function law_booking_guard_duplicates( $event_id, array $people, array $statuses
 		}
 	}
 
-	$bookings = law_bookings_for_event( $event_id, $statuses, -1 );
-	if ( $bookings ) {
-		cache_users( array_map( fn( $b ) => (int) $b->post_author, $bookings ) );
-	}
+	$taken   = null === $taken ? law_booking_taken_index( $event_id, $statuses ) : $taken;
 	$current = get_current_user_id();
-	foreach ( $bookings as $booking ) {
-		$author = (int) $booking->post_author;
-		$taken  = array( strtolower( (string) law_event_meta( $booking->ID, '_law_attendee_email' ) ) );
-		$user   = get_user_by( 'id', $author );
-		if ( $user ) {
-			$taken[] = strtolower( $user->user_email );
+
+	// $rows maps a person back to the repeater row they came from, so a
+	// refusal can be marked against the offending field rather than only
+	// stated at the top of the form. Row 0 is the booker, who has no row.
+	foreach ( $users as $user_id => $name ) {
+		if ( isset( $taken['users'][ $user_id ] ) ) {
+			return law_booking_duplicate_error( $name, $user_id === $current, ! empty( $taken['waiting'][ $user_id ] ), $rows[ $name ] ?? null );
 		}
-		$hit = ( $author && isset( $users[ $author ] ) ) ? $users[ $author ] : '';
-		foreach ( $taken as $email ) {
-			if ( '' !== $email && isset( $emails[ $email ] ) ) {
-				$hit = $emails[ $email ];
-				break;
-			}
+	}
+	foreach ( $emails as $email => $name ) {
+		if ( isset( $taken['emails'][ $email ] ) ) {
+			$owner = (int) $taken['emails'][ $email ];
+			return law_booking_duplicate_error( $name, $owner === $current, ! empty( $taken['waiting'][ $owner ] ), $rows[ $name ] ?? null );
 		}
-		if ( '' === $hit ) {
-			continue;
-		}
-		$waiting = 'law-waitlisted' === $booking->post_status;
-		if ( $author && $author === $current ) {
-			return new WP_Error(
-				'law_booking_duplicate',
-				$waiting
-					? 'You are already on the waitlist for this event. You can manage it from My bookings.'
-					: 'You already have a booking for this event. You can manage it from My bookings.'
-			);
-		}
-		return new WP_Error(
-			'law_booking_duplicate',
-			sprintf(
-				$waiting ? '%s is already on the waitlist for this event.' : '%s already has a place at this event.',
-				$hit
-			)
-		);
 	}
 	return true;
+}
+
+/**
+ * Who already holds a place (or a queue slot) on an event, as lookup maps, so
+ * a caller checking many people — the waitlist walking its queue — builds this
+ * once rather than reloading every booking on the event per candidate.
+ *
+ * @return array{users:array<int,true>,emails:array<string,int>,waiting:array<int,bool>}
+ */
+function law_booking_taken_index( $event_id, array $statuses = array( 'publish' ) ) {
+	$index    = array( 'users' => array(), 'emails' => array(), 'waiting' => array() );
+	$bookings = law_bookings_for_event( $event_id, $statuses, -1 );
+	if ( ! $bookings ) {
+		return $index;
+	}
+	cache_users( array_map( fn( $b ) => (int) $b->post_author, $bookings ) );
+
+	foreach ( $bookings as $booking ) {
+		$author  = (int) $booking->post_author;
+		$waiting = 'law-waitlisted' === $booking->post_status;
+		if ( $author ) {
+			$index['users'][ $author ]   = true;
+			$index['waiting'][ $author ] = $waiting;
+		}
+		// Both the snapshot taken at booking time and the account's current
+		// address: someone who changed their email must still be recognised.
+		$emails = array( strtolower( (string) law_event_meta( $booking->ID, '_law_attendee_email' ) ) );
+		$user   = get_user_by( 'id', $author );
+		if ( $user ) {
+			$emails[] = strtolower( $user->user_email );
+		}
+		foreach ( array_filter( $emails ) as $email ) {
+			$index['emails'][ $email ] = $author;
+		}
+	}
+	return $index;
+}
+
+/** The refusal the duplicate guard returns, worded for who is being refused. */
+function law_booking_duplicate_error( $name, $is_self, $waiting, $row = null ) {
+	// The row lets the form mark the offending email in place; the booker's
+	// own clash has no row to mark, so it stays a message.
+	$data = null === $row ? array() : array( 'row' => (int) $row, 'field' => 'email' );
+	if ( $is_self ) {
+		return new WP_Error(
+			'law_booking_duplicate',
+			$waiting
+				? 'You are already on the waitlist for this event. You can manage it from My bookings.'
+				: 'You already have a booking for this event. You can manage it from My bookings.',
+			$data
+		);
+	}
+	return new WP_Error(
+		'law_booking_duplicate',
+		sprintf(
+			$waiting ? '%s is already on the waitlist for this event.' : '%s already has a place at this event.',
+			$name
+		),
+		$data
+	);
 }
 
 /**
@@ -705,38 +771,47 @@ function law_booking_grant_attendee_role( $user_id, $event_id, $actor_id ) {
 /**
  * Tell a colleague about the booking someone made for them: the invite with a
  * set-password link for a brand-new account, or the "you have a place" email
- * for an existing one. Both carry THAT person's own booking number, and the
- * event's .ics invite.
+ * for an existing one. Both carry THAT person's own booking number.
  *
- * @param int  $booking_id The colleague's own booking.
- * @param bool $created    Their account was created for this booking.
+ * @param int   $booking_id The colleague's own booking.
+ * @param bool  $created    Their account was created for this booking.
+ * @param array $opts       invited / added (slugs) and ics (bool) — the
+ *                          waitlist sends the same shape with its own wording
+ *                          and no calendar invite, since it has no place yet.
  */
-function law_booking_notify_attendee( $booking_id, $created ) {
+function law_booking_notify_attendee( $booking_id, $created, array $opts = array() ) {
+	$opts = array_merge(
+		array( 'invited' => 'user_attendee_invited', 'added' => 'user_attendee_added', 'ics' => true ),
+		$opts
+	);
 	$booking = get_post( $booking_id );
 	if ( ! $booking ) {
 		return;
 	}
-	$event_id = (int) $booking->post_parent;
-	$person   = law_booking_attendee( $booking );
-	$user     = get_user_by( 'id', (int) $booking->post_author );
-	$email    = $user ? $user->user_email : $person['email'];
-	if ( ! is_email( $email ) ) {
+	$email = law_booking_attendee_email( $booking );
+	if ( '' === $email ) {
 		return;
 	}
 
-	$extra = array( 'attendee_name' => $person['name'] );
+	$event_id = (int) $booking->post_parent;
+	$person   = law_booking_attendee( $booking );
+	$user     = get_user_by( 'id', (int) $booking->post_author );
+	$extra    = array( 'attendee_name' => $person['name'] );
 	if ( $created && $user ) {
 		$extra['username']          = $user->user_login;
 		$extra['set_password_link'] = law_events_password_setup_link( $user, $event_id, 'booking_attendee_error' );
 	}
-	law_booking_send_with_ics(
-		$created ? 'user_attendee_invited' : 'user_attendee_added',
-		$event_id,
-		array(
-			'to'           => array( $email ),
-			'placeholders' => array_merge( law_booking_email_placeholders( $booking_id ), $extra ),
-		)
+
+	$slug = $created ? $opts['invited'] : $opts['added'];
+	$args = array(
+		'to'           => array( $email ),
+		'placeholders' => array_merge( law_booking_email_placeholders( $booking_id ), $extra ),
 	);
+	if ( $opts['ics'] ) {
+		law_booking_send_with_ics( $slug, $event_id, $args );
+		return;
+	}
+	law_events_send( $slug, $event_id, $args );
 }
 
 /**
@@ -751,8 +826,13 @@ function law_booking_notify_attendee( $booking_id, $created ) {
 function law_booking_set_status( $booking_id, $status ) {
 	$previous                             = $GLOBALS['law_booking_transitioning'] ?? false;
 	$GLOBALS['law_booking_transitioning'] = true;
-	$updated                              = wp_update_post( array( 'ID' => (int) $booking_id, 'post_status' => $status ), true );
-	$GLOBALS['law_booking_transitioning'] = $previous;
+	try {
+		$updated = wp_update_post( array( 'ID' => (int) $booking_id, 'post_status' => $status ), true );
+	} finally {
+		// finally, because a fatal in somebody else's save_post hook would
+		// otherwise leave the status guard disarmed for the rest of the request.
+		$GLOBALS['law_booking_transitioning'] = $previous;
+	}
 	return is_wp_error( $updated ) ? $updated : true;
 }
 
@@ -881,6 +961,15 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
 	};
 
 	law_event_recount_attendees( $event_id );
+
+	// Re-read the event itself, not just the seats: a committee cancel can
+	// complete while this request waits for the lock, and its sweep has
+	// already passed, so a booking inserted now would sit on a dead event with
+	// nothing left to correct it.
+	$open = law_booking_guard_open( $event_id );
+	if ( is_wp_error( $open ) ) {
+		return $refuse( $open );
+	}
 
 	$dup = law_booking_guard_duplicates( $event_id, $people, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
@@ -1200,8 +1289,16 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
 	if ( is_wp_error( $open ) ) {
 		return law_booking_log_refusal( $event_id, 0, $open, $actor_id );
 	}
-	if ( ! law_booking_party( $event_id, $booker_id, law_booking_holding_statuses() ) ) {
-		return new WP_Error( 'law_booking_no_party', 'You have no booking for this event to add a colleague to.' );
+	// An ACTIVE party, deliberately: someone whose own entry is still on the
+	// waitlist must not be able to hand a colleague a confirmed place ahead of
+	// the queue. They join the waitlist again instead.
+	if ( ! law_booking_party( $event_id, $booker_id ) ) {
+		return new WP_Error(
+			'law_booking_no_party',
+			law_booking_party( $event_id, $booker_id, law_booking_holding_statuses() )
+				? 'You are on the waitlist for this event, so you cannot add a colleague to a booking yet. They can join the waitlist too.'
+				: 'You have no booking for this event to add a colleague to.'
+		);
 	}
 
 	$clean = law_booking_clean_additional_rows( array( $raw_row ) );
@@ -1258,6 +1355,13 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
 	};
 
 	law_event_recount_attendees( $event_id );
+
+	// See law_booking_create(): the event can stop being open while this
+	// request queues for the lock.
+	$open = law_booking_guard_open( $event_id );
+	if ( is_wp_error( $open ) ) {
+		return $refuse( $open );
+	}
 
 	$dup = law_booking_guard_duplicates( $event_id, array( $row ), law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
@@ -1341,7 +1445,9 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
  *                           'self' (they cancelled their own place),
  *                           'booker' (the person who booked them cancelled it),
  *                           'host_reject' (host or committee, with a reason),
- *                           'event_cancelled' (the event-cancel sweep).
+ *                           'event_cancelled' (the event-cancel sweep),
+ *                           'account_deleted' (their account is gone, so there
+ *                           is nobody to email).
  * @param array  $args       Optional: reason (host_reject).
  * @return true|WP_Error
  */
@@ -1356,8 +1462,11 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	$event_id    = (int) $booking->post_parent;
 	$waitlisted  = 'law-waitlisted' === $booking->post_status;
 
-	// Under the event lock like every other mutation (GET_LOCK is re-entrant
-	// per session, so a sweep or promotion already holding it is fine).
+	// Under the event lock like every other mutation. NOTE: GET_LOCK does not
+	// nest — a second acquire on a name this session already holds returns
+	// immediately and a single RELEASE_LOCK frees it — so no caller may hold
+	// the lock across a call to this function. None does today: every path
+	// releases before calling the next locking function.
 	if ( ! law_booking_lock( $event_id ) ) {
 		return new WP_Error( 'law_booking_busy', 'The booking is busy with another change. Please try again in a moment.' );
 	}
@@ -1382,12 +1491,21 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	$person  = law_booking_attendee( $booking );
 	$reason  = trim( (string) ( $args['reason'] ?? '' ) );
 
+	// The committee reads these, so say who did it in words rather than
+	// printing the internal context token.
+	$by = array(
+		'self'            => 'cancelled by the attendee',
+		'booker'          => 'cancelled by the person who booked it',
+		'host_reject'     => 'cancelled by the host',
+		'event_cancelled' => 'cancelled because the event was cancelled',
+		'account_deleted' => 'cancelled because the account was deleted',
+	);
 	law_event_log(
 		$event_id,
 		sprintf(
-			$waitlisted ? 'Waitlist entry #%1$d cancelled (%2$s): %3$s.%4$s' : 'Booking #%1$d cancelled (%2$s): %3$s.%4$s',
+			$waitlisted ? 'Waitlist entry #%1$d %2$s: %3$s.%4$s' : 'Booking #%1$d %2$s: %3$s.%4$s',
 			$number,
-			str_replace( '_', ' ', $context ),
+			$by[ $context ] ?? str_replace( '_', ' ', $context ),
 			$person['name'] ?: $person['email'],
 			'' !== $reason ? ' Reason: ' . $reason : ''
 		),
@@ -1416,9 +1534,8 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 			'host_reject'     => 'user_booking_rejected',
 			'event_cancelled' => 'user_booking_event_cancelled',
 		);
-	$user  = get_user_by( 'id', (int) $booking->post_author );
-	$email = $user && is_email( $user->user_email ) ? $user->user_email : $person['email'];
-	if ( isset( $slugs[ $context ] ) && is_email( $email ) ) {
+	$email = law_booking_attendee_email( $booking );
+	if ( isset( $slugs[ $context ] ) && '' !== $email ) {
 		$host = get_user_by( 'id', (int) get_post_field( 'post_author', $event_id ) );
 		law_events_send(
 			$slugs[ $context ],
@@ -1458,6 +1575,10 @@ function law_bookings_cancel_party( $event_id, $booker_id, $actor_id ) {
 	$numbers   = array();
 	$done      = 0;
 
+	// One promotion pass for the whole party, not one per booking: four
+	// cancellations should not mean four passes and four lock acquisitions.
+	$suspended                         = $GLOBALS['law_waitlist_suspended'] ?? false;
+	$GLOBALS['law_waitlist_suspended'] = true;
 	foreach ( $party as $booking ) {
 		$context = (int) $booking->post_author === (int) $actor_id ? 'self' : 'booker';
 		$result  = law_booking_cancel( $booking->ID, (int) $actor_id, $context );
@@ -1466,6 +1587,7 @@ function law_bookings_cancel_party( $event_id, $booker_id, $actor_id ) {
 			$done++;
 		}
 	}
+	$GLOBALS['law_waitlist_suspended'] = $suspended;
 
 	if ( $done > 1 ) {
 		$actor = get_user_by( 'id', (int) $actor_id );
@@ -1477,9 +1599,13 @@ function law_bookings_cancel_party( $event_id, $booker_id, $actor_id ) {
 				$done,
 				implode( ', ', $numbers )
 			),
-			array( 'action' => 'booking_party_cancelled', 'bookings' => $done, 'source' => 'bookings' ),
+			array( 'action' => 'booking_party_cancelled', 'booking' => (int) $party[0]->ID, 'bookings' => $done, 'source' => 'bookings' ),
 			array( 'user_id' => (int) $actor_id )
 		);
+	}
+
+	if ( $done && function_exists( 'law_waitlist_process' ) ) {
+		law_waitlist_process( $event_id, 'cancel_party' );
 	}
 
 	return $done;
@@ -1593,18 +1719,30 @@ function law_booking_email_placeholders( $booking_id, array $party_ids = array()
 		$line    = trim( $person['name'] ) . ' (' . $person['email'] . ')';
 		$facts   = array_filter( array( $person['organisation'], $person['job_title'] ) );
 		if ( $facts ) {
-			$line .= ' — ' . implode( ', ', $facts );
+			$line .= ', ' . implode( ', ', $facts );
 		}
-		$list[]    = $line . ' — Booking #' . $number;
+		$list[]    = $line . ' (Booking #' . $number . ')';
 		$numbers[] = '#' . $number;
 	}
 
 	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
 	$remaining = law_event_tickets_remaining( $event_id );
 
+	// Only say anything about colleagues when there ARE colleagues: most
+	// bookings are one person, and a paragraph about people who do not exist
+	// reads as a mistake.
+	$party_note = count( $numbers ) > 1
+		? 'Each colleague has a booking of their own, with their own booking number, and has been emailed their own confirmation. Accounts are created for any who do not already have one, with a link to set their password and to add any dietary or accessibility requirements to their profile.'
+		: '';
+	$waitlist_note = count( $numbers ) > 1
+		? 'Everyone you added is on the waitlist in their own right, so places are offered to them individually.'
+		: '';
+
 	return array(
 		'booking_number'    => (string) (int) law_event_meta( $booking_id, '_law_booking_number' ),
 		'booking_numbers'   => implode( ', ', $numbers ),
+		'party_note'        => $party_note,
+		'waitlist_note'     => $waitlist_note,
 		'attendee_list'     => implode( "\n", $list ),
 		'invited_by'        => law_booking_invited_by_label( $booking_id ),
 		'tickets_available' => $available > 0 ? (string) $available : '',
@@ -1645,11 +1783,11 @@ function law_booking_maybe_capacity_warning( $event_id ) {
  *
  * @return WP_Error The same error, for `return law_booking_log_refusal(...)`.
  */
-function law_booking_log_refusal( $event_id, $booking_id, WP_Error $error, $actor_id ) {
+function law_booking_log_refusal( $event_id, $booking_id, WP_Error $error, $actor_id, $source = 'bookings' ) {
 	law_event_log(
 		$event_id,
-		sprintf( 'Booking refused: %s', $error->get_error_message() ),
-		array( 'action' => 'booking_guard_refused', 'booking' => (int) $booking_id, 'code' => $error->get_error_code(), 'source' => 'bookings' ),
+		sprintf( 'waitlist' === $source ? 'Waitlist refused: %s' : 'Booking refused: %s', $error->get_error_message() ),
+		array( 'action' => 'booking_guard_refused', 'booking' => (int) $booking_id, 'code' => $error->get_error_code(), 'source' => $source ),
 		array( 'user_id' => (int) $actor_id )
 	);
 	return $error;
@@ -1726,7 +1864,7 @@ function law_booking_add_attendee_handler() {
 	);
 
 	$user  = wp_get_current_user();
-	$party = law_booking_party( $event_id, (int) $user->ID, law_booking_holding_statuses() );
+	$party = law_booking_party( $event_id, (int) $user->ID );
 	if ( ! $party ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to change this booking.', 'status' => 403 ), 'booking-failed' );
 	}
@@ -1795,9 +1933,9 @@ function law_booking_cancel_handler() {
 		true,
 		array(
 			'title'    => $waitlisted ? 'Waitlist entry cancelled' : 'Booking cancelled',
-			'message'  => $is_self
-				? 'Your place has been freed. Reloading the page…'
-				: 'They have been emailed to let them know. Reloading the page…',
+			'message'  => $waitlisted
+				? ( $is_self ? 'You are off the waitlist. Reloading the page…' : 'They are off the waitlist and have been emailed. Reloading the page…' )
+				: ( $is_self ? 'Your place has been freed. Reloading the page…' : 'They have been emailed to let them know. Reloading the page…' ),
 			'redirect' => $party
 				? add_query_arg( 'law_notice', $notice, law_booking_manage_url( $party[0]->ID ) )
 				: add_query_arg( 'law_notice', $notice, home_url( '/account/events/' ) ),
@@ -1831,7 +1969,7 @@ function law_booking_cancel_party_handler() {
 		true,
 		array(
 			'title'    => 'Bookings cancelled',
-			'message'  => 'Everyone you booked has been emailed. Reloading the page…',
+			'message'  => 'Your place and everyone you booked have been cancelled, and everyone has been emailed. Reloading the page…',
 			'redirect' => add_query_arg( 'law_notice', 'party-cancelled', home_url( '/account/events/' ) ),
 		),
 		'party-cancelled'
@@ -1853,15 +1991,11 @@ function law_booking_reject_attendee_handler() {
 		)
 	);
 
-	$booking_id = absint( $_POST['booking_id'] ?? 0 );
-	$booking    = get_post( $booking_id );
-	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type
-		|| ! law_user_can_manage_event( get_current_user_id(), (int) $booking->post_parent ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to manage this event\'s bookings.', 'status' => 403 ), 'booking-failed' );
-	}
+	$booking    = law_booking_require_manageable( $is_ajax );
+	$waitlisted = 'law-waitlisted' === $booking->post_status;
 
 	$result = law_booking_cancel(
-		$booking_id,
+		(int) $booking->ID,
 		get_current_user_id(),
 		'host_reject',
 		array( 'reason' => trim( (string) wp_unslash( $_POST['law_reject_reason'] ?? '' ) ) )
@@ -1879,10 +2013,34 @@ function law_booking_reject_attendee_handler() {
 			'redirect' => add_query_arg(
 				array( 'law_event_bookings' => (int) $booking->post_parent, 'law_notice' => 'booking-rejected' ),
 				home_url( '/account/events/' )
-			),
+			) . ( $waitlisted ? '#law-waitlist' : '' ),
 		),
 		'booking-rejected'
 	);
+}
+
+/**
+ * The host/committee gate every booking-management handler starts with: load
+ * the posted booking, prove it is one, derive the event from its parent (never
+ * from a posted ID) and check the actor manages that event.
+ *
+ * One copy, because three copies of an authorisation check is how one of them
+ * eventually gets the negation wrong. Never returns on refusal.
+ *
+ * @return WP_Post The booking.
+ */
+function law_booking_require_manageable( $is_ajax, $notice = 'booking-failed' ) {
+	$booking = get_post( absint( $_POST['booking_id'] ?? 0 ) );
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type
+		|| ! law_user_can_manage_event( get_current_user_id(), (int) $booking->post_parent ) ) {
+		law_events_respond(
+			$is_ajax,
+			false,
+			array( 'message' => 'Sorry, you are not allowed to manage this event\'s bookings.', 'status' => 403 ),
+			$notice
+		);
+	}
+	return $booking;
 }
 
 /**
@@ -2109,6 +2267,11 @@ add_action(
 		}
 		$engine = ! empty( $GLOBALS['law_booking_transitioning'] ) || 'new' === $old_status;
 		law_event_recount_attendees( (int) $post->post_parent, $engine ? '' : 'wp-admin' );
+		// An administrator trashing a live booking frees a real place, and the
+		// engine never saw it. Offer it to the queue.
+		if ( ! $engine && 'publish' === $old_status && function_exists( 'law_waitlist_process' ) ) {
+			law_waitlist_process( (int) $post->post_parent, 'wp-admin' );
+		}
 	},
 	10,
 	3
@@ -2119,10 +2282,37 @@ add_action(
 	function ( $post_id, $post ) {
 		if ( $post instanceof WP_Post && LAW_BOOKING_CPT === $post->post_type && $post->post_parent ) {
 			law_event_recount_attendees( (int) $post->post_parent, 'deleted' );
+			if ( function_exists( 'law_waitlist_process' ) ) {
+				law_waitlist_process( (int) $post->post_parent, 'deleted' );
+			}
 		}
 	},
 	10,
 	2
+);
+
+/**
+ * Deleting a WordPress account releases that person's places.
+ *
+ * The law_booking CPT deliberately does not support 'author', so core's
+ * wp_delete_user() neither deletes nor reassigns booking posts: without this
+ * they would stay active with a dangling author, holding places nobody can
+ * ever take up. Their own bookings are cancelled (silently: there is nobody
+ * left to email) and the freed places are offered to the waitlist. Bookings
+ * they made FOR OTHER PEOPLE are left alone — those places belong to the
+ * colleagues, who simply lose the person who arranged them.
+ */
+add_action(
+	'deleted_user',
+	function ( $user_id ) {
+		foreach ( law_user_booking_ids( (int) $user_id ) as $booking_id ) {
+			$booking = get_post( $booking_id );
+			if ( ! $booking || ! in_array( $booking->post_status, law_booking_holding_statuses(), true ) ) {
+				continue;
+			}
+			law_booking_cancel( (int) $booking->ID, 0, 'account_deleted' );
+		}
+	}
 );
 
 /**

@@ -112,7 +112,7 @@ add_filter(
 /**
  * Untrash restores the status the post was trashed with (core would restore
  * to `draft`, a status the module never uses). Bookings are constrained to
- * their two statuses; anything else restores as cancelled, the safe side
+ * their own three statuses; anything else restores as cancelled, the safe side
  * (an active booking appearing from nowhere would consume places).
  */
 add_filter(

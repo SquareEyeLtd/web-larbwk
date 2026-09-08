@@ -11,9 +11,9 @@
  * the overlay.
  *
  * The .law-cal class is load-bearing, not decoration: it carries the navy text
- * colour (calendar.css), the .button hover and the aria-disabled treatment that
- * keeps the sold-out "Join waitlist" placeholder visibly inert, and the
- * light-surface .law-form-notice colours (event-form.css). The booking control
+ * colour (calendar.css), the .button hover and disabled treatments the booking
+ * control relies on, and the light-surface .law-form-notice colours
+ * (event-form.css). The booking control
  * lives here now rather than inside the page's own .law-cal wrapper, so without
  * this class the notices would render white on a light box.
  *

@@ -43,16 +43,6 @@ function law_booking_user_booking_for_event( $user_id, $event_id, array $statuse
 }
 
 /**
- * The user's ACTIVE booking ID on an event, or 0.
- *
- * @return int law_booking post ID.
- */
-function law_booking_user_active_booking_for_event( $user_id, $event_id ) {
-	$booking = law_booking_user_booking_for_event( $user_id, $event_id );
-	return $booking ? (int) $booking->ID : 0;
-}
-
-/**
  * One-shot form state for the no-JS (?law_book=1) booking form, so a refused
  * submission re-renders with the typed rows and the refusal message.
  */
@@ -99,12 +89,27 @@ function law_account_bookings() {
 	$statuses = law_booking_holding_statuses();
 	$grouped  = array();
 
-	foreach ( array_merge( law_user_booking_ids( $user_id ), law_user_bookings_made_ids( $user_id ) ) as $booking_id ) {
+	$booking_ids = array_merge( law_user_booking_ids( $user_id ), law_user_bookings_made_ids( $user_id ) );
+	// fields => 'ids' does not prime the post cache, so without this each
+	// booking, and then each parent event, is an individual query.
+	if ( $booking_ids ) {
+		_prime_post_caches( $booking_ids, false, true );
+	}
+	foreach ( $booking_ids as $booking_id ) {
 		$booking = get_post( $booking_id );
 		if ( ! $booking || ! in_array( $booking->post_status, $statuses, true ) || ! $booking->post_parent ) {
 			continue; // Live only: a cancelled booking's trail is email + log.
 		}
 		$event_id = (int) $booking->post_parent;
+		// A waitlist entry for an event that has started will never be
+		// promoted, and there is no clean-up job: hide it rather than leave a
+		// permanent "Waitlisted" card for something that already happened.
+		if ( 'law-waitlisted' === $booking->post_status ) {
+			$start = (string) law_event_meta( $event_id, '_law_start' );
+			if ( '' !== $start && strtotime( $start ) <= current_time( 'timestamp' ) ) {
+				continue;
+			}
+		}
 		if ( ! isset( $grouped[ $event_id ] ) ) {
 			$grouped[ $event_id ] = array( 'own' => null, 'colleagues' => array() );
 		}
@@ -115,6 +120,9 @@ function law_account_bookings() {
 		}
 	}
 
+	if ( $grouped ) {
+		_prime_post_caches( array_keys( $grouped ), false, true );
+	}
 	$items = array();
 	foreach ( $grouped as $event_id => $group ) {
 		// '*' so the card survives an event that later left the public
@@ -148,8 +156,8 @@ function law_account_bookings() {
 function law_booking_notice_text( $key ) {
 	$map = array(
 		'booking-created'   => array( 'ok', __( 'Your booking is confirmed. A confirmation with a calendar invitation is on its way to you.', 'law' ) ),
-		'booking-cancelled' => array( 'ok', __( 'The booking has been cancelled and they have been emailed.', 'law' ) ),
-		'party-cancelled'   => array( 'ok', __( 'All the bookings you made for this event have been cancelled, and everyone has been emailed.', 'law' ) ),
+		'booking-cancelled' => array( 'ok', __( 'The booking has been cancelled and the attendee has been emailed.', 'law' ) ),
+		'party-cancelled'   => array( 'ok', __( 'Your place and every booking you made for this event have been cancelled, and everyone has been emailed.', 'law' ) ),
 		'attendee-added'    => array( 'ok', __( 'Your colleague has their own booking now and has been emailed their confirmation.', 'law' ) ),
 		'booking-rejected'  => array( 'ok', __( 'The booking has been cancelled and the attendee emailed.', 'law' ) ),
 		'attendee-registered' => array( 'ok', __( 'The attendee has been registered and emailed their confirmation.', 'law' ) ),
@@ -157,8 +165,9 @@ function law_booking_notice_text( $key ) {
 		'rate-limited'      => array( 'error', __( 'Too many actions in a short time. Please wait a moment and try again.', 'law' ) ),
 		// The waitlist (WAITLIST.md §B5).
 		'waitlist-joined'    => array( 'ok', __( "You're on the waitlist. We'll email you as soon as a place opens up.", 'law' ) ),
-		'waitlist-left'      => array( 'ok', __( 'That waitlist entry has been cancelled and they have been emailed.', 'law' ) ),
+		'waitlist-left'      => array( 'ok', __( 'That waitlist entry has been cancelled and the attendee has been emailed.', 'law' ) ),
 		'waitlist-reordered' => array( 'ok', __( 'The waitlist order has been updated.', 'law' ) ),
+		'waitlist-unchanged' => array( 'ok', __( 'The waitlist had already moved on, so nothing was changed. This is the current order.', 'law' ) ),
 		'waitlist-promoted'  => array( 'ok', __( 'The entry has been promoted and the attendee emailed their confirmation.', 'law' ) ),
 		'waitlist-failed'    => array( 'error', __( 'Sorry, that waitlist change could not be made.', 'law' ) ),
 	);
@@ -254,25 +263,39 @@ function law_booking_render_action( $event ) {
 					);
 				}
 			}
+			$is_mine = '' === $invited_by;
 			printf(
 				'<a class="button orange" href="%s">%s</a>',
 				esc_url( law_booking_manage_url( (int) $booking->ID ) ),
-				esc_html( $waitlisted ? __( 'Manage waitlist entry', 'law' ) : __( 'Manage booking', 'law' ) )
+				esc_html(
+					$waitlisted
+						? ( $is_mine ? __( 'Manage waitlist entry', 'law' ) : __( 'View waitlist entry', 'law' ) )
+						: ( $is_mine ? __( 'Manage booking', 'law' ) : __( 'View booking', 'law' ) )
+				)
 			);
 			return;
 		}
 
 		// State: no place of their own, but they booked colleagues here. They
 		// still need the route to manage those, and may still book themselves.
-		$colleagues = law_booking_colleague_count( $event_id, $user_id );
+		// Holding statuses, not just active: someone who left the waitlist
+		// themselves still manages the colleagues they put on it.
+		$party      = law_booking_party( $event_id, $user_id, law_booking_holding_statuses() );
+		$colleagues = 0;
+		foreach ( $party as $entry ) {
+			if ( (int) $entry->post_author !== $user_id ) {
+				$colleagues++;
+			}
+		}
 		if ( $colleagues ) {
 			printf(
-				'<p class="law-booking-state">%s</p><a class="button second" href="%s">%s</a> ',
+				'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p><a class="button second" href="%s">%s</a> ',
 				esc_html( sprintf(
 					_n( "You've booked a place for %s colleague.", "You've booked places for %s colleagues.", $colleagues, 'law' ),
 					number_format_i18n( $colleagues )
 				) ),
-				esc_url( law_booking_manage_url( (int) law_booking_party( $event_id, $user_id )[0]->ID ) ),
+				esc_html__( "You don't have a place yourself.", 'law' ),
+				esc_url( law_booking_manage_url( (int) $party[0]->ID ) ),
 				esc_html__( 'Manage bookings', 'law' )
 			);
 		}
@@ -282,21 +305,22 @@ function law_booking_render_action( $event ) {
 	$remaining = law_event_tickets_remaining( $event_id );
 	if ( null === $remaining ) {
 		echo '<p class="law-booking-state law-booking-state--soon">' . esc_html__( 'Bookings open soon', 'law' ) . '</p>';
-		echo '<p class="law-booking-substate">' . esc_html__( "Booking for this event hasn't opened yet. Check back soon.", 'law' ) . '</p>';
+		echo '<p class="law-booking-substate">' . esc_html__( 'Places for this event have not been released yet. Check back nearer the date.', 'law' ) . '</p>';
 		return;
 	}
 
 	// State: the event has started or passed.
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' !== $start && strtotime( $start ) <= current_time( 'timestamp' ) ) {
-		echo '<p class="law-booking-state">' . esc_html__( 'This event has taken place, so bookings are closed.', 'law' ) . '</p>';
+		echo '<p class="law-booking-state">' . esc_html__( 'Bookings for this event have closed.', 'law' ) . '</p>';
 		return;
 	}
 
 	// State: sold out — the waitlist. Every entry is one place, promoted
 	// automatically in turn as places open up.
 	if ( 0 === $remaining ) {
-		echo '<p class="law-booking-substate">' . esc_html__( "This event is fully booked. Join the waitlist and we'll email you if a place opens up.", 'law' ) . '</p>';
+		echo '<p class="law-booking-state">' . esc_html__( 'This event is fully booked.', 'law' ) . '</p>';
+		echo '<p class="law-booking-substate">' . esc_html__( "Join the waitlist and we'll email you as soon as a place opens up.", 'law' ) . '</p>';
 		law_booking_render_opener( $event, 'waitlist' );
 		return;
 	}

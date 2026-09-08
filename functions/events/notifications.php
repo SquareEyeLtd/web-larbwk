@@ -230,7 +230,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your booking is confirmed: {event_title}',
-			'body'    => "Dear {attendee_name},\n\nYour booking (Booking #{booking_number}) for {event_title} is confirmed.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWho is coming:\n{attendee_list}\n\nEach colleague has a booking of their own, with their own booking number, and has been emailed their own confirmation. Accounts are created for any who do not already have one, with a link to set their password and to add any dietary or accessibility requirements to their profile.\n\nA calendar invitation is attached. You can view and manage these bookings under My bookings: {bookings_link}",
+			'body'    => "Dear {attendee_name},\n\nYour booking (Booking #{booking_number}) for {event_title} is confirmed.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWho is coming:\n{attendee_list}\n\n{party_note}\n\nA calendar invitation is attached. You can view and manage these bookings under My bookings: {bookings_link}",
 		),
 		'host_booking_received' => array(
 			'name'    => 'Email to host > new booking',
@@ -254,7 +254,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You are registered for {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the event will be listed under Your bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the event will be listed under My bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
 		),
 		'user_booking_registered_invited' => array(
 			'name'    => 'Email to attendee > registered by the organisers (new account)',
@@ -262,7 +262,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You are registered for {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have created an account for you. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address. If that link has expired, you can request a new one here: {forgot_link}\n\nOnce signed in, please add any dietary or accessibility requirements to your profile, so the organisers can look after you on the day: {profile_link}\n\nThe events you are booked onto are listed under Your bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have created an account for you. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address. If that link has expired, you can request a new one here: {forgot_link}\n\nOnce signed in, please add any dietary or accessibility requirements to your profile, so the organisers can look after you on the day: {profile_link}\n\nThe events you are booked onto are listed under My bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
 		),
 		'user_attendee_invited' => array(
 			'name'    => 'Email to attendee > invited to an event (new account)',
@@ -286,7 +286,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your place at {event_title} has been cancelled',
-			'body'    => "Dear {attendee_name},\n\nThe event host has cancelled your booking (Booking #{booking_number}) for {event_title} ({event_date}, {event_time}).\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
+			'body'    => "Dear {attendee_name},\n\nThe event host has cancelled your booking (Booking #{booking_number}) for {event_title} {event_when}.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
 		),
 		'user_booking_cancelled_by_booker' => array(
 			'name'    => 'Email to attendee > booking cancelled by whoever booked it',
@@ -294,7 +294,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your place at {event_title} has been cancelled',
-			'body'    => "Dear {attendee_name},\n\n{invited_by}, who booked your place at {event_title} ({event_date}, {event_time}), has cancelled your booking (Booking #{booking_number}), so you are no longer registered for this event.\n\nIf you think this is a mistake, please speak to the colleague who booked for you, or contact the host at {host_email}.",
+			'body'    => "Dear {attendee_name},\n\n{invited_by}, who booked your place at {event_title} {event_when}, has cancelled your booking (Booking #{booking_number}), so you are no longer registered for this event.\n\nIf you think this is a mistake, please speak to the colleague who booked for you, or contact the host at {host_email}.",
 		),
 		'user_booking_cancelled_self' => array(
 			'name'    => 'Email to attendee > you cancelled your booking',
@@ -302,7 +302,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have cancelled your place at {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThis confirms that you have cancelled your booking (Booking #{booking_number}) for {event_title} ({event_date}, {event_time}). Your place has been freed for someone else.\n\nIf you change your mind and places are still available, you can book again from the event page.",
+			'body'    => "Dear {attendee_name},\n\nThis confirms that you have cancelled your booking (Booking #{booking_number}) for {event_title} {event_when}. Your place has been freed for someone else.\n\nIf you change your mind and places are still available, you can book again from the event page.",
 		),
 		'user_booking_event_cancelled' => array(
 			'name'    => 'Email to attendee > event cancelled',
@@ -310,7 +310,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Event cancelled: {event_title}',
-			'body'    => "Dear {attendee_name},\n\nWe are sorry to let you know that {event_title}, which you were booked onto for {event_date}, has been cancelled by the organisers. Your booking has been cancelled with it, and there is nothing you need to do.\n\nWe hope to see you at other London Arbitration Week events.",
+			'body'    => "Dear {attendee_name},\n\nWe are sorry to let you know that {event_title}, which you were booked onto {event_when}, has been cancelled by the organisers. Your booking has been cancelled with it, and there is nothing you need to do.\n\nWe hope to see you at other London Arbitration Week events.",
 		),
 		/* The waitlist (WAITLIST.md §B4) ___________________________________ */
 
@@ -320,7 +320,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => "You're on the waitlist for {event_title}",
-			'body'    => "Dear {attendee_name},\n\n{event_title} is fully booked, so you are on the waitlist.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nOn the waitlist:\n{party_list}\n\nAs soon as a place opens up we book it for whoever is next in line and email them a confirmation with a calendar invitation. There is nothing else you need to do. Everyone you added is on the waitlist in their own right, so places are offered to them individually.\n\nYou can leave the waitlist at any time under My bookings: {bookings_link}",
+			'body'    => "Dear {attendee_name},\n\n{event_title} is fully booked, so you are on the waitlist.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nOn the waitlist:\n{party_list}\n\nAs soon as a place opens up we book it for whoever is next in line and email them a confirmation with a calendar invitation. There is nothing else you need to do. {waitlist_note}\n\nYou can leave the waitlist at any time under My bookings: {bookings_link}",
 		),
 		'user_waitlist_attendee_invited' => array(
 			'name'    => 'Email to attendee > put on the waitlist (new account)',
@@ -368,7 +368,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have left the waitlist for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThis confirms that you have come off the waitlist for {event_title} ({event_date}, {event_time}), so we will not offer you a place if one opens up.\n\nIf you change your mind you can join the waitlist again from the event page, though you would start at the back of the queue.",
+			'body'    => "Dear {attendee_name},\n\nThis confirms that you have come off the waitlist for {event_title} {event_when}, so we will not offer you a place if one opens up.\n\nIf you change your mind you can join the waitlist again from the event page, though you would start at the back of the queue.",
 		),
 		'user_waitlist_removed_by_booker' => array(
 			'name'    => 'Email to attendee > taken off the waitlist by whoever added you',
@@ -376,7 +376,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have been taken off the waitlist for {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{invited_by}, who put you on the waitlist for {event_title} ({event_date}, {event_time}), has taken you off it, so you will not be offered a place.\n\nIf you think this is a mistake, please speak to the colleague who added you, or contact the host at {host_email}.",
+			'body'    => "Dear {attendee_name},\n\n{invited_by}, who put you on the waitlist for {event_title} {event_when}, has taken you off it, so you will not be offered a place.\n\nIf you think this is a mistake, please speak to the colleague who added you, or contact the host at {host_email}.",
 		),
 		'user_waitlist_rejected' => array(
 			'name'    => 'Email to attendee > taken off the waitlist by the host',
@@ -384,7 +384,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have been taken off the waitlist for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThe event host has taken you off the waitlist for {event_title} ({event_date}, {event_time}), so you will not be offered a place.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
+			'body'    => "Dear {attendee_name},\n\nThe event host has taken you off the waitlist for {event_title} {event_when}, so you will not be offered a place.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
 		),
 		'user_waitlist_event_cancelled' => array(
 			'name'    => 'Email to attendee > event cancelled while you were waiting',
@@ -392,7 +392,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Event cancelled: {event_title}',
-			'body'    => "Dear {attendee_name},\n\nWe are sorry to let you know that {event_title}, which you were waiting for a place at on {event_date}, has been cancelled by the organisers. Your waitlist entry has been cancelled with it, and there is nothing you need to do.\n\nWe hope to see you at other London Arbitration Week events.",
+			'body'    => "Dear {attendee_name},\n\nWe are sorry to let you know that {event_title}, which you were waiting for a place at {event_when}, has been cancelled by the organisers. Your waitlist entry has been cancelled with it, and there is nothing you need to do.\n\nWe hope to see you at other London Arbitration Week events.",
 		),
 		'user_waitlist_blocked' => array(
 			'name'    => 'Email to attendee > your waitlist place could not be taken up',
@@ -400,7 +400,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'We could not confirm your place at {event_title}',
-			'body'    => "Dear {attendee_name},\n\nA place opened up at {event_title} ({event_date}, {event_time}) and we tried to book it for you, but could not:\n\n{blocked_reason}\n\nYou are still on the waitlist and keep your place in the queue. If you sort this out, for example by cancelling the booking that overlaps, we will offer you the next place that opens.\n\nYour bookings: {bookings_link}",
+			'body'    => "Dear {attendee_name},\n\nA place opened up at {event_title} {event_when} and we tried to book it for you, but could not:\n\n{blocked_reason}\n\nYou are still on the waitlist and keep your place in the queue. If you sort this out, for example by cancelling the booking that overlaps, we will offer you a place as soon as your turn comes round again.\n\nMy bookings: {bookings_link}",
 		),
 
 		'user_welcome_registered' => array(
@@ -417,7 +417,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is nearly full: {event_title}',
-			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places by editing your event's ticket allocation from your events dashboard: {dashboard_link}\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
+			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
 		),
 	);
 }
@@ -497,6 +497,9 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		// Event date/time, from the confirmed slot (empty until one is set).
 		'{event_date}'       => '',
 		'{event_time}'       => '',
+		// The date and time as one phrase, or '' when no slot is confirmed —
+		// the inline "({event_date}, {event_time})" pattern rendered "(, )".
+		'{event_when}'       => '',
 		// Bookings emails (filled via the send call's placeholders; the two
 		// links are real defaults so the welcome email works with no event).
 		'{attendee_name}'     => '',
@@ -504,6 +507,8 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{booking_number}'    => '',
 		'{booking_numbers}'   => '',
 		'{invited_by}'        => '',
+		'{party_note}'        => '',
+		'{waitlist_note}'     => '',
 		'{tickets_available}' => '',
 		'{tickets_remaining}' => '',
 		'{removal_reason}'    => '',
@@ -522,6 +527,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		$end                          = (string) law_event_meta( $event_id, '_law_end' );
 		$placeholders['{event_date}'] = date_i18n( 'l j F Y', strtotime( $start ) );
 		$placeholders['{event_time}'] = substr( $start, 11, 5 ) . ( '' !== $end ? ' to ' . substr( $end, 11, 5 ) : '' );
+		$placeholders['{event_when}'] = sprintf( 'on %s at %s', $placeholders['{event_date}'], $placeholders['{event_time}'] );
 	}
 
 	$latest = law_event_latest_comment( $event_id );

@@ -205,6 +205,14 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'Set your password', $sent[0]['message'] );
 		$this->assertMatchesRegularExpression( '/key=[A-Za-z0-9]+/', $sent[0]['message'], 'A minted set-password link.' );
 
+		// The host and committee hear ONCE about the whole submission, not once
+		// per person: three bookings must not mean three of each.
+		$host = get_userdata( (int) get_post_field( 'post_author', $event ) );
+		if ( $host ) {
+			$host_mail = array_filter( $this->mail_to( $host->user_email ), fn( $m ) => false !== stripos( $m['subject'], 'New booking' ) );
+			$this->assertCount( 1, $host_mail, 'One host email for a party of three.' );
+		}
+
 		// The host and committee copies go out as for any booking.
 		$host = get_userdata( (int) get_post_field( 'post_author', $event ) );
 		if ( $host ) {

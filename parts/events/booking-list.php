@@ -31,7 +31,8 @@ if ( ! $law_bl_event || LAW_EVENT_CPT !== $law_bl_event->post_type
 }
 
 $law_bl_active    = law_bookings_for_event( $law_bl_event_id );
-$law_bl_waitlist  = function_exists( 'law_waitlist_for_event' ) ? law_waitlist_for_event( $law_bl_event_id ) : array();
+$law_bl_wait_cap  = 200;
+$law_bl_waitlist  = function_exists( 'law_waitlist_for_event' ) ? law_waitlist_for_event( $law_bl_event_id, $law_bl_wait_cap ) : array();
 $law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled' );
 
 // One users + one usermeta query for the whole table instead of two per row
@@ -99,15 +100,17 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				$law_bl_modal      = 'law-modal-reject-' . $law_bl_booking->ID;
 				$law_bl_position   = (int) law_event_meta( $law_bl_booking->ID, '_law_waitlist_position' );
 				?>
-				<tr class="law-booking-table__first">
+				<tr>
 					<?php if ( $law_bl_waiting ) : ?>
 						<td class="law-booking-table__position">
 							<strong><?php echo esc_html( number_format_i18n( $law_bl_i + 1 ) ); ?></strong>
 							<?php
+							// Glyphs with an aria-label rather than three words of
+							// button text: five controls already share this row.
 							$law_bl_moves = array(
-								'top'  => array( __( 'Top', 'law' ), __( 'Move %s to the top of the waitlist', 'law' ), 0 === $law_bl_i ),
-								'up'   => array( __( 'Up', 'law' ), __( "Move %s up the waitlist", 'law' ), 0 === $law_bl_i ),
-								'down' => array( __( 'Down', 'law' ), __( 'Move %s down the waitlist', 'law' ), $law_bl_i === $law_bl_last ),
+								'top'  => array( '⤒', __( 'Move %s to the top of the waitlist', 'law' ), 0 === $law_bl_i ),
+								'up'   => array( '↑', __( 'Move %s up the waitlist', 'law' ), 0 === $law_bl_i ),
+								'down' => array( '↓', __( 'Move %s down the waitlist', 'law' ), $law_bl_i === $law_bl_last ),
 							);
 							foreach ( $law_bl_moves as $law_bl_dir => $law_bl_move ) :
 								// One form per direction: booking-form.js posts
@@ -121,9 +124,8 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 									<input type="hidden" name="expected_position" value="<?php echo esc_attr( (string) $law_bl_position ); ?>">
 									<?php wp_nonce_field( 'law_waitlist_reorder' ); ?>
 									<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
-									<button type="submit" class="button second law-booking-table__move" data-law-modal-busy="<?php esc_attr_e( 'Moving…', 'law' ); ?>"<?php echo $law_bl_move[2] ? ' disabled' : ''; ?>>
-										<?php echo esc_html( $law_bl_move[0] ); ?>
-										<span class="screen-reader-text"><?php echo esc_html( sprintf( $law_bl_move[1], $law_bl_person['name'] ) ); ?></span>
+									<button type="submit" class="button second law-booking-table__move" data-law-modal-busy="<?php esc_attr_e( 'Moving…', 'law' ); ?>"<?php echo $law_bl_move[2] ? ' disabled' : ''; ?> aria-label="<?php echo esc_attr( sprintf( $law_bl_move[1], $law_bl_person['name'] ) ); ?>">
+										<span aria-hidden="true"><?php echo esc_html( $law_bl_move[0] ); ?></span>
 									</button>
 								</form>
 							<?php endforeach; ?>
@@ -154,6 +156,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 							<?php if ( $law_bl_waiting ) :
 								$law_bl_remaining  = law_event_tickets_remaining( $law_bl_event_id );
 								$law_bl_full       = 0 === $law_bl_remaining;
+								$law_bl_over_by    = $law_bl_available > 0 ? max( 0, $law_bl_total + 1 - $law_bl_available ) : 0;
 								$law_bl_promote_id = 'law-modal-promote-' . $law_bl_booking->ID;
 								?>
 								<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
@@ -171,7 +174,17 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 											'title'   => sprintf( __( 'Promote %s', 'law' ), $law_bl_person['name'] ),
 											'copy'    => array(
 												sprintf( __( 'This registers %s onto the event now, ahead of the waitlist order, and emails them their confirmation.', 'law' ), $law_bl_person['name'] ),
-												$law_bl_full ? __( 'This event is full. Promoting this entry registers one more place than the event has, so it will be over-booked.', 'law' ) : '',
+												$law_bl_full
+													? sprintf(
+														_n(
+															'This event is already full, so promoting this entry will over-book it by %d place.',
+															'This event is already full, so promoting this entry will over-book it by %d places.',
+															max( 1, $law_bl_over_by ),
+															'law'
+														),
+														max( 1, $law_bl_over_by )
+													)
+													: '',
 											),
 											'confirm' => array( 'label' => __( 'Promote now', 'law' ), 'class' => 'button orange', 'busy' => __( 'Promoting…', 'law' ) ),
 											'close'   => __( 'Keep on the waitlist', 'law' ),
@@ -185,25 +198,34 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 								<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
 								<?php wp_nonce_field( 'law_booking_reject_attendee' ); ?>
 								<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
-								<button type="submit" class="button alert" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php esc_html_e( 'Reject', 'law' ); ?></button>
+								<?php // Hollow, so the destructive action does not pull as hard as Promote now. ?>
+								<button type="submit" class="button alert hollow" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php echo esc_html( $law_bl_waiting ? __( 'Remove', 'law' ) : __( 'Cancel booking', 'law' ) ); ?></button>
 								<?php
 								get_template_part(
 									'parts/layout/modal',
 									null,
 									array(
 										'id'      => $law_bl_modal,
-										'title'   => sprintf( __( 'Reject %s', 'law' ), $law_bl_person['name'] ),
+										'title'   => $law_bl_waiting
+											? sprintf( __( 'Remove %s from the waitlist', 'law' ), $law_bl_person['name'] )
+											: sprintf( __( 'Cancel the booking for %s', 'law' ), $law_bl_person['name'] ),
 										'copy'    => $law_bl_waiting
-											? sprintf( __( "This takes %s off the waitlist. They are emailed to let them know.", 'law' ), $law_bl_person['name'] )
-											: sprintf( __( "This cancels %s's booking and frees their place. They are emailed to let them know.", 'law' ), $law_bl_person['name'] ),
+											? sprintf( __( 'This takes %s off the waitlist. They are emailed to let them know.', 'law' ), $law_bl_person['name'] )
+											: sprintf( __( 'This cancels the booking for %s and frees their place. They are emailed to let them know.', 'law' ), $law_bl_person['name'] ),
 										'field'   => array(
 											'name'     => 'law_reject_reason',
-											'label'    => __( 'Why is the place being cancelled? (optional)', 'law' ),
+											'label'    => $law_bl_waiting
+												? __( 'Why are they being taken off the waitlist? (optional)', 'law' )
+												: __( 'Why is the place being cancelled? (optional)', 'law' ),
 											'help'     => __( 'Included in the email to the attendee.', 'law' ),
 											'rows'     => 3,
 											'required' => false,
 										),
-										'confirm' => array( 'label' => __( 'Reject attendee', 'law' ), 'class' => 'button alert', 'busy' => __( 'Rejecting…', 'law' ) ),
+										'confirm' => array(
+											'label' => $law_bl_waiting ? __( 'Remove from waitlist', 'law' ) : __( 'Cancel booking', 'law' ),
+											'class' => 'button alert',
+											'busy'  => $law_bl_waiting ? __( 'Removing…', 'law' ) : __( 'Cancelling…', 'law' ),
+										),
 										'close'   => __( 'Keep this attendee', 'law' ),
 									)
 								);
@@ -234,11 +256,27 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				printf(
 					' <span class="%s">%s</span>',
 					$law_bl_over ? 'law-booking-table__over' : '',
-					esc_html( sprintf( __( '%1$s of %2$s places taken.', 'law' ), number_format_i18n( $law_bl_total ), number_format_i18n( $law_bl_available ) ) )
+					esc_html(
+						$law_bl_over
+							? sprintf(
+								/* translators: 1: places taken, 2: places available, 3: the excess. */
+								__( '%1$s of %2$s places taken (over-booked by %3$s).', 'law' ),
+								number_format_i18n( $law_bl_total ),
+								number_format_i18n( $law_bl_available ),
+								number_format_i18n( $law_bl_total - $law_bl_available )
+							)
+							: sprintf( __( '%1$s of %2$s places taken.', 'law' ), number_format_i18n( $law_bl_total ), number_format_i18n( $law_bl_available ) )
+					)
 				);
 			}
 			if ( $law_bl_waitlist ) {
-				echo ' ' . esc_html( sprintf( _n( '%s on the waitlist.', '%s on the waitlist.', count( $law_bl_waitlist ), 'law' ), number_format_i18n( count( $law_bl_waitlist ) ) ) );
+				printf(
+					' <a href="#law-waitlist">%s</a>',
+					esc_html( sprintf(
+						_n( '%s person on the waitlist.', '%s people on the waitlist.', count( $law_bl_waitlist ), 'law' ),
+						number_format_i18n( count( $law_bl_waitlist ) )
+					) )
+				);
 			}
 			?>
 		</p>
@@ -304,6 +342,9 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 		<?php if ( $law_bl_waitlist ) : ?>
 			<h3 class="law-booking-manage__subtitle" id="law-waitlist"><?php echo esc_html( sprintf( __( 'Waitlist (%s)', 'law' ), number_format_i18n( count( $law_bl_waitlist ) ) ) ); ?></h3>
 			<p class="law-booking-substate"><?php esc_html_e( 'Entries are promoted in this order, automatically, as places open up. Move an entry to change the order, or promote it now to register it regardless of places.', 'law' ); ?></p>
+			<?php if ( count( $law_bl_waitlist ) >= $law_bl_wait_cap ) : ?>
+				<p class="law-bookings-dashboard__truncated" role="status"><?php echo esc_html( sprintf( __( 'Showing the first %s entries. The rest are still queued and are promoted in turn.', 'law' ), number_format_i18n( $law_bl_wait_cap ) ) ); ?></p>
+			<?php endif; ?>
 			<?php $law_bl_render_table( $law_bl_waitlist, true, true ); ?>
 		<?php endif; ?>
 

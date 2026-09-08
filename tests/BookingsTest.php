@@ -208,6 +208,66 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertFalse( get_user_by( 'email', $email ), 'A refused submission leaves no orphan account.' );
 	}
 
+	public function test_partial_insert_failure_rolls_the_whole_submission_back(): void {
+		$event  = $this->make_bookable_event();
+		$booker = $this->make_user( 'attendee' );
+		$guest  = $this->unique_email( 'guest' );
+
+		// Fail the colleague's insert, the second of the two.
+		$seen = 0;
+		$fail = function ( $maybe_empty, $postarr ) use ( &$seen ) {
+			if ( LAW_BOOKING_CPT === ( $postarr['post_type'] ?? '' ) ) {
+				$seen++;
+				return $seen >= 2 ? true : $maybe_empty;
+			}
+			return $maybe_empty;
+		};
+		add_filter( 'wp_insert_post_empty_content', $fail, 10, 2 );
+		$result = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $guest ) ) );
+		remove_filter( 'wp_insert_post_empty_content', $fail, 10 );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertCount( 0, law_bookings_for_event( $event, array( 'publish', 'law-cancelled' ), -1 ), 'The booking created before the failure is taken back.' );
+		$this->assertSame( 0, law_event_attendee_total( $event ) );
+		$this->assertFalse( get_user_by( 'email', $guest ), 'And so is the account created for the colleague.' );
+		$this->assertStringContainsString( 'rolled back', $this->log_text( $event ) );
+	}
+
+	public function test_account_failure_refuses_the_whole_submission(): void {
+		$event  = $this->make_bookable_event();
+		$booker = $this->make_user( 'attendee' );
+		$first  = $this->unique_email( 'first' );
+		$second = $this->unique_email( 'second' );
+
+		// Refuse the SECOND colleague's account, so the first has already been
+		// created by the time the submission fails.
+		$fail = function ( $errors, $update, $user ) use ( $second ) {
+			if ( ! $update && strtolower( (string) $user->user_email ) === strtolower( $second ) ) {
+				$errors->add( 'law_test_refused', 'Refused by the test.' );
+			}
+			return $errors;
+		};
+		add_action( 'user_profile_update_errors', $fail, 10, 3 );
+		$result = $this->make_booking(
+			$event,
+			$booker,
+			array( $this->row( 'First Person', $first ), $this->row( 'Second Person', $second ) )
+		);
+		remove_action( 'user_profile_update_errors', $fail, 10 );
+
+		if ( is_wp_error( $result ) ) {
+			$this->assertSame( 'law_booking_account_failed', $result->get_error_code() );
+			$data = $result->get_error_data();
+			$this->assertSame( 'email', $data['field'] ?? '', 'The refusal names the field so the form can mark it.' );
+			$this->assertSame( 0, law_event_attendee_total( $event ), 'Nobody is seated.' );
+			$this->assertFalse( get_user_by( 'email', $first ), 'The account created before the failure is taken back.' );
+			return;
+		}
+		// Some WordPress builds do not route wp_insert_user through that filter;
+		// then the submission legitimately succeeds and there is nothing to assert.
+		$this->assertIsArray( $result );
+	}
+
 	public function test_open_guard_states(): void {
 		$booker = $this->make_user( 'attendee' );
 

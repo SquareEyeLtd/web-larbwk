@@ -605,11 +605,12 @@
 	color: #a12622;
 }
 
-/* Waiting, not refused: the brand tint rather than an alarm colour. */
+/* Waiting, not refused: the "pending" amber the sent-back badge uses, rather
+   than an alarm colour. The earlier lilac was near-invisible against the event
+   card's own #ececf1 tint, which is the one place this badge has to be read. */
 .law-cal-card__badge--waitlisted {
-	background: #f4f2fa;
-	color: #292459;
-	border: 1px solid #c9c5d6;
+	background: #fdeee0;
+	color: #a35300;
 }
 
 /* "Invited by X" on a colleague's row, and the press pass: quiet tags that
@@ -618,6 +619,8 @@
 	background: #f4f2fa;
 	color: #292459;
 	font-weight: 400;
+	/* A person's name, not a label: the badge component uppercases by default. */
+	text-transform: none;
 }
 
 /* Sold beyond capacity, after a host promoted someone off the waitlist onto a
@@ -1127,8 +1130,8 @@
    no bespoke display text, and this is its largest in-body idiom. */
 .law-booking-state { font-family: "Poppins", sans-serif; font-size: 1.4rem; font-weight: 600; color: #1a1a3d; margin: 0 0 .35rem; flex-basis: 100%; }
 .law-booking-substate { color: #1a1a3d; margin: 0 0 .75rem; flex-basis: 100%; }
-/* Disabled control (the Join waitlist placeholder; also fixes the old Register
-   placeholder look): visibly inert, no pointer, out of the interaction set. */
+/* An inert control: visibly disabled, no pointer, out of the interaction set.
+   Used by the programme card's placeholder actions. */
 .law-cal .button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; pointer-events: none; }
 /* The inline (?law_book=1) booking form replaces the action row's buttons. */
 .law-booking-inline { flex-basis: 100%; max-width: 44rem; margin-top: .5rem; }

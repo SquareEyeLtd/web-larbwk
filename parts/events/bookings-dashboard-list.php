@@ -56,7 +56,7 @@ $law_bd_rows    = $law_bd_data['rows'];
 			foreach ( $law_bd_rows as $law_bd_row ) :
 				$law_bd_list = law_booking_list_url( $law_bd_row['event_id'] );
 				?>
-				<tr class="law-booking-table__first">
+				<tr>
 					<td class="law-booking-table__booking">
 						<strong><a href="<?php echo esc_url( $law_bd_list ); ?>">#<?php echo esc_html( (string) $law_bd_row['number'] ); ?></a></strong>
 					</td>

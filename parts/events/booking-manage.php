@@ -89,9 +89,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 					: sprintf( __( 'Booking #%d', 'law' ), (int) law_event_meta( $law_bm_id, '_law_booking_number' ) )
 			);
 			?>
-			<?php if ( $law_bm_waitlisted ) : ?>
-				<span class="law-cal-card__badge law-cal-card__badge--waitlisted"><?php esc_html_e( 'Waitlisted', 'law' ); ?></span>
-			<?php elseif ( $law_bm_cancelled && ! $law_bm_party ) : ?>
+			<?php if ( $law_bm_cancelled && ! $law_bm_party ) : ?>
 				<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
 			<?php endif; ?>
 		</h2>
@@ -125,6 +123,9 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 				$law_bm_facts      = array_filter( array( $law_bm_person['organisation'], $law_bm_person['job_title'] ) );
 				$law_bm_modal_id   = 'law-modal-cancel-' . $law_bm_entry_id;
 				$law_bm_row_number = (int) law_event_meta( $law_bm_entry_id, '_law_booking_number' );
+				// A row badge only says something when the party is mixed: on an
+				// all-waiting entry the state paragraph above has said it once.
+				$law_bm_show_badge = $law_bm_row_gone || ( $law_bm_row_wait && ! $law_bm_waitlisted );
 
 				// The confirm copy per context.
 				if ( $law_bm_row_wait && $law_bm_row_self ) {
@@ -136,7 +137,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 				} elseif ( $law_bm_row_self ) {
 					$law_bm_copy = __( 'Your place is freed for someone else. You can book again later if places are still available.', 'law' );
 				} else {
-					$law_bm_copy = sprintf( __( "This cancels %s's booking and frees their place. They are emailed to let them know.", 'law' ), $law_bm_row_name );
+					$law_bm_copy = sprintf( __( 'This cancels the booking for %s and frees their place. They are emailed to let them know.', 'law' ), $law_bm_row_name );
 				}
 				?>
 				<li>
@@ -146,9 +147,9 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 							<span class="law-booking-manage__owner-flag"><?php esc_html_e( '(you)', 'law' ); ?></span>
 						<?php endif; ?>
 						<span class="law-booking-manage__number"><?php echo esc_html( sprintf( __( 'Booking #%d', 'law' ), $law_bm_row_number ) ); ?></span>
-						<?php if ( $law_bm_row_wait ) : ?>
+						<?php if ( $law_bm_show_badge && $law_bm_row_wait ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--waitlisted"><?php esc_html_e( 'Waitlisted', 'law' ); ?></span>
-						<?php elseif ( $law_bm_row_gone ) : ?>
+						<?php elseif ( $law_bm_show_badge ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
 						<?php endif; ?>
 						<br><?php echo esc_html( $law_bm_person['email'] . ( $law_bm_facts ? ' · ' . implode( ', ', $law_bm_facts ) : '' ) ); ?>
@@ -216,7 +217,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 		<?php endif; ?>
 
 		<?php if ( $law_bm_colleagues && count( $law_bm_party ) > 1 ) : ?>
-			<h3 class="law-booking-manage__subtitle"><?php echo esc_html( $law_bm_waitlisted ? __( 'Leave the waitlist', 'law' ) : __( 'Cancel all these bookings', 'law' ) ); ?></h3>
+			<h3 class="law-booking-manage__subtitle"><?php echo esc_html( $law_bm_waitlisted ? __( 'Leave the waitlist', 'law' ) : __( 'Cancel all bookings', 'law' ) ); ?></h3>
 			<form class="law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="law_booking_cancel_party">
 				<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bm_event_id ); ?>">
@@ -234,8 +235,8 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 						'id'      => 'law-modal-cancel-party',
 						'title'   => $law_bm_all_label,
 						'copy'    => $law_bm_waitlisted
-							? sprintf( __( 'This takes everyone you added off the waitlist for this event (%s). Each person is emailed to let them know.', 'law' ), $law_bm_names )
-							: sprintf( __( 'This cancels every booking you made for this event (%s). Each person is emailed to let them know.', 'law' ), $law_bm_names ),
+							? sprintf( __( 'This takes you and everyone you added off the waitlist for this event (%s). Each person is emailed to let them know.', 'law' ), $law_bm_names )
+							: sprintf( __( 'This cancels your own place and every booking you made for this event (%s). Each person is emailed to let them know.', 'law' ), $law_bm_names ),
 						'confirm' => array(
 							'label' => $law_bm_all_label,
 							'class' => 'button alert',

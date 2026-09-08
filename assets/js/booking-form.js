@@ -87,9 +87,19 @@
 	});
 
 	/* 3. Fetch submission. */
-	function clearErrors(form) {
-		var modal = form.closest('.law-modal');
-		(modal || form).querySelectorAll('.law-modal__error, [data-law-booking-error]').forEach(function (node) {
+
+	/* Which element a message belongs in. A confirm dialog is rendered INSIDE
+	   the form it confirms (parts/layout/modal.php), so form.closest('.law-modal')
+	   is null on exactly the forms that have one, and an error placed in the
+	   form lands behind the open dialog where nobody sees it. The submitter is
+	   what tells us which of the two we are in. */
+	function scopeFor(form, submitter) {
+		var modal = submitter && submitter.closest ? submitter.closest('.law-modal') : null;
+		return modal || form.closest('.law-modal') || form;
+	}
+
+	function clearErrors(form, scope) {
+		( scope || form ).querySelectorAll('.law-modal__error, [data-law-booking-error]').forEach(function (node) {
 			node.remove();
 		});
 		form.querySelectorAll('label.is-invalid').forEach(function (label) {
@@ -97,14 +107,15 @@
 		});
 	}
 
-	function showError(form, message) {
-		var modal = form.closest('.law-modal');
+	function showError(form, scope, message) {
+		scope = scope || form;
+		var in_modal = scope.classList && scope.classList.contains('law-modal');
 		var error = document.createElement('p');
 		error.setAttribute('role', 'alert');
-		if (modal) {
+		if (in_modal) {
 			error.className = 'law-modal__error';
-			var actions = form.querySelector('.law-modal__actions');
-			if (actions) { actions.parentNode.insertBefore(error, actions); } else { form.appendChild(error); }
+			var actions = scope.querySelector('.law-modal__actions');
+			if (actions) { actions.parentNode.insertBefore(error, actions); } else { scope.querySelector('.law-modal__dialog').appendChild(error); }
 		} else {
 			error.className = 'law-form-notice is-error';
 			error.setAttribute('data-law-booking-error', '');
@@ -123,9 +134,8 @@
 		input.focus();
 	}
 
-	function busyState(form, on, busyLabel) {
-		var button = form.querySelector('[type="submit"]');
-		var modal = form.closest('.law-modal');
+	function busyState(form, button, on, busyLabel) {
+		var modal = button && button.closest ? button.closest('.law-modal') : form.closest('.law-modal');
 		if (button) {
 			if (on) {
 				button.setAttribute('data-law-booking-label', button.textContent);
@@ -143,17 +153,30 @@
 		}
 	}
 
+	/* event.submitter's fallback for older Safari: click fires before submit,
+	   and law-modal.js can preventDefault an invalid click before any submit
+	   event, so a stale record can never fire one. Mirrors committee-actions.js. */
+	var lastClicked = null;
+	document.addEventListener('click', function (event) {
+		var button = event.target.closest ? event.target.closest('[type="submit"]') : null;
+		lastClicked = button && button.closest('form.law-booking-form') ? button : null;
+	}, true);
+
 	document.querySelectorAll('form.law-booking-form').forEach(function (form) {
 		form.addEventListener('submit', function (event) {
 			if (!window.fetch) { return; }
 			event.preventDefault();
-			var button = form.querySelector('[type="submit"]');
+			/* Not "the form's first submit": that is the opener sitting behind
+			   the confirm dialog. */
+			var button = event.submitter || lastClicked;
+			if (!button || button.form !== form) { button = form.querySelector('[type="submit"]'); }
 			if (button && button.disabled) { return; }
+			var scope = scopeFor(form, button);
 
 			var data = new FormData(form);
 			data.append('law_ajax', '1');
-			clearErrors(form);
-			busyState(form, true, button ? button.getAttribute('data-law-modal-busy') : '');
+			clearErrors(form, scope);
+			busyState(form, button, true, button ? button.getAttribute('data-law-modal-busy') : '');
 
 			// getAttribute, not form.action: the hidden name="action" input every
 			// admin-post form carries shadows the property.
@@ -162,8 +185,8 @@
 				.then(function (response) {
 					var payload = response.data || {};
 					if (!response.success) {
-						busyState(form, false);
-						showError(form, payload.message || 'Sorry, that did not work. Please try again.');
+						busyState(form, button, false);
+						showError(form, scope, payload.message || 'Sorry, that did not work. Please try again.');
 						if (typeof payload.row === 'number' && payload.field) {
 							markField(form, payload.row, payload.field);
 						}
@@ -172,19 +195,35 @@
 					var dialogId = form.getAttribute('data-law-booking-success');
 					var dialog = dialogId ? document.getElementById(dialogId) : null;
 					if (dialog && window.lawModal) {
-						busyState(form, false);
+						busyState(form, button, false);
 						window.lawModal.open(dialogId);
 						/* Lock it: the dialog's own links are the exits. Closing in
 						   place would leave the stale pre-booking page behind it. */
 						dialog.classList.add('law-modal--busy');
 						return;
 					}
+					/* Confirmed in a dialog: say what happened before reloading.
+					   The server's message is sometimes the whole point ("the
+					   event is now over-booked by 2 places"), and a page-top
+					   notice is scrolled past when the redirect carries an
+					   anchor. */
+					if (scope !== form && scope.classList && scope.classList.contains('law-modal')) {
+						var copy = scope.querySelector('.law-modal__copy');
+						if (copy && payload.message) { copy.textContent = payload.message; }
+						var title = scope.querySelector('.law-modal__title');
+						if (title && payload.title) { title.textContent = payload.title; }
+						scope.classList.add('law-modal--busy');
+						window.setTimeout(function () {
+							window.location.replace(payload.redirect || window.location.href);
+						}, 2500);
+						return;
+					}
 					/* replace, not assign: Back should not return to the stale form. */
 					window.location.replace(payload.redirect || window.location.href);
 				})
 				.catch(function () {
-					busyState(form, false);
-					showError(form, 'Sorry, that did not work. Please reload the page and try again.');
+					busyState(form, button, false);
+					showError(form, scope, 'Sorry, that did not work. Please reload the page and try again.');
 				});
 		});
 	});

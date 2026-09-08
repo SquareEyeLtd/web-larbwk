@@ -14,6 +14,24 @@
 > real name of its own. The issues tables in §A9 and §B7 record what was
 > decided by default and what still needs Denis's word.
 >
+> **Review gates, same day.** A security review (PASS: one medium, three low,
+> all fixed), a Playwright pass, three cold conformance audits and three
+> specialist reviews (design, DRY and scalability, copy) then ran. They found
+> four defects worth naming: the "is this event still open" guard ran before
+> the event lock but never inside it, so a committee cancel completing while a
+> booking queued for the lock could seat someone on a dead event; deleting a
+> WordPress account stranded that person's bookings and their places, because
+> the booking CPT has no `author` support and core therefore leaves them
+> alone; `law_waitlist_for_event()` joined on the position meta, so any entry
+> that lost its position vanished from the queue permanently while the count
+> still saw it; and five copies of the same "resolve this attendee's email
+> address" logic had already drifted, one of them having lost its validity
+> check. All are fixed, along with the wp-admin backstops not feeding the
+> queue, the promotion walk's N+1 under the lock, the submitter resolution in
+> booking-form.js (errors on a modal-confirmed action were rendered behind the
+> dialog), and a set of copy defects led by the booking confirmation talking
+> about colleagues to people who had booked alone.
+>
 > **Execution brief.** This document is self-contained: an agent starting cold should be
 > able to build everything below from it plus the code. It was produced on 8 September 2026
 > from Denis's decisions, two exploration passes over the working tree, three specialist

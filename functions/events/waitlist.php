@@ -34,17 +34,32 @@ const LAW_WAITLIST_PASS_SECONDS = 15;
  *
  * @return WP_Post[]
  */
-function law_waitlist_for_event( $event_id, $limit = -1 ) {
-	return get_posts(
+function law_waitlist_for_event( $event_id, $limit = 500 ) {
+	$entries = get_posts(
 		array(
 			'post_type'      => LAW_BOOKING_CPT,
 			'post_parent'    => (int) $event_id,
 			'post_status'    => 'law-waitlisted',
 			'posts_per_page' => (int) $limit,
-			'meta_key'       => '_law_waitlist_position',
-			'orderby'        => array( 'meta_value_num' => 'ASC', 'ID' => 'ASC' ),
+			'orderby'        => 'ID',
+			'order'          => 'ASC',
 		)
 	);
+	// Ordered in PHP, not by a meta_key orderby: that would INNER JOIN postmeta,
+	// so an entry that lost its position would disappear from the queue
+	// altogether rather than sort badly — invisibly stranded, since the count
+	// below would still see it. Here it sorts to the BACK and the next
+	// renumber heals it. get_posts has already primed the meta cache, so the
+	// sort costs nothing.
+	usort(
+		$entries,
+		function ( $a, $b ) {
+			$pa = (int) law_event_meta( $a->ID, '_law_waitlist_position' ) ?: PHP_INT_MAX;
+			$pb = (int) law_event_meta( $b->ID, '_law_waitlist_position' ) ?: PHP_INT_MAX;
+			return $pa === $pb ? $a->ID <=> $b->ID : $pa <=> $pb;
+		}
+	);
+	return $entries;
 }
 
 /**
@@ -52,16 +67,14 @@ function law_waitlist_for_event( $event_id, $limit = -1 ) {
  * an entry that somehow lost its position can never make the queue look empty.
  */
 function law_waitlist_count( $event_id ) {
-	$ids = get_posts(
-		array(
-			'post_type'      => LAW_BOOKING_CPT,
-			'post_parent'    => (int) $event_id,
-			'post_status'    => 'law-waitlisted',
-			'posts_per_page' => -1,
-			'fields'         => 'ids',
+	global $wpdb;
+	return (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND post_parent = %d AND post_status = 'law-waitlisted'",
+			LAW_BOOKING_CPT,
+			(int) $event_id
 		)
 	);
-	return count( $ids );
 }
 
 /**
@@ -81,10 +94,17 @@ function law_waitlist_renumber( $event_id ) {
 
 /** The next free position. Callers hold the event lock. */
 function law_waitlist_next_position( $event_id ) {
-	$last = 0;
-	foreach ( law_waitlist_for_event( $event_id ) as $entry ) {
-		$last = max( $last, (int) law_event_meta( $entry->ID, '_law_waitlist_position' ) );
-	}
+	global $wpdb;
+	$last = (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT MAX(CAST(pm.meta_value AS UNSIGNED)) FROM {$wpdb->postmeta} pm
+			 INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			 WHERE pm.meta_key = '_law_waitlist_position'
+			   AND p.post_type = %s AND p.post_parent = %d AND p.post_status = 'law-waitlisted'",
+			LAW_BOOKING_CPT,
+			(int) $event_id
+		)
+	);
 	return $last + 1;
 }
 
@@ -142,7 +162,7 @@ function law_waitlist_join( $event_id, $booker_id, array $additional_rows ) {
 		law_event_log(
 			$event_id,
 			'A waitlist has opened on this event: it is full and people are now queueing for a place.',
-			array( 'action' => 'waitlist_activated', 'source' => 'waitlist' ),
+			array( 'action' => 'waitlist_activated', 'booking' => (int) $ids[0], 'source' => 'waitlist' ),
 			array( 'user_id' => (int) $booker_id )
 		);
 	}
@@ -181,27 +201,12 @@ function law_waitlist_send_join_emails( array $ids, array $people, $booker, $eve
 		if ( 0 === $i ) {
 			continue;
 		}
-		$person = law_booking_attendee( $booking_id );
-		$user   = get_user_by( 'id', (int) get_post_field( 'post_author', $booking_id ) );
-		$email  = $user && is_email( $user->user_email ) ? $user->user_email : $person['email'];
-		if ( ! is_email( $email ) ) {
-			continue;
-		}
-		// A brand-new account still needs its set-password link, exactly as a
-		// booked colleague's invite does.
-		$created = ! empty( $people[ $i ]['created'] );
-		$extra   = array( 'attendee_name' => $person['name'] );
-		if ( $created && $user ) {
-			$extra['username']          = $user->user_login;
-			$extra['set_password_link'] = law_events_password_setup_link( $user, (int) $event_id, 'booking_attendee_error' );
-		}
-		law_events_send(
-			$created ? 'user_waitlist_attendee_invited' : 'user_waitlist_attendee_added',
-			$event_id,
-			array(
-				'to'           => array( $email ),
-				'placeholders' => array_merge( law_booking_email_placeholders( $booking_id ), $extra ),
-			)
+		// The booking path's notification with the waitlist's wording, and no
+		// calendar invite: they hold no place yet.
+		law_booking_notify_attendee(
+			$booking_id,
+			! empty( $people[ $i ]['created'] ),
+			array( 'invited' => 'user_waitlist_attendee_invited', 'added' => 'user_waitlist_attendee_added', 'ics' => false )
 		);
 	}
 }
@@ -257,28 +262,52 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 
 	try {
 		law_event_recount_attendees( $event_id );
-		foreach ( law_waitlist_for_event( $event_id ) as $entry ) {
+		// One pass over the event's active bookings for the whole walk, rather
+		// than one per candidate inside the duplicate guard.
+		$taken = law_booking_taken_index( $event_id );
+		// Re-read the event under the lock: a committee cancel can complete
+		// while this pass waits for it, and its sweep has already passed.
+		if ( true !== law_booking_guard_open( $event_id ) ) {
+			return array();
+		}
+		foreach ( law_waitlist_for_event( $event_id, LAW_WAITLIST_PASS_CAP * 3 ) as $entry ) {
 			$remaining = law_event_tickets_remaining( $event_id );
 			if ( null === $remaining || $remaining < 1 ) {
 				break;
 			}
-			if ( count( $promoted ) >= LAW_WAITLIST_PASS_CAP || time() - $started > LAW_WAITLIST_PASS_SECONDS ) {
+			// Blocked entries count too: a queue where most entries clash would
+			// otherwise walk every one of them, on every cancellation, forever.
+			if ( count( $promoted ) + count( $blocked ) >= LAW_WAITLIST_PASS_CAP || time() - $started > LAW_WAITLIST_PASS_SECONDS ) {
 				$more = true;
 				break;
 			}
 
-			$check = law_waitlist_check_promotable( $entry );
+			$check = law_waitlist_check_promotable( $entry, $taken );
 			if ( is_wp_error( $check ) ) {
-				$blocked[] = array( 'entry' => $entry, 'error' => $check );
+				// Claim the latch here, under the lock, so two passes racing on
+				// the same event cannot both decide they are the first to tell
+				// this person. The email itself waits until after the unlock.
+				$first = (string) law_event_meta( $entry->ID, '_law_waitlist_blocked' ) !== $check->get_error_code();
+				if ( $first ) {
+					law_event_update_meta( $entry->ID, '_law_waitlist_blocked', $check->get_error_code() );
+				}
+				$blocked[] = array( 'entry' => $entry, 'error' => $check, 'first' => $first );
 				continue; // Skipped in place: not a capacity problem, so the queue moves on.
 			}
 
 			law_waitlist_seat( $entry, 0, 'auto', $source );
 			$promoted[] = (int) $entry->ID;
+			// The person just seated now holds a place, so the next candidate
+			// must see them without the index being rebuilt from scratch.
+			$taken['users'][ (int) $entry->post_author ] = true;
+			$email = strtolower( law_booking_attendee( $entry )['email'] );
+			if ( '' !== $email ) {
+				$taken['emails'][ $email ] = true;
+			}
 		}
-		if ( $promoted ) {
-			law_waitlist_renumber( $event_id );
-		}
+		// Always, not only after a promotion: this is also what heals an entry
+		// restored from the trash with a stale or missing position.
+		law_waitlist_renumber( $event_id );
 	} finally {
 		unset( $processing[ $event_id ] );
 		law_booking_unlock( $event_id );
@@ -293,7 +322,7 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 		law_waitlist_notify_host( $event_id, $promoted );
 	}
 	foreach ( $blocked as $item ) {
-		law_waitlist_mark_blocked( $item['entry'], $item['error'], $source );
+		law_waitlist_mark_blocked( $item['entry'], $item['error'], $source, $item['first'] );
 	}
 	if ( $promoted ) {
 		law_booking_maybe_capacity_warning( $event_id );
@@ -327,22 +356,26 @@ add_action( 'law_waitlist_resume', function ( $event_id ) {
  *
  * @return true|WP_Error
  */
-function law_waitlist_check_promotable( $entry ) {
+function law_waitlist_check_promotable( $entry, ?array $taken = null ) {
 	$entry    = get_post( $entry );
 	$event_id = (int) $entry->post_parent;
 	$person   = law_booking_attendee( $entry );
 
 	// Against ACTIVE bookings only: the entry being promoted is itself
-	// waitlisted, and would otherwise match itself.
+	// waitlisted, and would otherwise match itself. $taken lets a promotion
+	// pass build that set once instead of once per candidate.
 	$dup = law_booking_guard_duplicates(
 		$event_id,
 		array( array( 'user_id' => (int) $entry->post_author, 'email' => $person['email'], 'name' => $person['name'] ) ),
-		array( 'publish' )
+		array( 'publish' ),
+		$taken
 	);
 	if ( is_wp_error( $dup ) ) {
 		return $dup;
 	}
-	return law_booking_guard_clash( (int) $entry->post_author, $event_id, $person['name'] );
+	// No name: the refusal is quoted straight into an email addressed TO this
+	// person, and "Jane Smith is already booked on X" reads wrong to Jane.
+	return law_booking_guard_clash( (int) $entry->post_author, $event_id, '' );
 }
 
 /**
@@ -397,24 +430,7 @@ function law_waitlist_seat( $entry, $actor_id, $mode, $source ) {
 
 /** Tell a promoted attendee they have a place, with the calendar invite. */
 function law_waitlist_notify_promoted( $booking_id ) {
-	$booking = get_post( $booking_id );
-	if ( ! $booking ) {
-		return;
-	}
-	$person = law_booking_attendee( $booking );
-	$user   = get_user_by( 'id', (int) $booking->post_author );
-	$email  = $user && is_email( $user->user_email ) ? $user->user_email : $person['email'];
-	if ( ! is_email( $email ) ) {
-		return;
-	}
-	law_booking_send_with_ics(
-		'user_waitlist_promoted',
-		(int) $booking->post_parent,
-		array(
-			'to'           => array( $email ),
-			'placeholders' => array_merge( law_booking_email_placeholders( $booking_id ), array( 'attendee_name' => $person['name'] ) ),
-		)
-	);
+	law_booking_notify_attendee( $booking_id, false, array( 'added' => 'user_waitlist_promoted' ) );
 }
 
 /** One summary to the host per pass, however many were promoted. */
@@ -422,7 +438,7 @@ function law_waitlist_notify_host( $event_id, array $promoted ) {
 	$lines = array();
 	foreach ( $promoted as $booking_id ) {
 		$person  = law_booking_attendee( $booking_id );
-		$lines[] = trim( $person['name'] ) . ' (' . $person['email'] . ') — Booking #' . (int) law_event_meta( $booking_id, '_law_booking_number' );
+		$lines[] = trim( $person['name'] ) . ' (' . $person['email'] . '), Booking #' . (int) law_event_meta( $booking_id, '_law_booking_number' );
 	}
 	law_events_send(
 		'host_waitlist_promoted',
@@ -444,7 +460,7 @@ function law_waitlist_notify_host( $event_id, array $promoted ) {
  * told once why it is being passed over, so they can resolve the clash rather
  * than wonder. The latch clears when the entry is seated or cancelled.
  */
-function law_waitlist_mark_blocked( $entry, WP_Error $error, $source ) {
+function law_waitlist_mark_blocked( $entry, WP_Error $error, $source, $first = null ) {
 	$entry    = get_post( $entry );
 	$event_id = (int) $entry->post_parent;
 	$person   = law_booking_attendee( $entry );
@@ -460,14 +476,20 @@ function law_waitlist_mark_blocked( $entry, WP_Error $error, $source ) {
 		array( 'action' => 'waitlist_skipped', 'booking' => (int) $entry->ID, 'code' => $code, 'source' => $source )
 	);
 
-	if ( (string) law_event_meta( $entry->ID, '_law_waitlist_blocked' ) === $code ) {
+	// The caller claims the latch under the lock and tells us whether this was
+	// the first sighting; a direct caller falls back to reading it here.
+	if ( null === $first ) {
+		$first = (string) law_event_meta( $entry->ID, '_law_waitlist_blocked' ) !== $code;
+		if ( $first ) {
+			law_event_update_meta( $entry->ID, '_law_waitlist_blocked', $code );
+		}
+	}
+	if ( ! $first ) {
 		return; // Already told them about this one.
 	}
-	law_event_update_meta( $entry->ID, '_law_waitlist_blocked', $code );
 
-	$user  = get_user_by( 'id', (int) $entry->post_author );
-	$email = $user && is_email( $user->user_email ) ? $user->user_email : $person['email'];
-	if ( ! is_email( $email ) ) {
+	$email = law_booking_attendee_email( $entry );
+	if ( '' === $email ) {
 		return;
 	}
 	law_events_send(
@@ -502,7 +524,7 @@ function law_waitlist_promote( $booking_id, $actor_id ) {
 
 	$open = law_booking_guard_open( $event_id );
 	if ( is_wp_error( $open ) ) {
-		return law_booking_log_refusal( $event_id, (int) $entry->ID, $open, $actor_id );
+		return law_booking_log_refusal( $event_id, (int) $entry->ID, $open, $actor_id, 'waitlist' );
 	}
 	if ( ! law_booking_lock( $event_id ) ) {
 		return new WP_Error( 'law_booking_busy', 'The event is busy with another change. Please try again in a moment.' );
@@ -512,7 +534,7 @@ function law_waitlist_promote( $booking_id, $actor_id ) {
 	$check = law_waitlist_check_promotable( $entry );
 	if ( is_wp_error( $check ) ) {
 		law_booking_unlock( $event_id );
-		return law_booking_log_refusal( $event_id, (int) $entry->ID, $check, $actor_id );
+		return law_booking_log_refusal( $event_id, (int) $entry->ID, $check, $actor_id, 'waitlist' );
 	}
 
 	$seated = law_waitlist_seat( $entry, $actor_id, 'manual', 'manual' );
@@ -593,7 +615,11 @@ function law_waitlist_reorder( $booking_id, $direction, $actor_id, $expected_pos
 	$moved = array_splice( $queue, $index, 1 );
 	array_splice( $queue, $target, 0, $moved );
 	foreach ( $queue as $i => $candidate ) {
-		law_event_update_meta( $candidate->ID, '_law_waitlist_position', $i + 1 );
+		// Only the entries that actually moved: shifting one place in a long
+		// queue should not rewrite every row to the value it already holds.
+		if ( (int) law_event_meta( $candidate->ID, '_law_waitlist_position' ) !== $i + 1 ) {
+			law_event_update_meta( $candidate->ID, '_law_waitlist_position', $i + 1 );
+		}
 	}
 
 	law_booking_unlock( $event_id );
@@ -630,11 +656,24 @@ add_action( 'untrashed_post', function ( $post_id ) {
 		return;
 	}
 	$event_id = (int) $post->post_parent;
-	if ( ! $event_id || ! law_booking_lock( $event_id ) ) {
+	if ( ! $event_id ) {
+		return;
+	}
+	if ( ! law_booking_lock( $event_id ) ) {
+		// Do not leave it holding a stale position that may now collide with
+		// somebody else's: try again shortly rather than silently skipping.
+		law_event_log(
+			$event_id,
+			sprintf( 'Restored waitlist entry #%d could not be requeued yet: the event was busy. It will be retried shortly.', (int) law_event_meta( $post->ID, '_law_booking_number' ) ),
+			array( 'action' => 'waitlist_requeue_deferred', 'booking' => (int) $post->ID, 'source' => 'waitlist' )
+		);
+		law_waitlist_schedule_resume( $event_id );
 		return;
 	}
 	delete_post_meta( $post->ID, '_law_waitlist_position' );
 	law_event_update_meta( $post->ID, '_law_waitlist_position', law_waitlist_next_position( $event_id ) );
+	// And close the gap the trashing left, or nobody holds position 1.
+	law_waitlist_renumber( $event_id );
 	law_booking_unlock( $event_id );
 	law_event_log(
 		$event_id,
@@ -700,11 +739,7 @@ function law_waitlist_reorder_handler() {
 		)
 	);
 
-	$booking = get_post( absint( $_POST['booking_id'] ?? 0 ) );
-	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type
-		|| ! law_user_can_manage_event( get_current_user_id(), (int) $booking->post_parent ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to manage this event\'s waitlist.', 'status' => 403 ), 'waitlist-failed' );
-	}
+	$booking = law_booking_require_manageable( $is_ajax, 'waitlist-failed' );
 
 	$result = law_waitlist_reorder(
 		(int) $booking->ID,
@@ -716,17 +751,19 @@ function law_waitlist_reorder_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => $result->get_error_message() ), 'waitlist-failed' );
 	}
 
+	$moved  = ! empty( $result['moved'] );
+	$notice = $moved ? 'waitlist-reordered' : 'waitlist-unchanged';
 	law_events_respond(
 		$is_ajax,
 		true,
 		array(
-			'title'    => 'Waitlist reordered',
-			'message'  => empty( $result['moved'] )
-				? 'The waitlist had already moved on. Reloading the page…'
-				: 'The new order is saved. Reloading the page…',
-			'redirect' => add_query_arg( 'law_notice', 'waitlist-reordered', law_booking_list_url( (int) $booking->post_parent ) ) . '#law-waitlist',
+			'title'    => $moved ? 'Waitlist reordered' : 'Waitlist unchanged',
+			'message'  => $moved
+				? 'The new order is saved. Reloading the page…'
+				: 'The waitlist had already moved on, so nothing was changed. Reloading the page…',
+			'redirect' => add_query_arg( 'law_notice', $notice, law_booking_list_url( (int) $booking->post_parent ) ) . '#law-waitlist',
 		),
-		'waitlist-reordered'
+		$notice
 	);
 }
 
@@ -741,11 +778,7 @@ function law_waitlist_promote_handler() {
 		)
 	);
 
-	$booking = get_post( absint( $_POST['booking_id'] ?? 0 ) );
-	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type
-		|| ! law_user_can_manage_event( get_current_user_id(), (int) $booking->post_parent ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to manage this event\'s waitlist.', 'status' => 403 ), 'waitlist-failed' );
-	}
+	$booking = law_booking_require_manageable( $is_ajax, 'waitlist-failed' );
 
 	$result = law_waitlist_promote( (int) $booking->ID, get_current_user_id() );
 	if ( is_wp_error( $result ) ) {

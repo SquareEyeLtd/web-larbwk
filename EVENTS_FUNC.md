@@ -157,7 +157,7 @@ screens, columns, emails) → migration (report, runner, page).
 - `law_event_meta_schema()`, `law_speaker_meta_schema()`,
   `law_session_meta_schema()`, `law_booking_meta_schema()`: the ~50 meta keys
   and their types (text, `text_array`, `int_array`, `address`, `people_rows`,
-  `speaker_rows`, `attendee_rows`, `consent`, `stripe_error`, etc.). Every key
+  `speaker_rows`, `consent`, `stripe_error`, etc.). Every key
   is registered via `register_post_meta` in `law_events_register_meta()` (on
   `init` priority 7) with a per-type sanitiser and an auth callback. Bookings
   phase 1 added `_law_tickets_sold` (the recalculated seat counter) and
@@ -571,7 +571,7 @@ block the queue. Joining is refused while places are free.
 - An entry restored from the trash goes to the BACK of the queue
   (`untrashed_post`): its old position is meaningless once the people behind it
   have moved up.
-- `law_event_tickets_changed()` (in bookings.php) is called at the END of both
+- `law_event_tickets_changed()` (in waitlist.php) is called at the END of both
   ticket write paths — `admin/event-screen.php` and
   `law_events_form_save()` — after every other field is written, so a save that
   moves the date and raises the places cannot email an invitation carrying the
@@ -690,7 +690,7 @@ block the queue. Joining is refused while places are free.
 
 ### `notifications.php`: the email registry
 
-- `law_events_email_registry()`: all 50 module emails as definitions (slug →
+- `law_events_email_registry()`: all 49 module emails as definitions (slug →
   recipients, subject, body with `{placeholders}`, trigger, active flag).
   - **Host**: `user_submitted`, `user_sent_back`, `user_payment_due`,
     `user_confirmed_paid`, `user_confirmed_free`, `user_rejected`,
@@ -1487,7 +1487,7 @@ These predate the rebuild and now branch on `law_events_source()`.
 
 ---
 
-## 6. Open items and product decisions (as of 5 September 2026)
+## 6. Open items and product decisions (as of 8 September 2026)
 
 The rebuild passed three adversarial-persona tests (designer, UX, security), a
 full end-to-end lifecycle test and a plan-conformance audit; the confirmed
@@ -1586,6 +1586,27 @@ rollback must stay alive.
 ---
 
 ## Change history
+
+Updated 8 September 2026, second round, for the **review gates** on the
+per-attendee rebuild: a security review (one medium, three low, all fixed), a
+Playwright pass, three cold conformance audits and three specialist reviews
+(design, DRY and scalability, copy). What changed as a result: the "is this
+event still open" guard now re-runs INSIDE the event lock, so a committee
+cancel completing while a booking waits for the lock can no longer seat someone
+on a dead event; deleting a WordPress account now releases that person's places
+(`deleted_user`), which core would not do because the booking CPT has no
+`author` support; the wp-admin backstops offer the place they free to the
+queue; `law_waitlist_for_event()` sorts in PHP rather than joining on the
+position meta, which had been silently dropping any entry that lost its
+position; `law_booking_attendee_email()` replaced five drifted copies of the
+same address lookup, one of which had lost its validity check; the waitlist's
+promotion walk builds its duplicate index once instead of reloading every
+booking on the event per candidate; and booking-form.js now resolves the actual
+submitter, so an error on a modal-confirmed action is shown in the dialog
+rather than behind it. Copy: the confirmation no longer talks about colleagues
+to people who booked alone, the cancellation emails no longer render "(, )" on
+an event with no confirmed slot, and the waitlist's "we could not confirm your
+place" email no longer refers to the reader in the third person.
 
 Updated 8 September 2026 for the **per-attendee bookings rebuild and the
 waitlist** (WAITLIST.md is the contract). A colleague a booker brings now gets
