@@ -460,14 +460,17 @@ body.page-template-templatesaccount-php {
 
 /*
  * GF scrolls to its anchor after a failed submit; the fixed nav would cover
- * the validation summary. Padding + negative margin moves the scroll target
- * up without affecting layout (GF scrolls via JS, so scroll-margin-top alone
- * doesn't work).
+ * the validation summary. Gravity Forms scrolls the window itself rather than
+ * using scrollIntoView(), so neither scroll-margin-top nor the site-wide
+ * scroll-padding-top in app.css reaches it. Padding plus an equal negative
+ * margin moves the scroll target up without affecting layout. The two values
+ * must stay equal, and both come from the shared header offset so this is not
+ * a fourth hard-coded nav height.
  */
 .auth-hero .gform_anchor {
 	display: block;
-	padding-top: 150px;
-	margin-top: -150px;
+	padding-top: var(--law-header-offset);
+	margin-top: calc(var(--law-header-offset) * -1);
 }
 
 /*

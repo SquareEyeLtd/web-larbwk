@@ -134,7 +134,7 @@ get_header();
 						?>
 
 						<?php if ( $law_show_bookings ) : ?>
-							<h2 class="law-account-events__heading"><?php esc_html_e( 'Your bookings', 'law' ); ?></h2>
+							<h2 id="law-account-bookings" class="law-account-events__heading"><?php esc_html_e( 'My bookings', 'law' ); ?></h2>
 							<?php if ( ! $law_bookings ) : ?>
 								<p class="law-cal__empty">
 									<?php
@@ -186,7 +186,7 @@ get_header();
 						<?php endif; ?>
 
 						<?php if ( $law_show_bookings && $law_show_host ) : ?>
-							<h2 class="law-account-events__heading"><?php esc_html_e( 'Your events', 'law' ); ?></h2>
+							<h2 id="law-account-events" class="law-account-events__heading"><?php esc_html_e( 'My events', 'law' ); ?></h2>
 						<?php endif; ?>
 
 						<?php

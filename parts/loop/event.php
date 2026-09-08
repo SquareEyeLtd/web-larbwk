@@ -9,6 +9,10 @@
  *   'show_status' => false,   // Committee status badge.
  *   'show_date'   => false,   // Prefix the time with the full date, for cards shown outside the calendar.
  *   'meta_lines'  => array(), // Extra meta lines below the venue/host, e.g. payment status.
+ *   'speaker'     => array(), // {name, organisation, job_title}: one speaker's appearance
+ *                             // at THIS event (the single speaker profile passes it).
+ *                             // Renders a divider under "Hosted by" then
+ *                             // "[name]'s organisation: …" and "[name]'s position: …".
  *   'actions'     => array(), // Button overrides: array of
  *                             // { label, url, arrow (bool), external (bool) },
  *                             // or a form-shaped action for a POST behind a
@@ -34,6 +38,22 @@ $law_show_status  = ! empty( $args['show_status'] );
 $law_time_label   = law_calendar_event_time_label( $event );
 $law_hosted       = law_calendar_hosted_by( $event );
 $law_meta_lines   = isset( $args['meta_lines'] ) && is_array( $args['meta_lines'] ) ? array_filter( array_map( 'strval', $args['meta_lines'] ) ) : array();
+
+// The speaker's appearance at this event (profile page only): label/value
+// pairs, the value rendered bold. A name ending in "s" takes a bare
+// apostrophe ("Asimakis' organisation"), house style per Denis.
+$law_speaker       = isset( $args['speaker'] ) && is_array( $args['speaker'] ) ? $args['speaker'] : array();
+$law_speaker_lines = array();
+$law_speaker_name  = trim( (string) ( $law_speaker['name'] ?? '' ) );
+if ( '' !== $law_speaker_name ) {
+	$law_possessive = $law_speaker_name . ( preg_match( '/s$/i', $law_speaker_name ) ? "'" : "'s" );
+	if ( '' !== trim( (string) ( $law_speaker['organisation'] ?? '' ) ) ) {
+		$law_speaker_lines[] = array( $law_possessive . ' organisation:', trim( (string) $law_speaker['organisation'] ) );
+	}
+	if ( '' !== trim( (string) ( $law_speaker['job_title'] ?? '' ) ) ) {
+		$law_speaker_lines[] = array( $law_possessive . ' position:', trim( (string) $law_speaker['job_title'] ) );
+	}
+}
 
 $law_actions = isset( $args['actions'] ) && is_array( $args['actions'] ) ? $args['actions'] : array();
 if ( ! $law_actions ) {
@@ -72,6 +92,12 @@ if ( '' !== $law_time_label ) {
 		<?php endif; ?>
 		<?php if ( $law_hosted ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html( $law_hosted ); ?></p>
+		<?php endif; ?>
+		<?php if ( $law_speaker_lines ) : ?>
+			<hr class="law-event-card__divider">
+			<?php foreach ( $law_speaker_lines as $law_speaker_line ) : ?>
+				<p class="law-event-card__meta law-event-card__meta--speaker"><?php echo esc_html( $law_speaker_line[0] ); ?> <strong><?php echo esc_html( $law_speaker_line[1] ); ?></strong></p>
+			<?php endforeach; ?>
 		<?php endif; ?>
 		<?php foreach ( $law_meta_lines as $law_meta_line ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html( $law_meta_line ); ?></p>

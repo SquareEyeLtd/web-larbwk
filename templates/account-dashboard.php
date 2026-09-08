@@ -105,23 +105,22 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					<?php if ( $law_speaker_rows ) : ?>
 						<ul class="law-dashboard__people">
 							<?php foreach ( $law_speaker_rows as $law_row ) :
-								$law_speaker = get_post( (int) ( $law_row['speaker_id'] ?? 0 ) );
-								if ( ! $law_speaker || LAW_SPEAKER_CPT !== $law_speaker->post_type ) {
+								// Organisation, job title and photo are this event's own (the appearance row).
+								$law_card = law_speaker_card( (int) ( $law_row['speaker_id'] ?? 0 ), (array) $law_row );
+								if ( ! $law_card ) {
 									continue;
 								}
-								$law_sp_org = trim( (string) ( $law_row['organisation_override'] ?? '' ) )
-									?: (string) law_event_meta( $law_speaker->ID, '_law_organisation' );
-								$law_sp_web = (string) law_event_meta( $law_speaker->ID, '_law_website' );
-								$law_sp_bio = trim( (string) $law_speaker->post_content );
+								$law_speaker = get_post( $law_card['id'] );
+								$law_sp_web  = (string) law_event_meta( $law_speaker->ID, '_law_website' );
+								$law_sp_bio  = trim( (string) $law_speaker->post_content );
 								?>
 								<li>
-									<?php echo get_the_post_thumbnail( $law_speaker->ID, 'thumbnail', array( 'class' => 'law-dashboard__person-photo' ) ); ?>
+									<?php if ( $law_card['photo'] ) : ?>
+										<img class="law-dashboard__person-photo" src="<?php echo esc_url( $law_card['photo'] ); ?>" alt="" width="150" height="150" loading="lazy">
+									<?php endif; ?>
 									<div>
-										<strong><?php echo esc_html( $law_speaker->post_title ); ?></strong>
-										<?php echo esc_html( implode( ' · ', array_filter( array(
-											(string) law_event_meta( $law_speaker->ID, '_law_job_title' ),
-											$law_sp_org,
-										) ) ) ); ?>
+										<strong><?php echo esc_html( $law_card['name'] ); ?></strong>
+										<?php echo esc_html( implode( ' · ', array_filter( array( $law_card['job_title'], $law_card['organisation'] ) ) ) ); ?>
 										<br><a href="mailto:<?php echo esc_attr( (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' ) ); ?>"><?php echo esc_html( (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' ) ); ?></a>
 										<?php if ( $law_sp_web ) : ?> · <a href="<?php echo esc_url( $law_sp_web ); ?>" target="_blank" rel="noopener">Profile ↗</a><?php endif; ?>
 										<?php if ( $law_sp_bio ) : ?><p class="law-dashboard__person-bio"><?php echo esc_html( $law_sp_bio ); ?></p><?php endif; ?>

@@ -82,6 +82,10 @@ add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_script( 'law-matchheight', 'https://cdnjs.cloudflare.com/ajax/libs/jquery.matchHeight/0.7.2/jquery.matchHeight-min.js', array( 'jquery' ), '0.7.2', true );
 	wp_enqueue_script( 'law-app', $uri . '/assets/js/app.js', array( 'jquery', 'law-foundation', 'law-wow', 'law-matchheight' ), $v( '/assets/js/app.js' ), true );
 
+	// Header account dropdown and burger state. The header is on every page,
+	// so this is unconditional. Vanilla, hence no dependencies.
+	wp_enqueue_script( 'law-header-nav', $uri . '/assets/js/header-nav.js', array(), $v( '/assets/js/header-nav.js' ), true );
+
 	if ( law_speakers_is_template() && ! law_speakers_is_single() ) {
 		wp_enqueue_script( 'law-speaker-search', $uri . '/assets/js/speaker-search.js', array(), $v( '/assets/js/speaker-search.js' ), true );
 	}

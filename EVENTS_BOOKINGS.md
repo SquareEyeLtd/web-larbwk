@@ -332,9 +332,22 @@ admin-post.php, which that block excludes.
 
 ### 7.1 The booking control on the single event page
 
-`law_booking_render_action( $event )` (in `functions/account-bookings.php`) replaces the
-placeholder Register anchor in `parts/calendar-body.php` (the "Back to events calendar"
-button stays). Five states:
+`law_booking_render_action( $event )` (in `functions/account-bookings.php`) renders in the
+footer row of the hero's event details box (`parts/calendar-event-details.php`), next to the
+facts, rather than at the bottom of the article where the placeholder Register anchor used to
+be (the "Back to events calendar" button stays there). Because that box carries the
+`law-cal` class, the control keeps the `.law-cal`-gated styling it depends on: the
+`aria-disabled` treatment that keeps the sold-out placeholder inert, the button hover, and
+the light-surface `.law-form-notice` colours.
+
+Both of the control's dialogs are `position: fixed`, and the hero's `.grid-container` is a
+stacking context (`z-index: 4`), which would clamp them and paint them under the fixed
+header. So `law_booking_footer_modal()` defers them to `wp_footer`, at body level:
+`parts/events/booking-modal.php` (`modal` context) and the extracted
+`parts/events/booking-success-modal.php`. The `?law_book=1` inline form is not fixed and
+stays in the flow, inside the box.
+
+Five states:
 
 1. **Bookings open soon**, when no ticket number is set: a paragraph at the
    `.law-cal-acc__heading` scale (no bespoke "big text" style exists in the theme) with the

@@ -9,6 +9,13 @@
  * only the field in the open modal is enabled, so a normal browser posts one
  * value per field name.
  *
+ * An opener that has no job without JS ships hidden and carries
+ * [data-law-modal-enhanced] as well: it is revealed here, and only once its
+ * modal has actually been found, so a dialog that failed to render leaves no
+ * dead button behind. The speaker cards on the single event view use this,
+ * pairing the revealed button with a [data-law-modal-fallback] <details> that
+ * holds the same content for anyone without JavaScript.
+ *
  * That last part is a UX guarantee, not a security one: these dialogs sit on
  * committee-only endpoints and carry text the user may write freely, so a
  * hand-made POST with two values only picks which of their own drafts wins.
@@ -46,7 +53,9 @@
 	function fields(modal) { return modal.querySelectorAll('[data-law-modal-field]'); }
 
 	function focusables(modal) {
-		return modal.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled])');
+		/* [tabindex="0"] picks up the speaker dialog's scrollable biography, which
+		   is a tab stop so it can be scrolled from the keyboard. */
+		return modal.querySelectorAll('a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]');
 	}
 
 	function openModal(modal, button) {
@@ -99,6 +108,8 @@
 		button.setAttribute('aria-haspopup', 'dialog');
 		button.setAttribute('aria-controls', modal.id);
 		button.setAttribute('aria-expanded', 'false');
+		/* JS-only openers ship hidden; now that the modal is confirmed, show it. */
+		if (button.hasAttribute('data-law-modal-enhanced')) { button.hidden = false; }
 		button.addEventListener('click', function () { openModal(modal, button); });
 	});
 

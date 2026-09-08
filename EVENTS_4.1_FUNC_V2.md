@@ -568,9 +568,19 @@ screens, columns, emails) → migration (report, runner, page).
   five-state control (`law_booking_render_action()`: You're booked with a
   Manage/View link → Bookings open soon → Book now + "N places left" →
   sold-out disabled "Join waitlist" placeholder → "This event has taken
-  place") in `parts/calendar-body.php`'s action row, whose hero fact is now
-  "Places remaining" in CPT mode; the programme card's disabled Register
-  default action is gone (`parts/loop/event.php`). The Book now opener is a
+  place") in the footer row of the hero's event details box
+  (`parts/calendar-event-details.php`), next to the facts rather than at the
+  bottom of the article; the programme card's disabled Register default action
+  is gone (`parts/loop/event.php`). The box carries the `law-cal` class so the
+  control keeps the `.law-cal`-gated styling it depends on (the `aria-disabled`
+  inert treatment, the button hover, the light-surface `.law-form-notice`
+  colours), and both of its `position: fixed` dialogs are deferred to
+  `wp_footer` by `law_booking_footer_modal()`, because the hero's
+  `.grid-container` is a stacking context (`z-index: 4`) that would otherwise
+  paint them under the fixed header. Availability is stated by the control, so
+  the old "Places remaining" hero fact appears in the box only as a fallback,
+  when the control renders nothing (the legacy source, and committee previews of
+  unpublished events). The Book now opener is a
   real link to the inline `?law_book=1` form (the no-JS path);
   `assets/js/booking-form.js` upgrades it to open
   `parts/events/booking-modal.php` (the `.law-modal` skeleton with a `--wide`
@@ -697,15 +707,65 @@ screens, columns, emails) → migration (report, runner, page).
 
 - `law_speaker_find_existing()`, `law_speaker_normalise_name()`: dedupe by email
   first, then normalised name.
-- `law_speaker_upsert()`: match-or-create a `law_speaker` from a submitted row;
-  gap-fills empty fields only (never blanks an existing value), and logs to the
-  event when it backfills a pre-existing shared record.
+- `law_speaker_upsert()`: match-or-create a `law_speaker` from a submitted row.
+  **Identity only** (name, email, website): it gap-fills empty fields (never
+  blanks an existing value) and logs to the event when it backfills a
+  pre-existing shared record. It no longer writes an organisation or job title;
+  the featured image and the biography it sets once are only fallbacks.
+- **Speaker details are per appearance** (Denis, 8 September 2026, extended to
+  the biography on 8 September 2026): the organisation, job title, photo **and
+  biography** a speaker had at a given event live on that event's
+  `_law_speakers` row (`{speaker_id, role, organisation, job_title, photo_id,
+  bio, sort}`), because one person speaks for different firms — and writes a
+  different biography — at different events, and each event must show what was
+  submitted for it. The old `_law_organisation`/`_law_job_title` speaker meta is
+  off the schema (stale rows are inert); the sanitiser reads a pre-change
+  `organisation_override` as `organisation`, and `bio` takes the textarea
+  sanitiser so a biography keeps its line breaks. A row that leaves the
+  biography or photo blank falls back to the speaker post's editor content and
+  featured image at read time.
+- `law_speakers_confirmed_maps()` (and its `law_speakers_confirmed_event_map()`
+  wrapper): the one pass over published events' rows, memoised — the archive
+  source (one profile per speaker referenced by a Confirmed event; visibility
+  derived from events, not status) plus each speaker's appearance row per event.
+- `law_speaker_appearances()` (first-submitted event first, by creation date
+  then ID, never by event date), `law_speaker_display_photo_id()` (on an event page,
+  speakers section and sessions alike, the photo set for THAT event wins, else
+  the first photo ever provided for the speaker, else the initials
+  placeholder), `law_speaker_first_appearance()`
+  (the archive/profile rule: organisation, job title, photo and biography from
+  the FIRST appearance, each field falling through to a later one only when
+  empty),
+  `law_speaker_appearance_for_event()` (the exact row for one event, event row
+  first then its sessions), `law_speaker_photo_url()` (row attachment, else the
+  featured image).
 - `law_speaker_post_profile()`, `law_event_speaker_cards()`,
   `law_speaker_card()`: the profile and card shapes the archive/single views
-  render.
-- `law_speakers_confirmed_event_map()`: the archive source — one profile per
-  speaker referenced by a Confirmed event (visibility derived from events, not
-  status).
+  render. The profile carries `appearances`; a card takes its values from the
+  row, and a session row falls through to the parent event's row for the same
+  speaker, then to the speaker post for the photo and biography. The card's
+  photo is the `medium` size, since the single event view renders it at 5.5rem.
+  `templates/speaker.php` shows no headline organisation/job title **and no
+  biography**: each "Speaking at" card (`parts/loop/event.php`, `speaker` arg)
+  renders a divider and "[name]'s organisation: …" / "[name]'s position: …",
+  and the biography is on the event page's speaker cards.
+- `law_speaker_bio_excerpt()` (24 words, an explicit `…` because
+  `wp_trim_words()` otherwise appends the `&hellip;` entity, and
+  `strip_shortcodes()` because an appearance biography never passes through
+  `the_content`) and `law_speaker_bio_summary()` (the full plain text, the
+  excerpt, and whether the excerpt trimmed anything — the card offers "Read
+  full bio" only when it did). `law_speaker_seo_description()` reuses the
+  excerpt.
+- `law_speaker_dialog_register()` / `law_speaker_dialogs()`: the request-scoped
+  registry behind the single event view's biography dialogs. A speaker card
+  registers and gets an element id back; `parts/calendar-body.php` prints the
+  registered dialogs once, after the speaker and session sections. A registry
+  rather than an index threaded through the templates because the cards render
+  in two places (the event's Speakers list and each session panel) and every
+  dialog must land **outside** the sessions accordion: a closed `<details>`
+  renders nothing, so a dialog inside one could never open. One dialog per
+  card, not per speaker, since two session rows for the same person can
+  legitimately carry different biographies.
 - `law_event_session_ids()`, `law_event_session_rows()`: an event's sessions
   (child `law_session` posts) and their rows.
 
@@ -784,7 +844,12 @@ screens, columns, emails) → migration (report, runner, page).
   speaker-photo validation (real MIME sniff, 5 MB cap, pixel bounds) and the
   media sideload.
 - `law_events_form_save_speakers()`, `law_events_form_save_sessions()`: upsert
-  speakers/sessions and store the relationship rows.
+  speakers (identity) and store the appearance rows with this event's
+  organisation, job title and photo; a re-save without a new upload keeps the
+  photo already on the row for the same speaker (the posted `photo_id` is a
+  display echo, never trusted). Session rows copy the matched event row's
+  details. `law_events_form_values()` prefills organisation/job title from the
+  row, not the speaker post.
 - `law_events_form_handler()` (on `admin_post_law_event_form`): nonce,
   honeypot, rate limit (15 per 10 minutes), `law_events_user_can_submit()`,
   then `law_user_can_manage_event()` on an edit. **Cancelled and Rejected
@@ -1041,14 +1106,22 @@ event status by the rebuild) plus "Reference".
 - **`fields.php`** — `law_field_text/number/textarea/select/checkbox/datetime/`
   `media/repeater/relationship()`: the reusable meta-box field renderers, plus
   a `wp_ajax_law_events_search_posts` endpoint and `law-admin.js` enqueue that
-  power the speaker/organisation relationship pickers.
+  power the speaker/organisation relationship pickers. A speaker row carries
+  role, organisation, job title, a per-appearance photo control
+  (`law_field_relationship_photo()`, `wp.media` in `law-admin.js`) and a
+  per-appearance biography textarea on its own full-width line. `law-admin.js`
+  builds the identical markup for rows added via the AJAX search, so the two
+  cannot drift.
 - **`event-screen.php`** — the custom event edit screen: meta boxes for
   workflow actions, fee (with override), programme facts, invoice contact,
   people (co-owners/contacts), speakers, sessions, the comment thread and the
   activity log. `law_event_admin_save()` (on `save_post_law_event`, nonce +
   cap + reentrancy guard) writes the meta, applies the slot via the shared
   helper, and routes committee actions through the workflow engine.
-  `law_events_rows_from_post()` reads the repeater rows.
+  `law_events_rows_from_post()` reads the repeater rows, sanitising per key
+  rather than mapping one function over the row: a speaker's `bio` takes
+  `sanitize_textarea_field()`, since `sanitize_text_field()` would collapse its
+  line breaks before the meta schema's own textarea sanitiser ever saw them.
 - **`speaker-screen.php`, `session-screen.php`**: the speaker and session edit
   meta boxes and their saves.
 - **`columns.php`**: admin list columns (status, host, slot, payment), a status
@@ -1077,7 +1150,21 @@ event status by the rebuild) plus "Reference".
   and CSV-export admin-post handlers.
 - **`runner.php`** — the engine. `law_migration_steps()` defines the ordered
   steps: snapshot → preflight → co-owners → speakers → events → sessions →
-  comments → history → counters → redirects → notifications → pages.
+  speaker appearances (4b) → comments → history → counters → redirects →
+  notifications → pages. Step 2 imports each form 8 (Event > speaker) child's
+  photo once and records it in the map (`speaker_photos`); step 3 builds the
+  event's rows with `law_migration_speaker_rows()` (field 3 Organisation /
+  firm / chambers, field 4 Job title / role, field 7 Biography, the mapped
+  photo; legacy field 48 Speakers (list) rows as the fallback, which has no
+  biography column); step 4 copies the event row onto session rows
+  (`law_migration_session_speaker_rows()`); step 4b
+  (`law_migration_run_speaker_appearances()`) refreshes existing rows'
+  organisation, job title, photo and biography from the source entries,
+  idempotently, so a database migrated before details were per appearance is
+  fixed without a fresh run, and production gets a check. Its comparison
+  sanitises each field the way the schema would (the biography with the
+  textarea sanitiser, so line breaks are not a permanent diff) and truncates
+  biographies in the log line, which would otherwise be paragraphs long.
   `law_migration_create_snapshot()` runs `mysqldump` (password via `MYSQL_PWD`,
   not a `-p` CLI arg) with a random filename in a protected dir, then
   `law_migration_snapshot_ok()` fetches the snapshot's own public URL
@@ -1172,9 +1259,20 @@ These predate the rebuild and now branch on `law_events_source()`.
   (profile), `account-event-form.php` (submit/edit), `account-events.php`
   (My events + thread), `account-dashboard.php` (committee review queue),
   `event-single.php` (single event), `calendar.php` / `calendar-committee.php`
-  (programme). The committee calendar template enforces
-  `law_user_is_committee()` in code, not only via the Members plugin.
-- **Layout parts** (`parts/layout/`): `back-link.php`, `hero-title.php` and
+  (programme), `speakers.php` (the speakers archive, page template "Speakers",
+  page 658 Speakers) and `speaker.php` (a single profile — no "Template Name",
+  routed in by `law_speakers_single_template()`; it shows the photo, name,
+  website link and "Speaking at" cards, with the organisation, job title and
+  biography now per appearance and shown on the event pages). The committee
+  calendar template enforces `law_user_is_committee()` in code, not only via
+  the Members plugin. The archive's loop card is `parts/loop/speaker.php` and
+  its assets are `assets/js/speaker-search.js` and `assets/css/speakers.css`,
+  enqueued only on those two templates — which is why the single event view's
+  speaker cards are styled in `calendar.css` with `.law-cal-*` classes.
+- **Layout parts** (`parts/layout/`): `back-link.php`, `hero-title.php` (whose
+  `after_title` arg replaced the old event-specific `meta` arg: it takes
+  pre-escaped markup for a full-width cell below the title and is deliberately
+  not passed through `wp_kses_post()`, which would strip inline `<svg>`) and
   `modal.php`, the reusable confirmation dialog. Pass it an id, a title, copy
   paragraphs, an optional note field and the confirm button, and it renders the
   markup `law-modal.css` and `law-modal.js` expect and enqueues both itself.
@@ -1182,7 +1280,35 @@ These predate the rebuild and now branch on `law_events_source()`.
   `data-law-modal-busy`, the in-flight text a fetch layer swaps in), and
   `'confirm' => false` renders an informational dialog with no submit button —
   what the dashboard's script-opened success dialog uses.
-- **Parts** (`parts/events/`): `profile-fields.php` (the shared
+- **Calendar parts** (`parts/`): `calendar-body.php` (the shared list/single
+  view), `calendar-events.php`, `calendar-filters.php` and
+  `calendar-event-details.php` — the single event view's facts box, rendered
+  inside the hero below the title via `hero-title.php`'s `after_title` arg. It
+  holds its own hand-drawn line-icon set (the theme has no icon library) and
+  lays six facts out in a three-column grid. It exists because those facts used
+  to sit as loose white text on the hero photograph, at roughly 1.7-3:1 against
+  the 4.5:1 WCAG minimum for body text; a solid panel supplies its own
+  background whatever is behind it, which is the only fix that does not depend
+  on the image.
+- **Parts** (`parts/events/`): `speaker-card.php` (one speaker card on the
+  single event view — photo or initials, name, "job title, organisation", a
+  24-word biography excerpt and the "Read full bio" pair: the
+  `[data-law-modal-enhanced]` button and the `[data-law-modal-fallback]`
+  `<details>` holding the full text for the no-JS path, which also keeps it
+  indexable now that the profile page carries no biography. Used by both the
+  event's Speakers list and every session panel, so the two cannot drift) and
+  `speaker-bio-modal.php` (that dialog: photo, name, role and full biography.
+  Like `booking-modal.php` it renders the shared `.law-modal` skeleton itself
+  rather than going through `parts/layout/modal.php`, whose `copy` args would
+  nest `<p>` inside `<p>` once the biography goes through `wpautop()` and which
+  has no slot for the leading photo. The biography is the dialog's only
+  scrolling region: `.law-modal__dialog`'s own `overflow-y` would carry the
+  absolutely positioned close button off the top of a long bio, so the
+  speaker dialog is a flex column that does not scroll and the bio carries
+  `tabindex="0"` so it can be scrolled from the keyboard);
+  `booking-success-modal.php` (the post-booking
+  confirmation dialog, extracted from `booking-modal.php` so it can render on
+  `wp_footer`), `profile-fields.php` (the shared
   registration/profile field block, with conditional "Other: please specify"
   inputs), `people-repeater.php` (the co-owner/contact repeater on the front
   end), `thread.php` (the comment thread, host and committee contexts, which
@@ -1215,7 +1341,10 @@ These predate the rebuild and now branch on `law_events_source()`.
   confirmation-modal component (with `functions/modal.php` and
   `parts/layout/modal.php`): the JS hides and disables every
   `[data-law-modal-fallback]` block, turns each `[data-law-modal-open]` button
-  into an opener, enables only the `[data-law-modal-field]` in the open dialog
+  into an opener, reveals an opener that also carries
+  `[data-law-modal-enhanced]` (a control with no job without JS, revealed only
+  once its dialog has been found, so a dialog that failed to render leaves no
+  dead button), enables only the `[data-law-modal-field]` in the open dialog
   and traps Tab inside it. The committee dashboard uses it for the six
   actions — Approve, Send back, Reject, Mark paid & confirm, Cancel event
   (whose close button is relabelled "Keep the event", because the default

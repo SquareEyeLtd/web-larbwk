@@ -13,9 +13,11 @@
  *   content  (bool)   Output the_content() below the title.
  *   text     (string) HTML to output below the title instead of the_content(),
  *                     e.g. an ACF banner text field.
- *   meta     (array)  Labelled lines below the title, each
- *                     array( 'label' => 'Date', 'value' => '…' ). Used by the
- *                     single event view for Date / Time / Location etc.
+ *   after_title (string) Pre-escaped HTML for a full-width cell below the title.
+ *                     The caller owns the escaping, because this is markup, not
+ *                     copy: it is NOT run through wp_kses_post(), which would
+ *                     strip inline <svg>. The single event view uses it for the
+ *                     event details box (parts/calendar-event-details.php).
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -30,7 +32,7 @@ $law_hero_image    = array_key_exists( 'image', $args ) ? (string) $args['image'
 $law_hero_classes  = trim( 'hero ' . (string) ( $args['classes'] ?? '' ) );
 $law_hero_content  = ! empty( $args['content'] );
 $law_hero_text     = isset( $args['text'] ) ? (string) $args['text'] : '';
-$law_hero_meta     = isset( $args['meta'] ) && is_array( $args['meta'] ) ? $args['meta'] : array();
+$law_hero_after    = isset( $args['after_title'] ) ? (string) $args['after_title'] : '';
 ?>
 <section class="<?php echo esc_attr( $law_hero_classes ); ?>"<?php if ( $law_hero_image ) : ?> style="background-image: url('<?php echo esc_url( $law_hero_image ); ?>');"<?php endif; ?>>
 	<div class="overlay"></div>
@@ -52,25 +54,9 @@ $law_hero_meta     = isset( $args['meta'] ) && is_array( $args['meta'] ) ? $args
 					<?php echo wp_kses_post( $law_hero_text ); ?>
 				</div>
 			<?php endif; ?>
-			<?php if ( $law_hero_meta ) : ?>
-				<div class="large-9 cell">
-					<ul class="hero-meta">
-						<?php foreach ( $law_hero_meta as $law_hero_meta_row ) : ?>
-							<?php
-							$law_hero_meta_label = trim( (string) ( $law_hero_meta_row['label'] ?? '' ) );
-							$law_hero_meta_value = trim( (string) ( $law_hero_meta_row['value'] ?? '' ) );
-							if ( '' === $law_hero_meta_value ) {
-								continue;
-							}
-							?>
-							<li>
-								<?php if ( '' !== $law_hero_meta_label ) : ?>
-									<strong><?php echo esc_html( $law_hero_meta_label ); ?>:</strong>
-								<?php endif; ?>
-								<?php echo esc_html( $law_hero_meta_value ); ?>
-							</li>
-						<?php endforeach; ?>
-					</ul>
+			<?php if ( '' !== $law_hero_after ) : ?>
+				<div class="large-12 cell">
+					<?php echo $law_hero_after; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- pre-escaped by the caller, see the after_title note above. ?>
 				</div>
 			<?php endif; ?>
 		</div>

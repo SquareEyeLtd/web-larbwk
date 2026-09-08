@@ -59,12 +59,16 @@ function law_event_meta_schema() {
 	);
 }
 
-/** law_speaker meta schema. */
+/**
+ * law_speaker meta schema: identity only. Organisation, job title, photo and
+ * biography are per appearance and live on the event's _law_speakers rows
+ * (the featured image and the post's editor content are only fallbacks). The
+ * old _law_organisation and _law_job_title rows left in the database are
+ * inert.
+ */
 function law_speaker_meta_schema() {
 	return array(
 		'_law_speaker_email'    => 'email',
-		'_law_organisation'     => 'text',
-		'_law_job_title'        => 'text',
 		'_law_website'          => 'url',
 		'_law_organisation_ids' => 'int_array', // Reserved for 4.2 additional organisations.
 		'_law_gf_entry_id'      => 'int',
@@ -236,11 +240,27 @@ function law_events_sanitize_value( $value, $type ) {
 				if ( ! $id ) {
 					continue;
 				}
+				// The appearance: what this speaker was at THIS event. Organisation,
+				// job title, photo and biography are per event, not per person (the
+				// same person speaks for different firms, and writes a different
+				// biography, at different events). The pre-appearance key
+				// 'organisation_override' is read as 'organisation' so rows saved
+				// before the change keep working; a row with no biography falls back
+				// to the speaker post's editor content at read time
+				// (law_speaker_card()), the way an empty photo_id falls back to the
+				// featured image.
+				$organisation = (string) ( $row['organisation'] ?? '' );
+				if ( '' === trim( $organisation ) ) {
+					$organisation = (string) ( $row['organisation_override'] ?? '' );
+				}
 				$rows[] = array(
-					'speaker_id'            => $id,
-					'role'                  => sanitize_text_field( (string) ( $row['role'] ?? '' ) ),
-					'organisation_override' => sanitize_text_field( (string) ( $row['organisation_override'] ?? '' ) ),
-					'sort'                  => isset( $row['sort'] ) ? absint( $row['sort'] ) : $sort,
+					'speaker_id'   => $id,
+					'role'         => sanitize_text_field( (string) ( $row['role'] ?? '' ) ),
+					'organisation' => sanitize_text_field( $organisation ),
+					'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
+					'photo_id'     => absint( $row['photo_id'] ?? 0 ),
+					'bio'          => sanitize_textarea_field( (string) ( $row['bio'] ?? '' ) ),
+					'sort'         => isset( $row['sort'] ) ? absint( $row['sort'] ) : $sort,
 				);
 				$sort++;
 			}

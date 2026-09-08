@@ -290,14 +290,16 @@
 	vertical-align: -0.05em;
 }
 
-.law-speaker__bio {
-	margin-top: 1.5rem;
-}
-
 .law-speaker__events {
 	margin-top: 2.5rem;
 }
 
 .law-speaker__events .law-cal-card {
 	margin-bottom: 1rem;
+}
+
+/* "[Name] is speaking at:" — the name and the list heading are one h2; the
+   suffix sits in normal weight so the name still reads as the title. */
+.law-speaker__name-suffix {
+	font-weight: 400;
 }

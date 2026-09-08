@@ -38,18 +38,39 @@ if ( $event ) {
 		$law_places_meta = array( 'label' => 'Available tickets', 'value' => $event['tickets'] ? number_format_i18n( $event['tickets'] ) : '' );
 	}
 
+	// The details box that sits in the hero below the title. Built here and
+	// passed to the hero partial as pre-escaped markup, so parts/layout/
+	// hero-title.php stays generic page chrome (it is shared with 404.php,
+	// privacy, patrons and eight others) rather than carrying an events-module
+	// box, an icon set and a booking control.
+	//
+	// Places remaining is deliberately kept as its own footer fact rather than
+	// left to the booking control: law_booking_render_action() only states
+	// availability in two of its five states ("N places left" when bookable,
+	// "fully booked" when sold out), so an already-booked attendee wondering
+	// whether to bring colleagues would otherwise lose the number entirely.
+	ob_start();
+	get_template_part(
+		'parts/calendar-event-details',
+		null,
+		array(
+			'event'  => $event,
+			'places' => $law_places_meta,
+			'rows'   => array(
+				array( 'key' => 'date', 'label' => 'Date', 'value' => $event['date'] ? law_calendar_day_heading( $event['date'] ) : 'Slot not confirmed' ),
+				array( 'key' => 'time', 'label' => 'Time', 'value' => $event['start'] ? law_calendar_event_time_label( $event ) : '' ),
+				array( 'key' => 'venue', 'label' => 'Location', 'value' => $event['venue'] ),
+				array( 'key' => 'host', 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
+				array( 'key' => 'type', 'label' => 'Type', 'value' => $event['type'] ),
+				array( 'key' => 'sector', 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
+			),
+		)
+	);
+
 	$hero_args = array(
-		'title'   => $event['title'],
-		'classes' => 'law-event-hero',
-		'meta'    => array(
-			array( 'label' => 'Date', 'value' => $event['date'] ? law_calendar_day_heading( $event['date'] ) : 'Slot not confirmed' ),
-			array( 'label' => 'Time', 'value' => $event['start'] ? law_calendar_event_time_label( $event ) : '' ),
-			array( 'label' => 'Location', 'value' => $event['venue'] ),
-			array( 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
-			array( 'label' => 'Type', 'value' => $event['type'] ),
-			array( 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
-			$law_places_meta,
-		),
+		'title'       => $event['title'],
+		'classes'     => 'law-event-hero',
+		'after_title' => (string) ob_get_clean(),
 	);
 } else {
 	$hero_args = array();
@@ -99,6 +120,7 @@ if ( $event ) {
 									<?php law_calendar_edit_link( $event ); ?>
 								</p>
 							<?php endif; ?>
+							<h2 class="screen-reader-text"><?php esc_html_e( 'About this event', 'law' ); ?></h2>
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
@@ -155,30 +177,9 @@ if ( $event ) {
 													</div>
 												<?php endif; ?>
 												<?php if ( ! empty( $session['speakers'] ) ) : ?>
-													<ul class="law-cal-session__speakers">
+													<ul class="law-cal-speakers law-cal-speakers--cards">
 														<?php foreach ( $session['speakers'] as $session_speaker ) : ?>
-															<li>
-																<span class="law-cal-session__photo">
-																	<?php if ( ! empty( $session_speaker['photo'] ) ) : ?>
-																		<img src="<?php echo esc_url( $session_speaker['photo'] ); ?>" alt="<?php echo esc_attr( $session_speaker['name'] ); ?>" width="32" height="32">
-																	<?php else : ?>
-																		<span class="law-cal-session__initials" aria-hidden="true"><?php echo esc_html( law_calendar_name_initials( $session_speaker['name'] ) ); ?></span>
-																	<?php endif; ?>
-																</span>
-																<span class="law-cal-session__speaker-body">
-																	<?php if ( ! empty( $session_speaker['url'] ) ) : ?>
-																		<a href="<?php echo esc_url( $session_speaker['url'] ); ?>"><?php echo esc_html( $session_speaker['name'] ); ?></a>
-																	<?php else : ?>
-																		<?php echo esc_html( $session_speaker['name'] ); ?>
-																	<?php endif; ?>
-																	<?php
-																	$role = array_filter( array( $session_speaker['job_title'], $session_speaker['organisation'] ) );
-																	if ( $role ) {
-																		echo '<span class="law-cal-session__role">' . esc_html( implode( ', ', $role ) ) . '</span>';
-																	}
-																	?>
-																</span>
-															</li>
+															<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $session_speaker ) ); ?>
 														<?php endforeach; ?>
 													</ul>
 												<?php endif; ?>
@@ -190,44 +191,29 @@ if ( $event ) {
 							<?php if ( empty( $event['sessions'] ) && ! empty( $event['speakers'] ) ) : ?>
 								<section class="law-cal-acc">
 									<h2 class="law-cal-acc__heading">Speakers</h2>
-									<ul class="law-cal-speakers law-cal-speakers--large">
+									<ul class="law-cal-speakers law-cal-speakers--cards">
 										<?php foreach ( $event['speakers'] as $speaker ) : ?>
-											<li>
-												<span class="law-cal-speakers__photo">
-													<?php if ( ! empty( $speaker['photo'] ) ) : ?>
-														<img src="<?php echo esc_url( $speaker['photo'] ); ?>" alt="<?php echo esc_attr( $speaker['name'] ); ?>" loading="lazy">
-													<?php else : ?>
-														<span class="law-cal-speakers__initials" aria-hidden="true"><?php echo esc_html( law_calendar_name_initials( $speaker['name'] ) ); ?></span>
-													<?php endif; ?>
-												</span>
-												<span class="law-cal-speakers__body">
-													<?php if ( $speaker['url'] ) : ?>
-														<a href="<?php echo esc_url( $speaker['url'] ); ?>"><?php echo esc_html( $speaker['name'] ); ?></a>
-													<?php else : ?>
-														<?php echo esc_html( $speaker['name'] ); ?>
-													<?php endif; ?>
-													<?php
-													$role = array_filter( array( $speaker['job_title'], $speaker['organisation'] ) );
-													if ( $role ) {
-														echo '<span class="law-cal-speakers__role">' . esc_html( implode( ', ', $role ) ) . '</span>';
-													}
-													?>
-												</span>
-											</li>
+											<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $speaker ) ); ?>
 										<?php endforeach; ?>
 									</ul>
 								</section>
 							<?php endif; ?>
+							<?php
+							// The "Read full bio" dialogs the cards above registered, printed
+							// here and nowhere else: they must land outside the sessions
+							// accordion, because a closed <details> renders nothing and a
+							// dialog inside one could never be opened.
+							foreach ( law_speaker_dialogs() as $law_cal_dialog ) {
+								get_template_part( 'parts/events/speaker-bio-modal', null, $law_cal_dialog );
+							}
+							?>
 							<div class="law-cal-detail__actions law-booking-actions">
 								<?php
 								// The five-state booking control (Book now / waitlist /
-								// open soon / closed / you're booked) and, on ?law_book=1,
-								// the inline no-JS booking form. Renders nothing on the
-								// legacy source. No arrow on Book now: it opens a modal on
-								// this page, and the arrow SVG means "leaves this page".
-								if ( function_exists( 'law_booking_render_action' ) ) {
-									law_booking_render_action( $event );
-								}
+								// open soon / closed / you're booked) used to sit here. It
+								// now renders in the hero's details box next to the places
+								// count, so the decision and the means to act on it are in
+								// one place. See parts/calendar-event-details.php.
 								?>
 								<a class="button" href="<?php echo esc_url( law_calendar_url() ); ?>"><?php esc_html_e( 'Back to events calendar', 'law' ); ?></a>
 							</div>

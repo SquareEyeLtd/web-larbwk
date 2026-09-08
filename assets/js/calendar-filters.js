@@ -242,8 +242,11 @@
 				return;
 			}
 			event.preventDefault();
-			var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-			target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+			/* No behavior option and no reduced-motion check: both come from
+			   html's scroll-behavior in app.css, as does the header offset via
+			   scroll-padding-top. preventDefault stays because this replaces
+			   the history entry rather than pushing one. */
+			target.scrollIntoView({ block: 'start' });
 			window.history.replaceState(null, '', link.getAttribute('href'));
 		});
 	});

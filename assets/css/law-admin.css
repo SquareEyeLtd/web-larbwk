@@ -6,9 +6,16 @@
 .law-rel-results .button-link { display: block; width: 100%; text-align: left; padding: 6px 10px; }
 .law-rel-results .button-link:hover { background: #f0f0f1; }
 .law-rel-chosen { margin: 8px 0 0; max-width: 640px; }
-.law-rel-item { display: flex; gap: 8px; align-items: center; padding: 6px 8px; background: #f6f7f7; border: 1px solid #dcdcde; margin-bottom: 4px; }
+.law-rel-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; background: #f6f7f7; border: 1px solid #dcdcde; margin-bottom: 4px; }
 .law-rel-item .law-rel-title { min-width: 160px; font-weight: 600; }
-.law-rel-item input[type="text"] { flex: 1; }
+.law-rel-item input[type="text"] { flex: 1; min-width: 140px; }
+.law-rel-photo { display: inline-flex; align-items: center; gap: 6px; }
+.law-rel-photo-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 2px; border: 1px solid #dcdcde; }
+/* The per-appearance biography: its own full-width line under the row's inline
+   controls, which are all flex: 1 on one wrapping line and would squeeze a
+   textarea to nothing. */
+.law-rel-bio { flex: 1 0 100%; margin: 2px 0 0; resize: vertical; }
+.law-speaker-appearances li { margin-bottom: 8px; }
 .law-thread { max-height: 340px; overflow: auto; }
 .law-thread__item { padding: 8px 10px; border-left: 3px solid #dcdcde; margin-bottom: 8px; background: #f9f9f9; }
 .law-thread__item.is-committee { border-left-color: #2271b1; }

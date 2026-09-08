@@ -243,16 +243,10 @@
 		}, true);
 	});
 
-	/* Section nav: smooth scroll + highlight. */
-	document.querySelectorAll('.law-form-nav a').forEach(function (link) {
-		link.addEventListener('click', function (event) {
-			var target = document.querySelector(link.getAttribute('href'));
-			if (target) {
-				event.preventDefault();
-				target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-			}
-		});
-	});
+	/* The section nav needs no handler: smooth scrolling and the header offset
+	   are site-wide CSS (html's scroll-behavior and scroll-padding-top in
+	   app.css), so the browser's own hash navigation does the right thing and
+	   also keeps the URL and history correct, which this handler did not. */
 
 	/* Thread reply without a reload: post via fetch (law_ajax=1 makes the
 	   handler answer JSON), append the returned bubble to the thread and

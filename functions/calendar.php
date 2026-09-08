@@ -1160,10 +1160,11 @@ function law_calendar_entry_ids_from_value( $raw ) {
 }
 
 /**
- * Speakers referenced by form 8 entry IDs (Sessions field 6).
+ * Speakers referenced by form 8 (Event > speaker) entry IDs (field 6 Speakers
+ * on form 9, Event > session).
  *
  * @param mixed $raw Multiselect value.
- * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string}>
+ * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string,bio:string}>
  */
 function law_calendar_speakers_from_ids( $raw ) {
 	if ( ! class_exists( 'GFAPI' ) ) {
@@ -1187,6 +1188,7 @@ function law_calendar_speakers_from_ids( $raw ) {
 			'job_title'    => trim( (string) rgar( $entry, '4' ) ),
 			'url'          => law_calendar_speaker_profile_url( $entry_id ),
 			'photo'        => law_calendar_speaker_photo_url( rgar( $entry, '6' ) ),
+			'bio'          => trim( (string) rgar( $entry, '7' ) ),
 		);
 	}
 
@@ -1303,7 +1305,7 @@ function law_calendar_speaker_photo_url( $raw ) {
  * Website 5, Photo 6.
  *
  * @param array $entry Form 2 entry.
- * @return array<int,array{name:string,organisation:string,job_title:string,url:string,photo:string}>
+ * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string,bio:string}>
  */
 function law_calendar_speakers( $entry ) {
 	if ( ! is_array( $entry ) ) {
@@ -1320,7 +1322,7 @@ function law_calendar_speakers( $entry ) {
 
 /**
  * @param array $entry Form 2 entry.
- * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string}>
+ * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string,bio:string}>
  */
 function law_calendar_speakers_from_nested( $entry ) {
 	$children = law_calendar_nested_children( $entry, law_calendar_speakers_nested_field_id() );
@@ -1342,6 +1344,7 @@ function law_calendar_speakers_from_nested( $entry ) {
 			'job_title'    => trim( (string) rgar( $child, '4' ) ),
 			'url'          => law_calendar_speaker_profile_url( $entry_id ),
 			'photo'        => law_calendar_speaker_photo_url( rgar( $child, '6' ) ),
+			'bio'          => trim( (string) rgar( $child, '7' ) ),
 		);
 	}
 
@@ -1350,7 +1353,7 @@ function law_calendar_speakers_from_nested( $entry ) {
 
 /**
  * @param mixed $raw Serialized List field 48 value.
- * @return array<int,array{name:string,organisation:string,job_title:string,url:string,photo:string}>
+ * @return array<int,array{id:int,name:string,organisation:string,job_title:string,url:string,photo:string,bio:string}>
  */
 function law_calendar_speakers_from_list( $raw ) {
 	$rows = maybe_unserialize( $raw );
@@ -1366,12 +1369,19 @@ function law_calendar_speakers_from_list( $raw ) {
 		if ( '' === $name ) {
 			continue;
 		}
+		// The legacy list field has no biography column and no entry of its own,
+		// so the card shape is completed with empties rather than left short:
+		// every reader can then use $speaker['bio'] and ['id'] without an
+		// undefined-key warning. Its URL is the speaker's own website, not a
+		// profile permalink on this site.
 		$speakers[] = array(
+			'id'           => 0,
 			'name'         => $name,
 			'organisation' => trim( (string) ( $row['Organisation'] ?? '' ) ),
 			'job_title'    => trim( (string) ( $row['Job title'] ?? '' ) ),
 			'url'          => esc_url_raw( (string) ( $row['URL'] ?? '' ) ),
 			'photo'        => '',
+			'bio'          => '',
 		);
 	}
 	return $speakers;

@@ -300,9 +300,8 @@
 
 /* --- Day sections -------------------------------------------------------- */
 
-.law-cal-day-section {
-	scroll-margin-top: calc(var(--law-cal-sticky-top, 0px) + 1rem);
-}
+/* No scroll offset here: html's scroll-padding-top in app.css handles every
+   anchor on the site, including the day links. */
 
 .law-cal-day-bar {
 	margin: 2.25rem 0 1rem;
@@ -340,6 +339,7 @@
 	padding: 1.25rem 1.5rem;
 	margin: 0 0 1rem;
 	background: #ececf1;
+	border: 2px solid #292459;
 }
 
 @media (min-width: 48em) {
@@ -351,8 +351,10 @@
 	}
 }
 
+/* Sponsored cards sit on the same grey fill as the rest; the orange border is
+   the only difference, so the listing reads as one surface. */
 .law-event-card--sponsored {
-	background: #fff8d4;
+	border-color: #ef7d05;
 }
 
 .law-event-card__body {
@@ -388,6 +390,18 @@
 	color: #555;
 	font-size: 0.85rem;
 	line-height: 1.4;
+}
+
+/* Speaker profile "Speaking at" cards: the person's organisation and position
+   at this particular event, separated from the venue/host lines. */
+.law-event-card__divider {
+	border: 0;
+	border-top: 1px solid #dcdcdc;
+	margin: 0.6rem 0 0.5rem;
+}
+
+.law-event-card__meta--speaker {
+	color: #333;
 }
 
 .law-event-card__actions {
@@ -618,28 +632,10 @@
 
 /* --- Single event view ---------------------------------------------------- */
 
-/* Hero meta lines: Date / Time / Location etc. (parts/layout/hero-title.php) */
-#pages .hero .hero-meta {
-	list-style: none;
-	margin: 1.5rem 0 0;
-	padding: 0;
-	color: #fff;
-	font-size: 1.15rem;
-	line-height: 1.55;
-	text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-}
-
-#pages .hero .hero-meta li {
-	margin: 0 0 0.2rem;
-}
-
-#pages .hero .hero-meta strong {
-	font-weight: 700;
-}
-
-.law-event-hero .grid-container {
-	padding-bottom: 80px;
-}
+/* The hero's facts now live in a solid box (.law-event-details, at the end of
+   this file) rather than as loose white text on the photograph. The old
+   .hero-meta rules and an unreachable .law-event-hero padding override (it
+   lacked the #pages prefix every hero rule needs) were removed with them. */
 
 /* Back link (parts/layout/back-link.php), shared with the speaker profile.
    The .law-cal selectors outweigh ".law-cal a { color: inherit }". */
@@ -757,36 +753,61 @@
 	line-height: 1.5;
 }
 
+/* --- Speaker cards (parts/events/speaker-card.php) ---
+   Two per row from 48em, each a block with an orange rule down its left edge
+   rather than a box: the single event view is already a light page with an
+   orange-ruled sessions accordion, and a filled card would compete with it.
+   Used by the event's own Speakers list and by every session panel, so the
+   same rules have to work at both widths. */
 .law-cal-speakers {
 	list-style: none;
 	padding: 0;
 	margin: 0;
 }
 
-.law-cal-speakers li {
-	display: flex;
-	gap: 0.75rem;
-	align-items: flex-start;
-	margin: 0 0 0.85rem;
-	font-size: 0.9rem;
-	line-height: 1.35;
+.law-cal-speakers--cards {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 1.75rem 2rem;
+	padding-top: 0.35rem;
 }
 
-.law-cal-speakers li:last-child {
-	margin-bottom: 0;
+@media screen and (min-width: 48em) {
+	.law-cal-speakers--cards {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+/* margin, not just the grid gap: the shared .law-cal-speakers list rules and
+   the theme's list resets both set one, and a stray margin would double the
+   gap on one axis only. */
+.law-cal-speakers__card {
+	margin: 0;
+	padding: 0.1rem 0 0.2rem 1.25rem;
+	border-left: 3px solid #ef7d05;
+	font-size: 1rem;
+	line-height: 1.4;
+}
+
+.law-cal-speakers__head {
+	display: flex;
+	gap: 1rem;
+	align-items: center;
 }
 
 .law-cal-speakers__photo {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	flex: 0 0 3rem;
-	width: 3rem;
-	height: 3rem;
+	flex: 0 0 5.5rem;
+	width: 5.5rem;
+	height: 5.5rem;
 	background: rgba(38, 30, 91, 0.15);
 	overflow: hidden;
 }
 
+/* object-fit because the card asks for the uncropped 'medium' size, not the
+   square-cropped thumbnail (law_speaker_card()). */
 .law-cal-speakers__photo img {
 	display: block;
 	width: 100%;
@@ -799,30 +820,23 @@
 	color: rgba(41, 36, 89, 0.5);
 	font-family: poppins, sans-serif;
 	font-weight: 600;
-	font-size: 1rem;
+	font-size: 1.6rem;
 	letter-spacing: 0.05em;
-}
-
-/* Event listing speakers: bigger photos, roomier rows. */
-.law-cal-speakers--large li {
-	align-items: center;
-	margin: 0 0 1.1rem;
-	font-size: 1rem;
-}
-
-.law-cal-speakers--large .law-cal-speakers__photo {
-	flex-basis: 4.5rem;
-	width: 4.5rem;
-	height: 4.5rem;
-}
-
-.law-cal-speakers--large .law-cal-speakers__initials {
-	font-size: 1.4rem;
 }
 
 .law-cal-speakers__body {
 	min-width: 0;
 	flex: 1;
+	overflow-wrap: anywhere;
+}
+
+.law-cal-speakers__name {
+	display: block;
+	color: #ef7d05;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+	font-size: 1.05rem;
+	line-height: 1.3;
 }
 
 .law-cal-speakers a {
@@ -837,13 +851,102 @@
 
 .law-cal-speakers__role {
 	display: block;
+	margin-top: 0.15rem;
 	color: #666;
-	font-size: 0.8rem;
+	font-size: 0.85rem;
 	font-weight: 400;
 }
 
+.law-cal-speakers__bio {
+	margin: 0.85rem 0 0;
+	color: #292459;
+	font-size: 0.9rem;
+	line-height: 1.5;
+}
+
+/* A link in all but element: .law-cal a never matches a button, and Foundation
+   has no button reset, so every inherited property is restated. */
+.law-cal .law-cal-speakers__biolink {
+	display: inline;
+	margin: 0.35rem 0 0;
+	padding: 0;
+	background: none;
+	border: 0;
+	color: #ef7d05;
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 600;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.law-cal .law-cal-speakers__biolink:hover,
+.law-cal .law-cal-speakers__biolink:focus {
+	color: #292459;
+}
+
+.law-cal .law-cal-speakers__biolink:focus-visible {
+	outline: 2px solid #292459;
+	outline-offset: 2px;
+}
+
+/* Foundation's [hidden] { display: none } and the rule above have the same
+   specificity, so without !important a JS-only opener would show through
+   before its modal is confirmed (the same reason law-modal.css:10 shouts). */
+[data-law-modal-enhanced][hidden] {
+	display: none !important;
+}
+
+/* The no-JS path (law-modal.js hides it when the script runs). The marker
+   rules further down are scoped to .law-cal-session__summary, so this summary
+   would otherwise keep the browser's default triangle. */
+.law-cal-speakers__fallback {
+	margin-top: 0.35rem;
+}
+
+.law-cal-speakers__fallback > summary {
+	display: inline-block;
+	color: #ef7d05;
+	font-size: 0.9rem;
+	font-weight: 600;
+	text-decoration: underline;
+	cursor: pointer;
+	list-style: none;
+}
+
+.law-cal-speakers__fallback > summary::-webkit-details-marker {
+	display: none;
+}
+
+.law-cal-speakers__fallback > summary::marker {
+	content: '';
+}
+
+.law-cal-speakers__fallback > summary:focus-visible {
+	outline: 2px solid #292459;
+	outline-offset: 2px;
+}
+
+.law-cal-speakers__fullbio {
+	margin-top: 0.5rem;
+	color: #292459;
+	font-size: 0.9rem;
+	line-height: 1.5;
+}
+
+.law-cal-speakers__fullbio p {
+	margin: 0 0 0.75rem;
+	line-height: 1.5;
+}
+
+.law-cal-speakers__fullbio p:last-child {
+	margin-bottom: 0;
+}
+
+/* No 65ch cap here, unlike the prose above it: this section wraps only the
+   Speakers heading and the two-column card grid, which needs the whole
+   large-8 column. Its one consumer is parts/calendar-body.php. */
 .law-cal-acc {
-	max-width: 65ch;
 	margin-top: 0.5rem;
 	padding: 0;
 }
@@ -858,12 +961,7 @@
 	line-height: 1.1;
 }
 
-.law-cal-acc .law-cal-speakers {
-	padding-top: 0.25rem;
-}
-
 .law-cal-sessions {
-	max-width: 65ch;
 	margin-top: 0.5rem;
 }
 
@@ -946,7 +1044,11 @@
 	padding: 0 0 1.1rem;
 }
 
+/* The 65ch measure sits on the prose rather than on .law-cal-sessions: the
+   accordion's summary rows carry the orange rule, so capping the whole list
+   would leave short rules over a full-width card grid. */
 .law-cal-session__body {
+	max-width: 65ch;
 	font-size: 1rem;
 	line-height: 1.5;
 	color: #292459;
@@ -960,73 +1062,6 @@
 
 .law-cal-session__body p:last-child {
 	margin-bottom: 0;
-}
-
-.law-cal-session__speakers {
-	list-style: none;
-	padding: 0.65rem 0 0;
-	margin: 0;
-}
-
-.law-cal-session__speakers li {
-	display: flex;
-	gap: 0.5rem;
-	align-items: flex-start;
-	margin: 0 0 0.55rem;
-	font-size: 0.8rem;
-	line-height: 1.3;
-}
-
-.law-cal-session__speakers li:last-child {
-	margin-bottom: 0;
-}
-
-.law-cal-session__photo {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex: 0 0 2rem;
-	width: 2rem;
-	height: 2rem;
-	background: rgba(38, 30, 91, 0.15);
-	overflow: hidden;
-}
-
-.law-cal-session__initials {
-	color: rgba(41, 36, 89, 0.5);
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 0.7rem;
-	letter-spacing: 0.05em;
-}
-
-.law-cal-session__photo img {
-	display: block;
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-}
-
-.law-cal-session__speaker-body {
-	min-width: 0;
-	flex: 1;
-}
-
-.law-cal-session__speakers a {
-	color: #ef7d05;
-	font-weight: 600;
-}
-
-.law-cal-session__speakers a:hover,
-.law-cal-session__speakers a:focus {
-	color: #292459;
-}
-
-.law-cal-session__role {
-	display: block;
-	color: #666;
-	font-size: 0.7rem;
-	font-weight: 400;
 }
 
 #pages .hero .law-cal-banner-title {
@@ -1066,3 +1101,171 @@
 /* The inline (?law_book=1) booking form replaces the action row's buttons. */
 .law-booking-inline { flex-basis: 100%; max-width: 44rem; margin-top: .5rem; }
 .law-booking-inline .law-modal__actions { justify-content: flex-start; }
+
+/* --- Event details box (parts/calendar-event-details.php) ------------------ */
+
+/* This block lives at the END of the file on purpose. The box reuses .law-cal
+   and .law-cal-detail__actions, so several rules below tie on specificity with
+   .law-cal .button (line ~1044), .law-cal-detail__actions .button and
+   .law-cal-detail__actions itself. Ties are settled by source order, so moving
+   this block up into the "Single event view" section silently breaks the mobile
+   full-width button and the footer spacing. Leave it here. */
+
+/* The hero holds one line of title plus the box now, so the generous bottom
+   padding comes down. Only padding-bottom is set: this selector is (1,3,0) and
+   would beat app.css's responsive #pages .hero .grid-container rules at every
+   width (media queries add no specificity), so padding-top is left alone
+   deliberately, letting app.css's 190px/170px steps keep cascading. */
+#pages .hero.law-event-hero .grid-container {
+	padding-bottom: 80px;
+}
+
+@media screen and (max-width: 63.9375em) {
+	#pages .hero.law-event-hero .grid-container {
+		padding-bottom: 50px;
+	}
+}
+
+/* A solid surface is the whole point: body-size text cannot meet 4.5:1 over a
+   photograph whose brightest areas sit near #c9b8bd, and a panel supplies its
+   own background whatever is behind it. #ececf1 is the programme card's fill
+   (.law-event-card), so the detail view opens on the same surface the visitor
+   just clicked. Square and shadowless, like every other panel in this file. */
+.law-event-details {
+	margin-top: 2rem;
+	padding: 1.75rem 2rem;
+	background: #ececf1;
+	border-top: 4px solid #ef7d05;
+	border-radius: 0;
+	/* Explicit, not just inherited from the .law-cal class the box also carries:
+	   body sets color #ffffff for the dark hero, so anything added here later
+	   would otherwise default to white on a near-white panel. */
+	color: #292459;
+}
+
+/* Explicit columns, not auto-fit: an event with only two populated facts would
+   stretch two auto-fit cells to ~500px each and look broken. Six facts divide
+   cleanly by three, which is why Places remaining is not one of them. */
+.law-event-details__grid {
+	display: grid;
+	gap: 1.75rem 2rem;
+	/* Foundation sets dl { margin-bottom: 1rem; line-height: 1.6 }. */
+	margin: 0;
+	line-height: 1.35;
+}
+
+@media screen and (min-width: 40em) {
+	.law-event-details__grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media screen and (min-width: 64em) {
+	.law-event-details__grid {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+/* Scoped, not a bare dt: Foundation's "dl dt" is (0,0,2) and sets
+   font-weight: bold and margin-bottom: .3rem, which a bare dt cannot beat. */
+.law-event-details__grid dt {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin: 0;
+	font-family: "Poppins", sans-serif;
+	font-size: 0.8rem;
+	font-weight: 600;
+	line-height: 1.2;
+	letter-spacing: 0.03em;
+	text-transform: uppercase;
+	/* 6.0:1 on #ececf1. Reuses the muted navy already in event-form.css rather
+	   than adding another near-identical hex to a theme with no colour tokens. */
+	color: #5a5a7a;
+}
+
+.law-event-details__grid dd {
+	margin: 0.3rem 0 0;
+	font-size: 1.1rem;
+	color: #292459;
+	/* Venue is free text and can be one long unbroken string. */
+	overflow-wrap: break-word;
+}
+
+.law-event-details__icon {
+	flex: 0 0 auto;
+}
+
+/* .law-cal (which this box carries) strips underlines from links, so the jump
+   to the Venue section further down needs its affordance back. */
+.law-event-details .law-event-details__link {
+	color: #292459;
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 2px;
+}
+
+.law-event-details .law-event-details__link:hover,
+.law-event-details .law-event-details__link:focus {
+	color: #ef7d05;
+}
+
+/* The booking control's row. Reuses .law-cal-detail__actions for its flex box
+   and its ".button { width: auto }" reset (.button is width: 100% in app.css),
+   so this only adds the separation from the facts above. */
+.law-event-details .law-event-details__footer {
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 1.5rem;
+	padding-top: 1.25rem;
+	border-top: 1px solid #d5d2de;
+}
+
+/* The five booking states, not just the bookable one. .law-booking-state and
+   .law-booking-substate are flex-basis: 100% so they take their own line, which
+   is right for "You're booked on this event." but leaves "N places left"
+   stranded above the button. Give the substate a flexible basis so it pairs
+   with the button on one row and still drops to its own line when it is a full
+   sentence (sold out, bookings open soon). */
+/* Direct child only: on the ?law_book=1 no-JS path the inline booking form
+   renders inside this footer and carries its own .law-booking-substate ("N
+   places left. You can bring up to 3 colleagues."), which is a sentence and
+   must not be sized up like the standalone count. */
+.law-event-details__footer > .law-booking-substate {
+	flex: 1 1 16rem;
+	margin: 0;
+	/* The one emphasised value in the box. Every fact in the grid is the same
+	   size, so availability is what carries the size step: it is the only
+	   number that changes, and the only one that decides anything. */
+	font-size: 1.3rem;
+	font-weight: 500;
+	color: #292459;
+}
+
+/* 1.4rem matches .law-cal-acc__heading, the page's h2 size, so inside the box it
+   would outshout the content it introduces. */
+.law-event-details .law-booking-state {
+	font-size: 1.15rem;
+	margin: 0 0 0.35rem;
+}
+
+/* Redirect notices (the no-JS booking results) are emitted first and carry no
+   flex-basis of their own, so without this they sit inline beside the state
+   line and squash. */
+.law-event-details .law-form-notice {
+	flex-basis: 100%;
+	margin-bottom: 0;
+}
+
+@media screen and (max-width: 39.9375em) {
+	.law-event-details {
+		padding: 1.25rem;
+	}
+
+	/* Full-width buttons on phones, as the programme cards already do. Three
+	   classes deep so it beats both .law-cal .button and
+	   .law-cal-detail__actions .button rather than relying on source order. */
+	.law-event-details .law-event-details__footer .button {
+		width: 100%;
+	}
+}

@@ -15,28 +15,7 @@
 <body <?php body_class(); ?> <?php if ( ! is_front_page() ) echo 'id="pages"'; ?>>
 <?php wp_body_open(); ?>
 
-  <nav class="nav" id="new-nav-v2">
-    <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
-    <div class="header-top mobile-top-nav hide-for-large">
-      <div class="header-top__group">
-      <?php law_render_header_member_status(); ?>
-      <?php
-      if ( has_nav_menu( 'top-menu' ) ) {
-      wp_nav_menu(
-          array(
-              'theme_location' => 'top-menu',
-              'container'      => false,
-              'menu_class'     => 'top-nav menu',
-              'menu_id'        => 'top-menu-mobile',
-              'fallback_cb'    => false,
-              'depth'          => 1,
-          )
-      );
-      }
-      ?>
-      </div>
-    </div>
-    <?php endif; ?>
+  <nav class="nav" id="new-nav-v2" aria-label="<?php esc_attr_e( 'Main', 'law' ); ?>">
     <div class="grid-container">
       <div class="grid-x">
         <div class="large-3 medium-4 small-6 cell">
@@ -47,29 +26,7 @@
           </div>
         </div>
         <div class="large-9 medium-8 small-6 show-for-large cell">
-           <?php if ( is_user_logged_in() || has_nav_menu( 'top-menu' ) ) : ?>
-           <div class="header-top">
-            <div class="header-top__group">
-            <?php law_render_header_member_status(); ?>
-            <?php
-            if ( has_nav_menu( 'top-menu' ) ) {
-            wp_nav_menu(
-                array(
-                    'theme_location' => 'top-menu',
-                    'container'      => false,
-                    'menu_class'     => 'top-nav dropdown menu align-right',
-                    'menu_id'        => 'top-menu-desktop',
-                    'fallback_cb'    => false,
-                    'depth'          => 0,
-                    'law_menu_mode'  => 'dropdown',
-                    'items_wrap'     => '<ul id="%1$s" class="%2$s" data-dropdown-menu>%3$s</ul>',
-                )
-            );
-            }
-            ?>
-            </div>
-            </div>
-           <?php endif; ?>
+          <?php get_template_part( 'parts/layout/top-nav', null, array( 'variant' => 'desktop' ) ); ?>
           <div class="main_list">
             <?php
             wp_nav_menu(
@@ -86,11 +43,15 @@
             ?>
           </div>
         </div>
-        <span class="navTrigger">
-          <i></i>
-          <i></i>
-          <i></i>
-        </span>
+        <?php /* Mobile only: a small account button in the logo row, to the left of the burger. */ ?>
+        <?php get_template_part( 'parts/layout/top-nav', null, array( 'variant' => 'mobile' ) ); ?>
+        <?php /* A real button, not a <span>: the mobile menu was previously unreachable by keyboard or screen reader. */ ?>
+        <button type="button" class="navTrigger" aria-expanded="false" aria-controls="mainListDiv">
+          <span class="screen-reader-text"><?php esc_html_e( 'Menu', 'law' ); ?></span>
+          <i aria-hidden="true"></i>
+          <i aria-hidden="true"></i>
+          <i aria-hidden="true"></i>
+        </button>
       </div>
     </div>
     <div class="hide-for-large">

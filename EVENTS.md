@@ -492,11 +492,18 @@ There is an `event` custom post type registered via Pods, and a deactivated
 Advanced Post Creation feed that would populate it, but neither is in use. See
 "Known defects", item 3.
 
-Individual listings (`?event=<entry_id>`) put the event title and its facts in
-the hero (`parts/layout/hero-title.php` `meta` arg): Date, Time, Location
-(field 21, Venue), Hosted by (field 105, Host organisation(s)), Type (field
-63, Event type), Sector (field 60) and Available tickets (field 54, Tickets
-available). The description renders in a 2/3 column, followed by a Venue
+Individual listings (`?event=<entry_id>`) put the event title in the hero, and
+its facts in a solid box below the title inside that hero
+(`parts/calendar-event-details.php`, passed to `parts/layout/hero-title.php`
+as its `after_title` arg): Date, Time, Location (field 21, Venue), Hosted by
+(field 105, Host organisation(s)), Type (field 63, Event type) and Sector
+(field 60), each with a line icon, in a three-column grid. Available tickets
+(field 54, Tickets available) appears as a seventh item only when the booking
+control renders nothing, since that control otherwise states availability
+itself. The facts used to sit as loose white text directly on the hero
+photograph, where body-size text measured roughly 1.7-3:1 against the 4.5:1
+WCAG minimum; a solid panel supplies its own background whatever is behind it.
+The description renders in a 2/3 column, followed by a Venue
 section (heading, the venue text as subtitle, then a Google Maps iframe). The
 embed is a search on that text (London is appended when the string does not
 already mention it). Placeholder values such as `TBC` skip the map. No
@@ -508,11 +515,16 @@ description.
 If the Sessions nested field (115 → form 9) has child entries, they appear
 under the venue as a **Sessions** heading, then a native `<details>` accordion
 per child. The summary shows title and start–end time; the panel holds the
-description and speakers from field 6 (name linking to
-`/speakers/<form 8 entry ID>/`, job title, organisation, and a 32px thumbnail
-or initials placeholder). The event-level Speakers section is omitted when any
-sessions exist; it still appears for events with no sessions, as a list with
-photos (initials placeholder when there is none, like the speaker pages).
+description and the session's speakers. The event-level Speakers section is
+omitted when any sessions exist; it still appears for events with no sessions.
+
+Both lists render the same **speaker cards** (`parts/events/speaker-card.php`,
+two per row from 48em, each with an orange rule down its left edge): a 5.5rem
+photo or initials placeholder, the name linking to the profile, "job title,
+organisation", and a 24-word biography excerpt with a "Read full bio" control
+that opens the full text in a dialog. Organisation, job title, photo and
+biography are all the speaker's values *for that event* (the appearance row),
+so the same person can read differently on two listings.
 
 ### The speakers archive
 
@@ -560,8 +572,10 @@ via the `law_speakers_rewrite_version` option) and a `template_include` filter
 swaps the template in. Unknown or non-public IDs 404; any entry ID of a merged
 person resolves to the same profile, whose canonical URL is the kept entry's.
 
-- Layout: photo (or initials) in a 1/3 column, details in 2/3; role above an
-  `<h2>` name, organisation, website link, then the biography.
+- Layout: photo (or initials) in a 1/3 column, details in 2/3; an `<h2>` name
+  and the website link. No role, organisation or biography here: those are per
+  appearance, so the organisation and position appear on each "Speaking at"
+  card and the biography on the event page's speaker cards.
 - Related events come from the profile's `event_ids`, mapped by
   `law_calendar_event_by_id()` and rendered like programme list cards, linking
   to the programme page's `?event=` view (`law_speaker_event_link()`, because
@@ -577,7 +591,10 @@ enqueued only on this template along with `assets/css/speakers.css`.
 
 The hero banner shared by this template, the calendars and other pages lives in
 `parts/layout/hero-title.php` (get_template_part args: `title`, `is_event`,
-`image`, `classes`, `content`).
+`image`, `classes`, `content`, `text`, `after_title`). `after_title` takes
+pre-escaped markup for a full-width cell below the title and is deliberately
+NOT run through `wp_kses_post()`, which would strip inline `<svg>`; the single
+event view uses it for the event details box.
 ---
 
 ## 9. Front-end pages and access
@@ -698,11 +715,29 @@ field 11, limited to `attendee`, `sponsor` and `event_host`. The profile form
 
 ### Navigation
 
-The Top menu contains Account → Profile, Events dashboard, My events, Submit an
-event, plus Register and Login. Neither `/inbox/` nor either programme page is
-linked from any menu. The Inbox menu item exists as post 595 but is still a
-draft. Members restricts page *content*, not menu items, so hosts currently see
-an "Events dashboard" link that will deny them.
+The header's top bar is built by the theme, not by Appearance > Menus:
+`functions/header-nav.php` decides what appears and `parts/layout/top-nav.php`
+draws it. Signed out: Sign in and Create an account. Signed in: one "Logged in
+as [name]" dropdown holding, in order, Events dashboard (committee, editors,
+administrators), My events (host-like users) or My bookings (everyone else),
+Submit an event (`law_events_user_can_submit()`), My profile and Sign out.
+Access is additive, so committee members get the dashboard *and* their own
+events. No role names appear in that file; it asks the capability helpers.
+Every control is the outlined white button; on a phone it is one small button
+beside the burger showing the first name only, and signed out it shows Sign
+in alone (registration is linked from the sign-in page). Sign in carries the
+current page as `redirect_to`, so a visitor lands back on the event or
+speaker they were reading; on the home, sign-in and register pages it carries
+nothing and the default applies (My events, or the dashboard for committee).
+The URL is built from the site origin plus the request URI, not through
+`home_url()`, which on a subdirectory install doubled the path (`/law/law/`)
+and let WordPress's 404 guesser send people to a random `law…` post.
+
+The old "Top menu" (term 19) and its If Menu role rules are no longer
+rendered. They stay in the database as the rollback until the custom bar has
+been verified in production, after which the `top-menu` location and the If
+Menu plugin can go. Neither `/inbox/` nor either programme page is linked
+from any menu.
 
 ---
 
@@ -713,7 +748,9 @@ functions/
   _init.php                  (empty, loader lives in functions.php)
   account-events.php         host events dashboard: GFAPI query, GV edit links,
                              Gravity Flow comments links, card actions
-  banner-account-status.php  account status banner
+  header-nav.php             the header top bar: account paths, page lookup,
+                             and the signed-in/out menu model (drawn by
+                             parts/layout/top-nav.php)
   calendar.php               the whole programme calendar: entry fetch/map,
                              filters, AJAX partial endpoint, display helpers
   editor.php                 block editor tweaks
@@ -739,8 +776,9 @@ parts/
   calendar-body.php          shared calendar page body (listing + single event)
   calendar-events.php        day sections + slot bars + cards; also the AJAX partial
   calendar-filters.php       day jump links, keyword/sector/type filters, mobile modal
+  calendar-event-details.php single event facts box in the hero (icons, 3-col grid)
 parts/layout/
-  hero-title.php             shared page hero (title, is_event, image args)
+  hero-title.php             shared page hero (title, is_event, image, after_title args)
 parts/loop/
   event.php                  programme event card (calendar listings, speaker profile)
   speaker.php                speakers archive card (takes a speaker profile)

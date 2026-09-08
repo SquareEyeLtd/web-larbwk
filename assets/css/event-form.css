@@ -226,10 +226,9 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 /* Section nav */
 /* Clear the fixed site header (~142px when scrolled/affixed) so the sticky
    section nav doesn't slide up underneath it. */
-.law-form-nav { position: sticky; top: 160px; align-self: flex-start; }
-/* Anchor targets land below the fixed header, not tucked under it, when a nav
-   link scrolls to a section. */
-.law-event-form fieldset[id^="law-section-"] { scroll-margin-top: 160px; }
+.law-form-nav { position: sticky; top: calc(var(--law-header-offset) + 1rem); align-self: flex-start; }
+/* No scroll offset here: html's scroll-padding-top in app.css handles every
+   anchor on the site, including these section links. */
 .law-form-nav ol { list-style: none; margin: 0; }
 /* Foundation's global a:focus/a:visited turn links blue after a click; keep
    every non-hover state white so hover is the only colour change. */

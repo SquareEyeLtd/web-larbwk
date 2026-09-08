@@ -46,16 +46,14 @@ get_header();
 
 				<div class="large-8 cell">
 					<div class="law-speaker__details">
-						<h2 class="law-speaker__name"><?php echo esc_html( $law_speaker['name'] ); ?></h2>
-
-						<?php if ( $law_speaker['job_title'] ) : ?>
-							<p class="law-speakers__role"><?php echo esc_html( $law_speaker['job_title'] ); ?></p>
-						<?php endif; ?>
-
-						<?php if ( $law_speaker['organisation'] ) : ?>
-							<p class="law-speaker__company"><?php echo esc_html( $law_speaker['organisation'] ); ?></p>
-						<?php endif; ?>
-
+						<?php
+						// One heading instead of the name plus a separate "Speaking at":
+						// "[name] is speaking at:" (Denis, 8 September 2026). No headline
+						// organisation or job title: those are per event and appear on
+						// each event card below. A profile only renders while a confirmed
+						// event references the speaker, so the list is never empty.
+						?>
+						<h2 class="law-speaker__name"><?php echo esc_html( $law_speaker['name'] ); ?> <span class="law-speaker__name-suffix">is speaking at:</span></h2>
 						<?php if ( $law_speaker['url'] ) : ?>
 							<p>
 								<a class="normal-link law-speaker__website" href="<?php echo esc_url( $law_speaker['url'] ); ?>" target="_blank" rel="noopener">
@@ -64,18 +62,22 @@ get_header();
 							</p>
 						<?php endif; ?>
 
-						<?php if ( $law_speaker['bio'] ) : ?>
-							<div class="law-speaker__bio">
-								<?php echo wp_kses_post( wpautop( $law_speaker['bio'] ) ); ?>
-							</div>
-						<?php endif; ?>
+						<?php
+						// No biography here either: like the organisation and job
+						// title, it is per event and is shown on the single event
+						// page's speaker cards ("Read full bio").
+						?>
 					</div>
 
 					<?php if ( $law_events ) : ?>
 						<div class="law-speaker__events law-cal">
-							<h3 class="law-cal-acc__heading">Speaking at</h3>
 							<?php foreach ( $law_events as $law_event ) : ?>
 								<?php
+								// What this speaker was at THIS event (organisation and
+								// position as submitted for it), rendered under "Hosted by".
+								$law_appearance = function_exists( 'law_speaker_appearance_for_event' )
+									? law_speaker_appearance_for_event( $law_speaker['id'], law_events_resolve_event_post_id( $law_event['id'] ) )
+									: null;
 								get_template_part(
 									'parts/loop/event',
 									null,
@@ -83,6 +85,11 @@ get_header();
 										'event'     => $law_event,
 										'url'       => law_speaker_event_link( $law_event['id'] ),
 										'show_date' => true,
+										'speaker'   => $law_appearance ? array(
+											'name'         => $law_speaker['name'],
+											'organisation' => $law_appearance['organisation'],
+											'job_title'    => $law_appearance['job_title'],
+										) : array(),
 									)
 								);
 								?>

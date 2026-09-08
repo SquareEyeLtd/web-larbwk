@@ -148,7 +148,17 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 					<label>Organisation / firm / chambers *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][organisation]" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
 					<label>Job title / role *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][job_title]" value="<?php echo esc_attr( (string) ( $law_row['job_title'] ?? '' ) ); ?>"></label>
 					<label>Website profile URL<input type="url" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][website]" value="<?php echo esc_attr( (string) ( $law_row['website'] ?? '' ) ); ?>"></label>
-					<label>Photo (JPG/PNG/WebP, 5 MB max)<input type="file" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speaker_photo[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>]" accept=".jpg,.jpeg,.png,.webp"><button type="button" class="law-file-clear" hidden>Clear photo</button></label>
+					<?php
+					// The photo already on this event's row (display only: the save
+					// carries it forward by speaker, it never trusts a posted ID).
+					$law_row_photo = ! $law_is_template && ! empty( $law_row['photo_id'] ) ? wp_get_attachment_image_url( (int) $law_row['photo_id'], 'thumbnail' ) : '';
+					?>
+					<label>Photo (JPG/PNG/WebP, 5 MB max)<input type="file" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speaker_photo[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>]" accept=".jpg,.jpeg,.png,.webp"><button type="button" class="law-file-clear" hidden>Clear photo</button>
+						<?php if ( $law_row_photo ) : ?>
+							<input type="hidden" name="speakers[<?php echo esc_attr( $law_i ); ?>][photo_id]" value="<?php echo esc_attr( (string) (int) $law_row['photo_id'] ); ?>">
+							<span class="law-current-photo"><img src="<?php echo esc_url( $law_row_photo ); ?>" alt="" width="40" height="40"> Current photo for this event (upload a new file to replace it)</span>
+						<?php endif; ?>
+					</label>
 					<label class="law-row-wide">Biography<textarea rows="3" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][bio]"><?php echo esc_textarea( (string) ( $law_row['bio'] ?? '' ) ); ?></textarea></label>
 				</div>
 			</div>

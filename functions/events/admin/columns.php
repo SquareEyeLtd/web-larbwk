@@ -114,7 +114,7 @@ add_action( 'pre_get_posts', function ( $query ) {
 add_filter( 'manage_' . LAW_SPEAKER_CPT . '_posts_columns', function ( $columns ) {
 	unset( $columns['date'] );
 	$columns['law_email']  = 'Email';
-	$columns['law_org']    = 'Organisation';
+	$columns['law_org']    = 'Organisation (first event)';
 	$columns['law_events'] = 'Confirmed events';
 	return $columns;
 } );
@@ -125,7 +125,8 @@ add_action( 'manage_' . LAW_SPEAKER_CPT . '_posts_custom_column', function ( $co
 			echo esc_html( (string) law_event_meta( $post_id, '_law_speaker_email' ) ?: '—' );
 			break;
 		case 'law_org':
-			echo esc_html( (string) law_event_meta( $post_id, '_law_organisation' ) ?: '—' );
+			// Per-event data: the archive rule is the first confirmed appearance.
+			echo esc_html( law_speaker_first_appearance( (int) $post_id )['organisation'] ?: '—' );
 			break;
 		case 'law_events':
 			$map = law_speakers_confirmed_event_map();

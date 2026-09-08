@@ -23,7 +23,7 @@
 /* The same light-section reset the committee panel does: the theme paints
    headings and paragraphs white for the dark hero, so the dialog recolours
    explicitly rather than inheriting whatever page it was dropped into. */
-.law-modal__dialog, .law-modal__title, .law-modal__copy, .law-modal .law-form-field label { color: #1a1a3d; }
+.law-modal__dialog, .law-modal__title, .law-modal__copy, .law-modal__subtitle, .law-modal__bio, .law-modal .law-form-field label { color: #1a1a3d; }
 /* A dialog with no field takes focus itself (tabindex="-1"), which is for
    screen readers and the Tab trap, not something to draw a ring around. */
 .law-modal__dialog:focus { outline: none; }
@@ -91,3 +91,45 @@ body.law-modal-open { overflow: hidden; }
 .law-modal a:not(.button) { color: #ef7d05; text-decoration: underline; }
 /* The logged-out state's two buttons sit at the start, like form actions. */
 .law-modal .law-booking-auth { justify-content: flex-start; }
+
+/* Speakers: the read-only biography dialog (parts/events/speaker-bio-modal.php),
+   opened by a speaker card's "Read full bio" button on the single event view. */
+/* The photo sits beside the title rather than above it, so neither runs under
+   the absolutely positioned close button in the top right. */
+.law-modal__media { display: flex; align-items: center; gap: 1rem; margin: 0 2rem .9rem 0; }
+.law-modal__photo {
+	display: flex; align-items: center; justify-content: center;
+	flex: 0 0 4rem; width: 4rem; height: 4rem;
+	background: rgba(38, 30, 91, .15); overflow: hidden;
+}
+.law-modal__photo img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+.law-modal__initials { color: rgba(41, 36, 89, .5); font-family: poppins, sans-serif; font-weight: 600; font-size: 1.25rem; letter-spacing: .05em; }
+.law-modal__heading { min-width: 0; overflow-wrap: anywhere; }
+/* The title's own rule reserves space for the close button; inside the media
+   row the flex layout already does, so the margin goes back to nothing. */
+.law-modal__media .law-modal__title { margin: 0 0 .15rem; }
+.law-modal__subtitle { margin: 0; font-size: .875rem; color: #666; }
+/* A long biography scrolls inside the dialog, not the dialog inside itself:
+   .law-modal__dialog's own overflow-y would carry the absolutely positioned
+   close button off the top of the screen, leaving no visible way out halfway
+   down a long bio. Here the dialog is a flex column that never scrolls, the
+   photo/name header and the profile link + actions stay put, and only the
+   biography moves. It carries tabindex="0" so keyboard users can scroll it. */
+.law-modal--speaker .law-modal__dialog { display: flex; flex-direction: column; overflow: hidden; }
+.law-modal--speaker .law-modal__media,
+.law-modal--speaker .law-modal__copy,
+.law-modal--speaker .law-modal__actions { flex: 0 0 auto; }
+.law-modal--speaker .law-modal__bio {
+	flex: 1 1 auto;
+	/* min-height:0, or the flex item refuses to shrink below its content and
+	   the dialog grows past its max-height instead of the bio scrolling. */
+	min-height: 0;
+	overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.law-modal--speaker .law-modal__bio:focus-visible { outline: 2px solid #ef7d05; outline-offset: 2px; }
+.law-modal__bio { font-size: .95rem; line-height: 1.55; }
+.law-modal__bio p { margin: 0 0 .85rem; line-height: 1.55; }
+.law-modal__bio p:last-child { margin-bottom: 0; }
+/* The last paragraph drops its own margin, so the "View speaker profile" link
+   under it needs the gap back. */
+.law-modal__bio + .law-modal__copy { margin-top: 1.1rem; }

@@ -186,7 +186,8 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		);
 		foreach ( $row_rules as $group => $rule ) {
 			foreach ( (array) ( $input[ $group ] ?? array() ) as $i => $row ) {
-				$filled = is_array( $row ) ? array_filter( $row, function ( $v ) { return is_scalar( $v ) && '' !== trim( (string) $v ); } ) : array();
+				// photo_id is a display-only echo of the stored photo, not host input.
+				$filled = is_array( $row ) ? array_filter( $row, function ( $v, $k ) { return 'photo_id' !== $k && is_scalar( $v ) && '' !== trim( (string) $v ); }, ARRAY_FILTER_USE_BOTH ) : array();
 				if ( ! $filled ) {
 					continue; // Untouched row: dropped on save, so nothing to require.
 				}
@@ -411,9 +412,20 @@ function law_events_validate_photos( array $files ) {
 
 /**
  * Speaker rows: match-or-create law_speaker posts (dedupe by email then
- * name, §3.2) and store the relationship rows on the event.
+ * name, §3.2) and store the appearance rows on the event. The organisation,
+ * job title, photo and biography the host typed are THIS event's values and go
+ * on the row; the speaker post keeps only identity, plus a fallback photo and
+ * biography for rows that carry none. A re-save without a fresh upload keeps
+ * the photo already on this event's row for the same speaker.
  */
 function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
+	$previous = array(); // speaker_id => photo_id already on this event.
+	foreach ( law_event_meta( $event_id, '_law_speakers' ) as $old ) {
+		if ( ! empty( $old['photo_id'] ) ) {
+			$previous[ (int) $old['speaker_id'] ] = (int) $old['photo_id'];
+		}
+	}
+
 	$relationships = array();
 	$sort          = 0;
 	foreach ( $rows as $i => $row ) {
@@ -437,18 +449,24 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 
 		$speaker_id = law_speaker_upsert(
 			array(
-				'name'         => (string) $row['name'],
-				'email'        => (string) ( $row['email'] ?? '' ),
-				'organisation' => (string) ( $row['organisation'] ?? '' ),
-				'job_title'    => (string) ( $row['job_title'] ?? '' ),
-				'website'      => (string) ( $row['website'] ?? '' ),
-				'bio'          => (string) ( $row['bio'] ?? '' ),
-				'photo_id'     => $photo_id,
+				'name'     => (string) $row['name'],
+				'email'    => (string) ( $row['email'] ?? '' ),
+				'website'  => (string) ( $row['website'] ?? '' ),
+				'bio'      => (string) ( $row['bio'] ?? '' ),
+				'photo_id' => $photo_id, // Fallback featured image only, set once.
 			),
 			array( 'event_id' => (int) $event_id, 'actor' => get_current_user_id() )
 		);
 		if ( $speaker_id ) {
-			$relationships[] = array( 'speaker_id' => $speaker_id, 'role' => '', 'organisation_override' => '', 'sort' => $sort++ );
+			$relationships[] = array(
+				'speaker_id'   => $speaker_id,
+				'role'         => '',
+				'organisation' => (string) ( $row['organisation'] ?? '' ),
+				'job_title'    => (string) ( $row['job_title'] ?? '' ),
+				'photo_id'     => $photo_id ?: (int) ( $previous[ $speaker_id ] ?? 0 ),
+				'bio'          => (string) ( $row['bio'] ?? '' ),
+				'sort'         => $sort++,
+			);
 		}
 	}
 	law_event_update_meta( $event_id, '_law_speakers', $relationships );
@@ -534,7 +552,16 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 		foreach ( $wanted as $name ) {
 			foreach ( $event_speakers as $relationship ) {
 				if ( law_speaker_normalise_name( get_the_title( $relationship['speaker_id'] ) ) === law_speaker_normalise_name( $name ) ) {
-					$linked[] = array( 'speaker_id' => (int) $relationship['speaker_id'], 'role' => '', 'organisation_override' => '', 'sort' => count( $linked ) );
+					// The session row carries the event's appearance details too.
+					$linked[] = array(
+						'speaker_id'   => (int) $relationship['speaker_id'],
+						'role'         => '',
+						'organisation' => (string) ( $relationship['organisation'] ?? '' ),
+						'job_title'    => (string) ( $relationship['job_title'] ?? '' ),
+						'photo_id'     => (int) ( $relationship['photo_id'] ?? 0 ),
+						'bio'          => (string) ( $relationship['bio'] ?? '' ),
+						'sort'         => count( $linked ),
+					);
 					break;
 				}
 			}
@@ -707,13 +734,19 @@ function law_events_form_values( $post, array $state ) {
 	$speakers = array();
 	foreach ( law_event_meta( $post->ID, '_law_speakers' ) as $row ) {
 		$speaker_id = (int) $row['speaker_id'];
+		// Organisation, job title, photo and biography are this event's own (the
+		// appearance row); name, email and website are the person's. The biography
+		// falls back to the speaker post's editor content for rows saved before
+		// biographies became per appearance.
+		$row_bio    = trim( (string) ( $row['bio'] ?? '' ) );
 		$speakers[] = array(
 			'name'         => get_the_title( $speaker_id ),
 			'email'        => (string) law_event_meta( $speaker_id, '_law_speaker_email' ),
-			'organisation' => (string) law_event_meta( $speaker_id, '_law_organisation' ),
-			'job_title'    => (string) law_event_meta( $speaker_id, '_law_job_title' ),
+			'organisation' => (string) ( $row['organisation'] ?? '' ),
+			'job_title'    => (string) ( $row['job_title'] ?? '' ),
 			'website'      => (string) law_event_meta( $speaker_id, '_law_website' ),
-			'bio'          => (string) get_post_field( 'post_content', $speaker_id ),
+			'bio'          => '' !== $row_bio ? $row_bio : (string) get_post_field( 'post_content', $speaker_id ),
+			'photo_id'     => (int) ( $row['photo_id'] ?? 0 ),
 		);
 	}
 	$sessions = array();

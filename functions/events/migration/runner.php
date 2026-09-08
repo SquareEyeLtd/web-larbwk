@@ -21,6 +21,7 @@ function law_migration_steps() {
 		'speakers'      => array( 'label' => 'Step 2: speakers', 'gated' => true ),
 		'events'        => array( 'label' => 'Step 3: events', 'gated' => true ),
 		'sessions'      => array( 'label' => 'Step 4: sessions', 'gated' => true ),
+		'speaker_appearances' => array( 'label' => 'Step 4b: speaker appearance details (organisation, job title, photo per event, refreshed from the source entries)', 'gated' => true ),
 		'comments'      => array( 'label' => 'Step 5: comment threads', 'gated' => true ),
 		'history'       => array( 'label' => 'Step 6: workflow history', 'gated' => true ),
 		'counters'      => array( 'label' => 'Step 7: counters and settings seed', 'gated' => true ),
@@ -417,16 +418,18 @@ function law_migration_run_speakers( $dry ) {
 			continue;
 		}
 
+		// Organisation (field 3), job title (field 4) and the photo (field 6)
+		// are per appearance: step 3 puts them on the event's speaker row. The
+		// photo is imported once here and recorded in the map for step 3; the
+		// upsert only uses it as the post's fallback featured image.
 		$photo_id  = law_migration_import_photo( rgar( $child, '6' ), 'speakers', $ref );
 		$speaker_id = law_speaker_upsert(
 			array(
-				'name'         => $name,
-				'email'        => $email,
-				'organisation' => (string) rgar( $child, '3' ),
-				'job_title'    => (string) rgar( $child, '4' ),
-				'website'      => (string) rgar( $child, '5' ),
-				'bio'          => (string) rgar( $child, '7' ),
-				'photo_id'     => $photo_id,
+				'name'     => $name,
+				'email'    => $email,
+				'website'  => (string) rgar( $child, '5' ),
+				'bio'      => (string) rgar( $child, '7' ),
+				'photo_id' => $photo_id,
 			)
 		);
 		if ( ! $speaker_id ) {
@@ -450,6 +453,9 @@ function law_migration_run_speakers( $dry ) {
 		$all[] = $entry_id;
 		law_event_update_meta( $speaker_id, '_law_gf_entry_ids', $all );
 		law_migration_map_set( 'speakers', $entry_id, $speaker_id );
+		if ( $photo_id ) {
+			law_migration_map_set( 'speaker_photos', $entry_id, $photo_id );
+		}
 		wp_set_object_terms( $speaker_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
 	}
 
@@ -702,27 +708,121 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 	law_event_update_meta( $post_id, '_law_co_owner_rows', $co_owners );
 	law_event_set_co_owner_ids( $post_id, $co_ids );
 
-	// Speakers relationship: nested children (form 8) in entry order, via the
-	// step 2 map. Legacy field 48 rows were already turned into posts there.
-	$relationships = array();
-	$sort          = 0;
-	$map           = law_migration_map();
-	foreach ( law_migration_children( 8, $entry_id ) as $child ) {
+	// Speakers: one appearance row per nested child (form 8) in entry order,
+	// carrying THAT entry's organisation, job title and photo (step 4b refreshes
+	// the same rows later). Legacy field 48 list rows are the fallback.
+	law_event_update_meta( $post_id, '_law_speakers', law_migration_speaker_rows( $entry, law_migration_map() ) );
+}
+
+/**
+ * The appearance rows for a form 2 (Event > submit an event) entry: nested
+ * form 8 (Event > speaker) children via the step 2 map, deduped within the
+ * event (first child wins), else legacy field 48 (Speakers (list)) rows
+ * matched to posts by name. Each row carries the organisation (field 3
+ * Organisation / firm / chambers), job title (field 4 Job title / role), photo
+ * (field 6 Photo) and biography (field 7 Biography) the speaker had at THIS
+ * event: the values the shared speaker post can no longer hold, since one
+ * person speaks for different firms, and writes a different biography, at
+ * different events.
+ *
+ * @param array $entry Form 2 entry.
+ * @param array $map   law_migration_map().
+ * @param bool  $dry   Dry run: never imports a photo file.
+ */
+function law_migration_speaker_rows( array $entry, array $map, $dry = false ) {
+	$rows = array();
+	$sort = 0;
+	foreach ( law_migration_children( 8, (int) $entry['id'] ) as $child ) {
 		$speaker_post = (int) ( $map['speakers'][ (int) $child['id'] ] ?? 0 );
-		if ( $speaker_post && ! in_array( $speaker_post, wp_list_pluck( $relationships, 'speaker_id' ), true ) ) {
-			$relationships[] = array( 'speaker_id' => $speaker_post, 'role' => '', 'organisation_override' => '', 'sort' => $sort++ );
+		if ( ! $speaker_post || in_array( $speaker_post, wp_list_pluck( $rows, 'speaker_id' ), true ) ) {
+			continue;
 		}
+		$rows[] = array(
+			'speaker_id'   => $speaker_post,
+			'role'         => '',
+			'organisation' => trim( (string) rgar( $child, '3' ) ),
+			'job_title'    => trim( (string) rgar( $child, '4' ) ),
+			'photo_id'     => law_migration_child_photo_id( $child, $speaker_post, $map, $dry ),
+			'bio'          => trim( (string) rgar( $child, '7' ) ),
+			'sort'         => $sort++,
+		);
 	}
-	// Legacy list rows (entries 303/774 pattern): match created posts by name.
-	if ( ! $relationships ) {
+	if ( ! $rows ) {
+		// Legacy list rows (entries 303/774 pattern): match created posts by name.
 		foreach ( law_calendar_speakers_from_list( rgar( $entry, '48' ) ) as $row ) {
 			$speaker_post = law_speaker_find_existing( '', $row['name'] );
-			if ( $speaker_post ) {
-				$relationships[] = array( 'speaker_id' => $speaker_post, 'role' => '', 'organisation_override' => '', 'sort' => $sort++ );
+			if ( $speaker_post && ! in_array( $speaker_post, wp_list_pluck( $rows, 'speaker_id' ), true ) ) {
+				$rows[] = array(
+					'speaker_id'   => $speaker_post,
+					'role'         => '',
+					'organisation' => (string) $row['organisation'],
+					'job_title'    => (string) $row['job_title'],
+					'photo_id'     => 0,
+					'bio'          => '', // The list field has no biography column.
+					'sort'         => $sort++,
+				);
 			}
 		}
 	}
-	law_event_update_meta( $post_id, '_law_speakers', $relationships );
+	return $rows;
+}
+
+/**
+ * The attachment for one child entry's photo (field 6): the step 2 map first;
+ * when step 2 ran before photos were per appearance, the speaker post's
+ * featured image if this child is that post's primary source entry (the file
+ * was sideloaded from it); otherwise import the file now. Whatever is found is
+ * recorded in the map so the next run is a lookup.
+ */
+function law_migration_child_photo_id( array $child, $speaker_post, array $map, $dry = false ) {
+	$child_id = (int) $child['id'];
+	$mapped   = (int) ( $map['speaker_photos'][ $child_id ] ?? 0 );
+	if ( $mapped && get_post( $mapped ) ) {
+		return $mapped;
+	}
+	if ( '' === law_calendar_speaker_photo_url( rgar( $child, '6' ) ) ) {
+		return 0;
+	}
+	$photo_id = 0;
+	if ( (int) law_event_meta( $speaker_post, '_law_gf_entry_id' ) === $child_id && has_post_thumbnail( $speaker_post ) ) {
+		$photo_id = (int) get_post_thumbnail_id( $speaker_post );
+	} elseif ( ! $dry ) {
+		$photo_id = law_migration_import_photo( rgar( $child, '6' ), 'speaker_appearances', 'form 8 entry ' . $child_id );
+	}
+	if ( $photo_id && ! $dry ) {
+		law_migration_map_set( 'speaker_photos', $child_id, $photo_id );
+	}
+	return $photo_id;
+}
+
+/**
+ * Session speaker rows: the referenced speakers (form 9 field 6), each carrying
+ * the parent event's appearance details for the same speaker.
+ */
+function law_migration_session_speaker_rows( array $child, $parent_post, array $map ) {
+	$event_rows = array();
+	foreach ( law_event_meta( $parent_post, '_law_speakers' ) as $row ) {
+		$event_rows[ (int) $row['speaker_id'] ] = $row;
+	}
+	$rows = array();
+	$sort = 0;
+	foreach ( law_calendar_entry_ids_from_value( rgar( $child, '6' ) ) as $speaker_entry ) {
+		$speaker_post = (int) ( $map['speakers'][ $speaker_entry ] ?? 0 );
+		if ( ! $speaker_post || in_array( $speaker_post, wp_list_pluck( $rows, 'speaker_id' ), true ) ) {
+			continue;
+		}
+		$event_row = $event_rows[ $speaker_post ] ?? array();
+		$rows[]    = array(
+			'speaker_id'   => $speaker_post,
+			'role'         => '',
+			'organisation' => (string) ( $event_row['organisation'] ?? '' ),
+			'job_title'    => (string) ( $event_row['job_title'] ?? '' ),
+			'photo_id'     => (int) ( $event_row['photo_id'] ?? 0 ),
+			'bio'          => (string) ( $event_row['bio'] ?? '' ),
+			'sort'         => $sort++,
+		);
+	}
+	return $rows;
 }
 
 /**
@@ -843,21 +943,133 @@ function law_migration_run_sessions( $dry ) {
 		law_event_update_meta( $session_id, '_law_end_time', rgar( $child, '3' ) );
 		law_event_update_meta( $session_id, '_law_gf_entry_id', $entry_id );
 
-		$speakers = array();
-		$sort     = 0;
-		foreach ( law_calendar_entry_ids_from_value( rgar( $child, '6' ) ) as $speaker_entry ) {
-			$speaker_post = (int) ( $map['speakers'][ $speaker_entry ] ?? 0 );
-			if ( $speaker_post ) {
-				$speakers[] = array( 'speaker_id' => $speaker_post, 'role' => '', 'organisation_override' => '', 'sort' => $sort++ );
-			}
-		}
-		law_event_update_meta( $session_id, '_law_speakers', $speakers );
+		law_event_update_meta( $session_id, '_law_speakers', law_migration_session_speaker_rows( $child, $parent_post, $map ) );
 
 		$created++;
 		law_migration_log( 'sessions', 'created', $ref, sprintf( 'Created session post %d under event post %d.', $session_id, $parent_post ) );
 	}
 
 	return array( 'done' => true, 'summary' => $created . ' sessions created.' );
+}
+
+/* Step 4b: speaker appearance details _____________________________________ */
+
+/**
+ * Refresh every migrated event's speaker rows with the organisation, job title,
+ * photo and biography from their source form 8 (Event > speaker) child
+ * entries, and
+ * fill blank session rows from the event. Idempotent: rows already carrying
+ * the source values are reported as current, rows the committee added in
+ * wp-admin (no source child) are left alone, and a source value that is empty
+ * never blanks a stored one. Safe to run on a database migrated before speaker
+ * details became per event, and as a post-migration check on production.
+ */
+function law_migration_run_speaker_appearances( $dry ) {
+	$map       = law_migration_map();
+	$changed   = 0;
+	$unchanged = 0;
+
+	foreach ( $map['events'] as $entry_id => $post_id ) {
+		$post_id = (int) $post_id;
+		$ref     = 'form 2 entry ' . (int) $entry_id . ' → event post ' . $post_id;
+		if ( ! $post_id || LAW_EVENT_CPT !== get_post_type( $post_id ) ) {
+			continue;
+		}
+		$entry = class_exists( 'GFAPI' ) ? GFAPI::get_entry( (int) $entry_id ) : null;
+		if ( ! is_array( $entry ) ) {
+			law_migration_log( 'speaker_appearances', 'skipped', $ref, 'Source entry missing; nothing to refresh from.' );
+			continue;
+		}
+
+		$source = array();
+		foreach ( law_migration_speaker_rows( $entry, $map, $dry ) as $row ) {
+			$source[ (int) $row['speaker_id'] ] = $row;
+		}
+
+		$rows  = array();
+		$diffs = array();
+		foreach ( law_event_meta( $post_id, '_law_speakers' ) as $row ) {
+			$from = $source[ (int) $row['speaker_id'] ] ?? null;
+			if ( $from ) {
+				foreach ( array( 'organisation', 'job_title', 'photo_id', 'bio' ) as $field ) {
+					// Compare what the schema would store (whitespace collapsed), or a
+					// double space in the source would re-flag the row on every run.
+					// The biography keeps its line breaks, so it takes the textarea
+					// sanitiser rather than the single-line one.
+					if ( 'photo_id' === $field ) {
+						$new = (int) $from[ $field ];
+					} elseif ( 'bio' === $field ) {
+						$new = sanitize_textarea_field( (string) $from[ $field ] );
+					} else {
+						$new = sanitize_text_field( (string) $from[ $field ] );
+					}
+					$old = $row[ $field ] ?? ( 'photo_id' === $field ? 0 : '' );
+					if ( ! empty( $new ) && (string) $new !== (string) $old ) {
+						// Biographies are paragraphs: trimmed in the log line so one
+						// speaker cannot drown the step's report.
+						$diffs[]       = sprintf(
+							'%s %s "%s" → "%s"',
+							get_the_title( (int) $row['speaker_id'] ),
+							str_replace( '_', ' ', $field ),
+							wp_html_excerpt( (string) $old, 60, '…' ),
+							wp_html_excerpt( (string) $new, 60, '…' )
+						);
+						$row[ $field ] = $new;
+					}
+				}
+			}
+			$rows[] = $row;
+		}
+
+		if ( ! $diffs ) {
+			$unchanged++;
+			law_migration_log( 'speaker_appearances', 'skipped', $ref, 'Speaker rows already carry the source details.' );
+			continue;
+		}
+		if ( $dry ) {
+			// Counted, not just logged: a dry run that found work used to report
+			// "0 events refreshed, N already current", which reads as nothing to do.
+			$changed++;
+			law_migration_log( 'speaker_appearances', 'dry-run', $ref, 'Would set ' . implode( '; ', $diffs ) . '.' );
+			continue;
+		}
+
+		law_event_update_meta( $post_id, '_law_speakers', $rows );
+
+		// Sessions inherit the event's details where their own rows are blank.
+		$by_speaker = array();
+		foreach ( $rows as $row ) {
+			$by_speaker[ (int) $row['speaker_id'] ] = $row;
+		}
+		foreach ( law_event_session_ids( $post_id ) as $session_id ) {
+			$session_rows = law_event_meta( $session_id, '_law_speakers' );
+			$touched      = false;
+			foreach ( $session_rows as &$session_row ) {
+				$from = $by_speaker[ (int) $session_row['speaker_id'] ] ?? null;
+				if ( ! $from ) {
+					continue;
+				}
+				foreach ( array( 'organisation', 'job_title', 'photo_id', 'bio' ) as $field ) {
+					if ( empty( $session_row[ $field ] ) && ! empty( $from[ $field ] ) ) {
+						$session_row[ $field ] = $from[ $field ];
+						$touched               = true;
+					}
+				}
+			}
+			unset( $session_row );
+			if ( $touched ) {
+				law_event_update_meta( $session_id, '_law_speakers', $session_rows );
+			}
+		}
+
+		$changed++;
+		law_migration_log( 'speaker_appearances', 'created', $ref, 'Set ' . implode( '; ', $diffs ) . '.' );
+	}
+
+	return array(
+		'done'    => true,
+		'summary' => sprintf( '%d events %s, %d already current.', $changed, $dry ? 'to refresh' : 'refreshed', $unchanged ),
+	);
 }
 
 /* Step 5: comments __________________________________________________________ */
@@ -1465,6 +1677,8 @@ function law_migration_run_step( $step, $dry ) {
 			return law_migration_run_events( $dry );
 		case 'sessions':
 			return law_migration_run_sessions( $dry );
+		case 'speaker_appearances':
+			return law_migration_run_speaker_appearances( $dry );
 		case 'comments':
 			return law_migration_run_comments( $dry );
 		case 'history':

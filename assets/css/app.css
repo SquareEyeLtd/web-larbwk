@@ -1,3 +1,42 @@
+/* --- Anchor scrolling, site-wide ------------------------------------------
+   One mechanism for every same-page anchor link on the site: the event form's
+   section nav, the programme's day links, the single event page's Location link
+   and anything added later. Nothing needs its own JavaScript or its own
+   scroll-margin-top.
+
+   scroll-padding-top on the scroll container is what does the work. It applies
+   to BOTH kinds of scroll: the browser's own hash navigation (clicking an
+   in-page link, or landing on a URL that already carries a fragment) and any
+   scrollIntoView() call. Without it the fixed .nav covers whatever you jumped
+   to. Setting it here, once, is why individual components no longer declare
+   scroll offsets of their own.
+
+   --law-header-offset is measured from the real nav on every page by app.js, so
+   it is correct at any breakpoint and in both the affixed and unaffixed states.
+   The value below is only the fallback for the moment before that script runs
+   and for any page where it fails, and it deliberately errs high: too much
+   offset leaves a small gap above the target, too little hides the target under
+   the header.
+
+   scroll-behavior belongs here too rather than in a click handler, so smooth
+   scrolling applies to native hash navigation as well, and honours the
+   visitor's reduced-motion preference in one place. An explicit behavior option
+   passed to scrollIntoView() still overrides it where a jump must be instant. */
+:root {
+    --law-header-offset: 130px;
+}
+
+html {
+    scroll-padding-top: calc(var(--law-header-offset) + 1rem);
+    scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -363,201 +402,170 @@ nav#new-nav .menu {
     float: right;
 }
 
-.nav .header-top {
+/* Header top bar ___________________________________________________
+   parts/layout/top-nav.php. Signed out: Sign in / Create an account.
+   Signed in: one account dropdown reading "Logged in as [name]", a native
+   <details> enhanced by assets/js/header-nav.js.
+
+   Every control is the site's outlined white button, the same treatment
+   the header's original "MY ACCOUNT" button had: transparent, 1px white
+   border, uppercase Poppins, orange fill on hover (the .button.white
+   recipe). Restated here rather than reusing .button, which is width:100%
+   and carries a transition:all this component does not want.
+
+   Desktop: a row of buttons above the main menu. Mobile: one small button
+   in the logo row, to the left of the burger.
+
+   This replaces the old .header-top / .top-nav / .header-member-status
+   block, which was written against Foundation's dropdown-menu state classes
+   and against .button classes typed into Appearance > Menus. */
+
+.nav .law-topnav {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
     width: 100%;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
     margin-bottom: 1rem;
-}
-
-.nav .header-top__group {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0;
-    max-width: 100%;
-    padding: 0.45rem 0.9rem;
-    background-color: rgba(0, 0, 0, 0.22);
-    border-radius: 9999px;
-}
-
-.nav .header-top__group .top-nav {
-    margin: 0;
-}
-
-.nav .header-top__group:has(.header-member-status):has(.top-nav) .header-member-status {
-    padding-right: 0.85rem;
-    margin-right: 0.85rem;
-    border-right: 1px solid rgba(255, 255, 255, 0.35);
-}
-
-.nav .header-member-status {
-    margin: 0;
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    color: #fff;
-    font-size: 0.85rem;
-    font-family: poppins, sans-serif;
-    font-weight: 400;
-    line-height: 1.4;
-}
-
-.nav .header-member-status__label {
-    white-space: nowrap;
-}
-
-.nav .header-member-status__name,
-.nav .header-member-status__logout {
-    margin-left: 0;
-}
-
-.nav .header-member-status__sep {
-    opacity: 0.55;
-    user-select: none;
-    padding: 0 0.15rem;
-}
-
-.nav .header-member-status__name,
-.nav .header-member-status__logout {
-    color: #fff;
-    font-weight: 600;
-    text-decoration: underline;
-    text-underline-offset: 3px;
-    text-decoration-color: rgba(255, 255, 255, 0.45);
-}
-
-.nav .header-member-status__name:hover,
-.nav .header-member-status__name:focus,
-.nav .header-member-status__logout:hover,
-.nav .header-member-status__logout:focus {
-    color: #ffcc02;
-    text-decoration-color: #ffcc02;
-}
-
-.nav .header-member-status__name:focus,
-.nav .header-member-status__logout:focus {
-    outline: 2px solid rgba(255, 204, 2, 0.65);
-    outline-offset: 2px;
-}
-
-.nav .header-top .top-nav {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    align-items: center;
-    gap: 0 1.25rem;
-}
-
-.nav .header-top .top-nav li {
-    width: auto;
-    margin: 0;
-    padding: 0;
-    text-align: right;
-}
-
-.nav .header-top,
-.nav .header-top__group {
+    /* The panel is absolutely positioned; it must be allowed to escape. */
     overflow: visible;
 }
 
-/* Pill padding lives on .header-top__group — reset Foundation / .button on top-level bar links only */
-.nav .header-top .top-nav.dropdown.menu > li > a,
-.nav .header-top .top-nav > li > a {
-    display: inline-block;
+.nav .law-topnav__inner {
+    max-width: 100%;
+    overflow: visible;
+}
+
+.nav .law-topnav__bar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    max-width: 100%;
     margin: 0;
     padding: 0;
-    color: #fff;
-    font-size: 0.85rem;
-    font-family: poppins, sans-serif;
-    font-weight: 600;
-    line-height: 1.2;
-    text-decoration: none;
+    list-style: none;
+    overflow: visible;
 }
 
-.nav .header-top .top-nav > li > a.button,
-.nav .header-top .top-nav > li > a.button.primary {
-    width: auto;
-    max-width: none;
-    margin: 0;
-    padding: 0;
-    line-height: 1.2;
-    text-align: center;
-    text-transform: none;
-    border: none;
-    background-color: transparent;
-    color: #fff;
-}
-
-.nav .header-top .top-nav > li > a.button:hover,
-.nav .header-top .top-nav > li > a.button:focus,
-.nav .header-top .top-nav > li > a.button.primary:hover,
-.nav .header-top .top-nav > li > a.button.primary:focus {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #ffcc02;
-    text-decoration: none;
-}
-
-.nav .header-top .top-nav > li > a:hover,
-.nav .header-top .top-nav > li > a:focus {
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    color: #ffcc02;
-}
-
-.nav .header-top .top-nav.dropdown.menu > li.is-dropdown-submenu-parent > a {
+.nav .law-topnav__item {
+    /* Anchors the absolutely positioned panel. */
     position: relative;
-    padding-right: 1.1rem;
+    width: auto;
+    margin: 0;
+    padding: 0;
 }
 
-.nav .header-top .top-nav.dropdown.menu > li.is-dropdown-submenu-parent > a::after {
+/* The button: sign-in and register links, and the account trigger. */
+.nav .law-topnav__button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    box-sizing: border-box;
+    min-height: 42px;
+    margin: 0;
+    padding: 0 1.4rem;
+    background-color: transparent;
+    border: 1px solid #fff;
+    border-radius: 0;
+    color: #fff;
+    font-family: poppins, sans-serif;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.nav .law-topnav__button:hover,
+.nav .law-topnav__button:focus,
+.nav .law-topnav__account[open] > .law-topnav__trigger {
+    background-color: #ef7d05;
+    border-color: #ef7d05;
+    color: #fff;
+    text-decoration: none;
+}
+
+.nav .law-topnav__button:focus-visible,
+.nav .law-topnav__panel-link:focus-visible {
+    outline: 2px solid rgba(255, 204, 2, 0.85);
+    outline-offset: 2px;
+}
+
+/* <summary> marker, both forms: WebKit still uses the pseudo-element. */
+.nav .law-topnav__trigger {
+    list-style: none;
+}
+
+.nav .law-topnav__trigger::-webkit-details-marker {
+    display: none;
+}
+
+.nav .law-topnav__trigger::marker {
+    content: "";
+}
+
+.nav .law-topnav__label {
+    flex: 0 0 auto;
+}
+
+/* A long name truncates rather than widening the button into the menu. */
+.nav .law-topnav__name {
     display: block;
-    position: absolute;
-    top: 50%;
-    right: 0;
-    left: auto;
+    max-width: 16ch;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.nav .law-topnav__caret {
+    flex: 0 0 auto;
     width: 0;
     height: 0;
-    margin-top: -3px;
     border-style: solid;
-    border-width: 5px;
-    border-bottom-width: 0;
-    content: "";
-    border-color: #fff transparent transparent;
+    border-width: 5px 4px 0;
+    border-color: currentColor transparent transparent;
+    transition: transform 0.15s ease;
 }
 
-.nav .header-top .top-nav .is-dropdown-submenu {
-    min-width: 11rem;
-    margin-top: 0.4rem;
-    padding: 0.45rem 0;
-    background-color: #292459;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-    z-index: 10001;
+.nav .law-topnav__account[open] .law-topnav__caret {
+    transform: rotate(180deg);
 }
 
-.nav .header-top .top-nav.align-right .is-dropdown-submenu.first-sub,
-.nav .header-top .top-nav > li.opens-left > .is-dropdown-submenu {
+/* The panel must stay out of flow. updateHeaderOffset() (assets/js/app.js)
+   publishes --law-header-offset from nav.getBoundingClientRect().bottom,
+   which absolutely positioned descendants do not affect. An in-flow panel
+   that grew the bar would shift every same-page anchor on the site, and the
+   event form's sticky nav with them, for as long as the menu was open. */
+.nav .law-topnav__panel {
+    position: absolute;
     top: 100%;
     right: 0;
     left: auto;
+    /* .nav is position:fixed with z-index:99, so it creates a stacking
+       context and this only ever orders the panel against .navTrigger (9)
+       and .main_list inside it. */
+    z-index: 10;
+    /* At least as wide as the button it hangs from. */
+    min-width: 100%;
+    width: max-content;
+    max-width: calc(100vw - 2rem);
+    /* Flush with the button: the borders overlap by a pixel. */
+    margin: -1px 0 0;
+    padding: 0.35rem 0;
+    list-style: none;
+    text-align: left;
+    background-color: #292459;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
-.nav .header-top .top-nav > li.opens-right > .is-dropdown-submenu {
-    top: 100%;
-    left: 0;
-    right: auto;
-}
-
-.nav .header-top .top-nav .is-dropdown-submenu > li {
+.nav .law-topnav__panel > li {
     display: block;
     width: 100%;
     margin: 0;
@@ -565,15 +573,16 @@ nav#new-nav .menu {
     text-align: left;
 }
 
-.nav .header-top .top-nav .is-dropdown-submenu li a {
+.nav .law-topnav__panel-link {
     display: block;
     width: 100%;
     box-sizing: border-box;
+    min-height: 28px;
     margin: 0;
-    padding: 0.55rem 1.15rem;
+    padding: 0.6rem 1.15rem;
     white-space: nowrap;
     color: #fff;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     font-family: poppins, sans-serif;
     font-weight: 600;
     line-height: 1.35;
@@ -581,66 +590,85 @@ nav#new-nav .menu {
     text-decoration: none;
 }
 
-.nav .header-top .top-nav .is-dropdown-submenu li a:hover,
-.nav .header-top .top-nav .is-dropdown-submenu li a:focus {
+.nav .law-topnav__panel-link:hover,
+.nav .law-topnav__panel-link:focus {
     background-color: rgba(255, 255, 255, 0.1);
     color: #ffcc02;
     text-decoration: none;
 }
 
-.nav .header-top .top-nav .is-dropdown-submenu .current-menu-item > a,
-.nav .header-top .top-nav .is-dropdown-submenu .current-menu-ancestor > a {
+.nav .law-topnav__panel-link.is-current {
     color: #ffcc02;
 }
 
-.nav .header-top img {
-    width: 32px;
-    height: 32px;
+/* Mobile: one small button in the logo row, left of the burger. The burger
+   is position:absolute at right:1.25rem, 30px wide, vertically centred in
+   .nav > .grid-container (position:relative below 1024px); this sits in
+   the same box, so the two centre on the same line. */
+@media screen and (max-width: 1023px) {
+    .nav .law-topnav--mobile {
+        position: absolute;
+        top: 0;
+        right: calc(1.25rem + 30px + 0.75rem);
+        bottom: 0;
+        z-index: 9;
+        width: auto;
+        margin: 0;
+    }
+
+    .nav .law-topnav--mobile .law-topnav__button {
+        gap: 0.35rem;
+        min-height: 36px;
+        padding: 0.35rem 0.7rem;
+        font-size: 0.65rem;
+    }
+
+    /* "Logged in as [name]" on one line does not fit beside the logo and
+       burger at 375px, so the trigger stacks: the label on its own line,
+       the name and caret beneath it. */
+    .nav .law-topnav--mobile .law-topnav__trigger {
+        /* Grid, not wrapped flex: a wrapped flex container is sized as if
+           nothing wrapped, which made the button as wide as the whole
+           sentence. Grid sizes to the wider of its two rows. */
+        display: grid;
+        /* Both columns intrinsic. With minmax(0, auto) on the first, the
+           label's width was all handed to the caret column. */
+        grid-template-columns: auto auto;
+        align-items: center;
+        justify-items: start;
+        column-gap: 0.35rem;
+        row-gap: 0.15rem;
+        text-align: left;
+    }
+
+    .nav .law-topnav--mobile .law-topnav__label {
+        grid-column: 1 / -1;
+        font-size: 0.55rem;
+    }
+
+    .nav .law-topnav--mobile .law-topnav__name {
+        max-width: 12ch;
+    }
+
+    .nav .law-topnav--mobile .law-topnav__caret {
+        border-width: 4px 3.5px 0;
+    }
+
+    .nav .law-topnav--mobile .law-topnav__panel {
+        min-width: 12rem;
+    }
+
+    .nav .law-topnav--mobile .law-topnav__panel-link {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
 }
 
-.nav .mobile-top-nav.hide-for-large {
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    background-color: #000;
-}
-
-.nav .mobile-top-nav.hide-for-large .header-top__group {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem 1.1rem;
-    width: 100%;
-    max-width: none;
-    border-radius: 0;
-    background-color: transparent;
-    padding: 0.4rem 1.25rem;
-}
-
-.nav .mobile-top-nav.hide-for-large .header-top__group:has(.header-member-status):has(.top-nav) .header-member-status {
-    padding-right: 0.85rem;
-    margin-right: 0;
-    padding-bottom: 0;
-    margin-bottom: 0;
-    border-right: 1px solid rgba(255, 255, 255, 0.35);
-    border-bottom: none;
-}
-
-.nav .mobile-top-nav.hide-for-large .top-nav {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0 1.1rem;
-}
-
-.nav .mobile-top-nav.hide-for-large .top-nav a {
-    font-size: 0.8rem;
-}
-
-.nav .header-top .top-nav.dropdown.menu > li {
-    position: relative;
+@media (prefers-reduced-motion: reduce) {
+    .nav .law-topnav__button,
+    .nav .law-topnav__caret {
+        transition: none;
+    }
 }
 
 .hide-for-large #mainListDiv .is-accordion-submenu {
@@ -659,10 +687,6 @@ nav#new-nav .menu {
     border-color: #fff transparent transparent;
 }
 
-.nav div.main_list .top-nav li {
-    width: 33.333%;
-    /* text-align: right; */
-}
 
 .nav div.main_list .navLinks {
     width: 100%;
@@ -954,14 +978,14 @@ nav.affix .logo {
     height: 4px;
 }
 
-.navTrigger i:nth-child(1) {
+.navTrigger i:nth-of-type(1) {
     -webkit-animation: outT 0.8s backwards;
     animation: outT 0.8s backwards;
     -webkit-animation-direction: reverse;
     animation-direction: reverse;
 }
 
-.navTrigger i:nth-child(2) {
+.navTrigger i:nth-of-type(2) {
     margin: 5px 0;
     -webkit-animation: outM 0.8s backwards;
     animation: outM 0.8s backwards;
@@ -969,24 +993,24 @@ nav.affix .logo {
     animation-direction: reverse;
 }
 
-.navTrigger i:nth-child(3) {
+.navTrigger i:nth-of-type(3) {
     -webkit-animation: outBtm 0.8s backwards;
     animation: outBtm 0.8s backwards;
     -webkit-animation-direction: reverse;
     animation-direction: reverse;
 }
 
-.navTrigger.active i:nth-child(1) {
+.navTrigger.active i:nth-of-type(1) {
     -webkit-animation: inT 0.8s forwards;
     animation: inT 0.8s forwards;
 }
 
-.navTrigger.active i:nth-child(2) {
+.navTrigger.active i:nth-of-type(2) {
     -webkit-animation: inM 0.8s forwards;
     animation: inM 0.8s forwards;
 }
 
-.navTrigger.active i:nth-child(3) {
+.navTrigger.active i:nth-of-type(3) {
     -webkit-animation: inBtm 0.8s forwards;
     animation: inBtm 0.8s forwards;
 }

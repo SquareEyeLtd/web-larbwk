@@ -57,7 +57,16 @@
 				? '<input type="hidden" name="' + name + '[]" value="' + id + '">'
 				: '<input type="hidden" name="' + name + '[' + i + '][speaker_id]" value="' + id + '">' +
 					'<input type="text" name="' + name + '[' + i + '][role]" value="" placeholder="Role (Speaker / Moderator / Host)" class="law-rel-role">' +
-					'<input type="text" name="' + name + '[' + i + '][organisation_override]" value="" placeholder="Organisation override" class="law-rel-org">';
+					'<input type="text" name="' + name + '[' + i + '][organisation]" value="" placeholder="Organisation at this event" class="law-rel-org">' +
+					'<input type="text" name="' + name + '[' + i + '][job_title]" value="" placeholder="Job title at this event" class="law-rel-job">' +
+					// Same markup as law_field_relationship_photo() in fields.php.
+					'<span class="law-rel-photo" data-law-rel-photo>' +
+						'<input type="hidden" name="' + name + '[' + i + '][photo_id]" value="0" class="law-rel-photo-id">' +
+						'<img class="law-rel-photo-thumb" src="" alt="" width="32" height="32" hidden>' +
+						'<button type="button" class="button-link law-rel-photo-choose">Choose photo</button>' +
+						'<button type="button" class="button-link law-rel-photo-clear" hidden>Remove photo</button>' +
+					'</span>' +
+					'<textarea name="' + name + '[' + i + '][bio]" rows="3" placeholder="Biography for this event" class="law-rel-bio"></textarea>';
 			li.innerHTML = '<span class="law-rel-title"></span>' + fields +
 				'<button type="button" class="button-link-delete law-rel-remove" aria-label="Remove">×</button>';
 			li.querySelector('.law-rel-title').textContent = title;
@@ -92,9 +101,45 @@
 			}, 250);
 		});
 
+		/* The per-appearance photo: a wp.media frame writes the attachment ID
+		   into the row's hidden input (the speaker post's featured image is
+		   only a fallback, so this is the photo the event actually shows). */
+		function setPhoto(control, id, url) {
+			control.querySelector('.law-rel-photo-id').value = id || 0;
+			var thumb = control.querySelector('.law-rel-photo-thumb');
+			thumb.src = url || '';
+			thumb.hidden = !url;
+			control.querySelector('.law-rel-photo-choose').textContent = url ? 'Change photo' : 'Choose photo';
+			control.querySelector('.law-rel-photo-clear').hidden = !url;
+		}
+
 		picker.addEventListener('click', function (event) {
 			if (event.target.classList.contains('law-rel-remove')) {
 				event.target.closest('.law-rel-item').remove();
+				return;
+			}
+			var control = event.target.closest('[data-law-rel-photo]');
+			if (!control) {
+				return;
+			}
+			if (event.target.classList.contains('law-rel-photo-clear')) {
+				setPhoto(control, 0, '');
+				return;
+			}
+			if (event.target.classList.contains('law-rel-photo-choose') && window.wp && wp.media) {
+				var frame = wp.media({
+					title: 'Speaker photo for this event',
+					button: { text: 'Use this photo' },
+					library: { type: 'image' },
+					multiple: false
+				});
+				frame.on('select', function () {
+					var attachment = frame.state().get('selection').first().toJSON();
+					var sizes = attachment.sizes || {};
+					var url = (sizes.thumbnail && sizes.thumbnail.url) || attachment.url;
+					setPhoto(control, attachment.id, url);
+				});
+				frame.open();
 			}
 		});
 	});

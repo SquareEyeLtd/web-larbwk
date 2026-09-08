@@ -194,6 +194,13 @@ function law_booking_render_action( $event ) {
 		'<p class="law-booking-substate">%s</p>',
 		esc_html( sprintf( _n( '%s place left', '%s places left', $remaining, 'law' ), number_format_i18n( $remaining ) ) )
 	);
+	// Both dialogs are position:fixed with z-index 10050 (law-modal.css). This
+	// control now renders inside the hero's event details box, and the hero's
+	// .grid-container is a stacking context (position:relative, z-index 4,
+	// app.css), which would clamp them to level 4 and paint them underneath the
+	// fixed header (.nav z-index 99, .affix z-index 9999). So they are deferred
+	// to wp_footer, at body level, where no stacking context can reach them.
+	law_booking_footer_modal( $event, 'success' );
 	if ( $inline ) {
 		get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'inline' ) );
 		return;
@@ -203,7 +210,33 @@ function law_booking_render_action( $event ) {
 		esc_url( add_query_arg( 'law_book', 1, get_permalink( $event_id ) ) ),
 		esc_html__( 'Book now', 'law' )
 	);
-	get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'modal' ) );
+	law_booking_footer_modal( $event, 'modal' );
+}
+
+/**
+ * Defer one of the two booking dialogs to wp_footer, so it renders at body level
+ * rather than inside whatever container the booking control sits in. See the
+ * comment in law_booking_render_action() for why this matters.
+ *
+ * Called during template render, well before wp_footer fires.
+ *
+ * @param array  $event The calendar-mapped event array.
+ * @param string $which 'modal' (the Book now dialog) or 'success'.
+ */
+function law_booking_footer_modal( array $event, $which ) {
+	if ( 'success' === $which && ! is_user_logged_in() ) {
+		return;
+	}
+	add_action(
+		'wp_footer',
+		static function () use ( $event, $which ) {
+			if ( 'success' === $which ) {
+				get_template_part( 'parts/events/booking-success-modal', null, array( 'event' => $event ) );
+				return;
+			}
+			get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'modal' ) );
+		}
+	);
 }
 
 /**

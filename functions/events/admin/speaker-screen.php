@@ -1,7 +1,10 @@
 <?php
 /**
- * law_speaker admin screen: contact fields (custom meta box), photo via the
- * core featured image box, biography via the editor, related events read-only.
+ * law_speaker admin screen: contact fields (custom meta box), a fallback photo
+ * via the core featured image box, a fallback biography via the editor,
+ * related events read-only. The biography, organisation, job title and photo
+ * that actually appear on a listing are per event, on the event's Speakers
+ * rows.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -16,10 +19,8 @@ add_action( 'add_meta_boxes_' . LAW_SPEAKER_CPT, function () {
 function law_speaker_box_details( $post ) {
 	wp_nonce_field( 'law_speaker_admin_save', 'law_speaker_admin_nonce' );
 	law_field_text( 'law_speaker_email', 'Email (the dedupe key)', (string) law_event_meta( $post->ID, '_law_speaker_email' ), array( 'type' => 'email' ) );
-	law_field_text( 'law_organisation', 'Organisation / firm / chambers', (string) law_event_meta( $post->ID, '_law_organisation' ) );
-	law_field_text( 'law_job_title', 'Job title / role', (string) law_event_meta( $post->ID, '_law_job_title' ) );
 	law_field_text( 'law_website', 'Website profile URL', (string) law_event_meta( $post->ID, '_law_website' ), array( 'type' => 'url' ) );
-	echo '<p class="description">The photo is the featured image; the biography is the main editor content.</p>';
+	echo '<p class="description">Biography, organisation, job title and photo are per event: edit them on each event (or session) under Speakers. The editor content and featured image here are only fallbacks, used for an event whose Speakers row leaves them blank.</p>';
 }
 
 function law_speaker_box_events( $post ) {
@@ -29,12 +30,19 @@ function law_speaker_box_events( $post ) {
 		echo '<p>Not on any confirmed event. The speaker only appears publicly while a confirmed event references them.</p>';
 		return;
 	}
-	echo '<ul>';
-	foreach ( $events as $event_id ) {
+	// Earliest first: the first row is what the speakers archive card shows.
+	$ordered = wp_list_pluck( law_speaker_appearances( (int) $post->ID ), 'event_id' );
+	echo '<ul class="law-speaker-appearances">';
+	foreach ( $ordered as $event_id ) {
+		$seen  = law_speaker_appearance_for_event( (int) $post->ID, (int) $event_id ) ?: array( 'organisation' => '', 'job_title' => '', 'photo_id' => 0 );
+		$thumb = $seen['photo_id'] ? (string) wp_get_attachment_image_url( $seen['photo_id'], 'thumbnail' ) : '';
+		$what  = implode( ', ', array_filter( array( $seen['job_title'], $seen['organisation'] ) ) );
 		printf(
-			'<li><a href="%s">%s</a></li>',
+			'<li>%s<a href="%s">%s</a>%s</li>',
+			$thumb ? '<img src="' . esc_url( $thumb ) . '" alt="" width="24" height="24" style="vertical-align:middle;margin-right:6px;border-radius:2px"> ' : '',
 			esc_url( get_edit_post_link( $event_id ) ),
-			esc_html( get_the_title( $event_id ) )
+			esc_html( get_the_title( $event_id ) ),
+			$what ? '<br><span class="description">' . esc_html( $what ) . '</span>' : ''
 		);
 	}
 	echo '</ul>';
@@ -51,8 +59,6 @@ add_action( 'save_post_' . LAW_SPEAKER_CPT, function ( $post_id ) {
 
 	foreach ( array(
 		'law_speaker_email' => '_law_speaker_email',
-		'law_organisation'  => '_law_organisation',
-		'law_job_title'     => '_law_job_title',
 		'law_website'       => '_law_website',
 	) as $field => $key ) {
 		if ( isset( $_POST[ $field ] ) ) {

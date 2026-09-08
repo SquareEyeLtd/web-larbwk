@@ -449,7 +449,7 @@ UI over the same keys, not ACF):
 | `_law_assignee` | 90 (Committee assignee) | User ID; change still triggers the assignee email |
 | `_law_contacts` | 94 (Event contacts, form 4 children) | Array of {name, organisation, email} rows |
 | `_law_co_owner_ids` | 106 (Additional event owners, form 6 children) | User IDs (section 3.4) |
-| `_law_speakers` | 112 (Speakers, form 8 children) | Array of {speaker_id, role, organisation_override, sort}; role and override empty in 4.1, defined now for 4.2 §3.5 |
+| `_law_speakers` | 112 (Speakers, form 8 children) | Array of {speaker_id, role, organisation, job_title, photo_id, sort}: the speaker's **appearance** at this event (field 3, field 4, field 6 of the child entry). Role empty in 4.1, defined for 4.2 §3.5. (Changed 8 September 2026 from {…, organisation_override, …}: details are per event, not per person.) |
 | `_law_registration_state` | (new, 4.2) | `open` / `apply` / `free` / `external` / `invitation` / `closed`; unused in 4.1 but registered so nothing re-migrates |
 | `_law_gf_entry_id` | (migration) | The source form 2 entry ID; powers URL redirects and Stripe metadata continuity |
 | `_law_stripe_error` | (new) | Set when invoice creation fails: the error message and timestamp; cleared on successful retry. Drives the alert and the Retry button (section 3.7) |
@@ -466,9 +466,20 @@ been all along.
 
 - `post_title`: name; `post_content`: field 7 (Biography); featured image:
   field 6 (Photo), sideloaded into the media library at migration.
-- Meta: `_law_speaker_email` (the dedupe key), `_law_organisation`,
-  `_law_job_title`, `_law_website`, and `_law_organisation_ids` reserved for the
-  4.2 "additional organisations" requirement.
+- Meta: `_law_speaker_email` (the dedupe key), `_law_website`, and
+  `_law_organisation_ids` reserved for the 4.2 "additional organisations"
+  requirement. **Organisation, job title and photo are not speaker meta**
+  (decided 8 September 2026): they are per appearance, on the event's
+  `_law_speakers` row, because the same person speaks for different firms and
+  under different titles at different events and the client wants each event
+  (and the profile's per-event list) to show what was submitted for it. The
+  featured image is only a fallback photo. The archive card and the profile
+  use the speaker's FIRST appearance (the first-submitted confirmed event, by
+  creation date, not the earliest event date); an event page shows the photo
+  set for that event, else the first one ever provided, else the initials
+  placeholder; the
+  profile page shows no headline organisation or job title, only the per-event
+  lines on its "Speaking at" cards.
 - **Speakers are first-class and shared across events**, which the current
   per-event child entries are not. The event stores the relationship (in
   `_law_speakers`), so one person appearing at three events is one post: exactly
@@ -1046,8 +1057,12 @@ The migrator never relies on ID ordering, only on `gpnf_entry_parent`.)
 2. **Speakers.** Form 8 (Event > speaker) children (186 rows) plus any
    remaining form 2 field 48 (Speakers (list)) rows on unmigrated entries:
    dedupe by email then name (the same rules as today's render-time dedupe),
-   create `law_speaker` posts, sideload photos to the media library. Every
-   source entry ID maps to its post (many-to-one) for URL redirects.
+   create `law_speaker` posts (identity only), sideload each child's photo to
+   the media library and record it per child entry. Every source entry ID maps
+   to its post (many-to-one) for URL redirects. Step 3 then writes each event's
+   appearance rows (that child's organisation, job title and photo), step 4
+   copies them onto session rows, and step 4b refreshes them from the source
+   entries idempotently.
 3. **Events.** The 75 active form 2 (Event > submit an event) entries: create
    `law_event` posts with the full field mapping (section 3.1), map field 95
    (Event status) to post status, set `post_author` from `created_by`, attach
@@ -1274,7 +1289,9 @@ areas) rather than starting a second architecture.
 2. **Custom post statuses + `publish` = Confirmed**: native queries and admin
    filtering beat status-in-meta.
 3. **Speakers deduped at save, shared across events**: matches 4.2 §3.5;
-   migration performs the first dedupe pass.
+   migration performs the first dedupe pass. The shared post is identity only;
+   organisation, job title and photo are per appearance on the event row
+   (8 September 2026).
 4. **Server-rendered forms, vanilla JS repeaters**: no front-end framework;
    consistent with the theme's existing patterns.
 5. **Stripe hosted invoices stay** for host fees: identical host experience to

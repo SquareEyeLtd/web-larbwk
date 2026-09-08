@@ -138,7 +138,9 @@ function law_field_repeater( $name, $label, array $rows, array $columns ) {
 
 /**
  * Relationship picker with AJAX search: stores rows of {speaker_id, role,
- * organisation_override} (or plain IDs when $simple).
+ * organisation, job_title, photo_id, bio} (or plain IDs when $simple). The
+ * organisation, job title, photo and biography are the speaker's appearance at
+ * THIS event/session, not properties of the speaker post.
  *
  * @param string $name      Base field name.
  * @param string $label     Group label.
@@ -177,13 +179,44 @@ function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
 			esc_attr( (string) ( $row['role'] ?? '' ) )
 		);
 		printf(
-			'<input type="text" name="%s[%d][organisation_override]" value="%s" placeholder="Organisation override" class="law-rel-org">',
+			'<input type="text" name="%s[%d][organisation]" value="%s" placeholder="Organisation at this event" class="law-rel-org">',
 			esc_attr( $name ),
 			(int) $i,
-			esc_attr( (string) ( $row['organisation_override'] ?? '' ) )
+			esc_attr( (string) ( $row['organisation'] ?? '' ) )
+		);
+		printf(
+			'<input type="text" name="%s[%d][job_title]" value="%s" placeholder="Job title at this event" class="law-rel-job">',
+			esc_attr( $name ),
+			(int) $i,
+			esc_attr( (string) ( $row['job_title'] ?? '' ) )
+		);
+		law_field_relationship_photo( $name, $i, (int) ( $row['photo_id'] ?? 0 ) );
+		// Last, and on its own full-width line (law-admin.css): the biography
+		// this speaker gave for this event. Empty here means the single event
+		// view falls back to the speaker post's editor content.
+		printf(
+			'<textarea name="%s[%d][bio]" rows="3" placeholder="Biography for this event" class="law-rel-bio">%s</textarea>',
+			esc_attr( $name ),
+			(int) $i,
+			esc_textarea( (string) ( $row['bio'] ?? '' ) )
 		);
 	}
 	echo '<button type="button" class="button-link-delete law-rel-remove" aria-label="Remove">×</button></li>';
+}
+
+/**
+ * The per-appearance photo control inside a relationship row: hidden
+ * attachment ID, thumbnail, Choose (wp.media, wired in law-admin.js) and
+ * Remove. law-admin.js builds the same markup for rows added via search.
+ */
+function law_field_relationship_photo( $name, $i, $photo_id ) {
+	$thumb = $photo_id ? (string) wp_get_attachment_image_url( $photo_id, 'thumbnail' ) : '';
+	echo '<span class="law-rel-photo" data-law-rel-photo>';
+	printf( '<input type="hidden" name="%s[%d][photo_id]" value="%d" class="law-rel-photo-id">', esc_attr( $name ), (int) $i, (int) $photo_id );
+	printf( '<img class="law-rel-photo-thumb" src="%s" alt="" width="32" height="32"%s>', esc_url( $thumb ), $thumb ? '' : ' hidden' );
+	echo '<button type="button" class="button-link law-rel-photo-choose">' . ( $thumb ? 'Change photo' : 'Choose photo' ) . '</button>';
+	echo '<button type="button" class="button-link law-rel-photo-clear"' . ( $thumb ? '' : ' hidden' ) . '>Remove photo</button>';
+	echo '</span>';
 }
 
 /* AJAX search behind the relationship picker ________________________________ */
@@ -230,8 +263,8 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 	}
 
 	wp_enqueue_media();
-	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.1' );
-	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.1', true );
+	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.3' );
+	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.3', true );
 	wp_localize_script(
 		'law-events-admin',
 		'lawEventsAdmin',

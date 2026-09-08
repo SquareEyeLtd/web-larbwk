@@ -473,7 +473,9 @@ function law_speaker_seo_description() {
 		return '';
 	}
 	if ( '' !== $speaker['bio'] ) {
-		return wp_trim_words( wp_strip_all_tags( $speaker['bio'] ), 24, '…' );
+		return function_exists( 'law_speaker_bio_excerpt' )
+			? law_speaker_bio_excerpt( $speaker['bio'] )
+			: wp_trim_words( wp_strip_all_tags( $speaker['bio'] ), 24, '…' );
 	}
 	$who  = $speaker['name'];
 	$role = array_filter( array( $speaker['job_title'], $speaker['organisation'] ) );

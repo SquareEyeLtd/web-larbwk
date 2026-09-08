@@ -426,9 +426,18 @@ function law_event_submitbox_script() {
 function law_events_rows_from_post( $field ) {
 	$rows = array();
 	foreach ( (array) ( $_POST[ $field ] ?? array() ) as $row ) {
-		if ( is_array( $row ) ) {
-			$rows[] = array_map( 'sanitize_text_field', array_map( 'wp_unslash', $row ) );
+		if ( ! is_array( $row ) ) {
+			continue;
 		}
+		$clean = array();
+		foreach ( $row as $key => $value ) {
+			$value = wp_unslash( is_scalar( $value ) ? (string) $value : '' );
+			// A speaker's biography is a paragraph, and sanitize_text_field()
+			// collapses its line breaks — before the meta schema's textarea
+			// sanitiser ever sees the value. Everything else here is single-line.
+			$clean[ $key ] = 'bio' === $key ? sanitize_textarea_field( $value ) : sanitize_text_field( $value );
+		}
+		$rows[] = $clean;
 	}
 	return $rows;
 }
