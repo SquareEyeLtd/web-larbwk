@@ -25,11 +25,22 @@
 > Country column on the list and exports (§7.4, §7.5), and the booking
 > control's button renamed Register (§7.1). Receptions/external events, the
 > flagship flow and an event-changed email stay deferred (§14).
+> **Revision 2, 8 September 2026: one booking per attendee.** Denis decided
+> that a colleague a booker brings should get their OWN booking with its own
+> unique booking number, rather than a row on the booker's booking, and that
+> the host, committee and admin lists should be flat, one row per person, with
+> only an "Invited by {name}" tag to show who brought whom. That supersedes the
+> party model described below wherever the two disagree, and it is what made
+> the waitlist simple enough to build in the same round. **WAITLIST.md is the
+> live contract for the booking data model and the waitlist**; the passages
+> here marked "Superseded" are kept because this document is a dated record of
+> what was agreed and built at the time, not a description of today's code.
+>
 > This is the design contract for the
 > attendee bookings slice of the events platform. It was produced on 7 September 2026
 > from Denis's brief, a scan of EVENTS_4.2_SPECS.md, seven rounds of scope decisions,
 > and three specialist-persona reviews (UX, design reuse, backend DRY) whose accepted
-> findings are folded in below. EVENTS_4.1_FUNC_V2.md documents the code as built,
+> findings are folded in below. EVENTS_FUNC.md documents the code as built,
 > phase by phase, per its own header rule.
 
 ## 1. What this is
@@ -71,6 +82,10 @@ All confirmed by Denis on 7 September 2026.
   duplicate guard this means one active booking per person per event, so a party is at most
   4 places: the booker plus 3 colleagues. The owner can add and remove attendees on their
   existing booking but can never open a second booking for the same event.
+  *Superseded in part (8 September 2026): the cap survives as three COLLEAGUE
+  bookings per booker per event, counted separately from their own, so a booker
+  who cancels their own place still holds up to three and may book themselves
+  again. See WAITLIST.md §A2.*
 - **Dietary and accessibility are profile-only.** The booking form collects name, email,
   organisation and job title per attendee. Dietary and accessibility requirements live on
   each attendee's own profile (the invite email points new attendees there), and the host
@@ -82,7 +97,8 @@ All confirmed by Denis on 7 September 2026.
   unset shows "Bookings open soon" and is not bookable until the committee or host sets a
   ticket number. (At the time of writing, 7 of 63 approved or confirmed events have no
   ticket number.)
-- **Sold out keeps a disabled "Join waitlist" button** (waitlist functionality is deferred),
+- **Superseded (8 September 2026): the waitlist is now built — see WAITLIST.md Part B.**
+  Sold out kept a disabled "Join waitlist" button while it was deferred,
   mitigated: adjacent visible text saying the waitlist is not open yet, the button removed
   from the tab order, and a new `[aria-disabled="true"]` style. The server hard-stop is what
   actually protects capacity.
@@ -107,7 +123,7 @@ All confirmed by Denis on 7 September 2026.
 - **Exports are CSV, Excel and PDF**, the same trio as the committee dashboard, reusing
   `functions/events/export.php` wholesale.
 - **Extras:** .ics calendar attachments on the confirmation and invite emails, and a welcome
-  email for new self-registered users (closing open decision 2 in EVENTS_4.1_FUNC_V2.md).
+  email for new self-registered users (closing open decision 2 in EVENTS_FUNC.md).
 - **Build behind the pre-launch gate.** The Programme page (page 622, Programme) and single
   event pages stay Members-gated to admin, editor and committee; QA runs with those accounts
   plus a temporary gate bypass for test attendees. Opening the programme to the public is a
@@ -154,6 +170,11 @@ edit could resurrect a cancelled booking (silently re-consuming places) and untr
 park a booking in core `draft`, a status no query reads.
 
 ### 3.2 Attendee storage: one ordered rows array, owner included
+
+> **Superseded (8 September 2026).** One booking per attendee: the rows array,
+> the flat `_law_booking_attendee` index and the `attendee_rows` sanitiser are
+> gone, replaced by scalar snapshot meta plus `_law_booked_by`. See
+> WAITLIST.md §A1.
 
 `_law_attendee_rows`: ordered rows of
 `{ user_id, name, email, organisation, job_title, is_owner }`, where **row 0 is the owner**,
@@ -729,7 +750,7 @@ results are logged when the number changes, and every email send is logged by
 5. **Host and committee** (~1 day): Bookings (n) actions, the bookings list, reject
    modals, the CSV/Excel/PDF export endpoint and buttons.
 6. **Admin, hardening, docs** (~1 day): booking-screen.php, the events Booked column, the
-   event-cancel sweep, EVENTS_4.1_FUNC_V2.md updates.
+   event-cancel sweep, EVENTS_FUNC.md updates.
 7. **Security review gate**: the security-specialist agent over the whole bookings surface
    (handlers, guards, exports, registration changes, emails); fix its findings.
 8. **Full E2E UX pass**: after security sign-off, the test-specialist agent (Playwright)
@@ -866,8 +887,9 @@ Recorded follow-ups (defaults chosen, no build now):
   logged-out visitors; booking itself is server-guarded. An ops note, not code.
 - **Auto-created attendee accounts get no HubSpot contact tags** (same as co-owner
   accounts); revisit with the deferred HubSpot sync.
-- **The waitlist itself** (signup capture, ordering, promotion) is deferred wholesale; the
-  disabled button and the server hard-stop are the v1 surface.
+- ~~**The waitlist itself** (signup capture, ordering, promotion) is deferred wholesale; the
+  disabled button and the server hard-stop are the v1 surface.~~ **Built on
+  8 September 2026; see WAITLIST.md Part B.**
 
 Deferred by Denis on 8 September 2026, after the spec-conformance review of the committee
 tooling: **receptions and externally booked events** (spec §2 names GAR, LCIA and CIARB as

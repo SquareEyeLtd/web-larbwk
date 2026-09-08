@@ -1,4 +1,4 @@
-# Events module: code report (4.1 custom rebuild)
+# Events module: code report (custom rebuild, 4.1 and 4.2)
 
 > **Keep this file current.** This document is the working reference for the
 > events module: any agent or developer who makes a material change to the
@@ -10,93 +10,19 @@
 > does.
 
 Working reference for the custom, CPT-backed events module that replaces the
-Gravity Forms / Gravity Flow / GravityView / Make stack described in
-EVENTS_4.1_FUNC.md. Verified against the codebase and the local database on
-5 September 2026, re-verified after the forms/payments security round and
-the additional-host email round the same day, updated 6 September 2026
-for the pre-launch-gate host bypass, the new `404.php` and the time-boxed,
-batched migration history step, and updated 7 September 2026 for the
-module-owned country → ISO mapper (`countries.php`), the committee
-front-end edit view (with the resubmit-on-any-save fix that came with it),
-the AJAX layer on the committee dashboard's workflow actions, and the
-cancel/withdraw/delete round: the seventh status `law-cancelled`, the
-committee Cancel and host Withdraw actions, the dashboard Delete-to-trash,
-the Stripe invoice-void helper (`law_stripe_void_invoice()`) and three new
-emails (25 total). Updated again 7 September 2026 for **bookings phase 1**
-(EVENTS_BOOKINGS.md is that feature's design contract): the fourth CPT
-`law_booking`, the bookings engine (`bookings.php`), the shared request
-plumbing (`request.php`, where `law_events_redirect_back()` and
-`law_events_rate_limit_ok()` moved from comments.php), the booking meta
-schema plus the `_law_tickets_sold` / `_law_capacity_warned` event keys, the
-status guard and untrash filter extended to bookings, and the parameterised
-`law_events_create_host_user()` + extracted
-`law_events_password_setup_link()` in co-owners.php. Bookings phase 2 landed
-the same day: the twelve bookings/welcome emails (37 total), the
-`$extra['attachments']` extension to `law_events_send()`, the `.ics`
-generator (`ics.php`), the `{event_date}`/`{event_time}` placeholders and
-the registration welcome email. Bookings phase 3 (same day): the booking
-surface — the five admin-post handlers on the shared request guard, the
-five-state booking control (`functions/account-bookings.php`), the booking
-modal and attendee repeater partials, `assets/js/booking-form.js`, the
-programme card's placeholder Register action removed, the hero's
-"Places remaining" fact, and the registration form's locked-role +
-`redirect_to` round trip for the modal's register link. Phases 4–6 (same
-day): the account area (the "Your bookings" section and audience split on
-My events, the `?law_booking=` manage view, the page 292 (My events)
-attendee-access fix scripted in `law_setup_account_events_attendee_access()`
-+ migration step 10), the host/committee `?law_event_bookings=` list with
-per-attendee Reject and the CSV/Excel/PDF export trio
-(`law_booking_export`, reusing export.php with a new optional title line),
-the read-only wp-admin booking screen (`admin/booking-screen.php`) and the
-events list's Booked column, and the event-cancel sweep
-(`law_bookings_cancel_all_for_event()`, called from the workflow's cancel
-side effects). The phase 7 security review (no critical/high findings) led
-to: all booking guards moved inside the event lock and the lock extended to
-remove/cancel; a row/owner cap inside the `attendee_rows` sanitiser; the
-.ics temp file deleted in a `finally`; and a locked registration role
-enforced server-side. Accepted info-level items (wp-admin trash of bookings
-bypassing the engine, unescaped email subjects) are recorded in
-EVENTS_BOOKINGS.md §14. A further round of three independent reviews
-(plan-conformance, adversarial correctness, performance) then landed:
-account creation and attendee emails moved OUTSIDE the lock (seats written
-under it, IDs backfilled after); the last-row auto-cancel re-checks rows
-under its own lock; events trashed/hard-deleted outside the workflow
-sweep-cancel their bookings (`wp_trash_post`/`before_delete_post`), and the
-sweep is time-boxed with a `law_bookings_resume_cancel_sweep` cron
-continuation; `law_events_bump_counter()` is atomic
-(`ON DUPLICATE KEY UPDATE` + `LAST_INSERT_ID()`), which also hardens the
-LAW reference counter; `law_events_rate_limit_ok()` gained an optional
-larger per-IP budget (booking surfaces pass 100/150 against shared-NAT
-offices); self-removal matches the row's linked user ID; an inverted
-`_law_end` falls back like a missing one in the clash guard
-(`law_booking_clash_end()`) and the .ics; recount/export fetch all bookings
-(-1); a no-recipient send logs "Email NOT sent"; `cache_users()` primes the
-bookings list and export. EVENTS_BOOKINGS.md §14 carries the full list.
-Updated 8 September 2026 for the **per-appearance speaker role** (Trevor,
-3 September 2026: a person is a Speaker, Host or Moderator *at each event*):
-`law_speaker_roles()` and its key/label/display helpers, the canonical-key
-`speaker_rows` sanitiser, the Role select on the host form and both wp-admin
-relationship pickers (the host form save used to blank a wp-admin role on
-every edit), the role in brackets after the name on event and session
-speaker cards, the bio dialog and the committee dashboard, the "[name]'s
-role" line on the profile's Speaking-at cards, and the migration's form 8
-field 9 (Role) mapping (step 3, the step 4b refresh, a warn-only preflight
-line).
-Updated 8 September 2026 for the **committee bookings round** (EVENTS_BOOKINGS.md
-§7.6 and §2): the cross-event **Bookings dashboard** page
-(`/account/dashboard/bookings/`, `templates/account-bookings-dashboard.php`,
-`functions/events/bookings-dashboard.php`, "Bookings dashboard" in the header
-account dropdown for committee), **registering an attendee on their behalf**
-from the per-event bookings list (`law_booking_register_by_manager()`, handler
-`law_booking_register_attendee`, a committee-only **press pass** flag on the
-row, two new emails — 39 total), the **Country** column on the per-event list
-and export, and the booking control's button renamed **Register** (was "Book
-now", per 4.2 spec §3.4's vocabulary for free events).
-The companion EVENTS_4.1_REBUILD.md remains the design contract;
-this document maps that design onto the code as built.
+Gravity Forms / Gravity Flow / GravityView / Make stack: the 4.1 host side
+(submission, moderation, invoicing) and the 4.2 attendee side (bookings and
+the waitlist). What the code does is described in the sections below; when
+each part arrived is in **Change history** at the end.
 
-Unlike EVENTS_4.1_FUNC.md, this file carries no secrets, so it is safe to
-track. Stripe keys live only in `wp-config.php` (`LAW_STRIPE_*` constants).
+The design contracts are EVENTS_4.1_REBUILD.md (the rebuild), EVENTS_BOOKINGS.md
+(the attendee bookings slice) and WAITLIST.md (one booking per attendee, and the
+waitlist); this document maps them onto the code as built.
+
+Note the near-identical name: `EVENTS_4.1_FUNC.md` is a different, gitignored
+document describing the **legacy** Gravity Forms stack. Unlike that one, this
+file carries no secrets, so it is safe to track. Stripe keys live only in
+`wp-config.php` (`LAW_STRIPE_*` constants).
 
 Where a Gravity Forms form or field is named, it is paired with its name per
 house convention, e.g. form 2 (Event > submit an event), field 95 (Event
@@ -107,8 +33,8 @@ migrator reads them or where the legacy source path still branches on them.
 
 ## 1. Where the feature lives
 
-1. **The events module** (`functions/events/`): a self-contained package of 34
-   files (22 top level, 6 `admin/`, 3 `stripe/`, 3 `migration/`) loaded by one
+1. **The events module** (`functions/events/`): a self-contained package of 36
+   files (24 top level, 6 `admin/`, 3 `stripe/`, 3 `migration/`) loaded by one
    loader, `functions/events/_load.php`, which is required from
    `functions.php:30`. Everything new lives here: the custom post types, the
    workflow engine, the bookings engine, direct Stripe invoicing, the migration
@@ -188,13 +114,14 @@ screens, columns, emails) → migration (report, runner, page).
   front-end archive of their own, `show_in_rest => false` (deliberate — nothing
   about a submitted event should reach the public REST API), and sessions
   hierarchical-by-`post_parent` under their event.
-- `law_booking` (bookings phase 1, EVENTS_BOOKINGS.md): private, no rewrite,
+- `law_booking` (bookings phase 1, now WAITLIST.md Part A): private, no rewrite,
   `supports => title` only, a submenu of Events like speakers/sessions, and
   `create_posts => do_not_allow` on top of the shared capability set — bookings
   are only ever created by the engine (`law_booking_create()`), so the
   capacity/duplicate/clash guards and the seat recount cannot be bypassed from
-  wp-admin. Event = `post_parent`, owner = `post_author`, status `publish`
-  (active) or `law-cancelled`.
+  wp-admin. Event = `post_parent`, **the attendee** = `post_author` (one
+  booking per attendee since 8 September 2026), status `publish` (active),
+  `law-waitlisted` or `law-cancelled`.
 - `law_events_register_taxonomies()`: `law_event_type`, `law_sector` and
   `law_event_category` on events, plus `law_year` on events and speakers (the
   programme-year filter that keeps a 2026 event from re-filing into 2027).
@@ -213,6 +140,13 @@ screens, columns, emails) → migration (report, runner, page).
 - `law_events_register_statuses()` (on `init` priority 6): `register_post_status`
   for each, with count labels for the admin list.
 - `law_event_status_label()`: label for a status key or a post.
+- `law_booking_statuses()` and `law_booking_status_label()`: the BOOKING
+  vocabulary (`publish` = Active, `law-waitlisted`, `law-cancelled`), kept
+  deliberately out of `law_event_statuses()`, which drives the committee's
+  event filters and the events admin list. `law-waitlisted` is registered
+  alongside the event statuses on the same `init` priority 6 hook: WP_Query
+  silently drops an unregistered `post_status`, leaving no status clause at
+  all, which would return every booking of every status.
 - `law_event_status_from_legacy()`: maps a legacy field 95 (Event status) value
   (Proposed/Sent back/Approved/Confirmed/Rejected) to a CPT status, used by the
   migrator.
@@ -228,9 +162,11 @@ screens, columns, emails) → migration (report, runner, page).
   `init` priority 7) with a per-type sanitiser and an auth callback. Bookings
   phase 1 added `_law_tickets_sold` (the recalculated seat counter) and
   `_law_capacity_warned` (the one-shot host warning latch) to the event
-  schema, and `_law_booking_number` + `_law_attendee_rows` on bookings; the
-  flat `_law_booking_attendee` index rows stay OUT of the schema, exactly like
-  `_law_co_owner`.
+  schema. Bookings carry `_law_booking_number`, `_law_booked_by`, the four
+  `_law_attendee_*` snapshot keys, `_law_is_press` and the four
+  `_law_waitlist_*` keys (WAITLIST.md §A7, §B1). The old `_law_attendee_rows`
+  array, its `attendee_rows` sanitiser and the flat `_law_booking_attendee`
+  index were removed with the per-attendee rebuild.
 - `law_events_sanitize_value()`: the one sanitiser, switched on type. The row
   types (`people_rows` for co-owners/contacts, `speaker_rows` for the
   event→speaker relationship) clean each subfield and drop empty rows — so the
@@ -255,7 +191,9 @@ screens, columns, emails) → migration (report, runner, page).
   accepted at current volumes) and the LAW reference built on it (e.g.
   `LAW26-00212`, seeded from the legacy max at migration).
   `law_bookings_next_number()` (bookings.php) uses the same helper for the
-  `law_bookings_counter` option behind "Booking #N".
+  `law_bookings_counter` option behind "Booking #N", and
+  `law_bookings_next_numbers( $n )` passes `$by = $n` to claim a consecutive
+  block for one party in a single atomic step.
 
 ### `countries.php`: country name → ISO 3166-1 alpha-2
 
@@ -364,12 +302,12 @@ screens, columns, emails) → migration (report, runner, page).
   Publish / Save Draft from confirming an unapproved event or parking it in a
   core status no dashboard shows. New inserts (form, migration, tests) pass
   through untouched. A second filter keeps the custom statuses out of the
-  quick-edit dropdown. **Since bookings phase 1 the guard also covers
-  `law_booking`** (its own flag, `law_booking_transitioning`, raised only by
-  `law_booking_cancel()`), so quick edit cannot resurrect a cancelled booking;
-  the `wp_untrash_post_status` filter likewise restores a booking to its
-  pre-trash status, constrained to publish/law-cancelled (anything else
-  restores as cancelled, the safe side).
+  quick-edit dropdown. **The guard also covers `law_booking`** (its own flag,
+  `law_booking_transitioning`, raised only by `law_booking_set_status()`), so
+  quick edit can neither resurrect a cancelled booking nor seat a waitlisted
+  one; the `wp_untrash_post_status` filter likewise restores a booking to its
+  pre-trash status, constrained to the keys of `law_booking_statuses()`
+  (anything else restores as cancelled, the safe side).
 - `law_event_ui_actions()`: the five actions the two committee UIs offer
   (approve, send_back, reject, mark_paid, cancel), the shared list both the
   dashboard handler and the wp-admin event screen check a posted action
@@ -498,169 +436,152 @@ screens, columns, emails) → migration (report, runner, page).
 - `law_events_owned_event_ids()`: events a user owns or co-owns, for the host
   dashboard.
 
-### `bookings.php`: the bookings engine (phases 1–6; EVENTS_BOOKINGS.md is the contract)
+### `bookings.php`: the bookings engine (WAITLIST.md Part A is the current contract; EVENTS_BOOKINGS.md is the original)
 
-- **Front-end surfaces** (phases 4–5): `functions/account-bookings.php`
-  (the control, `law_account_bookings()`, the audience split helper, the
-  form-state transients, the enqueues), `parts/events/booking-modal.php` /
-  `attendee-repeater.php` / `booking-manage.php` (`?law_booking=`, owner or
-  seated attendee; remove/add/cancel behind confirm modals with the specified
-  copy and close labels) / `booking-list.php` (`?law_event_bookings=`,
-  `law_user_can_manage_event()`; a flat dashboard-idiom table whose leading
-  Booking column repeats the number per attendee row — Denis, 7 September
-  2026, superseding the grouped-blocks design — with live
-  dietary/accessibility from `law_profile_values()` in wrapping columns, the
-  attendee's **country** (live from the profile too, 8 September 2026), a
-  **Press** badge on press-pass rows, per-attendee Reject with optional
-  reason, cancelled bookings collapsed with the cancelled badge, the
-  CSV/Excel/PDF export trio, and — below the table — **"Register an
-  attendee"** (8 September 2026): a host, co-owner or committee member
-  registers someone by name and email for phone/email requests, VIPs and
-  press. Handler `law_booking_register_attendee` (gate
-  `law_user_can_manage_event()` on the posted event, the subject itself since
-  no booking exists yet; `booking_edit` rate surface; no-JS refusals
-  re-render the typed row via `law_booking_store_form_state()`) calls
-  `law_booking_register_by_manager()`, which cleans the row with
-  `law_booking_clean_additional_rows()`, fast-fails the open/duplicate/
-  capacity guards, resolves or creates the attendee account
-  (`law_events_create_host_user()`, role attendee), then calls
-  `law_booking_create()` with `$args` (`actor`, `on_behalf`, `new_account`,
-  `press`, `owner_row`) so the person OWNS the booking — it sits under their
-  "Your bookings", they can manage or cancel it, and every guard, the recount
-  and the host/committee emails run exactly as for self-service. A refused
-  booking deletes the account it just created (no orphans; logged
-  `booking_attendee_account_rolled_back`). The confirmation is
-  `user_booking_registered` (existing account) or
-  `user_booking_registered_invited` (new account, with the set-password link
-  in the same email — one email, not invite + confirmation), both naming
-  `{registered_by}`. The **press flag** (`is_press` on the row, kept by the
-  `attendee_rows` sanitiser only when set) is honoured by the handler only for
-  `law_user_is_committee()` — press passes are LAW-issued (spec §6.4) — and
-  surfaces as the badge, a Press column in both exports and the Bookings
-  dashboard's "Press only" filter. Hosts get "Bookings (n)" on Confirmed cards
-  (`law_account_event_actions()`); the committee dashboard rows link the same
-  URL. `law_booking_export` (GET, format=csv|xlsx|json) reuses
-  `law_events_send_csv()`/`law_events_send_xlsx()` (both grew an optional
-  title line) and export-buttons.js/pdfmake (generalised: the filter form is
-  optional, page size follows column count); its columns are Booking ID,
-  First name, Second name, Email, Organisation, Job title, Country, Press,
-  Accessibility, Dietary.
-- **The event-cancel sweep** (phase 6): `law_bookings_cancel_all_for_event()`,
-  a direct call from the workflow's `cancel` side effects — every active
-  booking cancelled, every attendee sent `user_booking_event_cancelled`,
-  one summary log line.
+**One booking per attendee.** A booking is a `law_booking` post whose
+**author is the attendee**, with `post_parent` the event, its own
+`_law_booking_number`, and the person's details as scalar snapshot meta
+(`_law_attendee_name` / `_email` / `_organisation` / `_job_title`, plus the
+committee-only `_law_is_press`). `_law_booked_by` is always set: on a
+colleague's booking it is whoever brought them, and on a self-booking (or a
+registration made on someone's behalf) it equals the author, which is what
+"self-booked" means. Statuses are `publish`, `law-waitlisted` and
+`law-cancelled`.
 
-- A booking = a `law_booking` post (event = `post_parent`, owner =
-  `post_author`, `publish` active / `law-cancelled`) carrying
-  `_law_attendee_rows`, an ordered array where **row 0 is the owner**
-  (snapshot: user_id, name, email, organisation, job_title, is_owner), plus
-  one flat `_law_booking_attendee` postmeta row per linked user (the
-  `_law_co_owner` query pattern), all written by the single path
-  `law_booking_set_attendee_rows()`.
-- Mutations, all logging to the parent EVENT's activity log with
-  `source => 'bookings'` and `booking => <id>` (refusals too,
-  `booking_guard_refused`): `law_booking_create()` (guards → attendee-role
-  auto-grant → insert → accounts → rows → recount → emails → capacity check),
-  `law_booking_add_attendee()`, `law_booking_remove_attendee()` (contexts
-  owner / self / host_reject pick the notification template; the last removed
-  row auto-cancels), `law_booking_cancel()` (idempotent; context owner /
-  event_cancelled / last_attendee_removed picks who is emailed).
-- Guards: `law_booking_guard_open()` (Confirmed + CPT source + ticket number
-  set + not started — no ticket number means "Bookings open soon", NOT
-  unlimited), `law_booking_guard_duplicates()` (an email holds one place per
-  event, across active bookings and within a submission),
-  `law_booking_guard_capacity()`, `law_booking_guard_clash()` (overlap on
-  `_law_start`/`_law_end`, missing end = 23:59 of the start date, message
-  names the conflict), `law_booking_clean_additional_rows()` (cap 3, name +
-  valid email required, errors carry row/field data).
-- Places: `_law_tickets_sold` is stored and recalculated by
-  `law_event_recount_attendees()` after every mutation (the programme render
-  is the hot path, so no live counting); `law_event_tickets_remaining()`
-  returns null for "not open"; a `GET_LOCK('law_booking_event_<id>', 3)`
-  serialises the mutations — since the phase 7 security review EVERY
-  shared-state read runs inside it (the duplicate, own-booking, clash,
-  additional-cap and capacity guards on create/add, and the row
-  read-modify-write on remove/reject/cancel; the lock is re-entrant per
-  session, so remove's last-row auto-cancel taking it again is fine), so two
-  parallel submits can no longer both pass the pre-checks; two backstop
-  hooks (`transition_post_status`, `deleted_post`) recount after wp-admin
-  trash/untrash/delete, which never touch the engine.
-- Accounts: `law_booking_ensure_attendee_user()` links an existing account by
-  email (granting the `attendee` role) or creates one via the parameterised
-  `law_events_create_host_user()`; an account failure keeps the seat
-  (snapshot counts) and logs `booking_attendee_error`.
-- `law_booking_maybe_capacity_warning()`: one-shot host warning at ≤ 5 places
-  remaining (`_law_capacity_warned`), re-armed by the recount when removals
-  lift remaining above 5.
-- Emails (phase 2): `user_booking_confirmed`, `host_booking_received`,
-  `committee_booking_received` (assignee-first via `$extra['to']`, falling
-  back to the committee list), `user_attendee_invited` / `_added` /
-  `_rejected` / `_removed` / `_removed_self`,
-  `user_booking_cancelled_attendee`, `user_booking_event_cancelled` (the
-  phase 6 event-cancel sweep will send it), `host_capacity_warning`, and
-  (8 September 2026) `user_booking_registered` / `user_booking_registered_invited`
-  (registered on their behalf; the invited variant carries the set-password
-  link; both name `{registered_by}`) — all
-  in the registry, editable on the Emails screen, every send logged. The
-  confirmation, the registered-on-behalf pair and both attendee-added emails attach the event's `.ics`
-  invite via `law_booking_send_with_ics()` (tempfile deleted after the
-  synchronous send). One removal template per context, because a single
-  "you have been removed" would mis-describe most of them.
-- Handlers (phase 3), all on `law_events_guard_post()` (request.php):
-  `law_booking_create` (any signed-in user; role auto-granted; 10/600s on the
-  `booking` surface), `law_booking_add_attendee` / `law_booking_cancel`
-  (booking owner), `law_booking_remove_attendee` (owner, or the row's own
-  user — the context picks the email), `law_booking_reject_attendee`
-  (`law_user_can_manage_event()` on `post_parent`; posted event IDs are never
-  trusted), all 15/600s on `booking_edit`. Error payloads carry the engine's
-  row/field data so booking-form.js can mark the offending input; the no-JS
-  path stores `law_booking_store_form_state()` (account-bookings.php) and the
-  inline form re-renders with the typed rows. One rule beyond the guards:
-  **one active booking per person per event** — even a seatless owner is
-  refused a second booking and manages their existing one instead.
-- Front end (phase 3): `functions/account-bookings.php` renders the
-  five-state control (`law_booking_render_action()`: You're booked with a
-  Manage/View link → Bookings open soon → Book now + "N places left" →
-  sold-out disabled "Join waitlist" placeholder → "This event has taken
-  place") in the footer row of the hero's event details box
-  (`parts/calendar-event-details.php`), next to the facts rather than at the
-  bottom of the article; the programme card's disabled Register default action
-  is gone (`parts/loop/event.php`). The box carries the `law-cal` class so the
-  control keeps the `.law-cal`-gated styling it depends on (the `aria-disabled`
-  inert treatment, the button hover, the light-surface `.law-form-notice`
-  colours), and both of its `position: fixed` dialogs are deferred to
-  `wp_footer` by `law_booking_footer_modal()`, because the hero's
-  `.grid-container` is a stacking context (`z-index: 4`) that would otherwise
-  paint them under the fixed header. Availability is stated by the control, so
-  the old "Places remaining" hero fact appears in the box only as a fallback,
-  when the control renders nothing (the legacy source, and committee previews of
-  unpublished events). The Book now opener is a
-  real link to the inline `?law_book=1` form (the no-JS path);
-  `assets/js/booking-form.js` upgrades it to open
-  `parts/events/booking-modal.php` (the `.law-modal` skeleton with a `--wide`
-  dialog, NOT parts/layout/modal.php, whose args are single-field), wrapped
-  `law-event-form--light` so the dark-hero-first form styles do not vanish on
-  the white dialog. `parts/events/attendee-repeater.php` starts at zero rows
-  ("Add a colleague", cap `min(3, places remaining − 1)`) on its own
-  `data-law-booking-*` hooks so event-form.js's repeaters cannot double-fire.
-  Fetch errors are row/field-marked in place; success opens the locked
-  `law-booking-success` dialog whose two links (Close / View my bookings) are
-  the only exits — no 3-second auto-reload. Assets (event-form.css, the modal
-  pair, booking-form.js) enqueue at head time on the single event view.
-  `law_events_map_post()` now carries `tickets_sold`/`tickets_remaining`; the
-  front end never reads the legacy `tickets` key (its 0 means "unset").
-- Registration (phase 3): `?role=attendee&redirect_to=…` on `/register/`
-  hides the Role section (a hidden input posts the whitelisted role) and both
-  values survive the error round trip; the handler redirects a successful
-  registration back to the validated `redirect_to`, so the modal's register
-  link returns the new attendee to the event they were booking.
-- Tests: `tests/BookingsTest.php` (15 tests: creation, guards, mutations, the
-  status-guard/untrash extensions, the recount backstops) and
-  `tests/BookingEmailsTest.php` (9 tests: .ics UTC/folding/escaping,
-  attachments reaching `wp_mail`, per-context removal templates,
-  assignee-first committee routing, the capacity warning latch, the welcome
-  email); `LAW_Test_Case::make_booking()` tracks engine-created bookings and
-  users so teardown stays clean.
+A booker's **party** on an event is derived, never stored:
+`law_booking_party()` unions the bookings they author with the ones they
+booked for other people. That is what the manage view, the colleague cap and
+"cancel everything I booked" all read. (Before 8 September 2026 a party was
+ONE booking carrying an attendee rows array; that model, its flat
+`_law_booking_attendee` index and the `attendee_rows` sanitiser are gone.)
+
+- **Front-end surfaces**: `functions/account-bookings.php` (the six-state
+  control, `law_account_bookings()` grouped per event, the shared notice map
+  `law_booking_notice_text()` / `law_booking_notice_render()`, the counts label,
+  the form-state transients, the enqueues), `parts/events/booking-modal.php` /
+  `attendee-repeater.php` (a `mode` arg switches the same form between booking
+  and joining the waitlist) / `booking-manage.php` (`?law_booking=`; the
+  addressed booking resolves the event, and the view then shows the viewer's
+  whole party there, with per-row cancel, add-a-colleague and cancel-all behind
+  confirm modals) / `booking-list.php` (`?law_event_bookings=`,
+  `law_user_can_manage_event()`; a FLAT table, one row per booking, which is one
+  row per attendee — no grouping, just an "Invited by {name}" tag on a
+  colleague's row (Denis, 8 September 2026) — with live country, dietary and
+  accessibility from `law_profile_values()`, per-attendee Reject, the waitlist
+  section, and the CSV/Excel/PDF export trio).
+- **Places**: `_law_tickets_sold` is one `COUNT(*)` of the event's published
+  bookings (`law_event_recount_attendees()`), run after every mutation;
+  `law_event_tickets_remaining()` returns null for "not open" and clamps at 0,
+  so a deliberate over-booking shows as 0 remaining and a red count, never a
+  negative. Two wp-admin backstop hooks (`transition_post_status`,
+  `deleted_post`) recount after a trash, untrash or delete that never touched
+  the engine, and now also offer the freed place to the waitlist.
+- **Numbers**: `law_bookings_next_numbers( $n )` claims a consecutive block in
+  one atomic `law_events_bump_counter( $option, $by )`, so a party booked
+  together reads as a block even while another event is booking.
+- **Create** `law_booking_create( $event_id, $booker_id, $rows, $args )` returns
+  an **array** of booking IDs, the booker's first. It fast-fails on the cheap
+  refusals before creating any account, creates the colleagues' accounts (the
+  author needs a real user, so this cannot wait until after the lock), then
+  under the event lock re-runs every guard, claims the numbers and inserts the
+  posts. Anything that refuses mid-way takes the whole submission back: the
+  posts created so far are hard-deleted and so are the accounts this request
+  created, logged as `booking_create_rolled_back`. Nothing is emailed until the
+  lock is released. `$args['status']` is how the waitlist reuses all of it.
+- **Guards**: `law_booking_guard_open()` (Confirmed + CPT source + a ticket
+  number + not started), `law_booking_guard_duplicates( $event_id, $people,
+  $statuses )` (one place per person per event, matched by account AND by
+  email, across active and waitlisted bookings; promotion passes `publish`
+  only), the colleague cap (`law_booking_colleague_count()` — three colleagues
+  per booker per event, their own booking not counted, so a self-cancel neither
+  frees nor consumes a slot), `law_booking_guard_clash()` and
+  `law_booking_guard_seats()` (capacity for a booking, "the event must be full"
+  for a waitlist entry).
+- **Cancel** `law_booking_cancel( $booking_id, $actor, $context, $args )`
+  replaces the old remove-attendee: one person's booking, idempotent, with the
+  context (`self` / `booker` / `host_reject` / `event_cancelled`) choosing the
+  email they get and, for a waitlisted booking, the waitlist wording. It
+  releases any queue position, recounts, and offers the freed place to the
+  waitlist unless the event itself is going away.
+  `law_bookings_cancel_party()` is the booker's "cancel everything I booked".
+- **Status writes** go through `law_booking_set_status()`, which saves and
+  restores `$GLOBALS['law_booking_transitioning']` rather than clearing it, so
+  a nested transition (a promotion inside a sweep) cannot strand its caller.
+- **Register on behalf**: `law_booking_register_by_manager()` (unchanged in
+  shape) gives the person a booking of their own with `_law_booked_by` set to
+  themselves, so a host's own "My bookings" never fills with people they
+  registered; who acted is in the activity log and the confirmation email.
+- **Emails**: the booker's confirmation lists the whole party with each
+  person's number; every colleague gets their own confirmation naming who
+  booked them; the host and committee get **one** copy per submission.
+  Cancellation has one template per context
+  (`user_booking_rejected` / `_cancelled_by_booker` / `_cancelled_self` /
+  `user_booking_event_cancelled`).
+- **Handlers**, all on `law_events_guard_post()`: `law_booking_create`,
+  `law_booking_add_attendee` (posts the EVENT; the engine re-checks the actor
+  has a party there), `law_booking_cancel` (the attendee or the person who
+  booked them), `law_booking_cancel_party`, `law_booking_reject_attendee`
+  (`law_user_can_manage_event()` on `post_parent`) and
+  `law_booking_register_attendee`. `law_booking_error_payload()` is the shared
+  row/field refusal shape booking-form.js marks in place.
+- **The event-cancel sweep** `law_bookings_cancel_all_for_event()` cancels the
+  waitlist FIRST and suspends promotion for its duration, because it also runs
+  from `wp_trash_post` while the event is still published; otherwise a freed
+  place could promote somebody onto an event being deleted seconds later.
+- Tests: `tests/BookingsTest.php` (26), `tests/BookingEmailsTest.php` (10),
+  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (18).
+
+### `waitlist.php`: the waitlist (WAITLIST.md Part B)
+
+A waitlist entry is a booking with status `law-waitlisted` and a 1-based
+`_law_waitlist_position`. Because a booking is one attendee, an entry is
+exactly one place, so promotion is plain first-in-first-out and no party can
+block the queue. Joining is refused while places are free.
+
+- `law_waitlist_join()` is `law_booking_create()` with the waitlisted status:
+  the same guards, accounts, numbering and all-or-nothing rollback, plus
+  consecutive positions. It emails the joiner the whole party, each colleague
+  their own entry, and the host once, the first time a queue forms
+  (`host_waitlist_activated`, spec §4.4).
+- `law_waitlist_process( $event_id, $source )` walks the queue in order while
+  places remain, seating each entry that still passes the duplicate and clash
+  guards. An entry the guards refuse is **skipped in place**: it keeps its
+  position, the log records why every time, and its owner is emailed once
+  (`_law_waitlist_blocked` is the latch), so one stuck entry can never freeze
+  the queue behind it. The pass is capped at `LAW_WAITLIST_PASS_CAP` (10) and
+  `LAW_WAITLIST_PASS_SECONDS` (15) and hands the rest to the
+  `law_waitlist_resume` cron event, checking `wp_next_scheduled()` first
+  because WordPress silently drops a duplicate schedule. Every email is sent
+  after the lock is released; a static per-event flag and
+  `$GLOBALS['law_waitlist_suspended']` keep it out of its own re-entry and out
+  of the cancel sweep. It is deliberately NOT called from the recount, which
+  runs inside other bookers' locks.
+- Called from: `law_booking_cancel()` (any context but the sweep), both
+  wp-admin backstops, `law_event_tickets_changed()`, reorder and manual
+  promote.
+- `law_waitlist_promote()` is the host's "Promote now": it bypasses the
+  capacity guard only, never the duplicate or clash guards, and logs an
+  over-booking loudly (`waitlist_overbooked`).
+  `law_waitlist_reorder( $id, $direction, $actor, $expected_position )` moves an
+  entry top/up/down; the client posts only a direction enum, positions are
+  recomputed server-side, and a stale `expected_position` is a no-op rather
+  than a wrong move. `law_waitlist_renumber()` closes the gaps after any
+  promotion, cancellation or move, so the stored position always matches the
+  one the host is looking at.
+- An entry restored from the trash goes to the BACK of the queue
+  (`untrashed_post`): its old position is meaningless once the people behind it
+  have moved up.
+- `law_event_tickets_changed()` (in bookings.php) is called at the END of both
+  ticket write paths — `admin/event-screen.php` and
+  `law_events_form_save()` — after every other field is written, so a save that
+  moves the date and raises the places cannot email an invitation carrying the
+  old date. Raising the places offers them to the queue; lowering them only
+  logs.
+- Handlers: `law_waitlist_join` (signed in, on the shared `booking` rate
+  surface), `law_waitlist_reorder` and `law_waitlist_promote` (both
+  `law_user_can_manage_event()` on `post_parent`, on a new `waitlist_manage`
+  surface at 60/600s per user and 300 per IP, because a host tidying a long
+  queue would trip the edit budget).
 
 ### `bookings-dashboard.php`: the committee's cross-event Bookings dashboard (8 September 2026)
 
@@ -769,7 +690,7 @@ screens, columns, emails) → migration (report, runner, page).
 
 ### `notifications.php`: the email registry
 
-- `law_events_email_registry()`: all 37 module emails as definitions (slug →
+- `law_events_email_registry()`: all 50 module emails as definitions (slug →
   recipients, subject, body with `{placeholders}`, trigger, active flag).
   - **Host**: `user_submitted`, `user_sent_back`, `user_payment_due`,
     `user_confirmed_paid`, `user_confirmed_free`, `user_rejected`,
@@ -790,15 +711,29 @@ screens, columns, emails) → migration (report, runner, page).
   - **Admin / Square Eye**: `admins_user_registered`, `admin_stripe_error`, and
     the three inactive-by-default Square Eye copies `squareeye_submitted`,
     `squareeye_event_updated`, `squareeye_user_registered`.
-  - **Bookings** (phase 2, all `dynamic` unless noted): `user_booking_confirmed`
-    (.ics attached), `host_booking_received` (to `host`),
-    `committee_booking_received` (to `committee`, assignee-first via the send
-    call), `user_attendee_invited` / `user_attendee_added` (.ics attached),
-    the per-context removal family `user_attendee_rejected` /
-    `user_attendee_removed` / `user_attendee_removed_self` /
-    `user_booking_cancelled_attendee` / `user_booking_event_cancelled`,
-    `user_welcome_registered` (registration; event-less, so unlogged) and
-    `host_capacity_warning` (to `host`, one-shot latch).
+  - **Bookings** (all `dynamic` unless noted): `user_booking_confirmed`
+    (.ics attached; lists the whole party with each person's own number),
+    `host_booking_received` (to `host`) and `committee_booking_received` (to
+    `committee`, assignee-first via the send call), both once per submission;
+    `user_attendee_invited` / `user_attendee_added` (.ics attached; each names
+    who booked the place and carries that person's own number);
+    `user_booking_registered` / `_invited` (registered on their behalf); the
+    per-context cancellation family `user_booking_rejected` /
+    `user_booking_cancelled_by_booker` / `user_booking_cancelled_self` /
+    `user_booking_event_cancelled`; `user_welcome_registered` (registration;
+    event-less, so unlogged) and `host_capacity_warning` (to `host`, one-shot
+    latch).
+  - **Waitlist** (WAITLIST.md §B4): `user_waitlist_joined` (the joiner, with
+    the party), `user_waitlist_attendee_invited` / `_added` (a colleague put on
+    the queue; no .ics, since they hold no place yet),
+    `host_waitlist_activated` (to `host`, the first time a queue forms),
+    `user_waitlist_promoted` (**.ics attached** — the one waitlist email that
+    carries an invitation, because by then they have a place) and
+    `host_waitlist_promoted` (to `host`, one summary per pass),
+    `user_waitlist_left` / `user_waitlist_removed_by_booker` /
+    `user_waitlist_rejected` / `user_waitlist_event_cancelled`, and
+    `user_waitlist_blocked` (a place came up but a clash stopped it being
+    taken; sent once per reason).
 - `law_events_email()`: the registry entry with any admin override merged in
   (overrides live in one option, editable on the Emails screen).
 - `law_events_email_placeholders()`: builds the merge values for an event
@@ -1267,13 +1202,16 @@ event status by the rebuild) plus "Reference".
   lists each confirmed event with "role, job title, organisation".
 - **`columns.php`**: admin list columns (status, host, slot, payment), a status
   filter dropdown, and the `pre_get_posts` wiring for it.
-- **`booking-screen.php`** (bookings phase 6): the read-only `law_booking`
-  screen — Booking facts (number, status, the parent event linked both ways),
-  Attendees (snapshot rows with `get_edit_user_link()`), Activity (the parent
-  event's log filtered to this booking's context) — plus the bookings list
-  columns and the events list's "Booked" column (`sold / available`, red when
-  the committee lowered the ticket number below sold). Mutations stay
-  front-end-only so the engine's guards always run.
+- **`booking-screen.php`**: the read-only `law_booking` screen — Booking facts
+  (number, status via `law_booking_status_label()`, the attendee and who
+  invited them, both linked to their user screens, the parent event linked both
+  ways, and the waitlist position/joined/promoted stamps where they apply) and
+  Activity (the parent event's log filtered to this booking's context). There
+  is no separate Attendees box: one booking is one attendee. The list columns
+  are Booking, Event, Attendee, Invited by, Status, Date, plus the events
+  list's "Booked" column (`sold / available`, red when sold exceeds available,
+  which now also means a deliberate over-booking from the waitlist). Mutations
+  stay front-end-only so the engine's guards always run.
 - **`emails-screen.php`**: the Emails screen (its own top-level menu at
   position 7, directly under the Events menu at 6; formerly LAW > Emails, same
   `law-events-emails` slug and URL) — list, edit, send-test and
@@ -1644,3 +1582,112 @@ branches in `calendar.php`, `speakers.php` and `account-events.php`, the
 legacy-entry-ID resolvers, and the migration tooling can be deleted wholesale —
 the single largest line-count reduction available, deliberately deferred while
 rollback must stay alive.
+
+---
+
+## Change history
+
+Updated 8 September 2026 for the **per-attendee bookings rebuild and the
+waitlist** (WAITLIST.md is the contract). A colleague a booker brings now gets
+their own `law_booking` post with its own booking number instead of a row on
+the booker's booking, so the whole surface changed shape: the engine returns an
+array of bookings from one submission and rolls the whole submission back if
+anything refuses, `law_booking_remove_attendee()` is gone in favour of
+`law_booking_cancel()` with a context plus `law_bookings_cancel_party()`, the
+host/committee/admin lists are flat with an "Invited by {name}" tag, the emails
+name the booker and carry each person's own number, and the recount is one
+`COUNT(*)`. On top of that, `functions/events/waitlist.php` adds the
+booking-only `law-waitlisted` status, automatic first-in-first-out promotion
+(with skip-in-place for an entry the guards refuse), host reorder and
+"Promote now", and `law_event_tickets_changed()`, which offers newly released
+places to the queue — nothing fired on a ticket-number change before. The four
+notice maps were consolidated into `law_booking_notice_text()`. 138 tests green
+(was 118), including the new `tests/WaitlistTest.php`. This file was renamed
+from EVENTS_4.1_FUNC_V2.md in the same round, and its dated changelog moved
+here.
+
+Working reference for the custom, CPT-backed events module that replaces the
+Gravity Forms / Gravity Flow / GravityView / Make stack described in
+EVENTS_4.1_FUNC.md. Verified against the codebase and the local database on
+5 September 2026, re-verified after the forms/payments security round and
+the additional-host email round the same day, updated 6 September 2026
+for the pre-launch-gate host bypass, the new `404.php` and the time-boxed,
+batched migration history step, and updated 7 September 2026 for the
+module-owned country → ISO mapper (`countries.php`), the committee
+front-end edit view (with the resubmit-on-any-save fix that came with it),
+the AJAX layer on the committee dashboard's workflow actions, and the
+cancel/withdraw/delete round: the seventh status `law-cancelled`, the
+committee Cancel and host Withdraw actions, the dashboard Delete-to-trash,
+the Stripe invoice-void helper (`law_stripe_void_invoice()`) and three new
+emails (25 total). Updated again 7 September 2026 for **bookings phase 1**
+(EVENTS_BOOKINGS.md is that feature's design contract): the fourth CPT
+`law_booking`, the bookings engine (`bookings.php`), the shared request
+plumbing (`request.php`, where `law_events_redirect_back()` and
+`law_events_rate_limit_ok()` moved from comments.php), the booking meta
+schema plus the `_law_tickets_sold` / `_law_capacity_warned` event keys, the
+status guard and untrash filter extended to bookings, and the parameterised
+`law_events_create_host_user()` + extracted
+`law_events_password_setup_link()` in co-owners.php. Bookings phase 2 landed
+the same day: the twelve bookings/welcome emails (37 total), the
+`$extra['attachments']` extension to `law_events_send()`, the `.ics`
+generator (`ics.php`), the `{event_date}`/`{event_time}` placeholders and
+the registration welcome email. Bookings phase 3 (same day): the booking
+surface — the five admin-post handlers on the shared request guard, the
+five-state booking control (`functions/account-bookings.php`), the booking
+modal and attendee repeater partials, `assets/js/booking-form.js`, the
+programme card's placeholder Register action removed, the hero's
+"Places remaining" fact, and the registration form's locked-role +
+`redirect_to` round trip for the modal's register link. Phases 4–6 (same
+day): the account area (the "Your bookings" section and audience split on
+My events, the `?law_booking=` manage view, the page 292 (My events)
+attendee-access fix scripted in `law_setup_account_events_attendee_access()`
++ migration step 10), the host/committee `?law_event_bookings=` list with
+per-attendee Reject and the CSV/Excel/PDF export trio
+(`law_booking_export`, reusing export.php with a new optional title line),
+the read-only wp-admin booking screen (`admin/booking-screen.php`) and the
+events list's Booked column, and the event-cancel sweep
+(`law_bookings_cancel_all_for_event()`, called from the workflow's cancel
+side effects). The phase 7 security review (no critical/high findings) led
+to: all booking guards moved inside the event lock and the lock extended to
+remove/cancel; a row/owner cap inside the `attendee_rows` sanitiser; the
+.ics temp file deleted in a `finally`; and a locked registration role
+enforced server-side. Accepted info-level items (wp-admin trash of bookings
+bypassing the engine, unescaped email subjects) are recorded in
+EVENTS_BOOKINGS.md §14. A further round of three independent reviews
+(plan-conformance, adversarial correctness, performance) then landed:
+account creation and attendee emails moved OUTSIDE the lock (seats written
+under it, IDs backfilled after); the last-row auto-cancel re-checks rows
+under its own lock; events trashed/hard-deleted outside the workflow
+sweep-cancel their bookings (`wp_trash_post`/`before_delete_post`), and the
+sweep is time-boxed with a `law_bookings_resume_cancel_sweep` cron
+continuation; `law_events_bump_counter()` is atomic
+(`ON DUPLICATE KEY UPDATE` + `LAST_INSERT_ID()`), which also hardens the
+LAW reference counter; `law_events_rate_limit_ok()` gained an optional
+larger per-IP budget (booking surfaces pass 100/150 against shared-NAT
+offices); self-removal matches the row's linked user ID; an inverted
+`_law_end` falls back like a missing one in the clash guard
+(`law_booking_clash_end()`) and the .ics; recount/export fetch all bookings
+(-1); a no-recipient send logs "Email NOT sent"; `cache_users()` primes the
+bookings list and export. EVENTS_BOOKINGS.md §14 carries the full list.
+Updated 8 September 2026 for the **per-appearance speaker role** (Trevor,
+3 September 2026: a person is a Speaker, Host or Moderator *at each event*):
+`law_speaker_roles()` and its key/label/display helpers, the canonical-key
+`speaker_rows` sanitiser, the Role select on the host form and both wp-admin
+relationship pickers (the host form save used to blank a wp-admin role on
+every edit), the role in brackets after the name on event and session
+speaker cards, the bio dialog and the committee dashboard, the "[name]'s
+role" line on the profile's Speaking-at cards, and the migration's form 8
+field 9 (Role) mapping (step 3, the step 4b refresh, a warn-only preflight
+line).
+Updated 8 September 2026 for the **committee bookings round** (EVENTS_BOOKINGS.md
+§7.6 and §2): the cross-event **Bookings dashboard** page
+(`/account/dashboard/bookings/`, `templates/account-bookings-dashboard.php`,
+`functions/events/bookings-dashboard.php`, "Bookings dashboard" in the header
+account dropdown for committee), **registering an attendee on their behalf**
+from the per-event bookings list (`law_booking_register_by_manager()`, handler
+`law_booking_register_attendee`, a committee-only **press pass** flag on the
+row, two new emails — 39 total), the **Country** column on the per-event list
+and export, and the booking control's button renamed **Register** (was "Book
+now", per 4.2 spec §3.4's vocabulary for free events).
+The companion EVENTS_4.1_REBUILD.md remains the design contract;
+this document maps that design onto the code as built.

@@ -234,7 +234,7 @@ function law_committee_action_handler() {
 	// Only the actions this screen actually offers may come from this POST.
 	// Without the whitelist a hand-made request could run 'confirm' and publish
 	// an approved event whose invoice is still Unpaid (open finding 3 in
-	// EVENTS_4.1_FUNC_V2.md §6). An empty action is the plain "Save changes".
+	// EVENTS_FUNC.md §6). An empty action is the plain "Save changes".
 	$allowed = law_event_ui_actions();
 	if ( '' !== $action && ! in_array( $action, $allowed, true ) ) {
 		law_event_log(

@@ -1,11 +1,25 @@
 # WAITLIST.md: per-attendee bookings rebuild, then the events waitlist
 
+> **Status: built on 8 September 2026.** Part A (one booking per attendee),
+> Part B (the waitlist) and Part C (the rename to EVENTS_FUNC.md and the doc
+> updates) all landed; 138 PHPUnit tests are green, up from 118, including the
+> new `tests/WaitlistTest.php`. Changes made during the build, over and above
+> the plan below: booking positions are renumbered after every promotion,
+> cancellation and move (`law_waitlist_renumber()`), because the host's
+> displayed position and the stored one must agree for the reorder controls'
+> stale-click guard to mean anything; a colleague linked to an existing account
+> is logged as such on the create path, which the split of
+> `law_booking_ensure_attendee_user()` had dropped; and a registration made on
+> someone's behalf takes the name the manager typed when the account has no
+> real name of its own. The issues tables in §A9 and §B7 record what was
+> decided by default and what still needs Denis's word.
+>
 > **Execution brief.** This document is self-contained: an agent starting cold should be
 > able to build everything below from it plus the code. It was produced on 8 September 2026
 > from Denis's decisions, two exploration passes over the working tree, three specialist
 > design passes (engine, front end, adversarial review) and a final consumer re-scan.
 > Work in the order given (Part A, then Part B, then Part C). Read EVENTS_BOOKINGS.md and
-> EVENTS_4.1_FUNC_V2.md (to be renamed EVENTS_FUNC.md in Part C) before touching code;
+> EVENTS_FUNC.md before touching code;
 > they describe the module as built. Keep them current as you go (house rule).
 
 ## 0. Context and ground rules
@@ -140,7 +154,7 @@ every Stripe, saved-card and charge-on-promotion passage: bookings are free.
 | functions/events/admin/booking-screen.php | 26-73 (boxes), 108-139 (columns) | A6 |
 | functions/events/notifications.php | 227-322 (bookings registry), 417-427 (tags) | A4 |
 | tests/BookingsTest.php, BookingEmailsTest.php, BookingsDashboardTest.php, class-law-test-case.php | 40 tests + helpers | A8 |
-| EVENTS_BOOKINGS.md, EVENTS_4.1_FUNC_V2.md | rows-model passages | Part C |
+| EVENTS_BOOKINGS.md, EVENTS_FUNC.md | rows-model passages | Part C |
 
 ## A2. Engine (`functions/events/bookings.php`)
 
