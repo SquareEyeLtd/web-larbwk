@@ -255,7 +255,8 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 			$row['job_title'],
 			$row['country'],
 			$row['is_press'] ? 'Yes' : '',
-			ucfirst( $row['status'] ),
+			// The label the rest of the site uses, not the internal key.
+			law_booking_status_label( array( 'active' => 'publish', 'waitlisted' => 'law-waitlisted', 'cancelled' => 'law-cancelled' )[ $row['status'] ] ?? 'publish' ),
 			substr( $row['booked'], 0, 16 ),
 			$row['accessibility'],
 			$row['dietary'],
@@ -269,7 +270,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 	if ( '' !== $filters['year'] ) {
 		$scope[] = $filters['year'];
 	}
-	$scope[] = array( '' => 'active bookings', 'cancelled' => 'cancelled bookings', 'waitlisted' => 'waitlist entries', 'all' => 'all bookings' )[ $filters['status'] ];
+	$scope[] = array( '' => 'confirmed bookings', 'cancelled' => 'cancelled bookings', 'waitlisted' => 'waitlist entries', 'all' => 'all bookings' )[ $filters['status'] ];
 	if ( $filters['press'] ) {
 		$scope[] = 'press only';
 	}
@@ -279,7 +280,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 
 	return array(
 		'title'   => 'Bookings: ' . implode( ', ', $scope ),
-		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
+		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
 		'rows'    => $rows,
 	);
 }

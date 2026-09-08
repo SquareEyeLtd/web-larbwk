@@ -92,7 +92,7 @@ if ( $law_locked_by ) {
 			<input type="hidden" name="law_event_id" value="<?php echo esc_attr( (string) $law_post->ID ); ?>">
 			<input type="hidden" name="law_form_context" value="committee">
 			<?php wp_nonce_field( 'law_event_form' ); ?>
-			<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+			<?php law_events_honeypot_field(); ?>
 
 			<?php
 			// No law_ec field here: the ?ec= category mechanism applies on

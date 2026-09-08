@@ -109,7 +109,7 @@ $law_sections = array(
 					<input type="hidden" name="law_event_id" value="<?php echo esc_attr( (string) $law_event_id ); ?>">
 					<?php wp_nonce_field( 'law_event_form' ); ?>
 					<input type="hidden" name="law_ec" value="<?php echo esc_attr( sanitize_text_field( (string) ( $law_state['input']['law_ec'] ?? wp_unslash( $_GET['ec'] ?? '' ) ) ) ); ?>">
-					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+					<?php law_events_honeypot_field(); ?>
 
 					<?php
 					get_template_part( 'parts/events/event-form-fields', null, array(

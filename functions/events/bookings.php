@@ -281,7 +281,7 @@ function law_booking_invited_by_label( $booking ) {
 		return '';
 	}
 	$user = get_user_by( 'id', (int) law_event_meta( $booking->ID, '_law_booked_by' ) );
-	return $user ? $user->display_name : 'a deleted account';
+	return $user ? $user->display_name : __( 'a former user', 'law' );
 }
 
 /**
@@ -2195,7 +2195,7 @@ function law_booking_export_rows( $event_id ) {
 
 	return array(
 		'title'   => sprintf( 'Attendees for %s, %s', get_the_title( $event_id ), $when ),
-		'columns' => array( 'Booking ID', 'Invited by', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' ),
+		'columns' => array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' ),
 		'rows'    => $rows,
 	);
 }

@@ -131,7 +131,7 @@ if ( '' !== $law_time_label ) {
 					<input type="hidden" name="action" value="<?php echo esc_attr( (string) ( $law_action_form['action'] ?? '' ) ); ?>">
 					<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) (int) ( $law_action_form['event_id'] ?? 0 ) ); ?>">
 					<?php wp_nonce_field( (string) ( $law_action_form['nonce'] ?? '' ) ); ?>
-					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+					<?php law_events_honeypot_field(); ?>
 					<button
 						type="submit"
 						class="button law-event-card__button"

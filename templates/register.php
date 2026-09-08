@@ -52,7 +52,7 @@ $law_reg_redirect = wp_validate_redirect( wp_unslash( (string) ( $_GET['redirect
 					<form class="law-event-form law-auth-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 						<input type="hidden" name="action" value="law_register">
 						<?php wp_nonce_field( 'law_register' ); ?>
-						<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+						<?php law_events_honeypot_field(); ?>
 						<?php if ( '' !== $law_reg_locked_role ) : ?>
 							<input type="hidden" name="roles[]" value="<?php echo esc_attr( $law_reg_locked_role ); ?>">
 							<input type="hidden" name="locked_role" value="<?php echo esc_attr( $law_reg_locked_role ); ?>">

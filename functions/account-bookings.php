@@ -304,7 +304,7 @@ function law_booking_render_action( $event ) {
 	// State: no ticket number yet.
 	$remaining = law_event_tickets_remaining( $event_id );
 	if ( null === $remaining ) {
-		echo '<p class="law-booking-state law-booking-state--soon">' . esc_html__( 'Bookings open soon', 'law' ) . '</p>';
+		echo '<p class="law-booking-state">' . esc_html__( 'Bookings open soon', 'law' ) . '</p>';
 		echo '<p class="law-booking-substate">' . esc_html__( 'Places for this event have not been released yet. Check back nearer the date.', 'law' ) . '</p>';
 		return;
 	}

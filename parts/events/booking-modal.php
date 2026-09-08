@@ -80,7 +80,7 @@ else :
 		<input type="hidden" name="action" value="<?php echo esc_attr( $law_bk_action ); ?>">
 		<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bk_id ); ?>">
 		<?php wp_nonce_field( $law_bk_action ); ?>
-		<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+		<?php law_events_honeypot_field(); ?>
 
 		<p class="law-booking-summary">
 			<strong><?php echo esc_html( (string) $law_bk_event['title'] ); ?></strong>

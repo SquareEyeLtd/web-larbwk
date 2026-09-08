@@ -161,11 +161,11 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$data = law_bookings_dashboard_export_rows( $this->filters( array( 'law_event' => $f['event_a'] ) ) );
 
 		$this->assertSame(
-			array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
+			array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
 			$data['columns']
 		);
 		$this->assertStringContainsString( get_the_title( $f['event_a'] ), $data['title'] );
-		$this->assertStringContainsString( 'active bookings', $data['title'] );
+		$this->assertStringContainsString( 'confirmed bookings', $data['title'] );
 		$this->assertCount( 3, $data['rows'] );
 
 		$press = array_values( array_filter( $data['rows'], fn( $r ) => $f['press_email'] === $r[7] ) );
@@ -173,7 +173,7 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$this->assertSame( 'Pat', $press[0][5] );
 		$this->assertSame( 'Press', $press[0][6] );
 		$this->assertSame( 'Yes', $press[0][11] );
-		$this->assertSame( 'Active', $press[0][12] );
+		$this->assertSame( 'Confirmed', $press[0][12] );
 		$this->assertSame( '', $press[0][1], 'Registered on their own behalf, so no invited-by tag.' );
 
 		$owner = array_values( array_filter( $data['rows'], fn( $r ) => get_userdata( $f['owner_a'] )->user_email === $r[7] ) );

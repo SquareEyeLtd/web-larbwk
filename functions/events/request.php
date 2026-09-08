@@ -95,6 +95,19 @@ function law_events_nopriv_json() {
  * }
  * @return bool $is_ajax — whether the caller posted law_ajax=1.
  */
+/**
+ * The honeypot input law_events_guard_post() checks. Print it inside every
+ * module form.
+ *
+ * One helper, next to the code that springs the trap: the markup was written
+ * out by hand in fourteen templates, so rotating the field name, adding a
+ * second trap or changing the accessibility treatment meant a fourteen-file
+ * edit with nothing to catch a miss.
+ */
+function law_events_honeypot_field() {
+	echo '<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>';
+}
+
 function law_events_guard_post( $nonce_action, array $args = array() ) {
 	$is_ajax = ! empty( $_POST['law_ajax'] );
 

@@ -35,7 +35,7 @@ function law_event_statuses() {
  */
 function law_booking_statuses() {
 	return array(
-		'publish'        => 'Active',
+		'publish'        => 'Confirmed',
 		'law-waitlisted' => 'Waitlisted',
 		'law-cancelled'  => 'Cancelled',
 	);

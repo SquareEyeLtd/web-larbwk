@@ -186,7 +186,7 @@
 					var payload = response.data || {};
 					if (!response.success) {
 						busyState(form, button, false);
-						showError(form, scope, payload.message || 'Sorry, that did not work. Please try again.');
+						showError(form, scope, payload.message || 'Sorry, that change could not be made.');
 						if (typeof payload.row === 'number' && payload.field) {
 							markField(form, payload.row, payload.field);
 						}
@@ -223,7 +223,7 @@
 				})
 				.catch(function () {
 					busyState(form, button, false);
-					showError(form, scope, 'Sorry, that did not work. Please reload the page and try again.');
+					showError(form, scope, 'Sorry, that change could not be made. Please reload the page and try again.');
 				});
 		});
 	});

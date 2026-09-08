@@ -123,7 +123,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 									<input type="hidden" name="direction" value="<?php echo esc_attr( $law_bl_dir ); ?>">
 									<input type="hidden" name="expected_position" value="<?php echo esc_attr( (string) $law_bl_position ); ?>">
 									<?php wp_nonce_field( 'law_waitlist_reorder' ); ?>
-									<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+									<?php law_events_honeypot_field(); ?>
 									<button type="submit" class="button second law-booking-table__move" data-law-modal-busy="<?php esc_attr_e( 'Moving…', 'law' ); ?>"<?php echo $law_bl_move[2] ? ' disabled' : ''; ?> aria-label="<?php echo esc_attr( sprintf( $law_bl_move[1], $law_bl_person['name'] ) ); ?>">
 										<span aria-hidden="true"><?php echo esc_html( $law_bl_move[0] ); ?></span>
 									</button>
@@ -163,7 +163,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 									<input type="hidden" name="action" value="law_waitlist_promote">
 									<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
 									<?php wp_nonce_field( 'law_waitlist_promote' ); ?>
-									<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+									<?php law_events_honeypot_field(); ?>
 									<button type="submit" class="button orange" data-law-modal-open="<?php echo esc_attr( $law_bl_promote_id ); ?>"><?php esc_html_e( 'Promote now', 'law' ); ?></button>
 									<?php
 									get_template_part(
@@ -197,7 +197,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 								<input type="hidden" name="action" value="law_booking_reject_attendee">
 								<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
 								<?php wp_nonce_field( 'law_booking_reject_attendee' ); ?>
-								<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+								<?php law_events_honeypot_field(); ?>
 								<?php // Hollow, so the destructive action does not pull as hard as Promote now. ?>
 								<button type="submit" class="button alert hollow" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php echo esc_html( $law_bl_waiting ? __( 'Remove', 'law' ) : __( 'Cancel booking', 'law' ) ); ?></button>
 								<?php
@@ -305,7 +305,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					<input type="hidden" name="action" value="law_booking_register_attendee">
 					<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bl_event_id ); ?>">
 					<?php wp_nonce_field( 'law_booking_register_attendee' ); ?>
-					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+					<?php law_events_honeypot_field(); ?>
 					<?php // The data-law-booking-rows wrapper is what booking-form.js's row/field error marking walks. ?>
 					<div class="law-rows" data-law-booking-rows="law_attendees" data-law-max="1">
 					<div class="law-row">

@@ -47,7 +47,7 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 					<form class="law-event-form law-auth-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 						<input type="hidden" name="action" value="law_profile">
 						<?php wp_nonce_field( 'law_profile' ); ?>
-						<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+						<?php law_events_honeypot_field(); ?>
 
 						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_profile_values, 'errors' => $law_profile_errors ) ); ?>
 

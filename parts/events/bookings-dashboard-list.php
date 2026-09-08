@@ -84,7 +84,7 @@ $law_bd_rows    = $law_bd_data['rows'];
 						<?php elseif ( 'waitlisted' === $law_bd_row['status'] ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--waitlisted"><?php esc_html_e( 'Waitlisted', 'law' ); ?></span>
 						<?php else : ?>
-							<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php esc_html_e( 'Active', 'law' ); ?></span>
+							<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php esc_html_e( 'Confirmed', 'law' ); ?></span>
 						<?php endif; ?>
 					</td>
 					<td class="law-booking-table__booked"><?php echo esc_html( mysql2date( 'j M Y', $law_bd_row['booked'] ) ); ?><br><small><?php echo esc_html( mysql2date( 'H:i', $law_bd_row['booked'] ) ); ?></small></td>

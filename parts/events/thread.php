@@ -54,7 +54,7 @@ $law_notice          = sanitize_key( $_GET['law_notice'] ?? '' );
 		<input type="hidden" name="action" value="law_event_comment_reply">
 		<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_thread_event ); ?>">
 		<?php wp_nonce_field( 'law_event_comment_reply' ); ?>
-		<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+		<?php law_events_honeypot_field(); ?>
 		<label for="law-thread-reply-<?php echo esc_attr( (string) $law_thread_event ); ?>">Reply</label>
 		<textarea id="law-thread-reply-<?php echo esc_attr( (string) $law_thread_event ); ?>" name="comment" rows="4" required></textarea>
 		<p class="law-thread-reply__actions">

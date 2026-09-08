@@ -159,7 +159,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 							<input type="hidden" name="action" value="law_booking_cancel">
 							<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bm_entry_id ); ?>">
 							<?php wp_nonce_field( 'law_booking_cancel' ); ?>
-							<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+							<?php law_events_honeypot_field(); ?>
 							<?php
 							$law_bm_action_label = $law_bm_row_wait
 								? ( $law_bm_row_self ? __( 'Leave the waitlist', 'law' ) : __( 'Remove from the waitlist', 'law' ) )
@@ -197,7 +197,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 				<input type="hidden" name="action" value="law_booking_add_attendee">
 				<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bm_event_id ); ?>">
 				<?php wp_nonce_field( 'law_booking_add_attendee' ); ?>
-				<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+				<?php law_events_honeypot_field(); ?>
 				<?php // The rows wrapper is what booking-form.js walks to mark a refused field in place. ?>
 				<div class="law-rows" data-law-booking-rows="law_attendees">
 					<div class="law-row">
@@ -222,7 +222,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 				<input type="hidden" name="action" value="law_booking_cancel_party">
 				<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bm_event_id ); ?>">
 				<?php wp_nonce_field( 'law_booking_cancel_party' ); ?>
-				<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+				<?php law_events_honeypot_field(); ?>
 				<?php
 				$law_bm_all_label = $law_bm_waitlisted ? __( 'Leave the waitlist for everyone', 'law' ) : __( 'Cancel all bookings', 'law' );
 				?>

@@ -12,6 +12,13 @@
 /* The scrim is its own element so a click anywhere off the dialog closes the
    modal, and the dialog's own clicks never reach it. */
 .law-modal__overlay { position: absolute; inset: 0; background: rgba(26, 26, 61, .6); }
+/* white-space is inherited, and a confirm dialog is rendered INSIDE the form it
+   confirms — which on the dashboards is inside a table cell carrying
+   `white-space: nowrap`. The dialog is position:fixed, but inheritance does not
+   care: without this reset its copy runs off the right edge instead of
+   wrapping, and the sentence is simply cut off. */
+.law-modal__dialog, .law-modal__dialog * { white-space: normal; }
+
 .law-modal__dialog {
 	position: relative; width: 100%; max-width: 32rem; background: #fff; color: #1a1a3d;
 	border: 1px solid #e3e3ec; box-shadow: 0 12px 40px rgba(26, 26, 61, .35);
