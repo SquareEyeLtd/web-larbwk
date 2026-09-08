@@ -157,6 +157,44 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'already have an account', wp_strip_all_tags( $added[0]['message'] ) );
 	}
 
+	public function test_registered_on_behalf_emails_name_the_registrar_and_link_new_accounts(): void {
+		$event     = $this->make_bookable_event();
+		$committee = $this->make_committee_user();
+		wp_update_user( array( 'ID' => $committee, 'display_name' => 'Casey Committee' ) );
+
+		// Existing account: the plain "registered" template, no password link.
+		$existing = $this->make_user( 'attendee' );
+		$email    = get_userdata( $existing )->user_email;
+		$booking  = law_booking_register_by_manager( $event, array( 'name' => 'Ex Isting', 'email' => $email ), $committee );
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+		$sent = $this->mail_to( $email );
+		$this->assertCount( 1, $sent, 'Exactly one email to the registered person.' );
+		$this->assertStringContainsString( 'Casey Committee has registered a place for you', $sent[0]['message'] );
+		$this->assertStringContainsString( 'You already have an account', $sent[0]['message'] );
+		$this->assertStringNotContainsString( 'action=rp', $sent[0]['message'] );
+		$this->assertNotEmpty( $sent[0]['attachments'], 'The .ics invite rides the confirmation.' );
+
+		// New account: the "invited" variant with a set-password link, and
+		// still exactly one email (no separate invite + confirmation).
+		$new_email = $this->unique_email( 'new' );
+		$booking2  = law_booking_register_by_manager( $event, array( 'name' => 'New Person', 'email' => $new_email ), $committee );
+		$this->assertIsInt( $booking2 );
+		$this->posts[] = $booking2;
+		$this->users[] = (int) get_user_by( 'email', $new_email )->ID;
+		$sent = $this->mail_to( $new_email );
+		$this->assertCount( 1, $sent );
+		$this->assertStringContainsString( 'Casey Committee has registered a place for you', $sent[0]['message'] );
+		$this->assertStringContainsString( 'Set your password', $sent[0]['message'] );
+		$this->assertMatchesRegularExpression( '/key=[A-Za-z0-9]+/', $sent[0]['message'], 'A minted set-password link.' );
+
+		// The host and committee copies go out as for any booking.
+		$host = get_userdata( (int) get_post_field( 'post_author', $event ) );
+		if ( $host ) {
+			$this->assertNotEmpty( $this->mail_to( $host->user_email ) );
+		}
+	}
+
 	public function test_removal_templates_per_context(): void {
 		$event = $this->make_bookable_event();
 		$owner = $this->make_user( 'attendee' );

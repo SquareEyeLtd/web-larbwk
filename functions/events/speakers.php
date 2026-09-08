@@ -9,6 +9,65 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * The role a person has at ONE event (Trevor, 3 September 2026): Speaker,
+ * Host or Moderator. Per appearance like the organisation and job title,
+ * since the same person hosts one event and moderates another. Stored on the
+ * _law_speakers row as the key; '' means "not set", which reads as Speaker
+ * and, on a session row, inherits the parent event row's role.
+ *
+ * @return array<string,string> key => label, in the order the selects offer.
+ */
+function law_speaker_roles() {
+	return array(
+		'speaker'   => 'Speaker',
+		'host'      => 'Host',
+		'moderator' => 'Moderator',
+	);
+}
+
+/**
+ * Normalise a key OR a label (any case, padded) to a role key. '' for
+ * anything unknown, so a stray value can never reach the meta. The label
+ * match is what lets the migration map form 8 field 9 (Role), whose stored
+ * value is the label itself.
+ *
+ * @param mixed $value Posted or stored value.
+ * @return string Role key, or ''.
+ */
+function law_speaker_role_key( $value ) {
+	$value = mb_strtolower( trim( (string) ( is_scalar( $value ) ? $value : '' ) ) );
+	if ( '' === $value ) {
+		return '';
+	}
+	foreach ( law_speaker_roles() as $key => $label ) {
+		if ( $value === $key || $value === mb_strtolower( $label ) ) {
+			return $key;
+		}
+	}
+	return '';
+}
+
+/** The label for a role key or label; '' when unknown or empty. */
+function law_speaker_role_label( $key ) {
+	$key = law_speaker_role_key( $key );
+	return '' === $key ? '' : law_speaker_roles()[ $key ];
+}
+
+/**
+ * What a listing prints after the name. '' (never set: every row migrated or
+ * saved before roles existed) reads as Speaker, the default, and prints as
+ * such (Denis, 8 September 2026: the role shows on every card). This is the
+ * one line to change should the default ever be suppressed.
+ *
+ * @param string $role Row value (key, label or '').
+ * @return string Label to print.
+ */
+function law_speaker_role_display( $role ) {
+	$key = law_speaker_role_key( $role );
+	return law_speaker_role_label( '' === $key ? 'speaker' : $key );
+}
+
+/**
  * Find an existing speaker: by email first (same email = same person), then
  * by normalised full name.
  *
@@ -252,11 +311,11 @@ function law_speakers_confirmed_maps( $reset = false ) {
 
 /**
  * A speaker's confirmed appearances, first submitted first: one row per event
- * with the organisation, job title, photo and biography they had at THAT
- * event.
+ * with the role, organisation, job title, photo and biography they had at
+ * THAT event.
  *
  * @param int $speaker_id Speaker post ID.
- * @return array<int,array{event_id:int,organisation:string,job_title:string,photo_id:int,bio:string}>
+ * @return array<int,array{event_id:int,role:string,organisation:string,job_title:string,photo_id:int,bio:string}>
  */
 function law_speaker_appearances( $speaker_id ) {
 	$rows = law_speakers_confirmed_maps()['appearances'][ (int) $speaker_id ] ?? array();
@@ -265,6 +324,7 @@ function law_speaker_appearances( $speaker_id ) {
 	foreach ( $rows as $event_id => $row ) {
 		$appearances[] = array(
 			'event_id'     => (int) $event_id,
+			'role'         => law_speaker_role_key( $row['role'] ?? '' ),
 			'organisation' => trim( (string) ( $row['organisation'] ?? '' ) ),
 			'job_title'    => trim( (string) ( $row['job_title'] ?? '' ) ),
 			'photo_id'     => (int) ( $row['photo_id'] ?? 0 ),
@@ -317,6 +377,7 @@ function law_speaker_display_photo_id( $speaker_id, $row_photo_id = 0 ) {
  */
 function law_speaker_first_appearance( $speaker_id ) {
 	$first  = array( 'organisation' => '', 'job_title' => '', 'photo_id' => 0, 'bio' => '', 'event_id' => 0 );
+	// No role: it is what the person was at ONE event, never a headline fact.
 	$fields = array( 'organisation', 'job_title', 'photo_id', 'bio' );
 	foreach ( law_speaker_appearances( $speaker_id ) as $appearance ) {
 		if ( ! $first['event_id'] ) {
@@ -339,7 +400,7 @@ function law_speaker_first_appearance( $speaker_id ) {
  * sessions), regardless of the event's status. Used by the profile's
  * "Speaking at" cards and the admin "Appears at" box.
  *
- * @return array{organisation:string,job_title:string,photo_id:int,bio:string}|null Null when the speaker is not on the event.
+ * @return array{role:string,organisation:string,job_title:string,photo_id:int,bio:string}|null Null when the speaker is not on the event.
  */
 function law_speaker_appearance_for_event( $speaker_id, $event_id ) {
 	$speaker_id = (int) $speaker_id;
@@ -352,6 +413,7 @@ function law_speaker_appearance_for_event( $speaker_id, $event_id ) {
 		foreach ( $rows as $row ) {
 			if ( (int) ( $row['speaker_id'] ?? 0 ) === $speaker_id ) {
 				return array(
+					'role'         => law_speaker_role_key( $row['role'] ?? '' ),
 					'organisation' => trim( (string) ( $row['organisation'] ?? '' ) ),
 					'job_title'    => trim( (string) ( $row['job_title'] ?? '' ) ),
 					'photo_id'     => (int) ( $row['photo_id'] ?? 0 ),
@@ -413,7 +475,7 @@ function law_event_session_ids( $event_id ) {
 
 /**
  * Card-shaped speaker rows for an event listing (the shape
- * parts/calendar-body.php renders): id, name, organisation, job_title,
+ * parts/calendar-body.php renders): id, name, role, organisation, job_title,
  * url (profile), photo, photo_id, bio. Values are the event's own appearance
  * rows.
  *
@@ -431,8 +493,8 @@ function law_event_speaker_cards( $event_id ) {
 }
 
 /**
- * One card row for a speaker at one event. Organisation, job title, photo and
- * biography come from the appearance row; any field the row leaves empty falls
+ * One card row for a speaker at one event. Role, organisation, job title,
+ * photo and biography come from the appearance row; any field the row leaves empty falls
  * through to $fallback_rows (the parent event's rows, for a session row the
  * committee added in wp-admin without details), then the photo falls back to
  * the speaker post's featured image and the biography to its editor content.
@@ -453,15 +515,18 @@ function law_speaker_card( $speaker_id, array $row = array(), array $fallback_ro
 		return null;
 	}
 
+	$role         = law_speaker_role_key( $row['role'] ?? '' );
 	$organisation = trim( (string) ( $row['organisation'] ?? '' ) );
 	$job_title    = trim( (string) ( $row['job_title'] ?? '' ) );
 	$photo_id     = (int) ( $row['photo_id'] ?? 0 );
 	$bio          = trim( (string) ( $row['bio'] ?? '' ) );
-	if ( '' === $organisation || '' === $job_title || ! $photo_id || '' === $bio ) {
+	if ( '' === $role || '' === $organisation || '' === $job_title || ! $photo_id || '' === $bio ) {
 		foreach ( $fallback_rows as $fallback ) {
 			if ( (int) ( $fallback['speaker_id'] ?? 0 ) !== (int) $post->ID ) {
 				continue;
 			}
+			// A session row's blank role inherits the event's, like the other fields.
+			$role         = '' !== $role ? $role : law_speaker_role_key( $fallback['role'] ?? '' );
 			$organisation = '' !== $organisation ? $organisation : trim( (string) ( $fallback['organisation'] ?? '' ) );
 			$job_title    = '' !== $job_title ? $job_title : trim( (string) ( $fallback['job_title'] ?? '' ) );
 			$photo_id     = $photo_id ?: (int) ( $fallback['photo_id'] ?? 0 );
@@ -477,6 +542,7 @@ function law_speaker_card( $speaker_id, array $row = array(), array $fallback_ro
 	return array(
 		'id'           => (int) $post->ID,
 		'name'         => $post->post_title,
+		'role'         => $role, // Key, '' = Speaker; templates print law_speaker_role_display().
 		'organisation' => $organisation,
 		'job_title'    => $job_title,
 		'url'          => function_exists( 'law_speaker_url' ) ? law_speaker_url( $post->ID ) : '',

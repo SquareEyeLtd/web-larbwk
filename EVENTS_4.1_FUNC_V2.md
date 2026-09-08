@@ -72,6 +72,26 @@ offices); self-removal matches the row's linked user ID; an inverted
 (`law_booking_clash_end()`) and the .ics; recount/export fetch all bookings
 (-1); a no-recipient send logs "Email NOT sent"; `cache_users()` primes the
 bookings list and export. EVENTS_BOOKINGS.md §14 carries the full list.
+Updated 8 September 2026 for the **per-appearance speaker role** (Trevor,
+3 September 2026: a person is a Speaker, Host or Moderator *at each event*):
+`law_speaker_roles()` and its key/label/display helpers, the canonical-key
+`speaker_rows` sanitiser, the Role select on the host form and both wp-admin
+relationship pickers (the host form save used to blank a wp-admin role on
+every edit), the role in brackets after the name on event and session
+speaker cards, the bio dialog and the committee dashboard, the "[name]'s
+role" line on the profile's Speaking-at cards, and the migration's form 8
+field 9 (Role) mapping (step 3, the step 4b refresh, a warn-only preflight
+line).
+Updated 8 September 2026 for the **committee bookings round** (EVENTS_BOOKINGS.md
+§7.6 and §2): the cross-event **Bookings dashboard** page
+(`/account/dashboard/bookings/`, `templates/account-bookings-dashboard.php`,
+`functions/events/bookings-dashboard.php`, "Bookings dashboard" in the header
+account dropdown for committee), **registering an attendee on their behalf**
+from the per-event bookings list (`law_booking_register_by_manager()`, handler
+`law_booking_register_attendee`, a committee-only **press pass** flag on the
+row, two new emails — 39 total), the **Country** column on the per-event list
+and export, and the booking control's button renamed **Register** (was "Book
+now", per 4.2 spec §3.4's vocabulary for free events).
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.
 
@@ -215,7 +235,10 @@ screens, columns, emails) → migration (report, runner, page).
   types (`people_rows` for co-owners/contacts, `speaker_rows` for the
   event→speaker relationship) clean each subfield and drop empty rows — so the
   forms hand raw POST arrays straight in and the schema is the single cleaning
-  path.
+  path. A speaker row's `role` goes through `law_speaker_role_key()`
+  (speakers.php): only `speaker` / `host` / `moderator` are ever stored, a
+  label or any case is normalised to the key, and anything else becomes `''`
+  (unset, which reads as Speaker).
 - `law_events_address_parts()`: the ordered invoice-address keys (line1, line2,
   city, state, postal_code, country) — one source shared by the sanitiser, the
   admin screen and the migrator.
@@ -486,14 +509,42 @@ screens, columns, emails) → migration (report, runner, page).
   `law_user_can_manage_event()`; a flat dashboard-idiom table whose leading
   Booking column repeats the number per attendee row — Denis, 7 September
   2026, superseding the grouped-blocks design — with live
-  dietary/accessibility from `law_profile_values()` in wrapping columns,
-  per-attendee Reject with optional reason, cancelled bookings collapsed with
-  the cancelled badge, and the CSV/Excel/PDF export trio). Hosts get "Bookings (n)" on Confirmed cards
+  dietary/accessibility from `law_profile_values()` in wrapping columns, the
+  attendee's **country** (live from the profile too, 8 September 2026), a
+  **Press** badge on press-pass rows, per-attendee Reject with optional
+  reason, cancelled bookings collapsed with the cancelled badge, the
+  CSV/Excel/PDF export trio, and — below the table — **"Register an
+  attendee"** (8 September 2026): a host, co-owner or committee member
+  registers someone by name and email for phone/email requests, VIPs and
+  press. Handler `law_booking_register_attendee` (gate
+  `law_user_can_manage_event()` on the posted event, the subject itself since
+  no booking exists yet; `booking_edit` rate surface; no-JS refusals
+  re-render the typed row via `law_booking_store_form_state()`) calls
+  `law_booking_register_by_manager()`, which cleans the row with
+  `law_booking_clean_additional_rows()`, fast-fails the open/duplicate/
+  capacity guards, resolves or creates the attendee account
+  (`law_events_create_host_user()`, role attendee), then calls
+  `law_booking_create()` with `$args` (`actor`, `on_behalf`, `new_account`,
+  `press`, `owner_row`) so the person OWNS the booking — it sits under their
+  "Your bookings", they can manage or cancel it, and every guard, the recount
+  and the host/committee emails run exactly as for self-service. A refused
+  booking deletes the account it just created (no orphans; logged
+  `booking_attendee_account_rolled_back`). The confirmation is
+  `user_booking_registered` (existing account) or
+  `user_booking_registered_invited` (new account, with the set-password link
+  in the same email — one email, not invite + confirmation), both naming
+  `{registered_by}`. The **press flag** (`is_press` on the row, kept by the
+  `attendee_rows` sanitiser only when set) is honoured by the handler only for
+  `law_user_is_committee()` — press passes are LAW-issued (spec §6.4) — and
+  surfaces as the badge, a Press column in both exports and the Bookings
+  dashboard's "Press only" filter. Hosts get "Bookings (n)" on Confirmed cards
   (`law_account_event_actions()`); the committee dashboard rows link the same
   URL. `law_booking_export` (GET, format=csv|xlsx|json) reuses
   `law_events_send_csv()`/`law_events_send_xlsx()` (both grew an optional
   title line) and export-buttons.js/pdfmake (generalised: the filter form is
-  optional, page size follows column count).
+  optional, page size follows column count); its columns are Booking ID,
+  First name, Second name, Email, Organisation, Job title, Country, Press,
+  Accessibility, Dietary.
 - **The event-cancel sweep** (phase 6): `law_bookings_cancel_all_for_event()`,
   a direct call from the workflow's `cancel` side effects — every active
   booking cancelled, every attendee sent `user_booking_event_cancelled`,
@@ -546,9 +597,12 @@ screens, columns, emails) → migration (report, runner, page).
   back to the committee list), `user_attendee_invited` / `_added` /
   `_rejected` / `_removed` / `_removed_self`,
   `user_booking_cancelled_attendee`, `user_booking_event_cancelled` (the
-  phase 6 event-cancel sweep will send it) and `host_capacity_warning` — all
+  phase 6 event-cancel sweep will send it), `host_capacity_warning`, and
+  (8 September 2026) `user_booking_registered` / `user_booking_registered_invited`
+  (registered on their behalf; the invited variant carries the set-password
+  link; both name `{registered_by}`) — all
   in the registry, editable on the Emails screen, every send logged. The
-  confirmation and both attendee-added emails attach the event's `.ics`
+  confirmation, the registered-on-behalf pair and both attendee-added emails attach the event's `.ics`
   invite via `law_booking_send_with_ics()` (tempfile deleted after the
   synchronous send). One removal template per context, because a single
   "you have been removed" would mis-describe most of them.
@@ -607,6 +661,59 @@ screens, columns, emails) → migration (report, runner, page).
   assignee-first committee routing, the capacity warning latch, the welcome
   email); `LAW_Test_Case::make_booking()` tracks engine-created bookings and
   users so teardown stays clean.
+
+### `bookings-dashboard.php`: the committee's cross-event Bookings dashboard (8 September 2026)
+
+- **Why**: until this round the committee could only see bookings one event
+  at a time (the per-event list) or as a read-only wp-admin list searchable by
+  title only, so "which events is jane@firm.com booked on?" and "everyone
+  attending this year, for badging" had no answer. EVENTS_BOOKINGS.md §7.6.
+- **Page**: `/account/dashboard/bookings/`, a child of the events dashboard,
+  template `templates/account-bookings-dashboard.php` ("Bookings dashboard
+  (committee)"), in `law_migration_page_map()` and `law_setup_account_pages()`
+  (CPT mode); `law_setup_bookings_dashboard_access()` (setup-account-pages.php,
+  also called by migration step 10) copies the parent's `_members_access_role`
+  rows onto the child when it has none, because a page the pages step creates
+  carries no restriction and Members reads that as public. The template also
+  checks `law_user_is_committee()` in code. Linked as "Bookings dashboard" in
+  the header account dropdown for committee (`law_account_paths()` key
+  `bookings`), after "Events dashboard".
+- **Filters** (`law_bookings_dashboard_filters()`, from `$_GET` or an explicit
+  array): `law_kw` keyword over attendee name, email, organisation, job title,
+  the booking number ("#12" or "12") and the event title; `law_event` (the
+  picker lists only events holding a booking, `law_bookings_dashboard_events()`,
+  ordered by start); `law_bstatus` (active by default / `cancelled` / `all`);
+  `law_press` (press only); `law_year` (a `law_year` select, rendered only when
+  more than one term exists). The bar is the events dashboard's markup driven
+  by calendar-filters.js over `&law_partial=1`
+  (`law_bookings_dashboard_maybe_render_partial()`, Members + committee
+  re-checked); no checkbox controls, because that script reads a field's value
+  regardless of its checked state.
+- **Rows** (`law_bookings_dashboard_rows()`): one flat row per attendee of
+  every matching booking — booking number (linked to the per-event list),
+  event + start, attendee (booker flag, Press badge), email, organisation, job
+  title, live country, Active/Cancelled badge, booked date — plus a summary
+  line ("N attendees across N bookings on N events"). Bookings are fetched with
+  a screen cap (`LAW_BOOKINGS_DASHBOARD_SCREEN_CAP`, 2,000; a notice says so
+  when hit) and the keyword is applied in PHP over the fetched set, never as a
+  LIKE over serialised meta; `cache_users()` primes the profile reads. The
+  view is deliberately read-only: Reject and Register stay on the per-event
+  list, which every row links to (one place for mutations).
+- **Export**: `law_bookings_dashboard_export` (GET, `format=csv|xlsx|json`,
+  nonce of the same name, `law_user_is_committee()`, the committee-export
+  handler's shape), uncapped, columns Booking ID, Event, Event date,
+  Reference, First name, Second name, Email, Organisation, Job title, Country,
+  Press, Status, Booked on, Accessibility, Dietary; the title line records the
+  filters. The CSV/Excel hrefs bake in the server-rendered filters and
+  export-buttons.js refreshes them from the live filter form; pdfmake loads
+  footer-side for committee only.
+- **Assets**: calendar.css + calendar-filters.js (enqueue.php) and
+  event-form.css (submission-form.php) gate on the template alongside the
+  events dashboard; the table styles are the per-event list's
+  (`.law-booking-table`) plus a few `.law-bookings-dashboard__*` rules.
+- Tests: `tests/BookingsDashboardTest.php` (rows and live country, keyword
+  by email/name/number, event/status/press/year filters, filter
+  normalisation, export columns and the press marker, the event picker).
 
 ### `ics.php`: calendar invites (bookings phase 2)
 
@@ -724,6 +831,24 @@ screens, columns, emails) → migration (report, runner, page).
   sanitiser so a biography keeps its line breaks. A row that leaves the
   biography or photo blank falls back to the speaker post's editor content and
   featured image at read time.
+- **Speaker roles are per appearance too** (Trevor, 3 September 2026; built
+  8 September 2026): the row's `role` slot, reserved since 4.1, now holds what
+  the person was at THIS event. `law_speaker_roles()` is the vocabulary
+  (`speaker` / `host` / `moderator`, in the order the selects offer),
+  `law_speaker_role_key()` normalises a key or a label in any case to the key
+  (`''` for anything unknown), `law_speaker_role_label()` is the label, and
+  `law_speaker_role_display()` is what a listing prints after the name — `''`
+  reads as Speaker, the default, and prints as such on every card (Denis,
+  8 September 2026), so it is the one line to change should the default ever
+  be suppressed. `law_speaker_appearances()`,
+  `law_speaker_appearance_for_event()` and `law_speaker_card()` expose `role`;
+  a session row's blank role inherits the parent event row's, like its other
+  fields, and an explicit Speaker on a session row overrides an event-level
+  Host. `law_speaker_first_appearance()` deliberately carries no role: the
+  archive headline is per person, the role is per event. There is no free-text
+  "other" and the legacy `'gf'` render branch in `functions/calendar.php` was
+  left without it (it is deleted post-cutover); the role shows once the source
+  is `cpt`, with the migration carrying the values entered on the live form.
 - `law_speakers_confirmed_maps()` (and its `law_speakers_confirmed_event_map()`
   wrapper): the one pass over published events' rows, memoised — the archive
   source (one profile per speaker referenced by a Confirmed event; visibility
@@ -747,8 +872,9 @@ screens, columns, emails) → migration (report, runner, page).
   photo is the `medium` size, since the single event view renders it at 5.5rem.
   `templates/speaker.php` shows no headline organisation/job title **and no
   biography**: each "Speaking at" card (`parts/loop/event.php`, `speaker` arg)
-  renders a divider and "[name]'s organisation: …" / "[name]'s position: …",
-  and the biography is on the event page's speaker cards.
+  renders a divider and "[name]'s role: …" / "[name]'s organisation: …" /
+  "[name]'s position: …", and the biography is on the event page's speaker
+  cards.
 - `law_speaker_bio_excerpt()` (24 words, an explicit `…` because
   `wp_trim_words()` otherwise appends the `&hellip;` entity, and
   `strip_shortcodes()` because an appearance biography never passes through
@@ -844,11 +970,21 @@ screens, columns, emails) → migration (report, runner, page).
   speaker-photo validation (real MIME sniff, 5 MB cap, pixel bounds) and the
   media sideload.
 - `law_events_form_save_speakers()`, `law_events_form_save_sessions()`: upsert
-  speakers (identity) and store the appearance rows with this event's
+  speakers (identity) and store the appearance rows with this event's role,
   organisation, job title and photo; a re-save without a new upload keeps the
   photo already on the row for the same speaker (the posted `photo_id` is a
   display echo, never trusted). Session rows copy the matched event row's
-  details. `law_events_form_values()` prefills organisation/job title from the
+  details, role included (the host form's session picker is a list of names,
+  so a per-session role is a wp-admin-only override). The Speakers fieldset
+  (`parts/events/event-form-fields.php`) has a Role select between Name and
+  Email, the live form 8 layout; Speaker is preselected, the field is not
+  required, and the neighbouring label is now "Job title" (it read "Job title
+  / role", which beside a Role select said the same thing twice). Before
+  8 September 2026 this save hard-coded `role => ''`, so a role the committee
+  set in wp-admin vanished on the host's next edit. `event-form.js` resets a
+  cloned `<select>` to its first option rather than to `''`, which on a select
+  with no blank option would leave nothing selected and post no role.
+  `law_events_form_values()` prefills role/organisation/job title from the
   row, not the speaker post.
 - `law_events_form_handler()` (on `admin_post_law_event_form`): nonce,
   honeypot, rate limit (15 per 10 minutes), `law_events_user_can_submit()`,
@@ -1107,11 +1243,15 @@ event status by the rebuild) plus "Reference".
   `media/repeater/relationship()`: the reusable meta-box field renderers, plus
   a `wp_ajax_law_events_search_posts` endpoint and `law-admin.js` enqueue that
   power the speaker/organisation relationship pickers. A speaker row carries
-  role, organisation, job title, a per-appearance photo control
+  a Role select (Speaker / Host / Moderator from `law_speaker_roles()`, was a
+  free-text input until 8 September 2026), organisation, job title, a
+  per-appearance photo control
   (`law_field_relationship_photo()`, `wp.media` in `law-admin.js`) and a
   per-appearance biography textarea on its own full-width line. `law-admin.js`
   builds the identical markup for rows added via the AJAX search, so the two
-  cannot drift.
+  cannot drift; the role choices reach it as `lawEventsAdmin.roleChoices`
+  through the existing `wp_localize_script()` call. The same picker renders
+  on the session screen, which is where a per-session role override lives.
 - **`event-screen.php`** — the custom event edit screen: meta boxes for
   workflow actions, fee (with override), programme facts, invoice contact,
   people (co-owners/contacts), speakers, sessions, the comment thread and the
@@ -1123,7 +1263,8 @@ event status by the rebuild) plus "Reference".
   `sanitize_textarea_field()`, since `sanitize_text_field()` would collapse its
   line breaks before the meta schema's own textarea sanitiser ever saw them.
 - **`speaker-screen.php`, `session-screen.php`**: the speaker and session edit
-  meta boxes and their saves.
+  meta boxes and their saves. The speaker screen's read-only "Appears at" box
+  lists each confirmed event with "role, job title, organisation".
 - **`columns.php`**: admin list columns (status, host, slot, payment), a status
   filter dropdown, and the `pre_get_posts` wiring for it.
 - **`booking-screen.php`** (bookings phase 6): the read-only `law_booking`
@@ -1153,18 +1294,25 @@ event status by the rebuild) plus "Reference".
   speaker appearances (4b) → comments → history → counters → redirects →
   notifications → pages. Step 2 imports each form 8 (Event > speaker) child's
   photo once and records it in the map (`speaker_photos`); step 3 builds the
-  event's rows with `law_migration_speaker_rows()` (field 3 Organisation /
-  firm / chambers, field 4 Job title / role, field 7 Biography, the mapped
-  photo; legacy field 48 Speakers (list) rows as the fallback, which has no
-  biography column); step 4 copies the event row onto session rows
-  (`law_migration_session_speaker_rows()`); step 4b
-  (`law_migration_run_speaker_appearances()`) refreshes existing rows'
+  event's rows with `law_migration_speaker_rows()` (field 9 Role — the
+  Speaker / Host / Moderator drop down Trevor added to the live form on
+  3 September 2026, mapped by label through `law_speaker_role_key()`; field 3
+  Organisation / firm / chambers, field 4 Job title / role, field 7 Biography,
+  the mapped photo; legacy field 48 Speakers (list) rows as the fallback,
+  which has no biography or role column); step 4 copies the event row onto
+  session rows (`law_migration_session_speaker_rows()`); step 4b
+  (`law_migration_run_speaker_appearances()`) refreshes existing rows' role,
   organisation, job title, photo and biography from the source entries,
   idempotently, so a database migrated before details were per appearance is
   fixed without a fresh run, and production gets a check. Its comparison
   sanitises each field the way the schema would (the biography with the
   textarea sanitiser, so line breaks are not a permanent diff) and truncates
-  biographies in the log line, which would otherwise be paragraphs long.
+  biographies in the log line, which would otherwise be paragraphs long. An
+  empty source value never blanks a stored one, so a database without field 9
+  (local, or staging pulled before 3 September 2026) leaves a committee-set
+  role alone; the preflight adds a **warn-only** "Form 8 field 9 (Role)" line
+  rather than putting the field in the structure map, so such a database
+  still passes.
   `law_migration_create_snapshot()` runs `mysqldump` (password via `MYSQL_PWD`,
   not a `-p` CLI arg) with a random filename in a protected dir, then
   `law_migration_snapshot_ok()` fetches the snapshot's own public URL
@@ -1258,6 +1406,8 @@ These predate the rebuild and now branch on `law_events_source()`.
 - **Templates**: `register.php` (custom registration), `account-profile.php`
   (profile), `account-event-form.php` (submit/edit), `account-events.php`
   (My events + thread), `account-dashboard.php` (committee review queue),
+  `account-bookings-dashboard.php` (the committee's cross-event bookings
+  table, see `bookings-dashboard.php` above),
   `event-single.php` (single event), `calendar.php` / `calendar-committee.php`
   (programme), `speakers.php` (the speakers archive, page template "Speakers",
   page 658 Speakers) and `speaker.php` (a single profile — no "Template Name",
@@ -1291,13 +1441,17 @@ These predate the rebuild and now branch on `law_events_source()`.
   background whatever is behind it, which is the only fix that does not depend
   on the image.
 - **Parts** (`parts/events/`): `speaker-card.php` (one speaker card on the
-  single event view — photo or initials, name, "job title, organisation", a
+  single event view — photo or initials, the name with the role at this event
+  in brackets after it (`.law-cal-speakers__tag`, outside the profile link so
+  the link text stays the name), "job title, organisation", a
   24-word biography excerpt and the "Read full bio" pair: the
   `[data-law-modal-enhanced]` button and the `[data-law-modal-fallback]`
   `<details>` holding the full text for the no-JS path, which also keeps it
   indexable now that the profile page carries no biography. Used by both the
   event's Speakers list and every session panel, so the two cannot drift) and
-  `speaker-bio-modal.php` (that dialog: photo, name, role and full biography.
+  `speaker-bio-modal.php` (that dialog: photo, name with the role in
+  brackets inside the heading so the dialog's accessible name carries it,
+  "job title, organisation" and the full biography.
   Like `booking-modal.php` it renders the shared `.law-modal` skeleton itself
   rather than going through `parts/layout/modal.php`, whose `copy` args would
   nest `<p>` inside `<p>` once the biography goes through `wpautop()` and which

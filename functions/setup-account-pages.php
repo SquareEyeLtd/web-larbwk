@@ -45,6 +45,8 @@ function law_setup_account_pages() {
 	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
 		$setup['account/events/submit'] = 'templates/account-event-form.php';
 		$setup['account/dashboard']     = 'templates/account-dashboard.php';
+		// The committee's cross-event bookings view (EVENTS_BOOKINGS.md §7.6).
+		$setup['account/dashboard/bookings'] = 'templates/account-bookings-dashboard.php';
 		// Phase D: the custom profile form replaces the form 3 embed.
 		$setup['account/profile']       = 'templates/account-profile.php';
 	}
@@ -97,6 +99,7 @@ function law_setup_account_pages() {
 	// only render an empty string there, but removing it keeps the editor
 	// content honest.
 	$report[] = 'ACCESS   /account/events/ attendee role: ' . law_setup_account_events_attendee_access();
+	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 
 	$login_page = get_page_by_path( 'login' );
 	if ( $login_page instanceof WP_Post ) {
@@ -145,6 +148,35 @@ function law_setup_account_events_attendee_access() {
 		return 'ok';
 	}
 	add_post_meta( $page->ID, '_members_access_role', 'attendee' );
+	return 'updated';
+}
+
+/**
+ * The Bookings dashboard (EVENTS_BOOKINGS.md §7.6) is a child page of the
+ * events dashboard and must carry the same Members restriction (committee,
+ * editor, administrator). A page created by the migration's pages step has
+ * no restriction at all, which the Members plugin reads as public — so this
+ * copies the parent's role rows onto the child whenever the child has none.
+ * Idempotent; shared by the setup trigger and migration step 10.
+ *
+ * @return string ok | updated | unrestricted | missing.
+ */
+function law_setup_bookings_dashboard_access() {
+	$page   = get_page_by_path( 'account/dashboard/bookings' );
+	$parent = get_page_by_path( 'account/dashboard' );
+	if ( ! $page instanceof WP_Post || ! $parent instanceof WP_Post ) {
+		return 'missing';
+	}
+	if ( get_post_meta( $page->ID, '_members_access_role' ) ) {
+		return 'ok';
+	}
+	$roles = get_post_meta( $parent->ID, '_members_access_role' );
+	if ( ! $roles ) {
+		return 'unrestricted'; // The parent has no Members restriction on this environment either.
+	}
+	foreach ( $roles as $role ) {
+		add_post_meta( $page->ID, '_members_access_role', $role );
+	}
 	return 'updated';
 }
 

@@ -12,7 +12,7 @@
  *
  * Its only exits are the two links: the script marks it law-modal--busy, so
  * Escape and overlay clicks are inert. Closing in place would leave a stale
- * "Book now" behind it.
+ * "Register" behind it.
  *
  * Args: event (the calendar-mapped array).
  */

@@ -460,7 +460,7 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 		if ( $speaker_id ) {
 			$relationships[] = array(
 				'speaker_id'   => $speaker_id,
-				'role'         => '',
+				'role'         => (string) ( $row['role'] ?? '' ), // Canonicalised by the schema sanitiser.
 				'organisation' => (string) ( $row['organisation'] ?? '' ),
 				'job_title'    => (string) ( $row['job_title'] ?? '' ),
 				'photo_id'     => $photo_id ?: (int) ( $previous[ $speaker_id ] ?? 0 ),
@@ -552,10 +552,11 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 		foreach ( $wanted as $name ) {
 			foreach ( $event_speakers as $relationship ) {
 				if ( law_speaker_normalise_name( get_the_title( $relationship['speaker_id'] ) ) === law_speaker_normalise_name( $name ) ) {
-					// The session row carries the event's appearance details too.
+					// The session row carries the event's appearance details too, the
+					// role included: the host form has no per-session role control.
 					$linked[] = array(
 						'speaker_id'   => (int) $relationship['speaker_id'],
-						'role'         => '',
+						'role'         => (string) ( $relationship['role'] ?? '' ),
 						'organisation' => (string) ( $relationship['organisation'] ?? '' ),
 						'job_title'    => (string) ( $relationship['job_title'] ?? '' ),
 						'photo_id'     => (int) ( $relationship['photo_id'] ?? 0 ),
@@ -734,13 +735,14 @@ function law_events_form_values( $post, array $state ) {
 	$speakers = array();
 	foreach ( law_event_meta( $post->ID, '_law_speakers' ) as $row ) {
 		$speaker_id = (int) $row['speaker_id'];
-		// Organisation, job title, photo and biography are this event's own (the
-		// appearance row); name, email and website are the person's. The biography
-		// falls back to the speaker post's editor content for rows saved before
-		// biographies became per appearance.
+		// Role, organisation, job title, photo and biography are this event's own
+		// (the appearance row); name, email and website are the person's. The
+		// biography falls back to the speaker post's editor content for rows saved
+		// before biographies became per appearance.
 		$row_bio    = trim( (string) ( $row['bio'] ?? '' ) );
 		$speakers[] = array(
 			'name'         => get_the_title( $speaker_id ),
+			'role'         => law_speaker_role_key( $row['role'] ?? '' ),
 			'email'        => (string) law_event_meta( $speaker_id, '_law_speaker_email' ),
 			'organisation' => (string) ( $row['organisation'] ?? '' ),
 			'job_title'    => (string) ( $row['job_title'] ?? '' ),
@@ -795,6 +797,7 @@ function law_events_form_values( $post, array $state ) {
 add_action( 'wp_enqueue_scripts', function () {
 	if ( is_page_template( 'templates/account-event-form.php' )
 		|| is_page_template( 'templates/account-dashboard.php' )
+		|| is_page_template( 'templates/account-bookings-dashboard.php' )
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {

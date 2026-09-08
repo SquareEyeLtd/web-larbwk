@@ -73,7 +73,7 @@ get_header();
 						<div class="law-speaker__events law-cal">
 							<?php foreach ( $law_events as $law_event ) : ?>
 								<?php
-								// What this speaker was at THIS event (organisation and
+								// What this speaker was at THIS event (role, organisation and
 								// position as submitted for it), rendered under "Hosted by".
 								$law_appearance = function_exists( 'law_speaker_appearance_for_event' )
 									? law_speaker_appearance_for_event( $law_speaker['id'], law_events_resolve_event_post_id( $law_event['id'] ) )
@@ -87,6 +87,7 @@ get_header();
 										'show_date' => true,
 										'speaker'   => $law_appearance ? array(
 											'name'         => $law_speaker['name'],
+											'role'         => $law_appearance['role'],
 											'organisation' => $law_appearance['organisation'],
 											'job_title'    => $law_appearance['job_title'],
 										) : array(),

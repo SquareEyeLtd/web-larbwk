@@ -49,6 +49,24 @@
 			return chosen.querySelectorAll('.law-rel-item').length + Date.now() % 1000;
 		}
 
+		/* The Role select, same options as law_field_relationship_row() in
+		   fields.php (localised as roleChoices so the two cannot drift). The
+		   first choice, Speaker, is the default for a new row. */
+		function roleSelect(fieldName) {
+			var choices = (window.lawEventsAdmin && lawEventsAdmin.roleChoices) || { speaker: 'Speaker' };
+			var select = document.createElement('select');
+			select.name = fieldName;
+			select.className = 'law-rel-role';
+			select.setAttribute('aria-label', 'Role at this event');
+			Object.keys(choices).forEach(function (key) {
+				var option = document.createElement('option');
+				option.value = key;
+				option.textContent = choices[key];
+				select.appendChild(option);
+			});
+			return select.outerHTML;
+		}
+
 		function addItem(id, title) {
 			var li = document.createElement('li');
 			li.className = 'law-rel-item';
@@ -56,7 +74,7 @@
 			var fields = simple
 				? '<input type="hidden" name="' + name + '[]" value="' + id + '">'
 				: '<input type="hidden" name="' + name + '[' + i + '][speaker_id]" value="' + id + '">' +
-					'<input type="text" name="' + name + '[' + i + '][role]" value="" placeholder="Role (Speaker / Moderator / Host)" class="law-rel-role">' +
+					roleSelect(name + '[' + i + '][role]') +
 					'<input type="text" name="' + name + '[' + i + '][organisation]" value="" placeholder="Organisation at this event" class="law-rel-org">' +
 					'<input type="text" name="' + name + '[' + i + '][job_title]" value="" placeholder="Job title at this event" class="law-rel-job">' +
 					// Same markup as law_field_relationship_photo() in fields.php.

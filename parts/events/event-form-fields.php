@@ -144,9 +144,22 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 				<button type="button" class="law-row-remove" aria-label="Remove speaker">×</button>
 				<div class="law-row-grid">
 					<label>Name *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][name]" value="<?php echo esc_attr( (string) ( $law_row['name'] ?? '' ) ); ?>"></label>
+					<?php
+					// The role at THIS event (Speaker / Host / Moderator), a per-appearance
+					// detail like the organisation. Speaker is the default, so a row saved
+					// before roles existed ('') selects it. The template row's select needs
+					// no empty option: event-form.js resets a cloned select to its first
+					// choice rather than to '' (which would leave nothing selected).
+					$law_row_role = law_speaker_role_key( $law_row['role'] ?? '' ) ?: 'speaker';
+					?>
+					<label>Role<select <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][role]">
+						<?php foreach ( law_speaker_roles() as $law_role_key => $law_role_label ) : ?>
+							<option value="<?php echo esc_attr( $law_role_key ); ?>" <?php selected( $law_row_role, $law_role_key ); ?>><?php echo esc_html( $law_role_label ); ?></option>
+						<?php endforeach; ?>
+					</select></label>
 					<label>Email *<input type="email" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][email]" value="<?php echo esc_attr( (string) ( $law_row['email'] ?? '' ) ); ?>"></label>
 					<label>Organisation / firm / chambers *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][organisation]" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
-					<label>Job title / role *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][job_title]" value="<?php echo esc_attr( (string) ( $law_row['job_title'] ?? '' ) ); ?>"></label>
+					<label>Job title *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][job_title]" value="<?php echo esc_attr( (string) ( $law_row['job_title'] ?? '' ) ); ?>"></label>
 					<label>Website profile URL<input type="url" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][website]" value="<?php echo esc_attr( (string) ( $law_row['website'] ?? '' ) ); ?>"></label>
 					<?php
 					// The photo already on this event's row (display only: the save

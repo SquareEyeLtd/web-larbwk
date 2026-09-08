@@ -207,6 +207,11 @@ function law_events_sanitize_value( $value, $type ) {
 					'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
 					'is_owner'     => $is_owner,
 				);
+				// Press pass (committee-issued, spec §6.4): only ever present on
+				// rows that carry it, so older rows keep their exact shape.
+				if ( ! empty( $row['is_press'] ) ) {
+					$clean['is_press'] = 1;
+				}
 				if ( $clean['user_id'] || '' !== $clean['email'] ) {
 					$rows[]     = $clean;
 					$has_owner  = $has_owner || (bool) $is_owner;
@@ -248,14 +253,16 @@ function law_events_sanitize_value( $value, $type ) {
 				// before the change keep working; a row with no biography falls back
 				// to the speaker post's editor content at read time
 				// (law_speaker_card()), the way an empty photo_id falls back to the
-				// featured image.
+				// featured image. 'role' is what the person was at THIS event (Speaker /
+				// Host / Moderator), stored as the law_speaker_roles() key; '' means the
+				// default, Speaker, and on a session row inherits the event's.
 				$organisation = (string) ( $row['organisation'] ?? '' );
 				if ( '' === trim( $organisation ) ) {
 					$organisation = (string) ( $row['organisation_override'] ?? '' );
 				}
 				$rows[] = array(
 					'speaker_id'   => $id,
-					'role'         => sanitize_text_field( (string) ( $row['role'] ?? '' ) ),
+					'role'         => law_speaker_role_key( $row['role'] ?? '' ),
 					'organisation' => sanitize_text_field( $organisation ),
 					'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
 					'photo_id'     => absint( $row['photo_id'] ?? 0 ),

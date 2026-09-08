@@ -520,11 +520,15 @@ omitted when any sessions exist; it still appears for events with no sessions.
 
 Both lists render the same **speaker cards** (`parts/events/speaker-card.php`,
 two per row from 48em, each with an orange rule down its left edge): a 5.5rem
-photo or initials placeholder, the name linking to the profile, "job title,
-organisation", and a 24-word biography excerpt with a "Read full bio" control
-that opens the full text in a dialog. Organisation, job title, photo and
-biography are all the speaker's values *for that event* (the appearance row),
-so the same person can read differently on two listings.
+photo or initials placeholder, the name linking to the profile with the role
+at this event in brackets after it ("Jane Doe (Moderator)" — Speaker, Host or
+Moderator, from form 8 field 9 (Role), the drop down added on 3 September
+2026; an unset role reads as Speaker), "job title, organisation", and a
+24-word biography excerpt with a "Read full bio" control that opens the full
+text in a dialog. Role, organisation, job title, photo and biography are all
+the speaker's values *for that event* (the appearance row), so the same person
+can read differently on two listings. The legacy Gravity Forms render path
+does not show the role; it appears once the source is the rebuilt module.
 
 ### The speakers archive
 
@@ -573,9 +577,10 @@ swaps the template in. Unknown or non-public IDs 404; any entry ID of a merged
 person resolves to the same profile, whose canonical URL is the kept entry's.
 
 - Layout: photo (or initials) in a 1/3 column, details in 2/3; an `<h2>` name
-  and the website link. No role, organisation or biography here: those are per
-  appearance, so the organisation and position appear on each "Speaking at"
-  card and the biography on the event page's speaker cards.
+  and the website link. No job title, organisation, role or biography here:
+  those are per appearance, so the role, organisation and position appear on
+  each "Speaking at" card ("[name]'s role: Moderator") and the biography on
+  the event page's speaker cards.
 - Related events come from the profile's `event_ids`, mapped by
   `law_calendar_event_by_id()` and rendered like programme list cards, linking
   to the programme page's `?event=` view (`law_speaker_event_link()`, because

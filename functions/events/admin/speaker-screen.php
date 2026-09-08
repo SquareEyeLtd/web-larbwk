@@ -34,9 +34,9 @@ function law_speaker_box_events( $post ) {
 	$ordered = wp_list_pluck( law_speaker_appearances( (int) $post->ID ), 'event_id' );
 	echo '<ul class="law-speaker-appearances">';
 	foreach ( $ordered as $event_id ) {
-		$seen  = law_speaker_appearance_for_event( (int) $post->ID, (int) $event_id ) ?: array( 'organisation' => '', 'job_title' => '', 'photo_id' => 0 );
+		$seen  = law_speaker_appearance_for_event( (int) $post->ID, (int) $event_id ) ?: array( 'role' => '', 'organisation' => '', 'job_title' => '', 'photo_id' => 0 );
 		$thumb = $seen['photo_id'] ? (string) wp_get_attachment_image_url( $seen['photo_id'], 'thumbnail' ) : '';
-		$what  = implode( ', ', array_filter( array( $seen['job_title'], $seen['organisation'] ) ) );
+		$what  = implode( ', ', array_filter( array( law_speaker_role_display( $seen['role'] ), $seen['job_title'], $seen['organisation'] ) ) );
 		printf(
 			'<li>%s<a href="%s">%s</a>%s</li>',
 			$thumb ? '<img src="' . esc_url( $thumb ) . '" alt="" width="24" height="24" style="vertical-align:middle;margin-right:6px;border-radius:2px"> ' : '',

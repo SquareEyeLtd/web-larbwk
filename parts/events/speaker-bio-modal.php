@@ -31,8 +31,9 @@ if ( '' === $law_bm_id || '' === $law_bm_name ) {
 
 law_modal_enqueue();
 
-$law_bm_role = implode( ', ', array_filter( array( (string) ( $law_bm_speaker['job_title'] ?? '' ), (string) ( $law_bm_speaker['organisation'] ?? '' ) ) ) );
-$law_bm_bio  = trim( (string) ( $law_bm_speaker['bio'] ?? '' ) );
+$law_bm_tag   = law_speaker_role_display( (string) ( $law_bm_speaker['role'] ?? '' ) );
+$law_bm_title = implode( ', ', array_filter( array( (string) ( $law_bm_speaker['job_title'] ?? '' ), (string) ( $law_bm_speaker['organisation'] ?? '' ) ) ) );
+$law_bm_bio   = trim( (string) ( $law_bm_speaker['bio'] ?? '' ) );
 ?>
 <div class="law-modal law-modal--speaker" id="<?php echo esc_attr( $law_bm_id ); ?>" hidden>
 	<div class="law-modal__overlay" data-law-modal-close></div>
@@ -48,9 +49,10 @@ $law_bm_bio  = trim( (string) ( $law_bm_speaker['bio'] ?? '' ) );
 				<?php endif; ?>
 			</span>
 			<span class="law-modal__heading">
-				<h2 class="law-modal__title" id="<?php echo esc_attr( $law_bm_id ); ?>-title"><?php echo esc_html( $law_bm_name ); ?></h2>
-				<?php if ( '' !== $law_bm_role ) : ?>
-					<p class="law-modal__subtitle"><?php echo esc_html( $law_bm_role ); ?></p>
+				<?php // The role sits inside the heading so the dialog's accessible name carries it, as the card's does. ?>
+				<h2 class="law-modal__title" id="<?php echo esc_attr( $law_bm_id ); ?>-title"><?php echo esc_html( $law_bm_name ); ?><?php if ( '' !== $law_bm_tag ) : ?> <span class="law-modal__tag">(<?php echo esc_html( $law_bm_tag ); ?>)</span><?php endif; ?></h2>
+				<?php if ( '' !== $law_bm_title ) : ?>
+					<p class="law-modal__subtitle"><?php echo esc_html( $law_bm_title ); ?></p>
 				<?php endif; ?>
 			</span>
 		</div>

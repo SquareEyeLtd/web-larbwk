@@ -49,13 +49,23 @@ $law_bl_available = (int) law_event_meta( $law_bl_event_id, '_law_tickets_availa
 // Result notices (the reject redirect flow lands back here).
 $law_bl_notice  = sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) );
 $law_bl_notices = array(
-	'attendee-removed' => array( 'ok', __( 'The attendee has been rejected and emailed.', 'law' ) ),
-	'booking-cancelled' => array( 'ok', __( 'That was the booking\'s last attendee, so the booking is now cancelled.', 'law' ) ),
-	'booking-failed'   => array( 'error', __( 'Sorry, that change could not be made.', 'law' ) ),
-	'rate-limited'     => array( 'error', __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ) ),
+	'attendee-removed'    => array( 'ok', __( 'The attendee has been rejected and emailed.', 'law' ) ),
+	'attendee-registered' => array( 'ok', __( 'The attendee has been registered and emailed their confirmation.', 'law' ) ),
+	'booking-cancelled'   => array( 'ok', __( 'That was the booking\'s last attendee, so the booking is now cancelled.', 'law' ) ),
+	'booking-failed'      => array( 'error', __( 'Sorry, that change could not be made.', 'law' ) ),
+	'rate-limited'        => array( 'error', __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ) ),
 );
 
 $law_bl_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_booking_export&event_id=' . $law_bl_event_id ), 'law_booking_export' );
+
+// Registering someone on their behalf (phone/email requests, VIPs, press) is
+// offered while the event is open with places left; the engine refuses
+// otherwise, so a full or started event just hides the form. The press flag
+// is committee-only (spec §6.4: press passes are issued by LAW admin).
+$law_bl_can_register = true === law_booking_guard_open( $law_bl_event_id ) && 0 !== law_event_tickets_remaining( $law_bl_event_id );
+$law_bl_is_committee = law_user_is_committee();
+$law_bl_form_state   = law_booking_form_state();
+$law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );
 
 /**
  * One flat table over a set of bookings: a leading Booking column carries the
@@ -76,6 +86,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 				<th><?php esc_html_e( 'Email', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Organisation', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Job title', 'law' ); ?></th>
+				<th><?php esc_html_e( 'Country', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Accessibility', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Dietary', 'law' ); ?></th>
 				<?php if ( $law_bl_actionable ) : ?><th></th><?php endif; ?>
@@ -97,7 +108,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 				<?php if ( ! $law_bl_rows ) : ?>
 					<tr>
 						<td class="law-booking-table__booking"><strong>#<?php echo esc_html( (string) $law_bl_number ); ?></strong></td>
-						<td colspan="<?php echo $law_bl_actionable ? 7 : 6; ?>"><?php esc_html_e( 'No attendees.', 'law' ); ?></td>
+						<td colspan="<?php echo $law_bl_actionable ? 8 : 7; ?>"><?php esc_html_e( 'No attendees.', 'law' ); ?></td>
 					</tr>
 				<?php endif; ?>
 				<?php foreach ( array_values( $law_bl_rows ) as $law_bl_i => $law_bl_row ) :
@@ -126,10 +137,14 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 							if ( ! empty( $law_bl_row['is_owner'] ) ) {
 								echo ' <span class="law-booking-manage__owner-flag">' . esc_html__( '(booker)', 'law' ) . '</span>';
 							}
+							if ( ! empty( $law_bl_row['is_press'] ) ) {
+								echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';
+							}
 						?></td>
 						<td><?php echo esc_html( (string) ( $law_bl_row['email'] ?? '' ) ); ?></td>
 						<td><?php echo esc_html( (string) ( $law_bl_row['organisation'] ?? '' ) ?: '—' ); ?></td>
 						<td><?php echo esc_html( (string) ( $law_bl_row['job_title'] ?? '' ) ?: '—' ); ?></td>
+						<td><?php echo esc_html( (string) ( $law_bl_profile['country'] ?? '' ) ?: '—' ); ?></td>
 						<td class="law-booking-table__req"><?php echo esc_html( $law_bl_access ?: '—' ); ?></td>
 						<td class="law-booking-table__req"><?php echo esc_html( $law_bl_diet ?: '—' ); ?></td>
 						<?php if ( $law_bl_actionable ) : ?>
@@ -212,6 +227,51 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 			<p class="law-cal__empty"><?php esc_html_e( 'No active bookings yet.', 'law' ); ?></p>
 		<?php else : ?>
 			<?php $law_bl_render_table( $law_bl_active, true ); ?>
+		<?php endif; ?>
+
+		<?php if ( $law_bl_can_register ) : ?>
+			<div class="law-booking-register">
+				<h3 class="law-booking-manage__subtitle"><?php esc_html_e( 'Register an attendee', 'law' ); ?></h3>
+				<p class="law-booking-note"><?php esc_html_e( 'For requests that arrive by phone or email. The person gets a booking of their own: they are emailed a confirmation (with a link to set a password if they have no account yet) and can manage or cancel it from Your bookings.', 'law' ); ?></p>
+				<?php if ( '' !== (string) $law_bl_form_state['message'] ) : ?>
+					<p class="law-form-notice is-error" role="alert"><?php echo esc_html( (string) $law_bl_form_state['message'] ); ?></p>
+				<?php endif; ?>
+				<form class="law-event-form law-event-form--light law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<input type="hidden" name="action" value="law_booking_register_attendee">
+					<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bl_event_id ); ?>">
+					<?php wp_nonce_field( 'law_booking_register_attendee' ); ?>
+					<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+					<?php // The data-law-booking-rows wrapper is what booking-form.js's row/field error marking walks. ?>
+					<div class="law-rows" data-law-booking-rows="law_attendees" data-law-max="1">
+					<div class="law-row">
+						<div class="law-row-grid law-row-grid--attendee">
+							<?php
+							$law_bl_fields = array(
+								'name'         => array( __( 'Full name *', 'law' ), 'text' ),
+								'email'        => array( __( 'Email *', 'law' ), 'email' ),
+								'organisation' => array( __( 'Organisation', 'law' ), 'text' ),
+								'job_title'    => array( __( 'Job title', 'law' ), 'text' ),
+							);
+							foreach ( $law_bl_fields as $law_bl_key => $law_bl_field ) :
+								$law_bl_invalid = 0 === (int) $law_bl_form_state['row'] && $law_bl_form_state['field'] === $law_bl_key;
+								?>
+								<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off"<?php echo in_array( $law_bl_key, array( 'name', 'email' ), true ) ? ' aria-required="true"' : ''; ?> name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
+							<?php endforeach; ?>
+						</div>
+					</div>
+					</div>
+					<?php if ( $law_bl_is_committee ) : ?>
+						<div class="law-form-field">
+							<div class="law-choices">
+								<label><input type="checkbox" name="law_press" value="1"> <?php esc_html_e( 'Press pass (marked as press on the attendee list and exports)', 'law' ); ?></label>
+							</div>
+						</div>
+					<?php endif; ?>
+					<p class="law-modal__actions law-booking-actions-start">
+						<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Registering…', 'law' ); ?>"><?php esc_html_e( 'Register attendee', 'law' ); ?></button>
+					</p>
+				</form>
+			</div>
 		<?php endif; ?>
 
 		<?php if ( $law_bl_cancelled ) : ?>

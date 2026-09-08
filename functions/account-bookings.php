@@ -117,7 +117,7 @@ function law_account_user_is_host_like() {
 /**
  * The booking control on the single event view (parts/calendar-body.php),
  * replacing the placeholder Register anchor. Five states:
- * you're booked → bookings open soon → book now → sold out (disabled
+ * you're booked → bookings open soon → register → sold out (disabled
  * waitlist) → the event has taken place. Renders nothing on the legacy
  * source or for a non-Confirmed event (committee previews carry no booking UI).
  *
@@ -208,7 +208,7 @@ function law_booking_render_action( $event ) {
 	printf(
 		'<a class="button orange" href="%s" data-law-modal-open="law-booking-modal">%s</a>',
 		esc_url( add_query_arg( 'law_book', 1, get_permalink( $event_id ) ) ),
-		esc_html__( 'Book now', 'law' )
+		esc_html__( 'Register', 'law' )
 	);
 	law_booking_footer_modal( $event, 'modal' );
 }
@@ -221,7 +221,7 @@ function law_booking_render_action( $event ) {
  * Called during template render, well before wp_footer fires.
  *
  * @param array  $event The calendar-mapped event array.
- * @param string $which 'modal' (the Book now dialog) or 'success'.
+ * @param string $which 'modal' (the Register dialog) or 'success'.
  */
 function law_booking_footer_modal( array $event, $which ) {
 	if ( 'success' === $which && ! is_user_logged_in() ) {

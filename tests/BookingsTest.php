@@ -519,7 +519,7 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'Attendees for', $data['title'] );
 		$this->assertStringContainsString( get_the_title( $event ), $data['title'] );
 		$this->assertSame(
-			array( 'Booking ID', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Accessibility', 'Dietary' ),
+			array( 'Booking ID', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' ),
 			$data['columns']
 		);
 		$this->assertCount( 2, $data['rows'], 'Owner + guest; the cancelled booking is excluded.' );
@@ -534,6 +534,76 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertSame( $guest, $data['rows'][1][3] );
 		$this->assertSame( 'Test Org', $data['rows'][1][4] );
 		$this->assertSame( 'Associate', $data['rows'][1][5] );
+	}
+
+	/* Registering on someone's behalf _______________________________________ */
+
+	public function test_register_by_manager_existing_account_owns_booking_and_flags_press(): void {
+		$event     = $this->make_bookable_event();
+		$committee = $this->make_committee_user();
+		$person    = $this->make_user( 'event_host' ); // Not an attendee yet: the role is granted.
+		wp_update_user( array( 'ID' => $person, 'first_name' => 'Pat', 'last_name' => 'Press' ) );
+		$email = get_userdata( $person )->user_email;
+
+		$booking = law_booking_register_by_manager(
+			$event,
+			array( 'name' => 'Ignored Name', 'email' => $email, 'organisation' => 'Form Org', 'job_title' => 'Reporter' ),
+			$committee,
+			array( 'press' => true )
+		);
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+
+		$this->assertSame( $person, (int) get_post_field( 'post_author', $booking ), 'The person owns the booking, not the committee member.' );
+		$rows = law_event_meta( $booking, '_law_attendee_rows' );
+		$this->assertCount( 1, $rows );
+		$this->assertSame( 'Pat Press', $rows[0]['name'], 'The account name wins over the typed name.' );
+		$this->assertSame( 'Form Org', $rows[0]['organisation'], 'The typed organisation fills a blank profile.' );
+		$this->assertSame( 'Reporter', $rows[0]['job_title'] );
+		$this->assertSame( 1, $rows[0]['is_owner'] );
+		$this->assertSame( 1, $rows[0]['is_press'], 'The press flag survives the schema sanitiser.' );
+		$this->assertContains( 'attendee', (array) get_userdata( $person )->roles );
+		$this->assertSame( 1, law_event_attendee_total( $event ) );
+		$this->assertContains( $event, law_user_booked_event_ids( $person ) );
+
+		$log = $this->log_text( $event );
+		$this->assertStringContainsString( 'on behalf of Pat Press', $log );
+		$this->assertStringContainsString( 'press pass', $log );
+
+		// One active booking per person: registering them again is refused by name.
+		$again = law_booking_register_by_manager( $event, array( 'name' => 'Pat Press', 'email' => $email ), $committee );
+		$this->assertWPError( $again, 'law_booking_duplicate' );
+	}
+
+	public function test_register_by_manager_creates_account_and_rolls_back_on_refusal(): void {
+		$event = $this->make_bookable_event( array( '_law_tickets_available' => 1 ) );
+		$host  = (int) get_post_field( 'post_author', $event ) ?: $this->make_user( 'event_host' );
+		$email = $this->unique_email( 'new' );
+
+		$booking = law_booking_register_by_manager( $event, array( 'name' => 'New Person', 'email' => $email, 'organisation' => 'New Org', 'job_title' => 'Trainee' ), $host );
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+		$user = get_user_by( 'email', $email );
+		$this->assertNotFalse( $user, 'An attendee account is created for a new email.' );
+		$this->assertContains( 'attendee', (array) $user->roles );
+		$this->assertSame( (int) $user->ID, (int) get_post_field( 'post_author', $booking ) );
+		$this->assertSame( 'New Org', get_user_meta( $user->ID, 'organisation', true ) );
+		$this->assertSame( 'Trainee', get_user_meta( $user->ID, 'job_title', true ) );
+		$this->users[] = (int) $user->ID;
+		$rows = law_event_meta( $booking, '_law_attendee_rows' );
+		$this->assertArrayNotHasKey( 'is_press', $rows[0], 'Not press unless asked.' );
+
+		// The event is now full: a second new person is refused and no account
+		// is left behind.
+		$other  = $this->unique_email( 'other' );
+		$result = law_booking_register_by_manager( $event, array( 'name' => 'Other Person', 'email' => $other ), $host );
+		$this->assertWPError( $result, 'law_booking_full' );
+		$this->assertFalse( get_user_by( 'email', $other ), 'A refused registration leaves no orphan account.' );
+
+		// Invalid input is refused with row/field data for the form.
+		$bad = law_booking_register_by_manager( $event, array( 'name' => 'No Email', 'email' => 'nope' ), $host );
+		$this->assertWPError( $bad, 'law_booking_invalid_row' );
+		$this->assertSame( 'email', $bad->get_error_data()['field'] );
 	}
 
 	public function test_profile_requirements_join_and_other_text(): void {

@@ -46,6 +46,7 @@ function law_account_paths() {
 	return array(
 		'account'   => 'account',
 		'dashboard' => 'account/dashboard',
+		'bookings'  => 'account/dashboard/bookings',
 		'events'    => 'account/events',
 		'submit'    => 'account/events/submit',
 		'profile'   => 'account/profile',
@@ -260,6 +261,12 @@ function law_header_nav() {
 		$items[] = array(
 			'key'   => 'dashboard',
 			'label' => __( 'Events dashboard', 'law' ),
+		);
+		// The cross-event bookings view (EVENTS_BOOKINGS.md §7.6), a child
+		// page of the events dashboard with the same Members restriction.
+		$items[] = array(
+			'key'   => 'bookings',
+			'label' => __( 'Bookings dashboard', 'law' ),
 		);
 	}
 

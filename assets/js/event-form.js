@@ -32,6 +32,8 @@
 				field.removeAttribute('data-name');
 				if (field.type === 'checkbox' || field.type === 'radio') {
 					field.checked = false; // Its value is the choice itself; only the state resets.
+				} else if (field.tagName === 'SELECT') {
+					field.selectedIndex = 0; // value = '' would select nothing when no option is blank (the speaker Role select).
 				} else if (field.type !== 'file') {
 					field.value = '';
 				}

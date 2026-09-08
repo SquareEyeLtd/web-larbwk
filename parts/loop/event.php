@@ -9,10 +9,11 @@
  *   'show_status' => false,   // Committee status badge.
  *   'show_date'   => false,   // Prefix the time with the full date, for cards shown outside the calendar.
  *   'meta_lines'  => array(), // Extra meta lines below the venue/host, e.g. payment status.
- *   'speaker'     => array(), // {name, organisation, job_title}: one speaker's appearance
- *                             // at THIS event (the single speaker profile passes it).
- *                             // Renders a divider under "Hosted by" then
- *                             // "[name]'s organisation: …" and "[name]'s position: …".
+ *   'speaker'     => array(), // {name, role, organisation, job_title}: one speaker's
+ *                             // appearance at THIS event (the single speaker profile
+ *                             // passes it). Renders a divider under "Hosted by" then
+ *                             // "[name]'s role: …", "[name]'s organisation: …" and
+ *                             // "[name]'s position: …".
  *   'actions'     => array(), // Button overrides: array of
  *                             // { label, url, arrow (bool), external (bool) },
  *                             // or a form-shaped action for a POST behind a
@@ -47,6 +48,12 @@ $law_speaker_lines = array();
 $law_speaker_name  = trim( (string) ( $law_speaker['name'] ?? '' ) );
 if ( '' !== $law_speaker_name ) {
 	$law_possessive = $law_speaker_name . ( preg_match( '/s$/i', $law_speaker_name ) ? "'" : "'s" );
+	// The role first: it is the headline fact about the appearance, and it always
+	// prints (an unset role reads as Speaker, the default).
+	$law_speaker_role = function_exists( 'law_speaker_role_display' ) ? law_speaker_role_display( (string) ( $law_speaker['role'] ?? '' ) ) : '';
+	if ( '' !== $law_speaker_role ) {
+		$law_speaker_lines[] = array( $law_possessive . ' role:', $law_speaker_role );
+	}
 	if ( '' !== trim( (string) ( $law_speaker['organisation'] ?? '' ) ) ) {
 		$law_speaker_lines[] = array( $law_possessive . ' organisation:', trim( (string) $law_speaker['organisation'] ) );
 	}

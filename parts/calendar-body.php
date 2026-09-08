@@ -209,7 +209,7 @@ if ( $event ) {
 							?>
 							<div class="law-cal-detail__actions law-booking-actions">
 								<?php
-								// The five-state booking control (Book now / waitlist /
+								// The five-state booking control (Register / waitlist /
 								// open soon / closed / you're booked) used to sit here. It
 								// now renders in the hero's details box next to the places
 								// count, so the decision and the means to act on it are in

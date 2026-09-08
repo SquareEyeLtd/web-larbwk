@@ -511,15 +511,29 @@ function law_booking_ensure_attendee_user( array $row, $event_id, $booking_id, $
  * @param int   $event_id        law_event post ID.
  * @param int   $owner_id        The booking attendee (becomes post_author).
  * @param array $additional_rows Raw repeater rows (name/email/organisation/job_title).
+ * @param array $args            Optional, for the on-behalf path
+ *                               (law_booking_register_by_manager()):
+ *                               actor (int, the user acting — defaults to the
+ *                               owner), on_behalf (bool), new_account (bool,
+ *                               the owner's account was just created so the
+ *                               confirmation carries a set-password link),
+ *                               press (bool, flags the owner row as a press
+ *                               pass), owner_row (organisation / job_title
+ *                               fallbacks when the profile lacks them).
  * @return int|WP_Error Booking post ID.
  */
-function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
+function law_booking_create( $event_id, $owner_id, array $additional_rows, array $args = array() ) {
 	$event_id = (int) $event_id;
 	$owner_id = (int) $owner_id;
+	$args     = array_merge(
+		array( 'actor' => $owner_id, 'on_behalf' => false, 'new_account' => false, 'press' => false, 'owner_row' => array() ),
+		$args
+	);
+	$actor_id = (int) $args['actor'] ?: $owner_id;
 
 	$open = law_booking_guard_open( $event_id );
 	if ( is_wp_error( $open ) ) {
-		return law_booking_log_refusal( $event_id, 0, $open, $owner_id );
+		return law_booking_log_refusal( $event_id, 0, $open, $actor_id );
 	}
 	$owner = get_user_by( 'id', $owner_id );
 	if ( ! $owner ) {
@@ -532,14 +546,18 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 	}
 
 	$profile   = law_profile_values( $owner_id );
+	$fallback  = (array) $args['owner_row'];
 	$owner_row = array(
 		'user_id'      => $owner_id,
 		'name'         => trim( $owner->first_name . ' ' . $owner->last_name ) ?: $owner->display_name,
 		'email'        => $owner->user_email,
-		'organisation' => (string) ( $profile['organisation'] ?? '' ),
-		'job_title'    => (string) ( $profile['job_title'] ?? '' ),
+		'organisation' => (string) ( $profile['organisation'] ?? '' ) ?: (string) ( $fallback['organisation'] ?? '' ),
+		'job_title'    => (string) ( $profile['job_title'] ?? '' ) ?: (string) ( $fallback['job_title'] ?? '' ),
 		'is_owner'     => 1,
 	);
+	if ( ! empty( $args['press'] ) ) {
+		$owner_row['is_press'] = 1;
+	}
 
 	// EVERY shared-state guard runs inside the event lock (security review,
 	// 7 September 2026): two near-simultaneous requests must serialise before
@@ -548,9 +566,9 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 	if ( ! law_booking_lock( $event_id ) ) {
 		return new WP_Error( 'law_booking_busy', 'The event is busy taking another booking. Please try again in a moment.' );
 	}
-	$refuse = function ( WP_Error $error ) use ( $event_id, $owner_id ) {
+	$refuse = function ( WP_Error $error ) use ( $event_id, $actor_id ) {
 		law_booking_unlock( $event_id );
-		return law_booking_log_refusal( $event_id, 0, $error, $owner_id );
+		return law_booking_log_refusal( $event_id, 0, $error, $actor_id );
 	};
 
 	law_event_recount_attendees( $event_id );
@@ -564,13 +582,18 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 	// they adjust their existing booking, never open a second one.
 	foreach ( law_bookings_for_event( $event_id ) as $existing_booking ) {
 		if ( (int) $existing_booking->post_author === $owner_id ) {
-			return $refuse( new WP_Error( 'law_booking_duplicate', 'You already have a booking for this event. You can manage it from Your bookings.' ) );
+			return $refuse( new WP_Error(
+				'law_booking_duplicate',
+				$args['on_behalf']
+					? sprintf( '%s already has a booking for this event.', $owner_row['name'] )
+					: 'You already have a booking for this event. You can manage it from Your bookings.'
+			) );
 		}
 	}
 
 	// Clash: the owner, and every colleague who already has an account. A
 	// colleague with no account yet can hold no other booking.
-	$clash = law_booking_guard_clash( $owner_id, $event_id );
+	$clash = law_booking_guard_clash( $owner_id, $event_id, $args['on_behalf'] ? $owner_row['name'] : '' );
 	if ( is_wp_error( $clash ) ) {
 		return $refuse( $clash );
 	}
@@ -597,7 +620,7 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 			$event_id,
 			sprintf( 'Attendee role granted to %s (%s) on booking.', $owner->display_name, $owner->user_email ),
 			array( 'action' => 'booking_role_granted', 'user' => $owner_id, 'source' => 'bookings' ),
-			array( 'user_id' => $owner_id )
+			array( 'user_id' => $actor_id )
 		);
 	}
 
@@ -643,7 +666,7 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 		if ( ! empty( $row['is_owner'] ) ) {
 			continue;
 		}
-		$result = law_booking_ensure_attendee_user( $row, $event_id, $booking_id, $owner_id );
+		$result = law_booking_ensure_attendee_user( $row, $event_id, $booking_id, $actor_id );
 		if ( ! is_wp_error( $result ) && (int) $result['user_id'] !== (int) $row['user_id'] ) {
 			$rows[ $i ]['user_id'] = (int) $result['user_id'];
 			$backfilled            = true;
@@ -653,22 +676,51 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 		law_booking_set_attendee_rows( $booking_id, $rows );
 	}
 
+	$actor = $actor_id !== $owner_id ? get_user_by( 'id', $actor_id ) : null;
 	law_event_log(
 		$event_id,
-		sprintf( 'Booking #%d created by %s: %d attendee%s.', $number, $owner->display_name, count( $rows ), 1 === count( $rows ) ? '' : 's' ),
-		array( 'action' => 'booking_created', 'booking' => $booking_id, 'attendees' => count( $rows ), 'sold' => $sold, 'source' => 'bookings' ),
-		array( 'user_id' => $owner_id )
+		$args['on_behalf']
+			? sprintf(
+				'Booking #%d created by %s on behalf of %s (%s)%s.',
+				$number,
+				$actor ? $actor->display_name : 'the organisers',
+				$owner_row['name'],
+				$owner->user_email,
+				! empty( $args['press'] ) ? ', press pass' : ''
+			)
+			: sprintf( 'Booking #%d created by %s: %d attendee%s.', $number, $owner->display_name, count( $rows ), 1 === count( $rows ) ? '' : 's' ),
+		array( 'action' => 'booking_created', 'booking' => $booking_id, 'attendees' => count( $rows ), 'sold' => $sold, 'on_behalf' => (int) (bool) $args['on_behalf'], 'press' => (int) ! empty( $args['press'] ), 'source' => 'bookings' ),
+		array( 'user_id' => $actor_id )
 	);
 
 	$placeholders = law_booking_email_placeholders( $booking_id );
-	law_booking_send_with_ics(
-		'user_booking_confirmed',
-		$event_id,
-		array(
-			'to'           => array( $owner->user_email ),
-			'placeholders' => array_merge( $placeholders, array( 'attendee_name' => $owner_row['name'] ) ),
-		)
-	);
+	if ( $args['on_behalf'] ) {
+		// Registered by a host or the committee: the confirmation says so, and
+		// a brand-new account gets its set-password link in the same email
+		// (one email, not an invite plus a confirmation).
+		$extra = array(
+			'attendee_name' => $owner_row['name'],
+			'registered_by' => $actor ? $actor->display_name : 'the organisers',
+		);
+		if ( ! empty( $args['new_account'] ) ) {
+			$extra['username']          = $owner->user_login;
+			$extra['set_password_link'] = law_events_password_setup_link( $owner, $event_id, 'booking_attendee_error' );
+		}
+		law_booking_send_with_ics(
+			! empty( $args['new_account'] ) ? 'user_booking_registered_invited' : 'user_booking_registered',
+			$event_id,
+			array( 'to' => array( $owner->user_email ), 'placeholders' => array_merge( $placeholders, $extra ) )
+		);
+	} else {
+		law_booking_send_with_ics(
+			'user_booking_confirmed',
+			$event_id,
+			array(
+				'to'           => array( $owner->user_email ),
+				'placeholders' => array_merge( $placeholders, array( 'attendee_name' => $owner_row['name'] ) ),
+			)
+		);
+	}
 	law_events_send( 'host_booking_received', $event_id, array( 'placeholders' => $placeholders ) );
 	// Committee copy goes to the event's assignee when one is set (settled),
 	// falling back to the registry's committee audience.
@@ -680,6 +732,115 @@ function law_booking_create( $event_id, $owner_id, array $additional_rows ) {
 	law_events_send( 'committee_booking_received', $event_id, $extra );
 
 	law_booking_maybe_capacity_warning( $event_id );
+
+	return $booking_id;
+}
+
+/**
+ * Register someone onto an event on their behalf (a host, co-owner or the
+ * committee acting from the bookings list — phone and email requests, VIPs,
+ * press). The person gets a booking OF THEIR OWN (they are its owner, it sits
+ * under their "Your bookings", they can manage it), created through
+ * law_booking_create() so every guard, the recount and the host/committee
+ * emails run exactly as for a self-service booking. What differs is the
+ * confirmation: `user_booking_registered` (existing account) or
+ * `user_booking_registered_invited` (new account, with the set-password link),
+ * both naming who registered them.
+ *
+ * A new account is created before the booking (post_author needs a user) and
+ * deleted again if the booking is then refused, so a failed attempt leaves no
+ * orphan account behind; the cheap guards run first so the common refusals
+ * never create one at all.
+ *
+ * @param int   $event_id law_event post ID.
+ * @param array $raw_row  name / email / organisation / job_title as posted.
+ * @param int   $actor_id The manager acting.
+ * @param array $args     press (bool): flag the row as a press pass (the
+ *                        handler only honours this for the committee).
+ * @return int|WP_Error Booking post ID.
+ */
+function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, array $args = array() ) {
+	$event_id = (int) $event_id;
+	$actor_id = (int) $actor_id;
+	$press    = ! empty( $args['press'] );
+
+	$clean = law_booking_clean_additional_rows( array( $raw_row ) );
+	if ( is_wp_error( $clean ) ) {
+		return $clean;
+	}
+	$row = $clean[0] ?? null;
+	if ( ! $row ) {
+		return new WP_Error( 'law_booking_invalid_row', 'Please complete the attendee details.', array( 'row' => 0, 'field' => 'name' ) );
+	}
+
+	// Fast-fail on the common refusals before any account is created. All of
+	// these run again inside the event lock in law_booking_create().
+	$open = law_booking_guard_open( $event_id );
+	if ( is_wp_error( $open ) ) {
+		return law_booking_log_refusal( $event_id, 0, $open, $actor_id );
+	}
+	$dup = law_booking_guard_duplicates( $event_id, array( $row['email'] ) );
+	if ( is_wp_error( $dup ) ) {
+		return law_booking_log_refusal( $event_id, 0, $dup, $actor_id );
+	}
+	$cap = law_booking_guard_capacity( $event_id, 1 );
+	if ( is_wp_error( $cap ) ) {
+		return law_booking_log_refusal( $event_id, 0, $cap, $actor_id );
+	}
+
+	$user    = get_user_by( 'email', $row['email'] );
+	$created = false;
+	if ( ! $user ) {
+		$user_id = law_events_create_host_user(
+			$row['email'],
+			$row['name'],
+			$row['organisation'],
+			array( 'role' => 'attendee', 'job_title' => $row['job_title'] )
+		);
+		if ( is_wp_error( $user_id ) ) {
+			law_event_log(
+				$event_id,
+				sprintf( 'Attendee account creation failed for %s: %s', $row['email'], $user_id->get_error_message() ),
+				array( 'action' => 'booking_attendee_error', 'source' => 'bookings' ),
+				array( 'user_id' => $actor_id )
+			);
+			return new WP_Error( 'law_booking_account_failed', sprintf( 'An account could not be created for %s: %s', $row['email'], $user_id->get_error_message() ), array( 'row' => 0, 'field' => 'email' ) );
+		}
+		$user    = get_user_by( 'id', (int) $user_id );
+		$created = true;
+		law_event_log(
+			$event_id,
+			sprintf( 'Attendee account created for a registration on their behalf: %s (%s).', $row['name'], $row['email'] ),
+			array( 'action' => 'booking_attendee_account_created', 'user' => (int) $user_id, 'source' => 'bookings' ),
+			array( 'user_id' => $actor_id )
+		);
+	}
+
+	$booking_id = law_booking_create(
+		$event_id,
+		(int) $user->ID,
+		array(),
+		array(
+			'actor'       => $actor_id,
+			'on_behalf'   => true,
+			'new_account' => $created,
+			'press'       => $press,
+			'owner_row'   => $row,
+		)
+	);
+
+	if ( is_wp_error( $booking_id ) && $created ) {
+		// No orphan accounts: the person was never emailed, so nothing points
+		// at the account and it can simply go.
+		require_once ABSPATH . 'wp-admin/includes/user.php';
+		wp_delete_user( (int) $user->ID );
+		law_event_log(
+			$event_id,
+			sprintf( 'Attendee account for %s removed again: the registration was refused (%s).', $row['email'], $booking_id->get_error_message() ),
+			array( 'action' => 'booking_attendee_account_rolled_back', 'source' => 'bookings' ),
+			array( 'user_id' => $actor_id )
+		);
+	}
 
 	return $booking_id;
 }
@@ -1110,9 +1271,11 @@ add_action( 'admin_post_law_booking_cancel', 'law_booking_cancel_handler' );
 add_action( 'admin_post_nopriv_law_booking_cancel', 'law_events_nopriv_json' );
 add_action( 'admin_post_law_booking_reject_attendee', 'law_booking_reject_attendee_handler' );
 add_action( 'admin_post_nopriv_law_booking_reject_attendee', 'law_events_nopriv_json' );
+add_action( 'admin_post_law_booking_register_attendee', 'law_booking_register_attendee_handler' );
+add_action( 'admin_post_nopriv_law_booking_register_attendee', 'law_events_nopriv_json' );
 
 /**
- * Book now: create a booking for the signed-in user (the attendee role is
+ * Register: create a booking for the signed-in user (the attendee role is
  * granted by the engine, not required).
  */
 function law_booking_create_handler() {
@@ -1346,6 +1509,61 @@ function law_booking_reject_attendee_handler() {
 	);
 }
 
+/**
+ * The bookings list's "Register an attendee" action: a host, co-owner or
+ * committee member registering someone onto the event on their behalf. The
+ * gate is law_user_can_manage_event() on the posted event (the event IS the
+ * subject here — no booking exists yet). The press flag is committee-only:
+ * press passes are issued administratively by LAW (spec §6.4), so a host's
+ * posted flag is ignored, not refused.
+ */
+function law_booking_register_attendee_handler() {
+	$event_id = absint( $_POST['event_id'] ?? 0 );
+	$list     = $event_id ? law_booking_list_url( $event_id ) : home_url( '/account/events/' );
+	$is_ajax  = law_events_guard_post(
+		'law_booking_register_attendee',
+		array(
+			'rate'            => array( 'booking_edit', 15, 600, 150 ),
+			'honeypot_json'   => array( 'title' => 'Attendee registered', 'message' => 'Done.', 'redirect' => $list ),
+			'honeypot_notice' => 'attendee-registered',
+		)
+	);
+
+	$event = get_post( $event_id );
+	if ( ! $event || LAW_EVENT_CPT !== $event->post_type || ! law_user_can_manage_event( get_current_user_id(), $event_id ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to manage this event\'s bookings.', 'status' => 403 ), 'booking-failed' );
+	}
+
+	$row    = wp_unslash( $_POST['law_attendees'] ?? array() );
+	$row    = is_array( $row ) ? reset( $row ) : array();
+	$press  = ! empty( $_POST['law_press'] ) && law_user_is_committee();
+	$result = law_booking_register_by_manager( $event_id, is_array( $row ) ? $row : array(), get_current_user_id(), array( 'press' => $press ) );
+
+	if ( is_wp_error( $result ) ) {
+		if ( ! $is_ajax ) {
+			// The no-JS list form re-renders with the typed row and the refusal.
+			law_booking_store_form_state( get_current_user_id(), $result, array( is_array( $row ) ? $row : array() ) );
+		}
+		$payload = array( 'message' => $result->get_error_message() );
+		$data    = $result->get_error_data();
+		if ( is_array( $data ) ) {
+			$payload += array_intersect_key( $data, array( 'row' => 1, 'field' => 1 ) );
+		}
+		law_events_respond( $is_ajax, false, $payload, 'booking-failed' );
+	}
+
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => 'Attendee registered',
+			'message'  => 'They have been emailed their confirmation. Reloading the page…',
+			'redirect' => add_query_arg( 'law_notice', 'attendee-registered', $list ),
+		),
+		'attendee-registered'
+	);
+}
+
 /** The manage-booking URL (?law_booking= on My events). */
 function law_booking_manage_url( $booking_id ) {
 	return add_query_arg( 'law_booking', (int) $booking_id, home_url( '/account/events/' ) );
@@ -1428,6 +1646,8 @@ function law_booking_export_rows( $event_id ) {
 				(string) ( $row['email'] ?? '' ),
 				(string) ( $row['organisation'] ?? '' ),
 				(string) ( $row['job_title'] ?? '' ),
+				(string) ( $profile['country'] ?? '' ),
+				! empty( $row['is_press'] ) ? 'Yes' : '',
 				law_booking_profile_requirements( $profile, 'accessibility' ),
 				law_booking_profile_requirements( $profile, 'dietary' ),
 			);
@@ -1436,7 +1656,7 @@ function law_booking_export_rows( $event_id ) {
 
 	return array(
 		'title'   => sprintf( 'Attendees for %s, %s', get_the_title( $event_id ), $when ),
-		'columns' => array( 'Booking ID', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Accessibility', 'Dietary' ),
+		'columns' => array( 'Booking ID', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' ),
 		'rows'    => $rows,
 	);
 }

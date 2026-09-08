@@ -105,7 +105,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					<?php if ( $law_speaker_rows ) : ?>
 						<ul class="law-dashboard__people">
 							<?php foreach ( $law_speaker_rows as $law_row ) :
-								// Organisation, job title and photo are this event's own (the appearance row).
+								// Role, organisation, job title and photo are this event's own (the appearance row).
 								$law_card = law_speaker_card( (int) ( $law_row['speaker_id'] ?? 0 ), (array) $law_row );
 								if ( ! $law_card ) {
 									continue;
@@ -120,6 +120,8 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 									<?php endif; ?>
 									<div>
 										<strong><?php echo esc_html( $law_card['name'] ); ?></strong>
+										<?php $law_card_role = law_speaker_role_display( $law_card['role'] ); ?>
+										<?php if ( '' !== $law_card_role ) : ?><span class="law-dashboard__person-role">(<?php echo esc_html( $law_card_role ); ?>)</span><?php endif; ?>
 										<?php echo esc_html( implode( ' · ', array_filter( array( $law_card['job_title'], $law_card['organisation'] ) ) ) ); ?>
 										<br><a href="mailto:<?php echo esc_attr( (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' ) ); ?>"><?php echo esc_html( (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' ) ); ?></a>
 										<?php if ( $law_sp_web ) : ?> · <a href="<?php echo esc_url( $law_sp_web ); ?>" target="_blank" rel="noopener">Profile ↗</a><?php endif; ?>
@@ -144,7 +146,18 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 									<?php if ( $law_session['time_label'] ) : ?> — <?php echo esc_html( $law_session['time_label'] ); ?><?php endif; ?>
 									<?php if ( $law_session['description'] ) : ?><p><?php echo esc_html( $law_session['description'] ); ?></p><?php endif; ?>
 									<?php if ( $law_session['speakers'] ) : ?>
-										<p class="law-dashboard__session-speakers">Speakers: <?php echo esc_html( implode( ', ', wp_list_pluck( $law_session['speakers'], 'name' ) ) ); ?></p>
+										<?php
+										// Each name with the role the person has in this session (a blank
+										// session row inherits the event's), the way the public cards print it.
+										$law_session_names = array_map(
+											function ( $law_session_speaker ) {
+												$law_session_role = law_speaker_role_display( (string) ( $law_session_speaker['role'] ?? '' ) );
+												return $law_session_speaker['name'] . ( '' !== $law_session_role ? ' (' . $law_session_role . ')' : '' );
+											},
+											$law_session['speakers']
+										);
+										?>
+										<p class="law-dashboard__session-speakers">Speakers: <?php echo esc_html( implode( ', ', $law_session_names ) ); ?></p>
 									<?php endif; ?>
 								</li>
 							<?php endforeach; ?>

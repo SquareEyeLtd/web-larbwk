@@ -21,7 +21,7 @@ function law_migration_steps() {
 		'speakers'      => array( 'label' => 'Step 2: speakers', 'gated' => true ),
 		'events'        => array( 'label' => 'Step 3: events', 'gated' => true ),
 		'sessions'      => array( 'label' => 'Step 4: sessions', 'gated' => true ),
-		'speaker_appearances' => array( 'label' => 'Step 4b: speaker appearance details (organisation, job title, photo per event, refreshed from the source entries)', 'gated' => true ),
+		'speaker_appearances' => array( 'label' => 'Step 4b: speaker appearance details (role, organisation, job title, photo, biography per event, refreshed from the source entries)', 'gated' => true ),
 		'comments'      => array( 'label' => 'Step 5: comment threads', 'gated' => true ),
 		'history'       => array( 'label' => 'Step 6: workflow history', 'gated' => true ),
 		'counters'      => array( 'label' => 'Step 7: counters and settings seed', 'gated' => true ),
@@ -262,6 +262,24 @@ function law_migration_preflight() {
 				empty( $missing ) ? 'All expected fields present' : 'Mismatch: ' . implode( ', ', $missing )
 			);
 		}
+
+		// Form 8 field 9 (Role): added to the live form on 3 September 2026, so a
+		// database pulled before then lacks it. Warn-only: without it every
+		// migrated row keeps the default role (Speaker) rather than failing the run.
+		$role_form  = GFAPI::get_form( 8 );
+		$role_field = '';
+		foreach ( is_array( $role_form ) ? $role_form['fields'] : array() as $field ) {
+			if ( '9' === (string) $field->id ) {
+				$role_field = (string) $field->type;
+				break;
+			}
+		}
+		$check(
+			'Form 8 field 9 (Role)',
+			'select' === $role_field,
+			'select' === $role_field ? 'Present: speaker roles will migrate' : ( $role_field ? "Field 9 is a {$role_field}, not a select: roles will not migrate" : 'Absent: migrated rows keep the default role (Speaker)' ),
+			true
+		);
 
 		// Source counts.
 		$counts = array();
@@ -718,12 +736,14 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
  * The appearance rows for a form 2 (Event > submit an event) entry: nested
  * form 8 (Event > speaker) children via the step 2 map, deduped within the
  * event (first child wins), else legacy field 48 (Speakers (list)) rows
- * matched to posts by name. Each row carries the organisation (field 3
- * Organisation / firm / chambers), job title (field 4 Job title / role), photo
- * (field 6 Photo) and biography (field 7 Biography) the speaker had at THIS
- * event: the values the shared speaker post can no longer hold, since one
- * person speaks for different firms, and writes a different biography, at
- * different events.
+ * matched to posts by name. Each row carries the role (field 9 Role, a
+ * Speaker / Host / Moderator drop down added on 3 September 2026, mapped by
+ * label to the law_speaker_roles() key and '' where the field or value is
+ * absent), organisation (field 3 Organisation / firm / chambers), job title
+ * (field 4 Job title / role), photo (field 6 Photo) and biography (field 7
+ * Biography) the speaker had at THIS event: the values the shared speaker post
+ * can no longer hold, since one person speaks for different firms, and writes
+ * a different biography, at different events.
  *
  * @param array $entry Form 2 entry.
  * @param array $map   law_migration_map().
@@ -739,7 +759,7 @@ function law_migration_speaker_rows( array $entry, array $map, $dry = false ) {
 		}
 		$rows[] = array(
 			'speaker_id'   => $speaker_post,
-			'role'         => '',
+			'role'         => law_speaker_role_key( rgar( $child, '9' ) ),
 			'organisation' => trim( (string) rgar( $child, '3' ) ),
 			'job_title'    => trim( (string) rgar( $child, '4' ) ),
 			'photo_id'     => law_migration_child_photo_id( $child, $speaker_post, $map, $dry ),
@@ -754,7 +774,7 @@ function law_migration_speaker_rows( array $entry, array $map, $dry = false ) {
 			if ( $speaker_post && ! in_array( $speaker_post, wp_list_pluck( $rows, 'speaker_id' ), true ) ) {
 				$rows[] = array(
 					'speaker_id'   => $speaker_post,
-					'role'         => '',
+					'role'         => '', // The list field has no role column either.
 					'organisation' => (string) $row['organisation'],
 					'job_title'    => (string) $row['job_title'],
 					'photo_id'     => 0,
@@ -814,7 +834,7 @@ function law_migration_session_speaker_rows( array $child, $parent_post, array $
 		$event_row = $event_rows[ $speaker_post ] ?? array();
 		$rows[]    = array(
 			'speaker_id'   => $speaker_post,
-			'role'         => '',
+			'role'         => (string) ( $event_row['role'] ?? '' ),
 			'organisation' => (string) ( $event_row['organisation'] ?? '' ),
 			'job_title'    => (string) ( $event_row['job_title'] ?? '' ),
 			'photo_id'     => (int) ( $event_row['photo_id'] ?? 0 ),
@@ -991,13 +1011,17 @@ function law_migration_run_speaker_appearances( $dry ) {
 		foreach ( law_event_meta( $post_id, '_law_speakers' ) as $row ) {
 			$from = $source[ (int) $row['speaker_id'] ] ?? null;
 			if ( $from ) {
-				foreach ( array( 'organisation', 'job_title', 'photo_id', 'bio' ) as $field ) {
+				foreach ( array( 'role', 'organisation', 'job_title', 'photo_id', 'bio' ) as $field ) {
 					// Compare what the schema would store (whitespace collapsed), or a
 					// double space in the source would re-flag the row on every run.
 					// The biography keeps its line breaks, so it takes the textarea
-					// sanitiser rather than the single-line one.
+					// sanitiser rather than the single-line one. The role is already a
+					// key; an empty source (field 9 absent, or left on "Select role")
+					// never blanks a role the committee set, by the ! empty rule below.
 					if ( 'photo_id' === $field ) {
 						$new = (int) $from[ $field ];
+					} elseif ( 'role' === $field ) {
+						$new = law_speaker_role_key( $from[ $field ] );
 					} elseif ( 'bio' === $field ) {
 						$new = sanitize_textarea_field( (string) $from[ $field ] );
 					} else {
@@ -1049,7 +1073,7 @@ function law_migration_run_speaker_appearances( $dry ) {
 				if ( ! $from ) {
 					continue;
 				}
-				foreach ( array( 'organisation', 'job_title', 'photo_id', 'bio' ) as $field ) {
+				foreach ( array( 'role', 'organisation', 'job_title', 'photo_id', 'bio' ) as $field ) {
 					if ( empty( $session_row[ $field ] ) && ! empty( $from[ $field ] ) ) {
 						$session_row[ $field ] = $from[ $field ];
 						$touched               = true;
@@ -1548,6 +1572,7 @@ function law_migration_page_map() {
 		'account'                    => array( 'title' => 'Account', 'template' => 'templates/account.php' ),
 		'register'                   => array( 'title' => 'Register for an Account', 'template' => 'templates/register.php' ),
 		'account/dashboard'          => array( 'title' => 'Events dashboard', 'template' => 'templates/account-dashboard.php' ),
+		'account/dashboard/bookings' => array( 'title' => 'Bookings dashboard', 'template' => 'templates/account-bookings-dashboard.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
 		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
 		'account/events/submit'      => array( 'title' => 'Submit an event', 'template' => 'templates/account-event-form.php' ),
@@ -1624,6 +1649,11 @@ function law_migration_run_pages( $dry ) {
 	// setup-account-pages trigger, so the two cannot drift.
 	if ( ! $dry && function_exists( 'law_setup_account_events_attendee_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/events/', 'Attendee role access: ' . law_setup_account_events_attendee_access() . '.' );
+	}
+	// The Bookings dashboard is a child of the events dashboard and inherits
+	// its committee-only Members restriction (a freshly created page has none).
+	if ( ! $dry && function_exists( 'law_setup_bookings_dashboard_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/bookings/', 'Committee restriction: ' . law_setup_bookings_dashboard_access() . '.' );
 	}
 
 	return array( 'done' => true, 'summary' => sprintf( '%d templates assigned, %d pages created.', $updated, $created ) );

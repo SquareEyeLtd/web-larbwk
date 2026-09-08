@@ -139,6 +139,7 @@ function law_field_repeater( $name, $label, array $rows, array $columns ) {
 /**
  * Relationship picker with AJAX search: stores rows of {speaker_id, role,
  * organisation, job_title, photo_id, bio} (or plain IDs when $simple). The
+ * role (a Speaker / Host / Moderator select, law_speaker_roles()),
  * organisation, job title, photo and biography are the speaker's appearance at
  * THIS event/session, not properties of the speaker post.
  *
@@ -172,11 +173,19 @@ function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
 		printf( '<input type="hidden" name="%s[]" value="%d">', esc_attr( $name ), (int) $id );
 	} else {
 		printf( '<input type="hidden" name="%s[%d][speaker_id]" value="%d">', esc_attr( $name ), (int) $i, (int) $id );
+		// The role at this event. A stored '' (rows saved before roles existed)
+		// selects Speaker, the default; on a session row that also means "inherit
+		// the event's" at read time, which the explicit Speaker option overrides.
+		$role    = law_speaker_role_key( $row['role'] ?? '' ) ?: 'speaker';
+		$options = '';
+		foreach ( law_speaker_roles() as $key => $label ) {
+			$options .= sprintf( '<option value="%s"%s>%s</option>', esc_attr( $key ), selected( $role, $key, false ), esc_html( $label ) );
+		}
 		printf(
-			'<input type="text" name="%s[%d][role]" value="%s" placeholder="Role (Speaker / Moderator / Host)" class="law-rel-role">',
+			'<select name="%s[%d][role]" class="law-rel-role" aria-label="Role at this event">%s</select>',
 			esc_attr( $name ),
 			(int) $i,
-			esc_attr( (string) ( $row['role'] ?? '' ) )
+			$options
 		);
 		printf(
 			'<input type="text" name="%s[%d][organisation]" value="%s" placeholder="Organisation at this event" class="law-rel-org">',
@@ -263,14 +272,17 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 	}
 
 	wp_enqueue_media();
-	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.3' );
-	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.3', true );
+	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.4' );
+	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.4', true );
 	wp_localize_script(
 		'law-events-admin',
 		'lawEventsAdmin',
 		array(
-			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-			'nonce'   => wp_create_nonce( 'law_events_admin' ),
+			'ajaxUrl'     => admin_url( 'admin-ajax.php' ),
+			'nonce'       => wp_create_nonce( 'law_events_admin' ),
+			// The relationship row's Role select choices, so a row added via the
+			// search carries the same options as law_field_relationship_row().
+			'roleChoices' => law_speaker_roles(),
 		)
 	);
 } );

@@ -2,7 +2,7 @@
  * The bookings front end (EVENTS_BOOKINGS.md §7): progressive enhancement over
  * three no-JS-complete pieces.
  *
- * 1. The Book now opener is a real link to the inline form (?law_book=1);
+ * 1. The Register opener is a real link to the inline form (?law_book=1);
  *    with JS it opens the booking modal instead (law-modal.js does the
  *    opening off data-law-modal-open — this script only stops the navigation).
  * 2. The attendee repeater (parts/events/attendee-repeater.php): add/remove

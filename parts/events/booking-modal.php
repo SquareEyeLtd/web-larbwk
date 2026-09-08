@@ -3,7 +3,7 @@
  * The booking form for a single event (EVENTS_BOOKINGS.md §7.2), in two
  * contexts:
  *
- * - 'modal': the .law-modal skeleton the Book now button opens (law-modal.js
+ * - 'modal': the .law-modal skeleton the Register button opens (law-modal.js
  *   supplies open/close/focus-trap behaviour off the shared classes; this is
  *   deliberately NOT parts/layout/modal.php, whose args are confirm-dialog
  *   shaped, single field). Hidden without JS — the opener is then a real link
@@ -93,7 +93,7 @@ else :
 			<?php if ( 'modal' === $law_bk_ctx ) : ?>
 				<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Cancel', 'law' ); ?></button>
 			<?php endif; ?>
-			<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Booking…', 'law' ); ?>"><?php esc_html_e( 'Book now', 'law' ); ?></button>
+			<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Registering…', 'law' ); ?>"><?php esc_html_e( 'Register', 'law' ); ?></button>
 		</p>
 	</form>
 	<?php

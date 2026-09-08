@@ -7,7 +7,9 @@
  * The biography is the appearance's own (law_speaker_card() reads the event or
  * session row, falling back to the parent event's row and then to the speaker
  * post's editor content), shown as a short excerpt with a "Read full bio"
- * control when there is more to read.
+ * control when there is more to read. The role at this event (Speaker / Host /
+ * Moderator, per appearance too) prints in brackets after the name, outside
+ * the profile link so the link text stays the name alone.
  *
  * That control is progressive enhancement, on the modal component's own terms
  * (assets/js/law-modal.js): the button ships hidden and is revealed only when
@@ -29,9 +31,10 @@ if ( ! $law_sc || '' === trim( (string) ( $law_sc['name'] ?? '' ) ) ) {
 	return;
 }
 
-$law_sc_name = (string) $law_sc['name'];
-$law_sc_role = implode( ', ', array_filter( array( (string) ( $law_sc['job_title'] ?? '' ), (string) ( $law_sc['organisation'] ?? '' ) ) ) );
-$law_sc_bio  = law_speaker_bio_summary( (string) ( $law_sc['bio'] ?? '' ) );
+$law_sc_name  = (string) $law_sc['name'];
+$law_sc_tag   = law_speaker_role_display( (string) ( $law_sc['role'] ?? '' ) );
+$law_sc_title = implode( ', ', array_filter( array( (string) ( $law_sc['job_title'] ?? '' ), (string) ( $law_sc['organisation'] ?? '' ) ) ) );
+$law_sc_bio   = law_speaker_bio_summary( (string) ( $law_sc['bio'] ?? '' ) );
 
 // The dialog only earns its place when the excerpt actually left something out;
 // otherwise "Read full bio" would open the paragraph already on screen.
@@ -54,9 +57,12 @@ $law_sc_dialog = $law_sc_bio['trimmed'] ? law_speaker_dialog_register( $law_sc )
 				<?php else : ?>
 					<?php echo esc_html( $law_sc_name ); ?>
 				<?php endif; ?>
+				<?php if ( '' !== $law_sc_tag ) : ?>
+					<span class="law-cal-speakers__tag">(<?php echo esc_html( $law_sc_tag ); ?>)</span>
+				<?php endif; ?>
 			</span>
-			<?php if ( '' !== $law_sc_role ) : ?>
-				<span class="law-cal-speakers__role"><?php echo esc_html( $law_sc_role ); ?></span>
+			<?php if ( '' !== $law_sc_title ) : ?>
+				<span class="law-cal-speakers__role"><?php echo esc_html( $law_sc_title ); ?></span>
 			<?php endif; ?>
 		</span>
 	</div>

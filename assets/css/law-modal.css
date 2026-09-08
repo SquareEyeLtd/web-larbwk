@@ -109,6 +109,8 @@ body.law-modal-open { overflow: hidden; }
    row the flex layout already does, so the margin goes back to nothing. */
 .law-modal__media .law-modal__title { margin: 0 0 .15rem; }
 .law-modal__subtitle { margin: 0; font-size: .875rem; color: #666; }
+/* The speaker's role at the event, in brackets after the name (speaker-bio-modal.php). */
+.law-modal__tag { font-size: .875rem; font-weight: 400; color: #666; white-space: nowrap; }
 /* A long biography scrolls inside the dialog, not the dialog inside itself:
    .law-modal__dialog's own overflow-y would carry the absolutely positioned
    close button off the top of the screen, leaving no visible way out halfway

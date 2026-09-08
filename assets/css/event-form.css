@@ -396,6 +396,7 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__people--plain li { display: block; }
 .law-dashboard__person-photo { width: 56px; height: 56px; object-fit: cover; border-radius: 50%; flex-shrink: 0; }
 .law-dashboard__person-bio { margin: .3rem 0 0; font-size: .9rem; color: #444; }
+.law-dashboard__person-role { font-size: .85rem; color: #666; }
 .law-dashboard__sessions { list-style: none; margin: .5rem 0 0; }
 .law-dashboard__sessions li { padding: .5rem 0; border-bottom: 1px solid #eee; }
 .law-dashboard__sessions p { margin: .2rem 0 0; }
@@ -510,3 +511,18 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 /* A subtle rule between bookings replaces the old group header rows. */
 .law-booking-table tbody tr.law-booking-table__first td { border-top: 2px solid #d9d9e3; }
 .law-booking-table .law-booking-manage__action { margin: 0; }
+/* Inline badges inside table cells (Press, Active/Cancelled): the card badge
+   is absolutely positioned by default. */
+.law-booking-table .law-cal-card__badge { position: static; display: inline-block; vertical-align: middle; margin-left: .35rem; }
+.law-booking-table__press { background: #1a1a3d; color: #fff; }
+/* "Register an attendee" on the per-event list. */
+.law-booking-register { max-width: 60rem; margin-top: 2rem; }
+.law-booking-register .law-booking-manage__subtitle, .law-booking-register .law-booking-note { color: #1a1a3d; }
+.law-booking-register .law-booking-note { max-width: 46rem; }
+/* The cross-event Bookings dashboard (/account/dashboard/bookings/). */
+.law-bookings-dashboard__summary { color: #1a1a3d; margin: 0 0 1rem; }
+.law-bookings-dashboard__truncated { color: #8a4b00; margin: 0 0 1rem; }
+.law-booking-table__event small, .law-booking-table__booked small { color: #5a5a7a; }
+.law-booking-table td.law-booking-table__event { white-space: normal; min-width: 14rem; }
+.law-booking-table td.law-booking-table__booking { white-space: nowrap; min-width: 0; }
+.law-cal-filter-form__field--event select { min-width: 16rem; }

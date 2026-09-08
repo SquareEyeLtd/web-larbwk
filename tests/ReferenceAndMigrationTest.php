@@ -110,8 +110,8 @@ class ReferenceAndMigrationTest extends LAW_Test_Case {
 		$this->posts[] = $session;
 		law_event_update_meta( $session, '_law_speakers', array( array( 'speaker_id' => $speaker ) ) );
 
-		$this->assertSame( array( 'organisation' => 'PDLegal', 'job_title' => 'Associate', 'photo_id' => 0, 'bio' => '' ), law_speaker_appearance_for_event( $speaker, $early ) );
-		$this->assertSame( array( 'organisation' => 'PDLegal LLC', 'job_title' => 'Managing Partner', 'photo_id' => 4242, 'bio' => 'Wrote a different bio for the later event.' ), law_speaker_appearance_for_event( $speaker, $late ) );
+		$this->assertSame( array( 'role' => '', 'organisation' => 'PDLegal', 'job_title' => 'Associate', 'photo_id' => 0, 'bio' => '' ), law_speaker_appearance_for_event( $speaker, $early ) );
+		$this->assertSame( array( 'role' => '', 'organisation' => 'PDLegal LLC', 'job_title' => 'Managing Partner', 'photo_id' => 4242, 'bio' => 'Wrote a different bio for the later event.' ), law_speaker_appearance_for_event( $speaker, $late ) );
 		$this->assertNull( law_speaker_appearance_for_event( $speaker, $this->make_event() ), 'Not on the event: null.' );
 
 		// The archive/profile rule: first appearance, each field falling through

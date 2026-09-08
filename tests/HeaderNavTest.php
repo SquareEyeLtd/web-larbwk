@@ -35,9 +35,9 @@ class HeaderNavTest extends LAW_Test_Case {
 	 */
 	public static function role_expectations(): array {
 		return array(
-			'administrator'    => array( 'administrator', array( 'dashboard', 'events', 'submit', 'profile', 'signout' ) ),
-			'editor'           => array( 'editor', array( 'dashboard', 'events', 'submit', 'profile', 'signout' ) ),
-			'events_committee' => array( 'events_committee', array( 'dashboard', 'events', 'submit', 'profile', 'signout' ) ),
+			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'events', 'submit', 'profile', 'signout' ) ),
+			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'events', 'submit', 'profile', 'signout' ) ),
+			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'events', 'submit', 'profile', 'signout' ) ),
 			'event_host'       => array( 'event_host', array( 'events', 'submit', 'profile', 'signout' ) ),
 			'sponsor'          => array( 'sponsor', array( 'events', 'submit', 'profile', 'signout' ) ),
 			'attendee'         => array( 'attendee', array( 'events', 'profile', 'signout' ) ),

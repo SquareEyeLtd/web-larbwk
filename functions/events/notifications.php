@@ -248,6 +248,22 @@ function law_events_email_registry() {
 			'subject' => 'New booking: {event_title} ({law_reference})',
 			'body'    => "A new booking (Booking #{booking_number}) has been made for {event_title} ({law_reference}).\n\nAttendees:\n{attendee_list}\n\nPlaces remaining: {tickets_remaining} of {tickets_available}.\n\nView the event on the committee dashboard: {committee_link}",
 		),
+		'user_booking_registered' => array(
+			'name'    => 'Email to attendee > registered by the organisers (existing account)',
+			'trigger' => 'a host or committee member registers someone onto an event',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'You are registered for {event_title}',
+			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the event will be listed under Your bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+		),
+		'user_booking_registered_invited' => array(
+			'name'    => 'Email to attendee > registered by the organisers (new account)',
+			'trigger' => 'a host or committee member registers someone onto an event and an account is created',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'You are registered for {event_title}',
+			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have created an account for you. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address. If that link has expired, you can request a new one here: {forgot_link}\n\nOnce signed in, please add any dietary or accessibility requirements to your profile, so the organisers can look after you on the day: {profile_link}\n\nThe events you are booked onto are listed under Your bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+		),
 		'user_attendee_invited' => array(
 			'name'    => 'Email to attendee > invited to an event (new account)',
 			'trigger' => 'booking attendee account created',
@@ -406,6 +422,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{tickets_available}' => '',
 		'{tickets_remaining}' => '',
 		'{removal_reason}'    => '',
+		'{registered_by}'     => '',
 		'{bookings_link}'     => home_url( '/account/events/' ),
 		'{profile_link}'      => home_url( '/account/profile/' ),
 	);

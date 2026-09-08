@@ -19,7 +19,13 @@
 > closed (the manage view's add-attendee form now hides on a full event, the
 > repeater's required fields carry aria-required, two clash edge-case tests
 > were added, and this document's stale signatures/wording were corrected).
-> 84 PHPUnit tests green. This is the design contract for the
+> 84 PHPUnit tests green. **Committee round, 8 September 2026** (Denis's
+> review answers): the cross-event Bookings dashboard (§7.6), registering an
+> attendee on their behalf with a committee-only press flag (§7.4), the
+> Country column on the list and exports (§7.4, §7.5), and the booking
+> control's button renamed Register (§7.1). Receptions/external events, the
+> flagship flow and an event-changed email stay deferred (§14).
+> This is the design contract for the
 > attendee bookings slice of the events platform. It was produced on 7 September 2026
 > from Denis's brief, a scan of EVENTS_4.2_SPECS.md, seven rounds of scope decisions,
 > and three specialist-persona reviews (UX, design reuse, backend DRY) whose accepted
@@ -45,10 +51,22 @@ All confirmed by Denis on 7 September 2026.
 
 ### Scope
 
-- **Booking control vocabulary: Book now and Waitlist only.** Every Confirmed event is
+- **Booking control vocabulary: Register and Waitlist only.** Every Confirmed event is
   bookable on this site. No external-link, apply, invitation-only or admin-set registration
   states. The reserved event meta `_law_registration_state` stays unused (do not cut it, do
-  not wire it).
+  not wire it). The button read "Book now" until 8 September 2026; Denis chose the spec's
+  free-event word, "Register" (§3.4), for the control and the modal's submit. Receptions and
+  the three externally booked hosts (GAR, LCIA, CIARB) are a later decision.
+- **Registering on someone's behalf** (8 September 2026): a host, co-owner or committee
+  member can register a person by name and email from the per-event bookings list (phone
+  and email requests, VIPs, press). The person gets a booking of their own (§7.4).
+- **Press passes** (spec §6.4) are a committee-only flag on that form: the row carries
+  `is_press`, shown as a Press badge and a Press column in the exports, and filterable on
+  the Bookings dashboard. Hosts registering someone cannot set it.
+- **Country** is shown on the per-event list and in every export, read live from the
+  profile like dietary and accessibility (spec §4.3 names it; it was missed in v1).
+- **A cross-event Bookings dashboard** for the committee at `/account/dashboard/bookings/`
+  (§7.6), linked from the header account dropdown as "Bookings dashboard".
 - **Max 3 additional attendees per booking** (the spec's cap, section 6.3). With the
   duplicate guard this means one active booking per person per event, so a party is at most
   4 places: the booker plus 3 colleagues. The owner can add and remove attendees on their
@@ -222,8 +240,12 @@ functions/events/bookings.php              the engine, guards, queries, recount,
                                            admin-post handlers and the export endpoint (module
                                            convention: a domain file owns its handlers)
 functions/events/ics.php                   .ics generation
+functions/events/bookings-dashboard.php    the committee's cross-event Bookings dashboard (§7.6):
+                                           filters, row builder, partial endpoint, export, assets
 functions/events/admin/booking-screen.php  booking meta boxes and admin list columns
 functions/account-bookings.php             front-end render helpers (mirrors account-events.php)
+templates/account-bookings-dashboard.php   the Bookings dashboard page template (§7.6)
+parts/events/bookings-dashboard-list.php   its table partial (also the &law_partial=1 response)
 ```
 
 Events-module files are required from `functions/events/_load.php` (request.php early,
@@ -266,6 +288,14 @@ log (section 11).
 - `law_booking_cancel( $booking_id, $actor_id, $context )`: status to `law-cancelled`
   (behind the transitioning flag), recount, emails every seated attendee, logs. Idempotent.
 - Reject is remove with the `host_reject` context and an optional reason.
+- `law_booking_register_by_manager( $event_id, $row, $actor_id, $args )` (8 September
+  2026): clean the row → fast-fail the open, duplicate and capacity guards → resolve or
+  create the attendee account → `law_booking_create( $event_id, $user_id, array(), $args )`
+  with `actor`, `on_behalf`, `new_account`, `press` and `owner_row` (organisation and job
+  title fallbacks for a blank profile). The person owns the booking, so every guard and
+  side effect is the self-service one; only the log line ("created by X on behalf of Y")
+  and the confirmation template differ. A refused booking deletes the account it just
+  created, so no orphan accounts are left behind.
 - `law_booking_ensure_attendee_user( array $row, $event_id, $booking_id, $actor )`:
   existing email → link the account, `add_role( 'attendee' )` if missing, send
   `user_attendee_added`; new email → create the account via the **parameterised**
@@ -316,7 +346,9 @@ code )` versus `law_events_redirect_back()`. Nonce string equals the action name
 | `law_booking_remove_attendee` | owner, or the row's own user (self-removal) | `booking_edit` |
 | `law_booking_cancel` | booking owner | `booking_edit` |
 | `law_booking_reject_attendee` | `law_user_can_manage_event( post_parent )` | `booking_edit` |
+| `law_booking_register_attendee` | `law_user_can_manage_event( event_id )` — the event is the subject, no booking exists yet; `law_press` honoured only for `law_user_is_committee()` | `booking_edit` |
 | `law_booking_export` (GET, `format=csv\|xlsx\|json`) | `law_user_can_manage_event` | none (read-only) |
+| `law_bookings_dashboard_export` (GET, `format=csv\|xlsx\|json`, filter params) | `law_user_is_committee()` | none (read-only) |
 
 Rate limits pass explicit max and window arguments (the helper defaults to 300 seconds).
 
@@ -352,7 +384,7 @@ Five states:
 1. **Bookings open soon**, when no ticket number is set: a paragraph at the
    `.law-cal-acc__heading` scale (no bespoke "big text" style exists in the theme) with the
    sub-line "Booking for this event hasn't opened yet. Check back soon."
-2. **Book now** (`button orange`, no arrow icon: the arrow SVG is the theme's
+2. **Register** (`button orange`, "Book now" until 8 September 2026; no arrow icon: the arrow SVG is the theme's
    "leaves this page" affordance and this opens a modal) when places remain, with
    "N places left" beside it.
 3. **Sold out**: the disabled "Join waitlist" button (`aria-disabled`, out of the tab
@@ -387,7 +419,7 @@ Two server-rendered states:
   `redirect_to` = the event permalink, and a register link
   `?role=attendee&redirect_to={permalink}`.
 - **Logged in**: the event summary (title, date, time), the note that accounts will be
-  created for additional attendees, the attendee repeater, and the Book now submit with a
+  created for additional attendees, the attendee repeater, and the Register submit with a
   busy label.
 
 Form styling: the form is wrapped `law-event-form law-event-form--light`. The base form and
@@ -425,7 +457,7 @@ colleagues being emailed to set up accounts and add dietary or accessibility req
 and where to manage the booking; buttons are "View my bookings" and "Close" (Close reloads).
 Quick row-level actions on the manage view keep the auto-reload pattern.
 
-No-JS path: the Book now opener degrades to a link to `?law_book=1` on the event permalink,
+No-JS path: the Register opener degrades to a link to `?law_book=1` on the event permalink,
 which server-renders the same form inline in the detail body; JS upgrades the control to
 open the modal instead. Failed no-JS submissions re-render with typed values via the
 transient state pattern (`law_registration_state()` precedent). Every other action here is a
@@ -487,10 +519,21 @@ The list (`parts/events/booking-list.php`): a flat table in the committee-dashbo
 (Denis, 7 September 2026: less height, "more tablish" — this superseded the design review's
 grouped-blocks recommendation). Columns: Booking (the number repeats per attendee row, the
 CSV's shape, with the booker's name as a sub-line on each booking's first row and a subtle
-rule between bookings), attendee name, email, organisation, job title, and accessibility and
-dietary read live from `law_profile_values()`, comma-joined including the "Other" free text
-(these two columns wrap; the rest keep the table's nowrap and the wrap scrolls sideways on
-mobile). The container carries the `.law-dashboard` class so the existing light-section
+rule between bookings), attendee name (with a Press badge on press-pass rows), email,
+organisation, job title, country (live from the profile, added 8 September 2026), and
+accessibility and dietary read live from `law_profile_values()`, comma-joined including the
+"Other" free text (these two columns wrap; the rest keep the table's nowrap and the wrap
+scrolls sideways on mobile).
+
+**Register an attendee** (8 September 2026), below the table while the event is open with
+places left: full name, email, organisation, job title and, for committee members only, a
+"Press pass" checkbox; submit "Register attendee" (busy "Registering…"). Same
+`.law-booking-form` fetch layer as everything else, so refusals mark the offending field
+inline (duplicate, clash, capacity, invalid email); the no-JS fallback re-renders the typed
+row via the form-state transient. Success reloads the list with the `attendee-registered`
+notice. The person is emailed `user_booking_registered` (existing account) or
+`user_booking_registered_invited` (new account, set-password link), both naming who
+registered them; the host and committee copies go out as for any booking. The container carries the `.law-dashboard` class so the existing light-section
 colour resets apply (account-events.php wraps in `.law-cal` only). Per attendee, a Reject button
 behind a confirm modal with an optional reason field, submitted over fetch with the plain
 POST fallback. Cancelled bookings show collapsed at the bottom with the existing
@@ -503,7 +546,8 @@ Booking column's sub-line; the owner keeps manage rights.
 Buttons "Export: CSV | Excel | PDF" (`button second`, the `.law-cal-export` markup) at the
 top of the bookings list. One shared row builder, `law_booking_export_rows( $event_id )`:
 active bookings only; columns Booking ID (repeated per attendee), First name, Second name,
-Email, Organisation, Job title, Accessibility (comma-joined), Dietary (comma-joined); the
+Email, Organisation, Job title, Country (live from the profile), Press ("Yes" or blank),
+Accessibility (comma-joined), Dietary (comma-joined); the
 name split prefers the linked user's first and last name, falling back to splitting the
 snapshot on the first space. A title line, "Attendees for {event title}, {date} {time}", rides the CSV
 title row, the XLSX first row and the JSON `title`.
@@ -516,6 +560,43 @@ via `law_events_send_csv()` (UTF-8 BOM plus the formula-injection guard), Excel 
 `assets/js/export-buttons.js` with vendor pdfmake, enqueued on the bookings-list view only
 (mirroring the gated enqueue in export.php; pdfmake is ~3MB). export-buttons.js may need a
 light generalisation, since it currently assumes the dashboard endpoint; verify in phase 5.
+
+### 7.6 The committee's Bookings dashboard (8 September 2026)
+
+Why: the per-event list and the read-only wp-admin list (searchable by title only) left the
+committee unable to answer "which events is jane@firm.com booked on?" or to pull every
+attendee of the year in one file for badging (the third-party badging solution in spec §1
+needs exactly that export). Spec §7.5's "visible to LAW for customer service" is this view.
+
+- **Page**: `/account/dashboard/bookings/`, a child of the events dashboard, template
+  `templates/account-bookings-dashboard.php`, in `law_migration_page_map()` and
+  `law_setup_account_pages()`. `law_setup_bookings_dashboard_access()` copies the parent's
+  Members roles onto the child when it has none (a page the migration creates carries no
+  restriction, which Members reads as public); the template also checks
+  `law_user_is_committee()`. Header dropdown item "Bookings dashboard", committee only,
+  after "Events dashboard" (`law_account_paths()` key `bookings`; HeaderNavTest pins it).
+- **Filters**: keyword (name, email, organisation, job title, booking number as `#12` or
+  `12`, event title; case-insensitive, applied in PHP over the fetched set, never a LIKE over
+  serialised meta), event (only events holding a booking, ordered by start), status (active
+  by default, cancelled, all), attendee type (all, press only), and programme year when more
+  than one `law_year` term exists. The bar is the events dashboard's markup driven by
+  calendar-filters.js over `&law_partial=1`; selects only, since that script reads a
+  checkbox's value regardless of its checked state.
+- **Table** (`parts/events/bookings-dashboard-list.php`): one flat row per attendee, the
+  per-event list's shape plus the event: Booking (number linked to the per-event list,
+  booker sub-line), Event (title linked, start), Attendee (booker flag, Press badge), Email,
+  Organisation, Job title, Country, Status badge, Booked. A summary line ("N attendees across
+  N bookings on N events"). Screen cap 2,000 bookings with a notice when hit; exports are
+  uncapped. Read-only by design: Reject and Register live on the per-event list, so
+  mutations have one home.
+- **Export**: `law_bookings_dashboard_export` (committee only), columns Booking ID, Event,
+  Event date, Reference, First name, Second name, Email, Organisation, Job title, Country,
+  Press, Status, Booked on, Accessibility, Dietary; the title line records the filters.
+  export-buttons.js refreshes the CSV/Excel hrefs from the live filter form; PDF via pdfmake
+  as elsewhere (A3 landscape, since the column count exceeds ten).
+- Code: `functions/events/bookings-dashboard.php` (filters, event picker, row builder,
+  export rows, the partial endpoint, the export handler, the committee-only asset gate).
+  Tests: `tests/BookingsDashboardTest.php`.
 
 ## 8. Registration and login changes
 
@@ -552,6 +633,8 @@ All in `law_events_email_registry()`, editable on the Emails screen, sent throug
 | `user_booking_event_cancelled` | dynamic (each attendee) | the event was cancelled (sweep) |
 | `user_welcome_registered` | dynamic | self-registration |
 | `host_capacity_warning` | host | remaining places at 5 or fewer with a positive limit, one-shot |
+| `user_booking_registered` | dynamic (the registered person) | a host or committee member registered them (existing account); names `{registered_by}`; **.ics attached** |
+| `user_booking_registered_invited` | dynamic (new account) | as above when an account was created: carries the set-password link in the same email, so one email not two; **.ics attached** |
 
 One removal-family template per context, because a single "you have been removed" email
 mis-describes three of the four contexts and is the removed person's only explanation.
@@ -566,7 +649,8 @@ registration has none (`admins_user_registered` already behaves the same).
 `law_events_email_placeholders()` gains generic `{event_date}` and `{event_time}` (from
 `_law_start`/`_law_end`), plus per-send values via `$extra`: `{attendee_name}`,
 `{attendee_list}`, `{booking_number}`, `{tickets_remaining}`, `{tickets_available}`,
-`{profile_link}`, `{bookings_link}`, `{removal_reason}`, `{host_email}`.
+`{profile_link}`, `{bookings_link}`, `{removal_reason}`, `{host_email}`, and (8 September
+2026) `{registered_by}` for the registered-on-behalf pair.
 
 ### 9.3 Attachments and the .ics generator
 
@@ -620,8 +704,11 @@ stream by the booking context key). Logged actions: `booking_created`,
 `booking_attendee_removed` (with by-whom context), `booking_attendee_rejected`,
 `booking_cancelled`, `booking_role_granted` (the auto-granted attendee role),
 `booking_capacity_warning`, `booking_attendee_error` (account-creation failure),
-`booking_event_cancel_sweep`, and `booking_guard_refused` for capacity, duplicate and clash
-refusals (refusals are logged too, per the module's WooCommerce-notes standard). Recount
+`booking_event_cancel_sweep`, `booking_attendee_account_rolled_back` (a registration on
+someone's behalf refused after its account was created), and `booking_guard_refused` for
+capacity, duplicate and clash refusals (refusals are logged too, per the module's
+WooCommerce-notes standard). A booking created on someone's behalf logs "created by X on
+behalf of Y" with `on_behalf` and `press` in the context. Recount
 results are logged when the number changes, and every email send is logged by
 `law_events_send()` as usual.
 
@@ -670,7 +757,12 @@ manageable, cancel frees places, the event-cancel sweep); the status-guard and u
 extensions and the wp-admin recount backstops; emails (slugs resolve, the capacity latch
 fires once and re-arms, attachments reach `wp_mail`, the welcome email, the right removal
 template per context); ics (correct UTC on a BST date and a GMT date, folding, escaping);
-registration role whitelist. The handler-level gates (nonces, the reject manager gate,
+registration role whitelist; (8 September 2026) registering on someone's behalf (an existing
+account owns the booking, the press flag survives the sanitiser, the typed organisation fills
+a blank profile, a duplicate is refused by name; a new account is created with the role and
+meta, and deleted again when the booking is refused), the registered-on-behalf emails (one
+email per person, the invited variant with a minted set-password link), and
+`tests/BookingsDashboardTest.php` for §7.6. The handler-level gates (nonces, the reject manager gate,
 `redirect_to` validation via `wp_validate_redirect`) live in admin-post handlers the house
 test style does not exercise over HTTP; they were verified by the phase 7 security review
 and the phase 8 Playwright pass. Note: the suite needs a raised PHP memory limit to boot
@@ -776,3 +868,10 @@ Recorded follow-ups (defaults chosen, no build now):
   accounts); revisit with the deferred HubSpot sync.
 - **The waitlist itself** (signup capture, ordering, promotion) is deferred wholesale; the
   disabled button and the server hard-stop are the v1 surface.
+
+Deferred by Denis on 8 September 2026, after the spec-conformance review of the committee
+tooling: **receptions and externally booked events** (spec §2 names GAR, LCIA and CIARB as
+external redirects and the Friday reception as invitation-only; today every Confirmed event
+shows the on-site control, and `_law_registration_state` stays reserved for this), the
+**flagship approval flow** (spec §5, a later build), and an **event-changed email** to
+attendees when a host edits the date or venue after bookings exist ("we don't care").
