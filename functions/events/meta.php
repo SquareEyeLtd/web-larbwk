@@ -87,16 +87,32 @@ function law_session_meta_schema() {
 }
 
 /**
- * law_booking meta schema (EVENTS_BOOKINGS.md §3.3). The flat per-attendee
- * index rows (_law_booking_attendee, one row per user ID) deliberately stay
- * OUT of this schema, exactly like _law_co_owner: registering the key would
- * force single => true onto a multi-row key. They are written only by
- * law_booking_set_attendee_rows().
+ * law_booking meta schema (WAITLIST.md §A7). ONE BOOKING PER ATTENDEE: the
+ * post's author is the attendee and these keys are their display snapshot as
+ * entered at booking, plus who booked them. Dietary, accessibility and
+ * country are never snapshotted — they read live from the attendee's profile.
+ *
+ * _law_booked_by is always set: the booker's user ID on a colleague's
+ * booking, and the attendee's own ID when they booked themselves or a manager
+ * registered them (a manager's own bookings list must never fill with people
+ * they registered; who acted is in the activity log).
  */
 function law_booking_meta_schema() {
 	return array(
-		'_law_booking_number' => 'int',
-		'_law_attendee_rows'  => 'attendee_rows',
+		'_law_booking_number'         => 'int',
+		'_law_booked_by'              => 'int',
+		'_law_attendee_name'          => 'text',
+		'_law_attendee_email'         => 'email',
+		'_law_attendee_organisation'  => 'text',
+		'_law_attendee_job_title'     => 'text',
+		'_law_is_press'               => 'flag',
+		// The waitlist (WAITLIST.md §B1). Position is 1-based, so 0 never
+		// means "first"; it is cleared with delete_post_meta(), because the
+		// int sanitiser stores 0 rather than deleting.
+		'_law_waitlist_position'      => 'int',
+		'_law_waitlist_joined'        => 'datetime',
+		'_law_waitlist_promoted'      => 'datetime',
+		'_law_waitlist_blocked'       => 'text',
 	);
 }
 
@@ -181,43 +197,6 @@ function law_events_sanitize_value( $value, $type ) {
 				$out[ $part ] = sanitize_text_field( (string) ( $value[ $part ] ?? '' ) );
 			}
 			return $out;
-		case 'attendee_rows':
-			// Booking attendee rows: the owner is row 0 (is_owner = 1); the
-			// name/email/organisation/job title are the display snapshot as
-			// entered at booking, while dietary/accessibility always read live
-			// from the linked user's profile. Defence in depth (security
-			// review, 7 September 2026): the schema itself caps the row count
-			// at owner + the additional cap and allows one owner row, so a
-			// future write path cannot slip an oversized or two-owner array
-			// past the engine's own checks.
-			$rows      = array();
-			$max_rows  = ( function_exists( 'law_booking_max_additional' ) ? law_booking_max_additional() : 3 ) + 1;
-			$has_owner = false;
-			foreach ( (array) $value as $row ) {
-				if ( ! is_array( $row ) || count( $rows ) >= $max_rows ) {
-					continue;
-				}
-				$email    = sanitize_email( (string) ( $row['email'] ?? '' ) );
-				$is_owner = ! empty( $row['is_owner'] ) && ! $has_owner ? 1 : 0;
-				$clean    = array(
-					'user_id'      => absint( $row['user_id'] ?? 0 ),
-					'name'         => sanitize_text_field( (string) ( $row['name'] ?? '' ) ),
-					'email'        => is_email( $email ) ? $email : '',
-					'organisation' => sanitize_text_field( (string) ( $row['organisation'] ?? '' ) ),
-					'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
-					'is_owner'     => $is_owner,
-				);
-				// Press pass (committee-issued, spec §6.4): only ever present on
-				// rows that carry it, so older rows keep their exact shape.
-				if ( ! empty( $row['is_press'] ) ) {
-					$clean['is_press'] = 1;
-				}
-				if ( $clean['user_id'] || '' !== $clean['email'] ) {
-					$rows[]     = $clean;
-					$has_owner  = $has_owner || (bool) $is_owner;
-				}
-			}
-			return $rows;
 		case 'people_rows':
 			$rows = array();
 			foreach ( (array) $value as $row ) {
@@ -347,7 +326,7 @@ function law_event_meta( $post_id, $key ) {
 	$value   = get_post_meta( $post_id, $key, true );
 	$schemas = law_events_all_meta_schemas();
 	$type    = $schemas[ $key ] ?? 'text';
-	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows', 'attendee_rows' ), true ) ) {
+	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows' ), true ) ) {
 		return is_array( $value ) ? $value : array();
 	}
 	if ( in_array( $type, array( 'address', 'consent' ), true ) ) {
@@ -368,16 +347,25 @@ function law_event_meta( $post_id, $key ) {
  * 7 September 2026; the LAW reference counter rides the same fix).
  *
  * @param string $option Counter option name.
- * @return int The incremented counter.
+ * @param int    $by     How many numbers to claim at once (a party of N takes
+ *                       one block, so its numbers are consecutive).
+ * @return int The LAST number in the claimed block.
  */
-function law_events_bump_counter( $option ) {
+function law_events_bump_counter( $option, $by = 1 ) {
 	global $wpdb;
+	// $by > 1 claims a consecutive block in ONE atomic step and returns the
+	// LAST number in it, so a party booked together gets consecutive booking
+	// numbers even while another event is booking concurrently (the counter is
+	// global, the event lock is not).
+	$by = max( 1, (int) $by );
 	$wpdb->query(
 		$wpdb->prepare(
 			"INSERT INTO {$wpdb->options} (option_name, option_value, autoload)
-			 VALUES (%s, LAST_INSERT_ID(1), 'no')
-			 ON DUPLICATE KEY UPDATE option_value = LAST_INSERT_ID(option_value + 1)",
-			$option
+			 VALUES (%s, LAST_INSERT_ID(%d), 'no')
+			 ON DUPLICATE KEY UPDATE option_value = LAST_INSERT_ID(option_value + %d)",
+			$option,
+			$by,
+			$by
 		)
 	);
 	$counter = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' );

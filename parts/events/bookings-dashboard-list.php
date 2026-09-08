@@ -24,12 +24,11 @@ $law_bd_rows    = $law_bd_data['rows'];
 <?php else : ?>
 	<p class="law-bookings-dashboard__summary">
 		<?php
-		// Three plurals, three _n() calls: one selector cannot serve nouns
-		// whose counts diverge.
+		// Two plurals, two _n() calls: one selector cannot serve nouns whose
+		// counts diverge. One booking is one attendee, so they are one noun.
 		echo esc_html( sprintf(
-			/* translators: 1: "N attendee(s)", 2: "N booking(s)", 3: "N event(s)". */
-			__( '%1$s across %2$s on %3$s.', 'law' ),
-			sprintf( _n( '%s attendee', '%s attendees', count( $law_bd_rows ), 'law' ), number_format_i18n( count( $law_bd_rows ) ) ),
+			/* translators: 1: "N booking(s)", 2: "N event(s)". */
+			__( '%1$s on %2$s.', 'law' ),
 			sprintf( _n( '%s booking', '%s bookings', $law_bd_data['bookings'], 'law' ), number_format_i18n( $law_bd_data['bookings'] ) ),
 			sprintf( _n( '%s event', '%s events', $law_bd_data['events'], 'law' ), number_format_i18n( $law_bd_data['events'] ) )
 		) );
@@ -54,18 +53,12 @@ $law_bd_rows    = $law_bd_data['rows'];
 			</tr></thead>
 			<tbody>
 			<?php
-			$law_bd_prev = 0;
 			foreach ( $law_bd_rows as $law_bd_row ) :
-				$law_bd_first = $law_bd_row['booking_id'] !== $law_bd_prev;
-				$law_bd_prev  = $law_bd_row['booking_id'];
-				$law_bd_list  = law_booking_list_url( $law_bd_row['event_id'] );
+				$law_bd_list = law_booking_list_url( $law_bd_row['event_id'] );
 				?>
-				<tr<?php echo $law_bd_first ? ' class="law-booking-table__first"' : ''; ?>>
+				<tr class="law-booking-table__first">
 					<td class="law-booking-table__booking">
 						<strong><a href="<?php echo esc_url( $law_bd_list ); ?>">#<?php echo esc_html( (string) $law_bd_row['number'] ); ?></a></strong>
-						<?php if ( $law_bd_first && '' !== $law_bd_row['owner_name'] ) : ?>
-							<br><small><?php echo esc_html( sprintf( $law_bd_row['owner_seated'] ? __( 'by %s', 'law' ) : __( 'by %s (not attending)', 'law' ), $law_bd_row['owner_name'] ) ); ?></small>
-						<?php endif; ?>
 					</td>
 					<td class="law-booking-table__event">
 						<a href="<?php echo esc_url( $law_bd_list ); ?>"><?php echo esc_html( $law_bd_row['event_title'] ); ?></a>
@@ -74,8 +67,8 @@ $law_bd_rows    = $law_bd_data['rows'];
 						<?php endif; ?>
 					</td>
 					<td><strong><?php echo esc_html( $law_bd_row['name'] ); ?></strong><?php
-						if ( $law_bd_row['is_owner'] ) {
-							echo ' <span class="law-booking-manage__owner-flag">' . esc_html__( '(booker)', 'law' ) . '</span>';
+						if ( '' !== $law_bd_row['invited_by'] ) {
+							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( sprintf( __( 'Invited by %s', 'law' ), $law_bd_row['invited_by'] ) ) . '</span>';
 						}
 						if ( $law_bd_row['is_press'] ) {
 							echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';
@@ -88,6 +81,8 @@ $law_bd_rows    = $law_bd_data['rows'];
 					<td>
 						<?php if ( 'cancelled' === $law_bd_row['status'] ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
+						<?php elseif ( 'waitlisted' === $law_bd_row['status'] ) : ?>
+							<span class="law-cal-card__badge law-cal-card__badge--waitlisted"><?php esc_html_e( 'Waitlisted', 'law' ); ?></span>
 						<?php else : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php esc_html_e( 'Active', 'law' ); ?></span>
 						<?php endif; ?>

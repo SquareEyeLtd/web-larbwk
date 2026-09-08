@@ -121,7 +121,7 @@ add_filter(
 		$post_type = get_post_type( $post_id );
 		$previous  = (string) get_post_meta( $post_id, '_wp_trash_meta_status', true );
 		if ( LAW_BOOKING_CPT === $post_type ) {
-			return in_array( $previous, array( 'publish', 'law-cancelled' ), true ) ? $previous : 'law-cancelled';
+			return in_array( $previous, array_keys( law_booking_statuses() ), true ) ? $previous : 'law-cancelled';
 		}
 		if ( LAW_EVENT_CPT !== $post_type ) {
 			return $new_status;

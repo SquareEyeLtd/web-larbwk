@@ -1,9 +1,10 @@
 <?php
 /**
- * Bookings front end (EVENTS_BOOKINGS.md §7): the five-state booking control
- * on the single event view, the booking modal/inline form plumbing, and the
- * transient form state the no-JS path repopulates from. Mirrors
- * account-events.php's role for the host dashboard. CPT-mode only.
+ * Bookings front end (WAITLIST.md §A5, §B5; EVENTS_BOOKINGS.md §7 is the
+ * original contract): the booking control on the single event view, the
+ * booking modal/inline form plumbing, the shared notice map and the transient
+ * form state the no-JS path repopulates from. Mirrors account-events.php's
+ * role for the host dashboard. CPT-mode only.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -17,19 +18,38 @@ function law_booking_is_event_view() {
 }
 
 /**
- * The user's ACTIVE booking on an event: as owner (even seatless) or holding
- * a seat. Feeds the "You're booked" state and its Manage/View link.
+ * This user's own live booking on an event, whatever its state.
  *
- * @return int law_booking post ID, 0 when none.
+ * @return WP_Post|null The booking (publish or law-waitlisted), newest first.
+ */
+function law_booking_user_booking_for_event( $user_id, $event_id, array $statuses = array( 'publish' ) ) {
+	$user_id  = (int) $user_id;
+	$event_id = (int) $event_id;
+	if ( $user_id < 1 || $event_id < 1 ) {
+		return null;
+	}
+	$found = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_parent'    => $event_id,
+			'post_status'    => $statuses,
+			'author'         => $user_id,
+			'posts_per_page' => 1,
+			'orderby'        => 'ID',
+			'order'          => 'DESC',
+		)
+	);
+	return $found ? $found[0] : null;
+}
+
+/**
+ * The user's ACTIVE booking ID on an event, or 0.
+ *
+ * @return int law_booking post ID.
  */
 function law_booking_user_active_booking_for_event( $user_id, $event_id ) {
-	foreach ( law_user_booking_ids( (int) $user_id ) as $booking_id ) {
-		$booking = get_post( $booking_id );
-		if ( $booking && 'publish' === $booking->post_status && (int) $booking->post_parent === (int) $event_id ) {
-			return (int) $booking_id;
-		}
-	}
-	return 0;
+	$booking = law_booking_user_booking_for_event( $user_id, $event_id );
+	return $booking ? (int) $booking->ID : 0;
 }
 
 /**
@@ -60,42 +80,115 @@ function law_booking_form_state() {
 }
 
 /**
- * The current user's ACTIVE bookings for the "Your bookings" section on
- * My events: booking + the mapped parent event + the framing facts the card
- * needs (owner cards say "You + N guests"; a guest's card is framed
- * "Booked by {owner}" with a View action).
+ * The current user's live bookings for the "My bookings" section on My events,
+ * grouped by EVENT: their own booking, plus the bookings they made for
+ * colleagues. One booking per attendee means a person can hold their own place
+ * and have brought others to the same event; that is one card, not several.
  *
- * @return array[] { booking: WP_Post, event: array, is_owner: bool,
- *                   owner_name: string, guests: int }
+ * A booker who cancelled their own place but still has colleagues booked keeps
+ * a card, because they can still manage those bookings.
+ *
+ * @return array[] { event: array, own: WP_Post|null, colleagues: WP_Post[],
+ *                   invited_by: string, waitlisted: bool, manage_id: int }
  */
 function law_account_bookings() {
 	if ( 'cpt' !== law_events_source() || ! is_user_logged_in() ) {
 		return array();
 	}
-	$user_id = get_current_user_id();
-	$items   = array();
-	foreach ( law_user_booking_ids( $user_id ) as $booking_id ) {
+	$user_id  = get_current_user_id();
+	$statuses = law_booking_holding_statuses();
+	$grouped  = array();
+
+	foreach ( array_merge( law_user_booking_ids( $user_id ), law_user_bookings_made_ids( $user_id ) ) as $booking_id ) {
 		$booking = get_post( $booking_id );
-		if ( ! $booking || 'publish' !== $booking->post_status ) {
-			continue; // Active only: a cancelled booking's trail is email + log.
+		if ( ! $booking || ! in_array( $booking->post_status, $statuses, true ) || ! $booking->post_parent ) {
+			continue; // Live only: a cancelled booking's trail is email + log.
 		}
+		$event_id = (int) $booking->post_parent;
+		if ( ! isset( $grouped[ $event_id ] ) ) {
+			$grouped[ $event_id ] = array( 'own' => null, 'colleagues' => array() );
+		}
+		if ( (int) $booking->post_author === $user_id ) {
+			$grouped[ $event_id ]['own'] = $booking;
+		} else {
+			$grouped[ $event_id ]['colleagues'][] = $booking;
+		}
+	}
+
+	$items = array();
+	foreach ( $grouped as $event_id => $group ) {
 		// '*' so the card survives an event that later left the public
-		// statuses; the phase 6 sweep cancels bookings on event cancel anyway.
-		$event = law_events_map_post( get_post( (int) $booking->post_parent ), array( '*' ) );
+		// statuses; the cancel sweep cancels bookings on event cancel anyway.
+		$event = law_events_map_post( get_post( $event_id ), array( '*' ) );
 		if ( ! $event ) {
 			continue;
 		}
-		$owner   = get_user_by( 'id', (int) $booking->post_author );
+		$primary = $group['own'] ?: $group['colleagues'][0];
 		$items[] = array(
-			'booking'    => $booking,
 			'event'      => $event,
-			'is_owner'   => (int) $booking->post_author === $user_id,
-			'owner_name' => $owner ? $owner->display_name : '',
-			'guests'     => count( array_filter( law_event_meta( $booking_id, '_law_attendee_rows' ), fn( $r ) => empty( $r['is_owner'] ) ) ),
+			'own'        => $group['own'],
+			'colleagues' => $group['colleagues'],
+			'invited_by' => $group['own'] ? law_booking_invited_by_label( $group['own'] ) : '',
+			'waitlisted' => 'law-waitlisted' === $primary->post_status,
+			'manage_id'  => (int) $primary->ID,
 		);
 	}
 	usort( $items, fn( $a, $b ) => strcmp( $a['event']['sort'], $b['event']['sort'] ) );
 	return $items;
+}
+
+/**
+ * The one notice map every bookings surface reads: the control, the manage
+ * view, the per-event list and My events. They each carried their own copy
+ * until the per-attendee rebuild, and the copies had drifted in wording, in
+ * markup and (worse) in meaning.
+ *
+ * @return array{0:string,1:string}|null [ 'ok'|'error', message ].
+ */
+function law_booking_notice_text( $key ) {
+	$map = array(
+		'booking-created'   => array( 'ok', __( 'Your booking is confirmed. A confirmation with a calendar invitation is on its way to you.', 'law' ) ),
+		'booking-cancelled' => array( 'ok', __( 'The booking has been cancelled and they have been emailed.', 'law' ) ),
+		'party-cancelled'   => array( 'ok', __( 'All the bookings you made for this event have been cancelled, and everyone has been emailed.', 'law' ) ),
+		'attendee-added'    => array( 'ok', __( 'Your colleague has their own booking now and has been emailed their confirmation.', 'law' ) ),
+		'booking-rejected'  => array( 'ok', __( 'The booking has been cancelled and the attendee emailed.', 'law' ) ),
+		'attendee-registered' => array( 'ok', __( 'The attendee has been registered and emailed their confirmation.', 'law' ) ),
+		'booking-failed'    => array( 'error', __( 'Sorry, that change could not be made.', 'law' ) ),
+		'rate-limited'      => array( 'error', __( 'Too many actions in a short time. Please wait a moment and try again.', 'law' ) ),
+		// The waitlist (WAITLIST.md §B5).
+		'waitlist-joined'    => array( 'ok', __( "You're on the waitlist. We'll email you as soon as a place opens up.", 'law' ) ),
+		'waitlist-left'      => array( 'ok', __( 'That waitlist entry has been cancelled and they have been emailed.', 'law' ) ),
+		'waitlist-reordered' => array( 'ok', __( 'The waitlist order has been updated.', 'law' ) ),
+		'waitlist-promoted'  => array( 'ok', __( 'The entry has been promoted and the attendee emailed their confirmation.', 'law' ) ),
+		'waitlist-failed'    => array( 'error', __( 'Sorry, that waitlist change could not be made.', 'law' ) ),
+	);
+	return $map[ $key ] ?? null;
+}
+
+/** Print the notice for ?law_notice=, if there is one. */
+function law_booking_notice_render() {
+	$notice = law_booking_notice_text( sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) ) );
+	if ( ! $notice ) {
+		return;
+	}
+	printf(
+		'<p class="law-form-notice %s" role="alert">%s</p>',
+		'ok' === $notice[0] ? 'is-success' : 'is-error',
+		esc_html( $notice[1] )
+	);
+}
+
+/**
+ * The bookings button's label for a host card or a committee dashboard row:
+ * "Bookings (12)", and "Bookings (12) · Waitlist (3)" once anyone is waiting.
+ */
+function law_booking_counts_label( $event_id ) {
+	$label    = sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $event_id ) ) );
+	$waiting  = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $event_id ) : 0;
+	if ( $waiting ) {
+		$label .= ' · ' . sprintf( __( 'Waitlist (%s)', 'law' ), number_format_i18n( $waiting ) );
+	}
+	return $label;
 }
 
 /**
@@ -116,10 +209,11 @@ function law_account_user_is_host_like() {
 
 /**
  * The booking control on the single event view (parts/calendar-body.php),
- * replacing the placeholder Register anchor. Five states:
- * you're booked → bookings open soon → register → sold out (disabled
- * waitlist) → the event has taken place. Renders nothing on the legacy
- * source or for a non-Confirmed event (committee previews carry no booking UI).
+ * replacing the placeholder Register anchor. Six states, in this order:
+ * you're booked → you're on the waitlist → bookings open soon → the event has
+ * taken place → sold out (join the waitlist) → register. Renders nothing on
+ * the legacy source or for a non-Confirmed event (committee previews carry no
+ * booking UI).
  *
  * @param array $event The calendar-mapped event array (law_events_map_post()).
  */
@@ -134,33 +228,53 @@ function law_booking_render_action( $event ) {
 	}
 
 	// The redirect-with-notice results (no-JS booking, mostly).
-	$notices = array(
-		'booking-created' => array( 'ok', 'Your booking is confirmed. A confirmation with a calendar invitation is on its way to you.' ),
-		'booking-failed'  => array( 'error', 'Sorry, that booking could not be made.' ),
-		'rate-limited'    => array( 'error', 'Too many actions in a short time. Please wait a moment and try again.' ),
-	);
-	$notice  = sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) );
-	if ( isset( $notices[ $notice ] ) ) {
-		printf(
-			'<p class="law-form-notice %s" role="alert">%s</p>',
-			'ok' === $notices[ $notice ][0] ? 'is-success' : 'is-error',
-			esc_html( $notices[ $notice ][1] )
-		);
-	}
+	law_booking_notice_render();
 
-	// State: already booked (owner, even seatless, or holding a seat).
 	$user_id = get_current_user_id();
 	if ( $user_id ) {
-		$booking_id = law_booking_user_active_booking_for_event( $user_id, $event_id );
-		if ( $booking_id ) {
-			$is_owner = (int) get_post_field( 'post_author', $booking_id ) === $user_id;
+		// State: this person already has a place, or is waiting for one. Their
+		// own booking decides; colleagues they brought are managed from the
+		// same view but do not make the control say "you're booked".
+		$booking = law_booking_user_booking_for_event( $user_id, $event_id, law_booking_holding_statuses() );
+		if ( $booking ) {
+			$waitlisted = 'law-waitlisted' === $booking->post_status;
+			$invited_by = law_booking_invited_by_label( $booking );
+			if ( $waitlisted ) {
+				printf(
+					'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+					esc_html__( "You're on the waitlist for this event.", 'law' ),
+					esc_html__( "We'll email you as soon as a place opens up.", 'law' )
+				);
+			} else {
+				printf( '<p class="law-booking-state">%s</p>', esc_html__( "You're booked on this event.", 'law' ) );
+				if ( '' !== $invited_by ) {
+					printf(
+						'<p class="law-booking-substate">%s</p>',
+						esc_html( sprintf( __( 'Invited by %s.', 'law' ), $invited_by ) )
+					);
+				}
+			}
 			printf(
-				'<p class="law-booking-state">%s</p><a class="button orange" href="%s">%s</a>',
-				esc_html__( "You're booked on this event.", 'law' ),
-				esc_url( law_booking_manage_url( $booking_id ) ),
-				esc_html( $is_owner ? __( 'Manage booking', 'law' ) : __( 'View booking', 'law' ) )
+				'<a class="button orange" href="%s">%s</a>',
+				esc_url( law_booking_manage_url( (int) $booking->ID ) ),
+				esc_html( $waitlisted ? __( 'Manage waitlist entry', 'law' ) : __( 'Manage booking', 'law' ) )
 			);
 			return;
+		}
+
+		// State: no place of their own, but they booked colleagues here. They
+		// still need the route to manage those, and may still book themselves.
+		$colleagues = law_booking_colleague_count( $event_id, $user_id );
+		if ( $colleagues ) {
+			printf(
+				'<p class="law-booking-state">%s</p><a class="button second" href="%s">%s</a> ',
+				esc_html( sprintf(
+					_n( "You've booked a place for %s colleague.", "You've booked places for %s colleagues.", $colleagues, 'law' ),
+					number_format_i18n( $colleagues )
+				) ),
+				esc_url( law_booking_manage_url( (int) law_booking_party( $event_id, $user_id )[0]->ID ) ),
+				esc_html__( 'Manage bookings', 'law' )
+			);
 		}
 	}
 
@@ -179,38 +293,54 @@ function law_booking_render_action( $event ) {
 		return;
 	}
 
-	// State: sold out — the disabled waitlist placeholder (settled: the real
-	// waitlist is a later phase; the server hard-stop protects capacity).
+	// State: sold out — the waitlist. Every entry is one place, promoted
+	// automatically in turn as places open up.
 	if ( 0 === $remaining ) {
-		echo '<p class="law-booking-substate">' . esc_html__( "This event is fully booked. The waitlist isn't open yet, so please check back.", 'law' ) . '</p>';
-		echo '<a class="button orange" aria-disabled="true" role="button" tabindex="-1">' . esc_html__( 'Join waitlist', 'law' ) . '</a>';
+		echo '<p class="law-booking-substate">' . esc_html__( "This event is fully booked. Join the waitlist and we'll email you if a place opens up.", 'law' ) . '</p>';
+		law_booking_render_opener( $event, 'waitlist' );
 		return;
 	}
 
-	// State: bookable. The opener is a real link to the inline no-JS form;
-	// booking-form.js upgrades it to open the modal instead.
-	$inline = ! empty( $_GET['law_book'] );
+	// State: bookable.
 	printf(
 		'<p class="law-booking-substate">%s</p>',
 		esc_html( sprintf( _n( '%s place left', '%s places left', $remaining, 'law' ), number_format_i18n( $remaining ) ) )
 	);
+	law_booking_render_opener( $event, 'book' );
+}
+
+/**
+ * The Register / Join waitlist opener plus its two dialogs. The opener is a
+ * real link to the inline no-JS form; booking-form.js upgrades it to open the
+ * modal instead.
+ *
+ * @param string $mode 'book' or 'waitlist'.
+ */
+function law_booking_render_opener( array $event, $mode = 'book' ) {
+	$event_id  = (int) $event['id'];
+	$waitlist  = 'waitlist' === $mode;
+	$param     = $waitlist ? 'law_waitlist' : 'law_book';
+	$dialog_id = $waitlist ? 'law-waitlist-modal' : 'law-booking-modal';
+
 	// Both dialogs are position:fixed with z-index 10050 (law-modal.css). This
-	// control now renders inside the hero's event details box, and the hero's
+	// control renders inside the hero's event details box, and the hero's
 	// .grid-container is a stacking context (position:relative, z-index 4,
 	// app.css), which would clamp them to level 4 and paint them underneath the
 	// fixed header (.nav z-index 99, .affix z-index 9999). So they are deferred
 	// to wp_footer, at body level, where no stacking context can reach them.
-	law_booking_footer_modal( $event, 'success' );
-	if ( $inline ) {
-		get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'inline' ) );
+	law_booking_footer_modal( $event, 'success', $mode );
+
+	if ( ! empty( $_GET[ $param ] ) ) {
+		get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'inline', 'mode' => $mode ) );
 		return;
 	}
 	printf(
-		'<a class="button orange" href="%s" data-law-modal-open="law-booking-modal">%s</a>',
-		esc_url( add_query_arg( 'law_book', 1, get_permalink( $event_id ) ) ),
-		esc_html__( 'Register', 'law' )
+		'<a class="button orange" href="%s" data-law-modal-open="%s">%s</a>',
+		esc_url( add_query_arg( $param, 1, get_permalink( $event_id ) ) ),
+		esc_attr( $dialog_id ),
+		esc_html( $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' ) )
 	);
-	law_booking_footer_modal( $event, 'modal' );
+	law_booking_footer_modal( $event, 'modal', $mode );
 }
 
 /**
@@ -221,20 +351,21 @@ function law_booking_render_action( $event ) {
  * Called during template render, well before wp_footer fires.
  *
  * @param array  $event The calendar-mapped event array.
- * @param string $which 'modal' (the Register dialog) or 'success'.
+ * @param string $which 'modal' (the Register / Join waitlist dialog) or 'success'.
+ * @param string $mode  'book' or 'waitlist'.
  */
-function law_booking_footer_modal( array $event, $which ) {
+function law_booking_footer_modal( array $event, $which, $mode = 'book' ) {
 	if ( 'success' === $which && ! is_user_logged_in() ) {
 		return;
 	}
 	add_action(
 		'wp_footer',
-		static function () use ( $event, $which ) {
+		static function () use ( $event, $which, $mode ) {
 			if ( 'success' === $which ) {
-				get_template_part( 'parts/events/booking-success-modal', null, array( 'event' => $event ) );
+				get_template_part( 'parts/events/booking-success-modal', null, array( 'event' => $event, 'mode' => $mode ) );
 				return;
 			}
-			get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'modal' ) );
+			get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'modal', 'mode' => $mode ) );
 		}
 	);
 }

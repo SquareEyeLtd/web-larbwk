@@ -24,9 +24,10 @@
 
 	/* 1. The modal opener is an anchor so the no-JS path navigates to the
 	   inline form; with JS, law-modal.js opens the dialog and the navigation
-	   must not happen. Scoped to the booking modal's own opener so a future
-	   anchor opener from another feature is not silently deadened. */
-	document.querySelectorAll('a[data-law-modal-open="law-booking-modal"]').forEach(function (link) {
+	   must not happen. Scoped to this feature's own two openers (Register and
+	   Join waitlist) so a future anchor opener elsewhere is not silently
+	   deadened. */
+	document.querySelectorAll('a[data-law-modal-open="law-booking-modal"], a[data-law-modal-open="law-waitlist-modal"]').forEach(function (link) {
 		link.addEventListener('click', function (event) {
 			event.preventDefault();
 		});

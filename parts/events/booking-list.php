@@ -1,15 +1,18 @@
 <?php
 /**
  * The per-event bookings list for hosts, co-owners and the committee
- * (?law_event_bookings=<event id> on /account/events/, EVENTS_BOOKINGS.md
- * §7.4). Access is law_user_can_manage_event(), re-checked here.
+ * (?law_event_bookings=<event id> on /account/events/, WAITLIST.md §A5).
+ * Access is law_user_can_manage_event(), re-checked here.
  *
- * A real table in the committee-dashboard idiom (Denis, 7 September 2026:
- * "more table view"), grouped by booking via full-width header rows; the
+ * A flat table in the committee-dashboard idiom: ONE ROW PER BOOKING, which
+ * since the per-attendee rebuild is one row per person, with no grouping by
+ * party (Denis, 8 September 2026). A colleague someone brought is marked with
+ * a small "Invited by {name}" tag on their own row, and that is all. The
  * dietary and accessibility columns (read live from each attendee's profile)
  * wrap rather than inheriting the table's nowrap, and the wrap scrolls
- * sideways on mobile like every other dashboard table. Cancelled bookings sit
- * collapsed at the bottom, read-only, with the cancelled badge.
+ * sideways on mobile like every other dashboard table. The waitlist sits in
+ * its own section with the reorder and promote controls; cancelled bookings
+ * sit collapsed at the bottom, read-only, with the cancelled badge.
  *
  * Args: event_id.
  */
@@ -28,33 +31,24 @@ if ( ! $law_bl_event || LAW_EVENT_CPT !== $law_bl_event->post_type
 }
 
 $law_bl_active    = law_bookings_for_event( $law_bl_event_id );
+$law_bl_waitlist  = function_exists( 'law_waitlist_for_event' ) ? law_waitlist_for_event( $law_bl_event_id ) : array();
 $law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled' );
 
-// One users + one usermeta query for the whole table instead of two per
-// attendee row (the dietary/accessibility columns read each linked profile).
+// One users + one usermeta query for the whole table instead of two per row
+// (the country/dietary/accessibility columns read each attendee's profile, and
+// the "Invited by" tag resolves the booker).
 $law_bl_user_ids = array();
-foreach ( array_merge( $law_bl_active, $law_bl_cancelled ) as $law_bl_prime ) {
-	foreach ( law_event_meta( $law_bl_prime->ID, '_law_attendee_rows' ) as $law_bl_prime_row ) {
-		if ( ! empty( $law_bl_prime_row['user_id'] ) ) {
-			$law_bl_user_ids[] = (int) $law_bl_prime_row['user_id'];
-		}
-	}
+foreach ( array_merge( $law_bl_active, $law_bl_waitlist, $law_bl_cancelled ) as $law_bl_prime ) {
+	$law_bl_user_ids[] = (int) $law_bl_prime->post_author;
+	$law_bl_user_ids[] = (int) law_event_meta( $law_bl_prime->ID, '_law_booked_by' );
 }
+$law_bl_user_ids = array_values( array_unique( array_filter( $law_bl_user_ids ) ) );
 if ( $law_bl_user_ids ) {
-	cache_users( array_values( array_unique( $law_bl_user_ids ) ) );
+	cache_users( $law_bl_user_ids );
 }
 $law_bl_total     = law_event_attendee_total( $law_bl_event_id );
 $law_bl_available = (int) law_event_meta( $law_bl_event_id, '_law_tickets_available' );
-
-// Result notices (the reject redirect flow lands back here).
-$law_bl_notice  = sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) );
-$law_bl_notices = array(
-	'attendee-removed'    => array( 'ok', __( 'The attendee has been rejected and emailed.', 'law' ) ),
-	'attendee-registered' => array( 'ok', __( 'The attendee has been registered and emailed their confirmation.', 'law' ) ),
-	'booking-cancelled'   => array( 'ok', __( 'That was the booking\'s last attendee, so the booking is now cancelled.', 'law' ) ),
-	'booking-failed'      => array( 'error', __( 'Sorry, that change could not be made.', 'law' ) ),
-	'rate-limited'        => array( 'error', __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ) ),
-);
+$law_bl_over      = $law_bl_available > 0 && $law_bl_total > $law_bl_available;
 
 $law_bl_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_booking_export&event_id=' . $law_bl_event_id ), 'law_booking_export' );
 
@@ -68,19 +62,22 @@ $law_bl_form_state   = law_booking_form_state();
 $law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );
 
 /**
- * One flat table over a set of bookings: a leading Booking column carries the
- * number on every attendee row (the CSV's shape — Denis, 7 September 2026:
- * less height, "more tablish"), with the booker's name as a sub-line on the
- * booking's first row only.
+ * One flat table over a set of bookings: one row per booking, which is one row
+ * per attendee (Denis, 8 September 2026 — no grouping by party; an additional
+ * attendee's row simply carries an "Invited by {name}" tag).
  *
  * @param WP_Post[] $law_bl_set        Bookings to render.
  * @param bool      $law_bl_actionable Whether the Reject column is live.
+ * @param bool      $law_bl_waiting    Waitlist mode: a Position column and the
+ *                                     reorder / promote controls.
  */
-$law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
+$law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl_waiting = false ) use ( $law_bl_event_id ) {
+	$law_bl_last = count( $law_bl_set ) - 1;
 	?>
 	<div class="law-dashboard__table-wrap">
 		<table class="law-dashboard__table law-booking-table">
 			<thead><tr>
+				<?php if ( $law_bl_waiting ) : ?><th><?php esc_html_e( 'Position', 'law' ); ?></th><?php endif; ?>
 				<th><?php esc_html_e( 'Booking', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Attendee', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Email', 'law' ); ?></th>
@@ -92,98 +89,129 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 				<?php if ( $law_bl_actionable ) : ?><th></th><?php endif; ?>
 			</tr></thead>
 			<tbody>
-			<?php foreach ( $law_bl_set as $law_bl_booking ) :
-				$law_bl_number = (int) law_event_meta( $law_bl_booking->ID, '_law_booking_number' );
-				$law_bl_owner  = get_user_by( 'id', (int) $law_bl_booking->post_author );
-				$law_bl_rows   = law_event_meta( $law_bl_booking->ID, '_law_attendee_rows' );
-
-				$law_bl_owner_seated = false;
-				foreach ( $law_bl_rows as $law_bl_row ) {
-					if ( ! empty( $law_bl_row['is_owner'] ) ) {
-						$law_bl_owner_seated = true;
-						break;
-					}
-				}
+			<?php foreach ( array_values( $law_bl_set ) as $law_bl_i => $law_bl_booking ) :
+				$law_bl_number     = (int) law_event_meta( $law_bl_booking->ID, '_law_booking_number' );
+				$law_bl_person     = law_booking_attendee( $law_bl_booking );
+				$law_bl_invited_by = law_booking_invited_by_label( $law_bl_booking );
+				$law_bl_profile    = law_profile_values( (int) $law_bl_booking->post_author );
+				$law_bl_access     = law_booking_profile_requirements( $law_bl_profile, 'accessibility' );
+				$law_bl_diet       = law_booking_profile_requirements( $law_bl_profile, 'dietary' );
+				$law_bl_modal      = 'law-modal-reject-' . $law_bl_booking->ID;
+				$law_bl_position   = (int) law_event_meta( $law_bl_booking->ID, '_law_waitlist_position' );
 				?>
-				<?php if ( ! $law_bl_rows ) : ?>
-					<tr>
-						<td class="law-booking-table__booking"><strong>#<?php echo esc_html( (string) $law_bl_number ); ?></strong></td>
-						<td colspan="<?php echo $law_bl_actionable ? 8 : 7; ?>"><?php esc_html_e( 'No attendees.', 'law' ); ?></td>
-					</tr>
-				<?php endif; ?>
-				<?php foreach ( array_values( $law_bl_rows ) as $law_bl_i => $law_bl_row ) :
-					$law_bl_user    = ! empty( $law_bl_row['user_id'] ) ? get_user_by( 'id', (int) $law_bl_row['user_id'] ) : null;
-					$law_bl_profile = $law_bl_user ? law_profile_values( (int) $law_bl_user->ID ) : array();
-					$law_bl_access  = law_booking_profile_requirements( $law_bl_profile, 'accessibility' );
-					$law_bl_diet    = law_booking_profile_requirements( $law_bl_profile, 'dietary' );
-					$law_bl_modal   = 'law-modal-reject-' . $law_bl_booking->ID . '-' . $law_bl_i;
-					?>
-					<tr<?php echo 0 === $law_bl_i ? ' class="law-booking-table__first"' : ''; ?>>
-						<td class="law-booking-table__booking">
-							<strong>#<?php echo esc_html( (string) $law_bl_number ); ?></strong>
-							<?php if ( 0 === $law_bl_i && $law_bl_owner ) : ?>
-								<br><small><?php echo esc_html(
-									sprintf(
-										$law_bl_owner_seated ? __( 'by %s', 'law' ) : __( 'by %s (not attending)', 'law' ),
-										$law_bl_owner->display_name
-									)
-								); ?></small>
-							<?php endif; ?>
-							<?php if ( 0 === $law_bl_i && ! $law_bl_actionable ) : ?>
-								<br><span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
-							<?php endif; ?>
-						</td>
-						<td><strong><?php echo esc_html( (string) ( $law_bl_row['name'] ?? '' ) ); ?></strong><?php
-							if ( ! empty( $law_bl_row['is_owner'] ) ) {
-								echo ' <span class="law-booking-manage__owner-flag">' . esc_html__( '(booker)', 'law' ) . '</span>';
-							}
-							if ( ! empty( $law_bl_row['is_press'] ) ) {
-								echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';
-							}
-						?></td>
-						<td><?php echo esc_html( (string) ( $law_bl_row['email'] ?? '' ) ); ?></td>
-						<td><?php echo esc_html( (string) ( $law_bl_row['organisation'] ?? '' ) ?: '—' ); ?></td>
-						<td><?php echo esc_html( (string) ( $law_bl_row['job_title'] ?? '' ) ?: '—' ); ?></td>
-						<td><?php echo esc_html( (string) ( $law_bl_profile['country'] ?? '' ) ?: '—' ); ?></td>
-						<td class="law-booking-table__req"><?php echo esc_html( $law_bl_access ?: '—' ); ?></td>
-						<td class="law-booking-table__req"><?php echo esc_html( $law_bl_diet ?: '—' ); ?></td>
-						<?php if ( $law_bl_actionable ) : ?>
-							<td class="law-dashboard__row-actions">
+				<tr class="law-booking-table__first">
+					<?php if ( $law_bl_waiting ) : ?>
+						<td class="law-booking-table__position">
+							<strong><?php echo esc_html( number_format_i18n( $law_bl_i + 1 ) ); ?></strong>
+							<?php
+							$law_bl_moves = array(
+								'top'  => array( __( 'Top', 'law' ), __( 'Move %s to the top of the waitlist', 'law' ), 0 === $law_bl_i ),
+								'up'   => array( __( 'Up', 'law' ), __( "Move %s up the waitlist", 'law' ), 0 === $law_bl_i ),
+								'down' => array( __( 'Down', 'law' ), __( 'Move %s down the waitlist', 'law' ), $law_bl_i === $law_bl_last ),
+							);
+							foreach ( $law_bl_moves as $law_bl_dir => $law_bl_move ) :
+								// One form per direction: booking-form.js posts
+								// new FormData(form), which omits the submitter,
+								// so the direction has to be a hidden input.
+								?>
 								<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-									<input type="hidden" name="action" value="law_booking_reject_attendee">
+									<input type="hidden" name="action" value="law_waitlist_reorder">
 									<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
-									<input type="hidden" name="attendee_email" value="<?php echo esc_attr( (string) ( $law_bl_row['email'] ?? '' ) ); ?>">
-									<?php wp_nonce_field( 'law_booking_reject_attendee' ); ?>
+									<input type="hidden" name="direction" value="<?php echo esc_attr( $law_bl_dir ); ?>">
+									<input type="hidden" name="expected_position" value="<?php echo esc_attr( (string) $law_bl_position ); ?>">
+									<?php wp_nonce_field( 'law_waitlist_reorder' ); ?>
 									<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
-									<button type="submit" class="button alert" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php esc_html_e( 'Reject', 'law' ); ?></button>
+									<button type="submit" class="button second law-booking-table__move" data-law-modal-busy="<?php esc_attr_e( 'Moving…', 'law' ); ?>"<?php echo $law_bl_move[2] ? ' disabled' : ''; ?>>
+										<?php echo esc_html( $law_bl_move[0] ); ?>
+										<span class="screen-reader-text"><?php echo esc_html( sprintf( $law_bl_move[1], $law_bl_person['name'] ) ); ?></span>
+									</button>
+								</form>
+							<?php endforeach; ?>
+						</td>
+					<?php endif; ?>
+					<td class="law-booking-table__booking">
+						<strong>#<?php echo esc_html( (string) $law_bl_number ); ?></strong>
+						<?php if ( ! $law_bl_actionable && ! $law_bl_waiting ) : ?>
+							<br><span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
+						<?php endif; ?>
+					</td>
+					<td><strong><?php echo esc_html( $law_bl_person['name'] ); ?></strong><?php
+						if ( '' !== $law_bl_invited_by ) {
+							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( sprintf( __( 'Invited by %s', 'law' ), $law_bl_invited_by ) ) . '</span>';
+						}
+						if ( law_event_meta( $law_bl_booking->ID, '_law_is_press' ) ) {
+							echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';
+						}
+					?></td>
+					<td><?php echo esc_html( $law_bl_person['email'] ); ?></td>
+					<td><?php echo esc_html( $law_bl_person['organisation'] ?: '—' ); ?></td>
+					<td><?php echo esc_html( $law_bl_person['job_title'] ?: '—' ); ?></td>
+					<td><?php echo esc_html( (string) ( $law_bl_profile['country'] ?? '' ) ?: '—' ); ?></td>
+					<td class="law-booking-table__req"><?php echo esc_html( $law_bl_access ?: '—' ); ?></td>
+					<td class="law-booking-table__req"><?php echo esc_html( $law_bl_diet ?: '—' ); ?></td>
+					<?php if ( $law_bl_actionable ) : ?>
+						<td class="law-dashboard__row-actions">
+							<?php if ( $law_bl_waiting ) :
+								$law_bl_remaining  = law_event_tickets_remaining( $law_bl_event_id );
+								$law_bl_full       = 0 === $law_bl_remaining;
+								$law_bl_promote_id = 'law-modal-promote-' . $law_bl_booking->ID;
+								?>
+								<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+									<input type="hidden" name="action" value="law_waitlist_promote">
+									<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
+									<?php wp_nonce_field( 'law_waitlist_promote' ); ?>
+									<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+									<button type="submit" class="button orange" data-law-modal-open="<?php echo esc_attr( $law_bl_promote_id ); ?>"><?php esc_html_e( 'Promote now', 'law' ); ?></button>
 									<?php
 									get_template_part(
 										'parts/layout/modal',
 										null,
 										array(
-											'id'      => $law_bl_modal,
-											'title'   => sprintf( __( 'Reject %s', 'law' ), (string) ( $law_bl_row['name'] ?? '' ) ),
+											'id'      => $law_bl_promote_id,
+											'title'   => sprintf( __( 'Promote %s', 'law' ), $law_bl_person['name'] ),
 											'copy'    => array(
-												sprintf( __( 'This cancels %s\'s place and frees it for someone else. They are emailed to let them know.', 'law' ), (string) ( $law_bl_row['name'] ?? '' ) ),
-												1 === count( $law_bl_rows ) ? __( 'They are the last person on the booking, so the whole booking will be cancelled.', 'law' ) : '',
+												sprintf( __( 'This registers %s onto the event now, ahead of the waitlist order, and emails them their confirmation.', 'law' ), $law_bl_person['name'] ),
+												$law_bl_full ? __( 'This event is full. Promoting this entry registers one more place than the event has, so it will be over-booked.', 'law' ) : '',
 											),
-											'field'   => array(
-												'name'     => 'law_reject_reason',
-												'label'    => __( 'Why is the place being cancelled? (optional)', 'law' ),
-												'help'     => __( 'Included in the email to the attendee.', 'law' ),
-												'rows'     => 3,
-												'required' => false,
-											),
-											'confirm' => array( 'label' => __( 'Reject attendee', 'law' ), 'class' => 'button alert', 'busy' => __( 'Rejecting…', 'law' ) ),
-											'close'   => __( 'Keep this attendee', 'law' ),
+											'confirm' => array( 'label' => __( 'Promote now', 'law' ), 'class' => 'button orange', 'busy' => __( 'Promoting…', 'law' ) ),
+											'close'   => __( 'Keep on the waitlist', 'law' ),
 										)
 									);
 									?>
 								</form>
-							</td>
-						<?php endif; ?>
-					</tr>
-				<?php endforeach; ?>
+							<?php endif; ?>
+							<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+								<input type="hidden" name="action" value="law_booking_reject_attendee">
+								<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
+								<?php wp_nonce_field( 'law_booking_reject_attendee' ); ?>
+								<p class="law-hp" aria-hidden="true"><label>Leave this field empty<input type="text" name="law_website_url" tabindex="-1" autocomplete="off"></label></p>
+								<button type="submit" class="button alert" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php esc_html_e( 'Reject', 'law' ); ?></button>
+								<?php
+								get_template_part(
+									'parts/layout/modal',
+									null,
+									array(
+										'id'      => $law_bl_modal,
+										'title'   => sprintf( __( 'Reject %s', 'law' ), $law_bl_person['name'] ),
+										'copy'    => $law_bl_waiting
+											? sprintf( __( "This takes %s off the waitlist. They are emailed to let them know.", 'law' ), $law_bl_person['name'] )
+											: sprintf( __( "This cancels %s's booking and frees their place. They are emailed to let them know.", 'law' ), $law_bl_person['name'] ),
+										'field'   => array(
+											'name'     => 'law_reject_reason',
+											'label'    => __( 'Why is the place being cancelled? (optional)', 'law' ),
+											'help'     => __( 'Included in the email to the attendee.', 'law' ),
+											'rows'     => 3,
+											'required' => false,
+										),
+										'confirm' => array( 'label' => __( 'Reject attendee', 'law' ), 'class' => 'button alert', 'busy' => __( 'Rejecting…', 'law' ) ),
+										'close'   => __( 'Keep this attendee', 'law' ),
+									)
+								);
+								?>
+							</form>
+						</td>
+					<?php endif; ?>
+				</tr>
 			<?php endforeach; ?>
 			</tbody>
 		</table>
@@ -195,23 +223,22 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 <div class="grid-x grid-padding-x">
 	<div class="large-12 cell">
 
-		<?php if ( isset( $law_bl_notices[ $law_bl_notice ] ) ) : ?>
-			<p class="law-form-notice <?php echo 'ok' === $law_bl_notices[ $law_bl_notice ][0] ? 'is-success' : 'is-error'; ?>" role="alert"><?php echo esc_html( $law_bl_notices[ $law_bl_notice ][1] ); ?></p>
-		<?php endif; ?>
+		<?php law_booking_notice_render(); ?>
 
 		<h2 class="law-booking-manage__title"><?php echo esc_html( sprintf( __( 'Bookings: %s', 'law' ), $law_bl_event->post_title ) ); ?></h2>
 		<p class="law-booking-substate">
 			<?php
-			// Two plurals in one sentence, so two _n() calls: one selector cannot
-			// serve both "attendee(s)" and "booking(s)" when the counts diverge.
-			echo esc_html( sprintf(
-				/* translators: 1: "N attendee(s)", 2: "N active booking(s)". */
-				__( '%1$s across %2$s.', 'law' ),
-				sprintf( _n( '%s attendee', '%s attendees', $law_bl_total, 'law' ), number_format_i18n( $law_bl_total ) ),
-				sprintf( _n( '%d active booking', '%d active bookings', count( $law_bl_active ), 'law' ), count( $law_bl_active ) )
-			) );
+			// One booking is one attendee now, so one plural selector does.
+			echo esc_html( sprintf( _n( '%s attendee.', '%s attendees.', $law_bl_total, 'law' ), number_format_i18n( $law_bl_total ) ) );
 			if ( $law_bl_available > 0 ) {
-				echo ' ' . esc_html( sprintf( __( '%1$s of %2$s places taken.', 'law' ), number_format_i18n( $law_bl_total ), number_format_i18n( $law_bl_available ) ) );
+				printf(
+					' <span class="%s">%s</span>',
+					$law_bl_over ? 'law-booking-table__over' : '',
+					esc_html( sprintf( __( '%1$s of %2$s places taken.', 'law' ), number_format_i18n( $law_bl_total ), number_format_i18n( $law_bl_available ) ) )
+				);
+			}
+			if ( $law_bl_waitlist ) {
+				echo ' ' . esc_html( sprintf( _n( '%s on the waitlist.', '%s on the waitlist.', count( $law_bl_waitlist ), 'law' ), number_format_i18n( count( $law_bl_waitlist ) ) ) );
 			}
 			?>
 		</p>
@@ -232,7 +259,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 		<?php if ( $law_bl_can_register ) : ?>
 			<div class="law-booking-register">
 				<h3 class="law-booking-manage__subtitle"><?php esc_html_e( 'Register an attendee', 'law' ); ?></h3>
-				<p class="law-booking-note"><?php esc_html_e( 'For requests that arrive by phone or email. The person gets a booking of their own: they are emailed a confirmation (with a link to set a password if they have no account yet) and can manage or cancel it from Your bookings.', 'law' ); ?></p>
+				<p class="law-booking-note"><?php esc_html_e( 'For requests that arrive by phone or email. The person gets a booking of their own: they are emailed a confirmation (with a link to set a password if they have no account yet) and can manage or cancel it from My bookings.', 'law' ); ?></p>
 				<?php if ( '' !== (string) $law_bl_form_state['message'] ) : ?>
 					<p class="law-form-notice is-error" role="alert"><?php echo esc_html( (string) $law_bl_form_state['message'] ); ?></p>
 				<?php endif; ?>
@@ -272,6 +299,12 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable ) {
 					</p>
 				</form>
 			</div>
+		<?php endif; ?>
+
+		<?php if ( $law_bl_waitlist ) : ?>
+			<h3 class="law-booking-manage__subtitle" id="law-waitlist"><?php echo esc_html( sprintf( __( 'Waitlist (%s)', 'law' ), number_format_i18n( count( $law_bl_waitlist ) ) ) ); ?></h3>
+			<p class="law-booking-substate"><?php esc_html_e( 'Entries are promoted in this order, automatically, as places open up. Move an entry to change the order, or promote it now to register it regardless of places.', 'law' ); ?></p>
+			<?php $law_bl_render_table( $law_bl_waitlist, true, true ); ?>
 		<?php endif; ?>
 
 		<?php if ( $law_bl_cancelled ) : ?>

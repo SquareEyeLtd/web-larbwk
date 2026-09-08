@@ -64,6 +64,9 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	$is_new = ! $post;
 	$locked = $post ? law_events_locked_fields( $post, $user_id ) : array();
 	$errors = new WP_Error();
+	// Read before the writes: raising the places is what offers them to the
+	// waitlist (see the call after the writes loop).
+	$before_tickets = $post ? (int) law_event_meta( $post->ID, '_law_tickets_available' ) : 0;
 
 	$title       = sanitize_text_field( $input['event_title'] ?? '' );
 	$description = wp_kses_post( $input['description'] ?? '' );
@@ -318,6 +321,19 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	}
 	foreach ( $writes as $key => $value ) {
 		law_event_update_meta( $event_id, $key, $value );
+	}
+
+	// Raising the places is the one way capacity opens without a cancellation,
+	// so the waitlist is offered them. Not on a brand-new event: nobody can be
+	// waiting for one that did not exist a moment ago.
+	if ( ! $is_new && function_exists( 'law_event_tickets_changed' ) ) {
+		law_event_tickets_changed(
+			$event_id,
+			$before_tickets,
+			(int) law_event_meta( $event_id, '_law_tickets_available' ),
+			$user_id,
+			law_user_is_committee( $user_id ) ? 'committee_form' : 'host_form'
+		);
 	}
 
 	// Country → ISO, for Stripe's address[country].

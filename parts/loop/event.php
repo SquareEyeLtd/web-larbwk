@@ -7,6 +7,8 @@
  *   'event'       => $event,  // Mapped event from law_calendar_map_entry(). Required.
  *   'url'         => '',      // Optional link override, e.g. law_speaker_event_link().
  *   'show_status' => false,   // Committee status badge.
+ *   'badge'       => array(), // { label, slug }: one extra badge on the card,
+ *                             // e.g. Waitlisted on a My bookings card.
  *   'show_date'   => false,   // Prefix the time with the full date, for cards shown outside the calendar.
  *   'meta_lines'  => array(), // Extra meta lines below the venue/host, e.g. payment status.
  *   'speaker'     => array(), // {name, role, organisation, job_title}: one speaker's
@@ -86,6 +88,9 @@ if ( '' !== $law_time_label ) {
 	<div class="law-event-card__body">
 		<?php if ( $law_show_status ) : ?>
 			<?php law_calendar_status_badge( $event ); ?>
+		<?php endif; ?>
+		<?php if ( ! empty( $args['badge']['label'] ) ) : ?>
+			<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( (string) ( $args['badge']['slug'] ?? 'default' ) ); ?>"><?php echo esc_html( (string) $args['badge']['label'] ); ?></span>
 		<?php endif; ?>
 		<h4 class="law-event-card__title">
 			<a href="<?php echo esc_url( $law_event_url ); ?>"><?php echo esc_html( $event['title'] ); ?></a>

@@ -34,7 +34,7 @@ $law_events = law_committee_events();
 					<td class="law-dashboard__row-actions"><a class="button" href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, get_permalink() ) ); ?>">Review</a>
 					<?php if ( 'publish' === $law_row->post_status && function_exists( 'law_booking_list_url' ) ) : ?>
 						<?php // The same bookings list the host sees: one view, one gate. ?>
-						<a class="button" href="<?php echo esc_url( law_booking_list_url( $law_row->ID ) ); ?>"><?php echo esc_html( sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $law_row->ID ) ) ) ); ?></a>
+						<a class="button" href="<?php echo esc_url( law_booking_list_url( $law_row->ID ) ); ?>"><?php echo esc_html( law_booking_counts_label( $law_row->ID ) ); ?></a>
 					<?php endif; ?></td>
 				</tr>
 			<?php endforeach; ?>

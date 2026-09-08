@@ -275,6 +275,7 @@ function law_event_admin_save( $post_id, $post ) {
 	$before_amount   = (float) law_event_meta( $post_id, '_law_fee_override_amount' );
 	$before_assignee = (int) law_event_meta( $post_id, '_law_assignee' );
 	$before_payment  = (string) law_event_meta( $post_id, '_law_payment_status' );
+	$before_tickets  = (int) law_event_meta( $post_id, '_law_tickets_available' );
 
 	$plain = array(
 		'law_fee_tier'            => '_law_fee_tier',
@@ -340,6 +341,12 @@ function law_event_admin_save( $post_id, $post ) {
 
 	law_event_log_fee_change( $post_id, $before_override, $before_amount, $actor );
 	law_event_maybe_notify_assignee( $post_id, $before_assignee, $actor );
+
+	// Raising the places is the one way capacity opens without a cancellation,
+	// so the waitlist is offered them here. Deliberately after every other
+	// field is written: a save that moves the date AND raises the places must
+	// not send an invitation carrying the old date.
+	law_event_tickets_changed( $post_id, $before_tickets, (int) law_event_meta( $post_id, '_law_tickets_available' ), $actor, 'admin_edit' );
 
 	// Thread reply and manual note.
 	$reply = trim( (string) wp_unslash( $_POST['law_thread_reply'] ?? '' ) );

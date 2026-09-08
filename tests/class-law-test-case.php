@@ -92,25 +92,66 @@ abstract class LAW_Test_Case extends TestCase {
 	}
 
 	/**
-	 * Create a booking through the engine, tracking the booking post AND the
-	 * accounts the engine creates for additional attendees — tearDown only
-	 * deletes tracked entities, and the engine creates things the fixtures
-	 * didn't.
+	 * Create a submission's bookings through the engine, tracking every
+	 * booking post AND the accounts the engine creates for colleagues —
+	 * tearDown only deletes tracked entities, and the engine creates things
+	 * the fixtures didn't.
 	 *
-	 * @return int|WP_Error law_booking_create()'s result.
+	 * @return int[]|WP_Error law_booking_create()'s result: one booking per
+	 *                        attendee, the booker's first.
 	 */
-	protected function make_booking( int $event_id, int $owner_id, array $additional = array() ) {
-		$result = law_booking_create( $event_id, $owner_id, $additional );
+	protected function make_booking( int $event_id, int $booker_id, array $additional = array() ) {
+		$result = law_booking_create( $event_id, $booker_id, $additional );
+		$this->track_booking_result( $result, $additional );
+		return $result;
+	}
+
+	/** The booker's own booking ID, for the many tests that only need that. */
+	protected function make_booking_id( int $event_id, int $booker_id, array $additional = array() ) {
+		$result = $this->make_booking( $event_id, $booker_id, $additional );
+		return is_wp_error( $result ) ? $result : (int) $result[0];
+	}
+
+	/** Join the waitlist through the engine, tracking what it creates. */
+	protected function make_waitlist( int $event_id, int $booker_id, array $additional = array() ) {
+		$result = law_waitlist_join( $event_id, $booker_id, $additional );
+		$this->track_booking_result( $result, $additional );
+		return $result;
+	}
+
+	/** Add one colleague to an existing party, tracking what it creates. */
+	protected function make_colleague_booking( int $event_id, int $booker_id, array $row ) {
+		$result = law_booking_add_attendee( $event_id, $booker_id, $row );
 		if ( ! is_wp_error( $result ) ) {
 			$this->posts[] = (int) $result;
 		}
-		foreach ( $additional as $row ) {
+		$this->track_row_users( array( $row ) );
+		return $result;
+	}
+
+	/** Track engine-created bookings and accounts for teardown. */
+	private function track_booking_result( $result, array $additional ): void {
+		if ( ! is_wp_error( $result ) ) {
+			foreach ( (array) $result as $booking_id ) {
+				$this->posts[] = (int) $booking_id;
+			}
+		}
+		$this->track_row_users( $additional );
+	}
+
+	private function track_row_users( array $rows ): void {
+		foreach ( $rows as $row ) {
 			$user = get_user_by( 'email', (string) ( $row['email'] ?? '' ) );
 			if ( $user && ! in_array( (int) $user->ID, $this->users, true ) ) {
 				$this->users[] = (int) $user->ID;
 			}
 		}
-		return $result;
+	}
+
+	/** Assert a WP_Error with the given code (shared by the booking suites). */
+	protected function assertWPError( $result, string $code ): void {
+		$this->assertInstanceOf( WP_Error::class, $result, 'Expected a refusal.' );
+		$this->assertSame( $code, $result->get_error_code(), $result->get_error_message() );
 	}
 
 	/** Queue Stripe responses for the happy invoice path. */

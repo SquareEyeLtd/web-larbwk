@@ -1,7 +1,10 @@
 <?php
 /**
- * Event post statuses. Core `publish` = Confirmed (publicly listable);
- * the moderation states are custom statuses (EVENTS_4.1_REBUILD.md §3.1).
+ * Post statuses for the module's own content. Events: core `publish` =
+ * Confirmed (publicly listable), the moderation states are custom statuses
+ * (EVENTS_4.1_REBUILD.md §3.1). Bookings have their own, smaller vocabulary
+ * (WAITLIST.md §B1), deliberately kept out of the event map, which drives the
+ * committee's event filters and the events admin list.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -23,8 +26,43 @@ function law_event_statuses() {
 	);
 }
 
+/**
+ * Booking statuses. `publish` is an active booking, `law-cancelled` is shared
+ * with events (a post status is global, so it is registered once, above), and
+ * `law-waitlisted` is registered here because it belongs to bookings alone.
+ *
+ * @return array<string,string> status => label.
+ */
+function law_booking_statuses() {
+	return array(
+		'publish'        => 'Active',
+		'law-waitlisted' => 'Waitlisted',
+		'law-cancelled'  => 'Cancelled',
+	);
+}
+
+/**
+ * A booking's status label. Falls back to a readable form of an unknown
+ * status rather than mislabelling it as active.
+ *
+ * @param string|WP_Post $status Post status or booking post.
+ */
+function law_booking_status_label( $status ) {
+	if ( $status instanceof WP_Post ) {
+		$status = $status->post_status;
+	}
+	$map = law_booking_statuses();
+	return $map[ $status ] ?? ucfirst( str_replace( array( 'law-', '-' ), array( '', ' ' ), (string) $status ) );
+}
+
 function law_events_register_statuses() {
-	foreach ( law_event_statuses() as $status => $config ) {
+	// law-waitlisted must be a REGISTERED status before anything queries it:
+	// WP_Query silently drops an unknown post_status, leaving no status clause
+	// at all, which would return every booking of every status.
+	$statuses = law_event_statuses();
+	$statuses['law-waitlisted'] = array( 'label' => 'Waitlisted', 'public' => false );
+
+	foreach ( $statuses as $status => $config ) {
 		if ( 'publish' === $status ) {
 			continue;
 		}

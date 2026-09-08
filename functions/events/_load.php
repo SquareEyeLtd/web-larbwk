@@ -26,6 +26,7 @@ require_once __DIR__ . '/unread.php';
 require_once __DIR__ . '/co-owners.php';
 require_once __DIR__ . '/ics.php';
 require_once __DIR__ . '/bookings.php';
+require_once __DIR__ . '/waitlist.php';
 require_once __DIR__ . '/bookings-dashboard.php';
 require_once __DIR__ . '/test-mode.php';
 require_once __DIR__ . '/notifications.php';

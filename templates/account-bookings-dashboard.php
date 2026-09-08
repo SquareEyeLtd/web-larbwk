@@ -77,6 +77,7 @@ $law_can = law_user_is_committee();
 							<label class="show-for-sr" for="law-bd-status"><?php esc_html_e( 'Status', 'law' ); ?></label>
 							<select id="law-bd-status" name="law_bstatus">
 								<option value=""><?php esc_html_e( 'Active bookings', 'law' ); ?></option>
+								<option value="waitlisted" <?php selected( $law_filters['status'], 'waitlisted' ); ?>><?php esc_html_e( 'Waitlist entries', 'law' ); ?></option>
 								<option value="cancelled" <?php selected( $law_filters['status'], 'cancelled' ); ?>><?php esc_html_e( 'Cancelled bookings', 'law' ); ?></option>
 								<option value="all" <?php selected( $law_filters['status'], 'all' ); ?>><?php esc_html_e( 'All bookings', 'law' ); ?></option>
 							</select>

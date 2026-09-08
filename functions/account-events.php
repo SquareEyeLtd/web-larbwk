@@ -239,7 +239,7 @@ function law_account_event_actions( $event, $entry ) {
 	// Confirmed events only — nothing else can hold a booking.
 	if ( 'cpt' === law_events_source() && 'Confirmed' === $event['status'] && function_exists( 'law_booking_list_url' ) ) {
 		$actions[] = array(
-			'label' => sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( (int) $event['id'] ) ) ),
+			'label' => law_booking_counts_label( (int) $event['id'] ),
 			'url'   => law_booking_list_url( (int) $event['id'] ),
 		);
 	}

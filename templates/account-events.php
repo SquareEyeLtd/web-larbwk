@@ -104,6 +104,9 @@ get_header();
 					<div class="large-12 cell">
 
 						<?php
+						// The event notices are this page's own; every booking and
+						// waitlist notice comes from the one shared map in
+						// account-bookings.php, so the wording cannot drift again.
 						$law_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 						$law_notice_text = array(
 							'event-updated'   => __( 'Your changes have been saved.', 'law' ),
@@ -111,15 +114,11 @@ get_header();
 							'event-withdrawn' => __( 'Your event has been withdrawn.', 'law' ),
 							'event-not-editable' => __( 'This event can no longer be edited.', 'law' ),
 							'withdraw-failed' => __( 'Sorry, this event could not be withdrawn. Please reload the page and try again.', 'law' ),
-							'rate-limited'    => __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ),
-							'booking-created'  => __( 'Your booking is confirmed. A confirmation with a calendar invitation is on its way to you.', 'law' ),
-							'booking-cancelled' => __( 'The booking has been cancelled and everyone on it has been emailed.', 'law' ),
-							'attendee-added'   => __( 'The attendee has been added and emailed the event details.', 'law' ),
-							'attendee-removed' => __( 'The attendee has been removed and their place freed.', 'law' ),
-							'booking-failed'   => __( 'Sorry, that booking change could not be made.', 'law' ),
 						);
 						if ( isset( $law_notice_text[ $law_notice ] ) ) {
 							echo '<div class="law-form-notice" role="status">' . esc_html( $law_notice_text[ $law_notice ] ) . '</div>';
+						} elseif ( function_exists( 'law_booking_notice_render' ) ) {
+							law_booking_notice_render();
 						}
 
 						// Your bookings (EVENTS_BOOKINGS.md §7.3): the attendee side of
@@ -161,10 +160,24 @@ get_header();
 											'event'      => $law_bk_item['event'],
 											'url'        => $law_bk_item['event']['url'],
 											'show_date'  => true,
+											'badge'      => $law_bk_item['waitlisted']
+												? array( 'label' => __( 'Waitlisted', 'law' ), 'slug' => 'waitlisted' )
+												: array(),
 											'meta_lines' => array_filter( array(
-												$law_bk_item['is_owner']
-													? sprintf( _n( 'You + %d guest', 'You + %d guests', $law_bk_item['guests'], 'law' ), $law_bk_item['guests'] )
-													: sprintf( __( 'Booked by %s', 'law' ), $law_bk_item['owner_name'] ),
+												// One booking per attendee: their own place, and
+												// separately the colleagues they brought here.
+												$law_bk_item['own']
+													? sprintf( __( 'Booking #%d', 'law' ), (int) law_event_meta( $law_bk_item['own']->ID, '_law_booking_number' ) )
+													: '',
+												$law_bk_item['own'] && '' !== $law_bk_item['invited_by']
+													? sprintf( __( 'Invited by %s', 'law' ), $law_bk_item['invited_by'] )
+													: '',
+												$law_bk_item['colleagues']
+													? sprintf(
+														_n( '+ %d colleague booked by you', '+ %d colleagues booked by you', count( $law_bk_item['colleagues'] ), 'law' ),
+														count( $law_bk_item['colleagues'] )
+													)
+													: '',
 											) ),
 											'actions'    => array(
 												array(
@@ -174,8 +187,8 @@ get_header();
 													'arrow'    => true,
 												),
 												array(
-													'label' => $law_bk_item['is_owner'] ? __( 'Manage', 'law' ) : __( 'View booking', 'law' ),
-													'url'   => law_booking_manage_url( $law_bk_item['booking']->ID ),
+													'label' => __( 'Manage', 'law' ),
+													'url'   => law_booking_manage_url( $law_bk_item['manage_id'] ),
 												),
 											),
 										)

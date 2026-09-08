@@ -136,25 +136,42 @@ class BookingEmailsTest extends LAW_Test_Case {
 
 	public function test_invite_and_added_emails_resolve_per_account_state(): void {
 		$event    = $this->make_bookable_event();
-		$owner    = $this->make_user( 'attendee' );
-		$fresh    = $this->unique_email( 'fresh' );
+		$booker   = $this->make_user( 'attendee' );
 		$existing = $this->make_user( 'attendee' );
+		$known    = get_userdata( $existing )->user_email;
+		$fresh    = $this->unique_email( 'fresh' );
+		$this->mail = array();
 
-		$this->make_booking( $event, $owner, array(
-			$this->row( 'Fresh Face', $fresh ),
-			$this->row( 'Old Hand', get_userdata( $existing )->user_email ),
-		) );
+		$ids = $this->make_booking(
+			$event,
+			$booker,
+			array( $this->row( 'Known Person', $known ), $this->row( 'New Person', $fresh ) )
+		);
+		$this->assertIsArray( $ids );
+		$booker_name = get_userdata( $booker )->display_name;
 
-		$invite = $this->mail_to( $fresh );
-		$this->assertNotEmpty( $invite );
-		$this->assertStringContainsString( 'You have been booked onto', $invite[0]['subject'] );
-		$this->assertStringContainsString( 'Set your password', wp_strip_all_tags( $invite[0]['message'] ) );
-		$this->assertStringContainsString( '/login/', wp_strip_all_tags( $invite[0]['message'] ), 'The set-password link is branded.' );
-		$this->assertNotEmpty( $invite[0]['attachments'] );
-
-		$added = $this->mail_to( get_userdata( $existing )->user_email );
+		// An existing account is told it has a booking; a new one gets the
+		// set-password link. Both carry THEIR OWN booking number.
+		$added = $this->mail_to( $known );
 		$this->assertNotEmpty( $added );
-		$this->assertStringContainsString( 'already have an account', wp_strip_all_tags( $added[0]['message'] ) );
+		$this->assertStringNotContainsString( 'Set your password', wp_strip_all_tags( $added[0]['message'] ) );
+		$this->assertStringContainsString( '#' . (int) law_event_meta( $ids[1], '_law_booking_number' ), wp_strip_all_tags( $added[0]['message'] ) );
+		$this->assertStringContainsString( $booker_name, wp_strip_all_tags( $added[0]['message'] ), 'The email names who booked them.' );
+
+		$invited = $this->mail_to( $fresh );
+		$this->assertNotEmpty( $invited );
+		$this->assertStringContainsString( 'action=reset', wp_strip_all_tags( $invited[0]['message'] ) );
+		$this->assertStringContainsString( '#' . (int) law_event_meta( $ids[2], '_law_booking_number' ), wp_strip_all_tags( $invited[0]['message'] ) );
+
+		// The booker's own confirmation lists everyone with their numbers.
+		$confirmation = $this->mail_to( get_userdata( $booker )->user_email );
+		$this->assertNotEmpty( $confirmation );
+		foreach ( $ids as $id ) {
+			$this->assertStringContainsString(
+				'#' . (int) law_event_meta( $id, '_law_booking_number' ),
+				wp_strip_all_tags( $confirmation[0]['message'] )
+			);
+		}
 	}
 
 	public function test_registered_on_behalf_emails_name_the_registrar_and_link_new_accounts(): void {
@@ -195,48 +212,54 @@ class BookingEmailsTest extends LAW_Test_Case {
 		}
 	}
 
-	public function test_removal_templates_per_context(): void {
-		$event = $this->make_bookable_event();
-		$owner = $this->make_user( 'attendee' );
-		$g1    = $this->unique_email( 'g1' );
-		$g2    = $this->unique_email( 'g2' );
+	public function test_cancel_templates_per_context(): void {
+		$event  = $this->make_bookable_event();
+		$booker = $this->make_user( 'attendee' );
+		$g1     = $this->unique_email( 'g1' );
+		$g2     = $this->unique_email( 'g2' );
 
-		$booking = $this->make_booking( $event, $owner, array( $this->row( 'G One', $g1 ), $this->row( 'G Two', $g2 ) ) );
+		$ids = $this->make_booking( $event, $booker, array( $this->row( 'G One', $g1 ), $this->row( 'G Two', $g2 ) ) );
 		$this->mail = array();
 
 		// Host reject: reason + host contact.
-		law_booking_remove_attendee( $booking, $g1, $this->make_committee_user(), 'host_reject', array( 'reason' => 'Overbooked session' ) );
+		law_booking_cancel( $ids[1], $this->make_committee_user(), 'host_reject', array( 'reason' => 'Overbooked session' ) );
 		$mail = $this->mail_to( $g1 );
 		$this->assertStringContainsString( 'has been cancelled', $mail[0]['subject'] );
 		$this->assertStringContainsString( 'Overbooked session', wp_strip_all_tags( $mail[0]['message'] ) );
 
-		// Owner removes a colleague.
-		law_booking_remove_attendee( $booking, $g2, $owner, 'owner' );
+		// The person who booked them cancels their booking: the email names them.
+		law_booking_cancel( $ids[2], $booker, 'booker' );
 		$mail = $this->mail_to( $g2 );
-		$this->assertStringContainsString( 'has been removed', $mail[0]['subject'] );
+		$this->assertStringContainsString( 'has been cancelled', $mail[0]['subject'] );
+		$this->assertStringContainsString( get_userdata( $booker )->display_name, wp_strip_all_tags( $mail[0]['message'] ) );
 
-		// Self-removal confirmation; the booking is then empty and auto-cancels
-		// with nobody left to email.
-		$owner_email = get_userdata( $owner )->user_email;
-		law_booking_remove_attendee( $booking, $owner_email, $owner, 'self' );
-		$mail = $this->mail_to( $owner_email );
-		$this->assertStringContainsString( 'You have left', $mail[0]['subject'] );
-		$this->assertSame( 'law-cancelled', get_post_status( $booking ) );
+		// Their own cancellation is confirmed to them, and only them.
+		$booker_email = get_userdata( $booker )->user_email;
+		law_booking_cancel( $ids[0], $booker, 'self' );
+		$mail = $this->mail_to( $booker_email );
+		$this->assertStringContainsString( 'You have cancelled', $mail[0]['subject'] );
+		$this->assertSame( 'law-cancelled', get_post_status( $ids[0] ) );
 	}
 
-	public function test_owner_cancel_emails_every_seated_attendee(): void {
-		$event   = $this->make_bookable_event();
-		$owner   = $this->make_user( 'attendee' );
-		$g1      = $this->unique_email( 'g1' );
-		$booking = $this->make_booking( $event, $owner, array( $this->row( 'G One', $g1 ) ) );
+	public function test_cancel_party_emails_each_person_with_their_number(): void {
+		$event  = $this->make_bookable_event();
+		$booker = $this->make_user( 'attendee' );
+		$g1     = $this->unique_email( 'g1' );
+		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'G One', $g1 ) ) );
 		$this->mail = array();
 
-		law_booking_cancel( $booking, $owner, 'owner' );
-		foreach ( array( get_userdata( $owner )->user_email, $g1 ) as $email ) {
-			$mail = $this->mail_to( $email );
-			$this->assertNotEmpty( $mail, 'Cancellation reaches ' . $email );
-			$this->assertStringContainsString( 'Booking cancelled', $mail[0]['subject'] );
-		}
+		law_bookings_cancel_party( $event, $booker, $booker );
+
+		// The actor gets the self template; the colleague gets the by-booker one.
+		$own = $this->mail_to( get_userdata( $booker )->user_email );
+		$this->assertStringContainsString( 'You have cancelled', $own[0]['subject'] );
+		$guest = $this->mail_to( $g1 );
+		$this->assertStringContainsString( 'has been cancelled', $guest[0]['subject'] );
+		$this->assertStringContainsString(
+			'#' . (int) law_event_meta( $ids[1], '_law_booking_number' ),
+			wp_strip_all_tags( $guest[0]['message'] ),
+			'Each person is told their own booking number.'
+		);
 	}
 
 	public function test_capacity_warning_mails_host_once(): void {

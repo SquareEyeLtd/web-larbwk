@@ -35,7 +35,7 @@ function law_bookings_dashboard_filters( ?array $source = null ) {
 	return array(
 		'kw'     => sanitize_text_field( wp_unslash( (string) ( $source['law_kw'] ?? '' ) ) ),
 		'event'  => absint( $source['law_event'] ?? 0 ),
-		'status' => in_array( $status, array( 'cancelled', 'all' ), true ) ? $status : '',
+		'status' => in_array( $status, array( 'cancelled', 'waitlisted', 'all' ), true ) ? $status : '',
 		'year'   => sanitize_key( (string) ( $source['law_year'] ?? '' ) ),
 		'press'  => ! empty( $source['law_press'] ),
 	);
@@ -78,9 +78,10 @@ function law_bookings_dashboard_events() {
 }
 
 /**
- * The flattened attendee rows for the dashboard and its export.
+ * The attendee rows for the dashboard and its export.
  *
- * One row per attendee of every booking matching the filters. The keyword
+ * One row per booking matching the filters, which since the per-attendee
+ * rebuild is one row per person. The keyword
  * matches (case-insensitively) the attendee's name, email, organisation and
  * job title, the booking number ("#12" or "12") and the event title; it is
  * applied in PHP over the fetched set rather than as a LIKE over serialised
@@ -115,7 +116,12 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 		}
 	}
 
-	$statuses = array( '' => array( 'publish' ), 'cancelled' => array( 'law-cancelled' ), 'all' => array( 'publish', 'law-cancelled' ) );
+	$statuses = array(
+		''           => array( 'publish' ),
+		'cancelled'  => array( 'law-cancelled' ),
+		'waitlisted' => array( 'law-waitlisted' ),
+		'all'        => array( 'publish', 'law-waitlisted', 'law-cancelled' ),
+	);
 	$query    = array(
 		'post_type'      => LAW_BOOKING_CPT,
 		'post_status'    => $statuses[ $filters['status'] ],
@@ -130,20 +136,16 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 	$truncated = $limit > 0 && count( $bookings ) >= $limit;
 
 	// One users + one usermeta query for the whole table (the per-event list's
-	// precedent): country, dietary and accessibility read from each profile.
+	// precedent): country, dietary and accessibility read from each profile,
+	// and the "Invited by" tag resolves the booker.
 	$user_ids = array();
 	foreach ( $bookings as $booking ) {
-		foreach ( law_event_meta( $booking->ID, '_law_attendee_rows' ) as $row ) {
-			if ( ! empty( $row['user_id'] ) ) {
-				$user_ids[] = (int) $row['user_id'];
-			}
-		}
-		if ( $booking->post_author ) {
-			$user_ids[] = (int) $booking->post_author;
-		}
+		$user_ids[] = (int) $booking->post_author;
+		$user_ids[] = (int) law_event_meta( $booking->ID, '_law_booked_by' );
 	}
+	$user_ids = array_values( array_unique( array_filter( $user_ids ) ) );
 	if ( $user_ids ) {
-		cache_users( array_values( array_unique( $user_ids ) ) );
+		cache_users( $user_ids );
 	}
 
 	$needle = function_exists( 'mb_strtolower' ) ? mb_strtolower( $filters['kw'] ) : strtolower( $filters['kw'] );
@@ -152,73 +154,65 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 	$seen_b = array();
 	$seen_e = array();
 
+	// One booking is one attendee, so one booking is one row.
 	foreach ( $bookings as $booking ) {
 		$event_id = (int) $booking->post_parent;
 		$event    = get_post( $event_id );
 		if ( ! $event || LAW_EVENT_CPT !== $event->post_type ) {
 			continue;
 		}
-		$number      = (int) law_event_meta( $booking->ID, '_law_booking_number' );
-		$owner       = get_user_by( 'id', (int) $booking->post_author );
-		$seats       = law_event_meta( $booking->ID, '_law_attendee_rows' );
-		$owner_seated = false;
-		foreach ( $seats as $seat ) {
-			if ( ! empty( $seat['is_owner'] ) ) {
-				$owner_seated = true;
-				break;
-			}
+		if ( $filters['press'] && ! law_event_meta( $booking->ID, '_law_is_press' ) ) {
+			continue;
 		}
 
-		foreach ( $seats as $seat ) {
-			if ( $filters['press'] && empty( $seat['is_press'] ) ) {
+		$number     = (int) law_event_meta( $booking->ID, '_law_booking_number' );
+		$person     = law_booking_attendee( $booking );
+		$invited_by = law_booking_invited_by_label( $booking );
+		$user       = get_user_by( 'id', (int) $booking->post_author );
+		$profile    = $user ? law_profile_values( (int) $user->ID ) : array();
+
+		if ( '' !== $needle ) {
+			$haystack = implode(
+				"\n",
+				array(
+					$person['name'],
+					$person['email'],
+					$person['organisation'],
+					$person['job_title'],
+					$invited_by,
+					(string) $number,
+					$event->post_title,
+				)
+			);
+			$haystack = function_exists( 'mb_strtolower' ) ? mb_strtolower( $haystack ) : strtolower( $haystack );
+			if ( false === strpos( $haystack, $needle ) ) {
 				continue;
 			}
-			$user    = ! empty( $seat['user_id'] ) ? get_user_by( 'id', (int) $seat['user_id'] ) : null;
-			$profile = $user ? law_profile_values( (int) $user->ID ) : array();
-
-			if ( '' !== $needle ) {
-				$haystack = implode(
-					"\n",
-					array(
-						(string) ( $seat['name'] ?? '' ),
-						(string) ( $seat['email'] ?? '' ),
-						(string) ( $seat['organisation'] ?? '' ),
-						(string) ( $seat['job_title'] ?? '' ),
-						(string) $number,
-						$event->post_title,
-					)
-				);
-				$haystack = function_exists( 'mb_strtolower' ) ? mb_strtolower( $haystack ) : strtolower( $haystack );
-				if ( false === strpos( $haystack, $needle ) ) {
-					continue;
-				}
-			}
-
-			$rows[] = array(
-				'booking_id'    => (int) $booking->ID,
-				'number'        => $number,
-				'status'        => 'law-cancelled' === $booking->post_status ? 'cancelled' : 'active',
-				'booked'        => (string) $booking->post_date,
-				'event_id'      => $event_id,
-				'event_title'   => $event->post_title,
-				'event_start'   => (string) law_event_meta( $event_id, '_law_start' ),
-				'event_ref'     => (string) law_event_meta( $event_id, '_law_reference' ),
-				'owner_name'    => $owner ? $owner->display_name : '',
-				'owner_seated'  => $owner_seated,
-				'user'          => $user,
-				'name'          => (string) ( $seat['name'] ?? '' ),
-				'email'         => (string) ( $seat['email'] ?? '' ),
-				'organisation'  => (string) ( $seat['organisation'] ?? '' ),
-				'job_title'     => (string) ( $seat['job_title'] ?? '' ),
-				'country'       => (string) ( $profile['country'] ?? '' ),
-				'is_owner'      => ! empty( $seat['is_owner'] ),
-				'is_press'      => ! empty( $seat['is_press'] ),
-				'accessibility' => law_booking_profile_requirements( $profile, 'accessibility' ),
-				'dietary'       => law_booking_profile_requirements( $profile, 'dietary' ),
-			);
-			$seen_b[ (int) $booking->ID ] = true;
-			$seen_e[ $event_id ]          = true;
 		}
+
+		$statuses = array( 'publish' => 'active', 'law-waitlisted' => 'waitlisted', 'law-cancelled' => 'cancelled' );
+		$rows[]   = array(
+			'booking_id'    => (int) $booking->ID,
+			'number'        => $number,
+			'status'        => $statuses[ $booking->post_status ] ?? 'active',
+			'booked'        => (string) $booking->post_date,
+			'event_id'      => $event_id,
+			'event_title'   => $event->post_title,
+			'event_start'   => (string) law_event_meta( $event_id, '_law_start' ),
+			'event_ref'     => (string) law_event_meta( $event_id, '_law_reference' ),
+			'invited_by'    => $invited_by,
+			'user'          => $user,
+			'name'          => $person['name'],
+			'email'         => $person['email'],
+			'organisation'  => $person['organisation'],
+			'job_title'     => $person['job_title'],
+			'country'       => (string) ( $profile['country'] ?? '' ),
+			'is_press'      => (bool) law_event_meta( $booking->ID, '_law_is_press' ),
+			'accessibility' => law_booking_profile_requirements( $profile, 'accessibility' ),
+			'dietary'       => law_booking_profile_requirements( $profile, 'dietary' ),
+		);
+		$seen_b[ (int) $booking->ID ] = true;
+		$seen_e[ $event_id ]          = true;
 	}
 
 	return array(
@@ -250,6 +244,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 		}
 		$rows[] = array(
 			$row['number'],
+			$row['invited_by'],
 			$row['event_title'],
 			'' !== $row['event_start'] ? $row['event_start'] : '',
 			$row['event_ref'],
@@ -260,7 +255,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 			$row['job_title'],
 			$row['country'],
 			$row['is_press'] ? 'Yes' : '',
-			'cancelled' === $row['status'] ? 'Cancelled' : 'Active',
+			ucfirst( $row['status'] ),
 			substr( $row['booked'], 0, 16 ),
 			$row['accessibility'],
 			$row['dietary'],
@@ -274,7 +269,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 	if ( '' !== $filters['year'] ) {
 		$scope[] = $filters['year'];
 	}
-	$scope[] = array( '' => 'active bookings', 'cancelled' => 'cancelled bookings', 'all' => 'all bookings' )[ $filters['status'] ];
+	$scope[] = array( '' => 'active bookings', 'cancelled' => 'cancelled bookings', 'waitlisted' => 'waitlist entries', 'all' => 'all bookings' )[ $filters['status'] ];
 	if ( $filters['press'] ) {
 		$scope[] = 'press only';
 	}
@@ -284,7 +279,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 
 	return array(
 		'title'   => 'Bookings: ' . implode( ', ', $scope ),
-		'columns' => array( 'Booking ID', 'Event', 'Event date', 'Reference', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
+		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Second name', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
 		'rows'    => $rows,
 	);
 }

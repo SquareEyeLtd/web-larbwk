@@ -605,6 +605,28 @@
 	color: #a12622;
 }
 
+/* Waiting, not refused: the brand tint rather than an alarm colour. */
+.law-cal-card__badge--waitlisted {
+	background: #f4f2fa;
+	color: #292459;
+	border: 1px solid #c9c5d6;
+}
+
+/* "Invited by X" on a colleague's row, and the press pass: quiet tags that
+   sit inline with the attendee's name rather than competing with it. */
+.law-booking-table__invited {
+	background: #f4f2fa;
+	color: #292459;
+	font-weight: 400;
+}
+
+/* Sold beyond capacity, after a host promoted someone off the waitlist onto a
+   full event. Deliberate, but it must never read as a normal count. */
+.law-booking-table__over {
+	color: #a12622;
+	font-weight: 700;
+}
+
 /* --- Edit link (admins/editors) ------------------------------------------ */
 
 .law-cal a.law-cal-edit,
