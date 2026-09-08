@@ -358,14 +358,36 @@ function law_events_bump_counter( $option, $by = 1 ) {
 	// numbers even while another event is booking concurrently (the counter is
 	// global, the event lock is not).
 	$by = max( 1, (int) $by );
+
+	// Two statements, deliberately. Doing the insert and the increment in one
+	// looks tidier and is WRONG: when that statement genuinely inserts, MySQL
+	// assigns the new row's own AUTO_INCREMENT option_id, and THAT becomes
+	// LAST_INSERT_ID, overriding the value the VALUES clause asked for. So the
+	// very first number a counter ever issued was the wp_options auto-increment
+	// rather than 1 — on a site with 111,546 option rows behind it, the first
+	// booking came out as #111547. Only the returned value was wrong; the
+	// stored counter was right, which is why it was invisible until someone
+	// read a booking number.
+	//
+	// Step one: make sure the row exists. Whatever LAST_INSERT_ID this leaves
+	// behind is discarded.
 	$wpdb->query(
 		$wpdb->prepare(
 			"INSERT INTO {$wpdb->options} (option_name, option_value, autoload)
-			 VALUES (%s, LAST_INSERT_ID(%d), 'no')
-			 ON DUPLICATE KEY UPDATE option_value = LAST_INSERT_ID(option_value + %d)",
-			$option,
+			 VALUES (%s, '0', 'no')
+			 ON DUPLICATE KEY UPDATE option_name = option_name",
+			$option
+		)
+	);
+
+	// Step two: claim the number. An UPDATE assigns no AUTO_INCREMENT, so
+	// LAST_INSERT_ID() is exactly what we set and nothing else, and two
+	// concurrent callers still each get their own block.
+	$wpdb->query(
+		$wpdb->prepare(
+			"UPDATE {$wpdb->options} SET option_value = LAST_INSERT_ID(option_value + %d) WHERE option_name = %s",
 			$by,
-			$by
+			$option
 		)
 	);
 	$counter = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' );

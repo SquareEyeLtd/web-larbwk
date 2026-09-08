@@ -16,6 +16,40 @@ class ReferenceAndMigrationTest extends LAW_Test_Case {
 		update_option( 'law_events_reference_counter', $before, false );
 	}
 
+	/**
+	 * A counter that has never been used starts at 1.
+	 *
+	 * It used to start at whatever wp_options' AUTO_INCREMENT happened to be:
+	 * the insert-and-increment was one statement, and when it genuinely
+	 * inserted, MySQL's own assignment of the new row's option_id won and
+	 * became LAST_INSERT_ID. On staging that made the first booking #111547.
+	 */
+	public function test_a_brand_new_counter_starts_at_one_and_stays_in_order(): void {
+		$option = 'law_test_counter_' . wp_generate_password( 8, false );
+		$this->assertFalse( get_option( $option ), 'The probe option must not exist yet.' );
+
+		$this->assertSame( 1, law_events_bump_counter( $option ), 'The first number a counter issues is 1.' );
+		$this->assertSame( 2, law_events_bump_counter( $option ) );
+		$this->assertSame( 3, law_events_bump_counter( $option ) );
+
+		// A block claims consecutive numbers and returns the last of them.
+		$this->assertSame( 6, law_events_bump_counter( $option, 3 ) );
+		$this->assertSame( 7, law_events_bump_counter( $option ) );
+
+		// And the stored value agrees with what was handed out, so a later
+		// request continues the sequence rather than repeating it.
+		$this->assertSame( 7, (int) get_option( $option ) );
+
+		delete_option( $option );
+	}
+
+	public function test_a_seeded_counter_continues_from_its_seed(): void {
+		$option = 'law_test_counter_' . wp_generate_password( 8, false );
+		update_option( $option, 40, false );
+		$this->assertSame( 41, law_events_bump_counter( $option ) );
+		delete_option( $option );
+	}
+
 	public function test_merge_tag_translation(): void {
 		$in  = 'Dear {Name (First):3.3}, your event {Event title:17} ({Unique ID:70}) — pay at {Stripe invoice URL:83}. {latest_comment}';
 		$out = law_migration_translate_tags( $in );
