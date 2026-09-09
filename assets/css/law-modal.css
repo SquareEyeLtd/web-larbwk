@@ -30,7 +30,11 @@
 /* The same light-section reset the committee panel does: the theme paints
    headings and paragraphs white for the dark hero, so the dialog recolours
    explicitly rather than inheriting whatever page it was dropped into. */
-.law-modal__dialog, .law-modal__title, .law-modal__copy, .law-modal__subtitle, .law-modal__bio, .law-modal .law-form-field label { color: #1a1a3d; }
+.law-modal__dialog, .law-modal__title, .law-modal__copy, .law-modal__subtitle, .law-modal__bio { color: #1a1a3d; }
+/* Field labels carry an element in the selector so the hero form's yellow
+   (`.law-event-form .law-form-field label`, equal specificity) can never win on
+   source order if a dialog is ever rendered inside one. */
+.law-modal .law-form-field label, .law-modal p.law-form-field label, .law-modal .law-form-label { color: #1a1a3d; }
 /* A dialog with no field takes focus itself (tabindex="-1"), which is for
    screen readers and the Tab trap, not something to draw a ring around. */
 .law-modal__dialog:focus { outline: none; }
@@ -70,7 +74,25 @@ body.law-modal-open { overflow: hidden; }
 /* A request error, shown inside the dialog above the actions. The shared
    .law-form-notice styles live in event-form.css and are coloured for the dark
    form surfaces, so the light dialog carries its own. */
-.law-modal__error { color: #cc4b37; font-weight: 600; margin: 0 0 1rem; }
+.law-modal__error { color: #b32d2e; font-weight: 600; margin: 0 0 1rem; }
+/* An inline field error, injected by law-modal.js under a required note left
+   empty. Its shared .law-form-error design in event-form.css is white text on a
+   translucent white strip, drawn for the purple hero form, so on this white
+   dialog the message was invisible. Same light treatment the light form variant
+   uses, at a class-plus-element specificity so it wins over
+   `.law-dashboard .law-form-error` and friends wherever the dialog is dropped,
+   whichever order the two stylesheets happen to print in. */
+.law-modal .law-form-error,
+.law-modal p.law-form-error,
+.law-modal span.law-form-error {
+	background: #fcf0f1; border-left-color: #b32d2e; color: #1a1a3d;
+}
+/* The invalid control's own border, in the light form's darker red rather than
+   the hero's #ff5c4d, and held through focus: the textarea's :focus rule above
+   would otherwise put the resting grey back the moment the field is focused,
+   which is exactly when the message appears. */
+.law-modal .law-form-field:has(> .law-form-error) textarea,
+.law-modal .law-form-field:has(> .law-form-error) textarea:focus { border: 2px solid #b32d2e; }
 @media screen and (max-width: 39.9375em) {
 	/* Near full width with a small inset, and pinned to the top so a tall dialog
 	   opens where the eye already is. */
