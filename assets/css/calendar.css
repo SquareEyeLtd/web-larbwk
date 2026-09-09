@@ -1,301 +1,303 @@
 /* Programme calendar */
 
 .law-cal {
-	color: #292459;
+  color: #292459;
 }
 
 .law-cal a {
-	color: inherit;
-	text-decoration: none;
+  color: inherit;
+  text-decoration: none;
 }
 
 .law-cal__note {
-	font-size: 0.8rem;
-	color: #666;
-	margin: 0 0 1.25rem;
+  font-size: 0.8rem;
+  color: #666;
+  margin: 0 0 1.25rem;
 }
 
 .law-cal__empty {
-	color: #666;
-	font-size: 0.9rem;
-	margin-top: 24px;
+  color: #666;
+  font-size: 0.9rem;
+  margin-top: 24px;
 }
 
 /* The empty state carries its own call to action, so it needs link styling back. */
 .law-cal .law-cal__empty a {
-	color: #ef7d05;
-	text-decoration: underline;
-	font-weight: 600;
+  color: #ef7d05;
+  text-decoration: underline;
+  font-weight: 600;
 }
 
 .law-cal .law-cal__empty a:hover,
 .law-cal .law-cal__empty a:focus {
-	color: #292459;
+  color: #292459;
 }
 
 /* --- Day jump links ------------------------------------------------------ */
 
 .law-cal-daynav {
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 0.6rem;
-	margin: 0 0 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin: 0 0 1rem;
 }
 
 @media (min-width: 48em) {
-	.law-cal-daynav {
-		grid-template-columns: repeat(5, minmax(0, 1fr));
-	}
+  .law-cal-daynav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
 }
 
 .law-cal-daynav__link {
-	display: block;
-	padding: 0.7rem 0.5rem 0.55rem;
-	border: 1px solid #ef7d05;
-	background: #fff;
-	color: #292459;
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 0.75rem;
-	line-height: 1.2;
-	letter-spacing: 0.03em;
-	text-align: center;
-	text-transform: uppercase;
-	transition: background 0.3s ease, color 0.3s ease;
+  display: block;
+  padding: 0.7rem 0.5rem 0.55rem;
+  border: 1px solid #ef7d05;
+  background: #fff;
+  color: #292459;
+  font-family: poppins, sans-serif;
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-align: center;
+  text-transform: uppercase;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
 }
 
 .law-cal-daynav__link:hover,
 .law-cal-daynav__link:focus {
-	background: #ef7d05;
-	color: #fff;
+  background: #ef7d05;
+  color: #fff;
 }
 
 .law-cal-daynav__link.is-empty {
-	border-color: #d5d2de;
-	color: #b3b0bd;
-	cursor: default;
-	pointer-events: none;
+  border-color: #d5d2de;
+  color: #b3b0bd;
+  cursor: default;
+  pointer-events: none;
 }
 
 /* --- Filters ------------------------------------------------------------- */
 
 .law-cal-filterbar {
-	margin: 0 0 1.75rem;
+  margin: 0 0 1.75rem;
 }
 
 /* Dashboard export buttons (templates/account-dashboard.php): one row next
    to their label. app.css makes every .button width: 100%, so size these to
    content like .law-cal-filter-form__actions .button does. */
 .law-cal-export {
-	display: flex;
-	align-items: center;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	margin: -0.75rem 0 1.75rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: -0.75rem 0 1.75rem;
 }
 
 .law-cal-export__label {
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 0.8rem;
-	color: #292459;
+  font-family: poppins, sans-serif;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #292459;
 }
 
 .law-cal-export .button {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: auto;
-	min-height: 2.5rem;
-	margin: 0;
-	padding-top: 0;
-	padding-bottom: 0;
-	box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 2.5rem;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
 }
 
 .law-cal-filterbar__toggle {
-	width: 100%;
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.55rem;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
 }
 
 .law-cal-filterbar__burger {
-	display: inline-flex;
-	flex-direction: column;
-	gap: 3px;
-	width: 14px;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 14px;
 }
 
 .law-cal-filterbar__burger span {
-	display: block;
-	height: 2px;
-	background: currentColor;
-	border-radius: 1px;
+  display: block;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
 }
 
 .law-cal-filterbar__head {
-	display: none;
-	align-items: center;
-	justify-content: space-between;
-	margin-bottom: 1rem;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
 }
 
 .law-cal-filterbar__title {
-	margin: 0;
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 1rem;
-	text-transform: uppercase;
-	color: #292459;
+  margin: 0;
+  font-family: poppins, sans-serif;
+  font-weight: 600;
+  font-size: 1rem;
+  text-transform: uppercase;
+  color: #292459;
 }
 
 .law-cal-filterbar__close {
-	border: 0;
-	background: none;
-	color: #292459;
-	font-size: 1.6rem;
-	line-height: 1;
-	cursor: pointer;
-	padding: 0 0.25rem;
+  border: 0;
+  background: none;
+  color: #292459;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
 }
 
 .law-cal-filter-form {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .law-cal-filter-form__field {
-	margin: 0;
-	min-width: 0;
+  margin: 0;
+  min-width: 0;
 }
 
 .law-cal-filter-form input[type="search"],
 .law-cal-filter-form select {
-	width: 100%;
-	margin: 0;
-	min-height: 2.5rem;
-	border: 1px solid #ef7d05;
-	border-radius: 0;
-	padding: 0.35rem 0.65rem;
-	box-shadow: none;
-	font-family: poppins, sans-serif;
-	font-size: 0.8rem;
-	font-weight: 600;
-	color: #292459;
-	background-color: #fff;
-	box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  min-height: 2.5rem;
+  border: 1px solid #ef7d05;
+  border-radius: 0;
+  padding: 0.35rem 0.65rem;
+  box-shadow: none;
+  font-family: poppins, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #292459;
+  background-color: #fff;
+  box-sizing: border-box;
 }
 
 .law-cal-filter-form input[type="search"]::placeholder {
-	color: #8f8ba6;
-	font-weight: 500;
+  color: #8f8ba6;
+  font-weight: 500;
 }
 
 .law-cal-filter-form select {
-	-webkit-appearance: none;
-	appearance: none;
-	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23292459' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-	/* Foundation sets background-origin: content-box on selects, which would
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23292459' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  /* Foundation sets background-origin: content-box on selects, which would
 	   shift the arrow inwards by the padding. */
-	background-origin: border-box;
-	background-repeat: no-repeat;
-	background-position: right 0.75rem center;
-	background-size: 0.65rem auto;
-	padding-right: 2.1rem;
+  background-origin: border-box;
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  background-size: 0.65rem auto;
+  padding-right: 2.1rem;
 }
 
 .law-cal-filter-form__actions {
-	display: flex;
-	gap: 0.6rem;
-	align-items: center;
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
 }
 
 .law-cal-filter-form__actions .button {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: auto;
-	min-height: 2.5rem;
-	margin: 0;
-	padding-top: 0;
-	padding-bottom: 0;
-	box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 2.5rem;
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  box-sizing: border-box;
 }
 
 /* Desktop: one row, applied instantly (Apply hidden once JS is running). */
 @media (min-width: 64em) {
-	.law-cal-filterbar__toggle {
-		display: none;
-	}
+  .law-cal-filterbar__toggle {
+    display: none;
+  }
 
-	.law-cal-filter-form {
-		flex-direction: row;
-		align-items: center;
-	}
+  .law-cal-filter-form {
+    flex-direction: row;
+    align-items: center;
+  }
 
-	.law-cal-filter-form__field {
-		flex: 1 1 0;
-	}
+  .law-cal-filter-form__field {
+    flex: 1 1 0;
+  }
 
-	.law-cal-filter-form__field--keyword {
-		flex: 1.6 1 0;
-	}
+  .law-cal-filter-form__field--keyword {
+    flex: 1.6 1 0;
+  }
 
-	.law-cal-filter-form__actions {
-		flex: 0 0 auto;
-	}
+  .law-cal-filter-form__actions {
+    flex: 0 0 auto;
+  }
 
-	.is-enhanced .law-cal-filter-form__apply {
-		display: none;
-	}
+  .is-enhanced .law-cal-filter-form__apply {
+    display: none;
+  }
 }
 
 /* Mobile with JS: the panel becomes a modal behind the Filters button. */
 @media (max-width: 63.9375em) {
-	.is-enhanced .law-cal-filterbar__panel {
-		display: none;
-	}
+  .is-enhanced .law-cal-filterbar__panel {
+    display: none;
+  }
 
-	.is-enhanced.is-modal-open .law-cal-filterbar__panel {
-		display: flex;
-		flex-direction: column;
-		justify-content: flex-end;
-		position: fixed;
-		inset: 0;
-		z-index: 1000;
-		background: rgba(41, 36, 89, 0.55);
-	}
+  .is-enhanced.is-modal-open .law-cal-filterbar__panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(41, 36, 89, 0.55);
+  }
 
-	.is-enhanced.is-modal-open .law-cal-filterbar__head {
-		display: flex;
-		background: #fff;
-		border-radius: 8px 8px 0 0;
-		margin: 0;
-		padding: 1.1rem 1.25rem 0.75rem;
-	}
+  .is-enhanced.is-modal-open .law-cal-filterbar__head {
+    display: flex;
+    background: #fff;
+    border-radius: 8px 8px 0 0;
+    margin: 0;
+    padding: 1.1rem 1.25rem 0.75rem;
+  }
 
-	.is-enhanced.is-modal-open .law-cal-filter-form {
-		background: #fff;
-		padding: 0 1.25rem 1.5rem;
-		max-height: 75vh;
-		overflow-y: auto;
-	}
+  .is-enhanced.is-modal-open .law-cal-filter-form {
+    background: #fff;
+    padding: 0 1.25rem 1.5rem;
+    max-height: 75vh;
+    overflow-y: auto;
+  }
 
-	.law-cal-modal-open,
-	.law-cal-modal-open body {
-		overflow: hidden;
-	}
+  .law-cal-modal-open,
+  .law-cal-modal-open body {
+    overflow: hidden;
+  }
 
-	.law-cal-filter-form__actions {
-		margin-top: 0.35rem;
-	}
+  .law-cal-filter-form__actions {
+    margin-top: 0.35rem;
+  }
 
-	.law-cal-filter-form__actions .button {
-		flex: 1 1 0;
-	}
+  .law-cal-filter-form__actions .button {
+    flex: 1 1 0;
+  }
 }
 
 /* --- Day sections -------------------------------------------------------- */
@@ -304,330 +306,335 @@
    anchor on the site, including the day links. */
 
 .law-cal-day-bar {
-	margin: 2.25rem 0 1rem;
-	padding: 1rem 1.5rem;
-	background: #292459;
-	color: #fff;
-	font-family: poppins, sans-serif;
-	font-size: 1.4rem;
-	font-weight: 600;
-	line-height: 1.2;
+  margin: 2.25rem 0 1rem;
+  padding: 1rem 1.5rem;
+  background: #292459;
+  color: #fff;
+  font-family: poppins, sans-serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .law-cal-day-section:first-of-type .law-cal-day-bar {
-	margin-top: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .law-cal-slot-bar {
-	margin: 1.5rem 0 1rem;
-	padding: 0.6rem 1.5rem;
-	background: #ef7d05;
-	color: #fff;
-	font-family: poppins, sans-serif;
-	font-size: 1rem;
-	font-weight: 600;
-	line-height: 1.3;
+  margin: 1.5rem 0 1rem;
+  padding: 0.6rem 1.5rem;
+  background: #ef7d05;
+  color: #fff;
+  font-family: poppins, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 /* --- Event card (parts/loop/event.php) ----------------------------------- */
 
 .law-event-card {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-	padding: 1.25rem 1.5rem;
-	margin: 0 0 1rem;
-	background: #ececf1;
-	border: 2px solid #292459;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1rem;
+  background: #ececf1;
+  border: 2px solid #292459;
 }
 
 @media (min-width: 48em) {
-	.law-event-card {
-		flex-direction: row;
-		align-items: center;
-		justify-content: space-between;
-		gap: 1.5rem;
-	}
+  .law-event-card {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }
 }
 
 /* Sponsored cards sit on the same grey fill as the rest; the orange border is
    the only difference, so the listing reads as one surface. */
 .law-event-card--sponsored {
-	border-color: #ef7d05;
+  border-color: #ef7d05;
 }
 
 .law-event-card__body {
-	min-width: 0;
-	flex: 1 1 auto;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .law-event-card__title {
-	margin: 0 0 0.35rem;
-	font-family: poppins, sans-serif;
-	font-size: 1.05rem;
-	font-weight: 600;
-	line-height: 1.3;
-	color: #292459;
+  margin: 0 0 0.35rem;
+  font-family: poppins, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #292459;
 }
 
 .law-event-card__title a:hover,
 .law-event-card__title a:focus {
-	color: #ef7d05;
+  color: #ef7d05;
 }
 
 .law-event-card__time {
-	margin: 0 0 0.25rem;
-	color: #ef7d05;
-	font-family: poppins, sans-serif;
-	font-size: 0.9rem;
-	font-weight: 600;
-	line-height: 1.35;
+  margin: 0 0 0.25rem;
+  color: #ef7d05;
+  font-family: poppins, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .law-event-card__meta {
-	margin: 0 0 0.15rem;
-	color: #555;
-	font-size: 0.85rem;
-	line-height: 1.4;
+  margin: 0 0 0.15rem;
+  color: #555;
+  font-size: 0.85rem;
+  line-height: 1.4;
 }
 
 /* Speaker profile "Speaking at" cards: the person's organisation and position
    at this particular event, separated from the venue/host lines. */
 .law-event-card__divider {
-	border: 0;
-	border-top: 1px solid #dcdcdc;
-	margin: 0.6rem 0 0.5rem;
+  border: 0;
+  border-top: 1px solid #dcdcdc;
+  margin: 0.6rem 0 0.5rem;
 }
 
 .law-event-card__meta--speaker {
-	color: #333;
+  color: #333;
 }
 
 .law-event-card__actions {
-	display: flex;
-	flex: 0 0 auto;
-	gap: 0.6rem;
-	align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.6rem;
+  align-items: center;
 }
 
 .law-event-card__actions .button {
-	width: auto;
-	margin: 0;
-	white-space: nowrap;
+  width: auto;
+  margin: 0;
+  white-space: nowrap;
 }
 
 .law-event-card__button--register {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
 }
 
 .law-event-card__arrow {
-	width: 0.7em;
-	height: 0.7em;
+  width: 0.7em;
+  height: 0.7em;
 }
 
 @media (max-width: 47.9375em) {
-	.law-event-card__actions .button {
-		flex: 1 1 0;
-	}
+  .law-event-card__actions .button {
+    flex: 1 1 0;
+  }
 }
 
 .law-event-card .law-cal-card__badge {
-	position: static;
-	display: inline-block;
-	margin: 0 0 0.4rem;
+  position: static;
+  display: inline-block;
+  margin: 0 0 0.4rem;
 }
 
 .law-event-card .law-cal-card__sponsored {
-	position: static;
-	display: inline-block;
-	margin-top: 0.5rem;
+  position: static;
+  display: inline-block;
+  margin-top: 0.5rem;
 }
 
 /* --- Host events dashboard (templates/account-events.php) ----------------- */
 
 .law-account-events__toolbar {
-	display: flex;
-	justify-content: flex-end;
-	margin: 0 0 1.5rem;
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 1.5rem;
 }
 
 .law-account-events__toolbar .button {
-	width: auto;
-	margin: 0;
+  width: auto;
+  margin: 0;
 }
 
 /* --- Loading skeleton ----------------------------------------------------- */
 
 .law-cal-events.is-loading {
-	pointer-events: none;
+  pointer-events: none;
 }
 
 .law-cal-skeleton__bar,
 .law-cal-skeleton__card,
 .law-cal-skeleton__line {
-	position: relative;
-	overflow: hidden;
-	background: #ececf1;
+  position: relative;
+  overflow: hidden;
+  background: #ececf1;
 }
 
 .law-cal-skeleton__bar--day {
-	height: 3.5rem;
-	margin: 2.25rem 0 1rem;
-	background: #d8d5e6;
+  height: 3.5rem;
+  margin: 2.25rem 0 1rem;
+  background: #d8d5e6;
 }
 
 .law-cal-skeleton__bar:first-child {
-	margin-top: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .law-cal-skeleton__bar--slot {
-	height: 2.5rem;
-	margin: 1.5rem 0 1rem;
-	background: #f3ddc6;
+  height: 2.5rem;
+  margin: 1.5rem 0 1rem;
+  background: #f3ddc6;
 }
 
 .law-cal-skeleton__card {
-	padding: 1.25rem 1.5rem;
-	margin: 0 0 1rem;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1rem;
 }
 
 /* Table-shaped skeleton (data-law-skeleton="table"): the committee dashboard. */
 .law-cal-skeleton__bar--table-head {
-	height: 2.4rem;
-	margin: 0 0 0.35rem;
-	background: #d8d5e6;
+  height: 2.4rem;
+  margin: 0 0 0.35rem;
+  background: #d8d5e6;
 }
 
 .law-cal-skeleton__bar--table-row {
-	height: 3.1rem;
-	margin: 0 0 0.35rem;
+  height: 3.1rem;
+  margin: 0 0 0.35rem;
 }
 
 .law-cal-skeleton__line {
-	height: 0.9rem;
-	background: #d8d5e6;
-	border-radius: 3px;
+  height: 0.9rem;
+  background: #d8d5e6;
+  border-radius: 3px;
 }
 
 .law-cal-skeleton__line--title {
-	width: 55%;
-	margin-bottom: 0.6rem;
+  width: 55%;
+  margin-bottom: 0.6rem;
 }
 
 .law-cal-skeleton__line--meta {
-	width: 30%;
+  width: 30%;
 }
 
 .law-cal-skeleton__bar::after,
 .law-cal-skeleton__card::after {
-	content: "";
-	position: absolute;
-	inset: 0;
-	transform: translateX(-100%);
-	background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-	animation: law-cal-shimmer 1.2s infinite;
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.55),
+    transparent
+  );
+  animation: law-cal-shimmer 1.2s infinite;
 }
 
 @keyframes law-cal-shimmer {
-	100% {
-		transform: translateX(100%);
-	}
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.law-cal-skeleton__bar::after,
-	.law-cal-skeleton__card::after {
-		animation: none;
-	}
+  .law-cal-skeleton__bar::after,
+  .law-cal-skeleton__card::after {
+    animation: none;
+  }
 }
 
 /* --- Status badges (committee) and sponsored tag -------------------------- */
 
 .law-cal-card__sponsored {
-	position: absolute;
-	right: 12px;
-	bottom: 10px;
-	font-family: poppins, sans-serif;
-	font-size: 10px;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.03em;
-	padding: 3px 8px;
-	border-radius: 10px;
-	background: #292459;
-	color: #fff;
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  font-family: poppins, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: #292459;
+  color: #fff;
 }
 
 .law-cal-card__badge {
-	position: absolute;
-	top: 12px;
-	right: 14px;
-	font-size: 10px;
-	font-weight: 600;
-	text-transform: uppercase;
-	padding: 3px 8px;
-	border-radius: 10px;
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 10px;
 }
 
 .law-cal-card__badge--confirmed {
-	background: #292459;
-	color: #fff;
+  background: #292459;
+  color: #fff;
 }
 
 .law-cal-card__badge--approved {
-	background: #fff;
-	color: #ef7d05;
-	border: 1px solid #ef7d05;
+  background: #fff;
+  color: #ef7d05;
+  border: 1px solid #ef7d05;
 }
 
 .law-cal-card__badge--proposed {
-	background: #f4f2fa;
-	color: #292459;
-	border: 1px solid #c9c5d6;
+  background: #f4f2fa;
+  color: #292459;
+  border: 1px solid #c9c5d6;
 }
 
 .law-cal-card__badge--sent-back {
-	background: #fdeee0;
-	color: #ef7d05;
+  background: #fdeee0;
+  color: #ef7d05;
 }
 
 .law-cal-card__badge--rejected {
-	background: #f3f3f3;
-	color: #666;
+  background: #f3f3f3;
+  color: #666;
 }
 
 .law-cal-card__badge--cancelled {
-	background: #fdeaea;
-	color: #a12622;
+  background: #fdeaea;
+  color: #a12622;
 }
 
 /* Waiting, not refused: the "pending" amber the sent-back badge uses, rather
    than an alarm colour. The earlier lilac was near-invisible against the event
    card's own #ececf1 tint, which is the one place this badge has to be read. */
 .law-cal-card__badge--waitlisted {
-	background: #fdeee0;
-	color: #a35300;
+  background: #fdeee0;
+  color: #a35300;
 }
 
 /* "Invited by X" on a colleague's row, and the press pass: quiet tags that
    sit inline with the attendee's name rather than competing with it. */
 .law-booking-table__invited {
-	background: #f4f2fa;
-	color: #292459;
-	font-weight: 400;
-	/* A person's name, not a label: the badge component uppercases by default. */
-	text-transform: none;
+  background: #f4f2fa;
+  color: #292459;
+  font-weight: 400;
+  /* A person's name, not a label: the badge component uppercases by default. */
+  text-transform: none;
 }
 
 /* Sold beyond capacity, after a host promoted someone off the waitlist onto a
    full event. Deliberate, but it must never read as a normal count. */
 .law-booking-table__over {
-	color: #a12622;
-	font-weight: 700;
+  color: #a12622;
+  font-weight: 700;
 }
 
 /* --- Edit link (admins/editors) ------------------------------------------ */
@@ -635,14 +642,14 @@
 .law-cal a.law-cal-edit,
 .law-event-card__title a.law-cal-edit,
 .law-cal-detail__title a.law-cal-edit {
-	display: inline-block;
-	margin-left: 0.45em;
-	font-size: 0.7rem;
-	font-weight: 500;
-	line-height: 1;
-	color: #888;
-	white-space: nowrap;
-	vertical-align: middle;
+  display: inline-block;
+  margin-left: 0.45em;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1;
+  color: #888;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .law-cal a.law-cal-edit:hover,
@@ -651,8 +658,8 @@
 .law-event-card__title a.law-cal-edit:focus,
 .law-cal-detail__title a.law-cal-edit:hover,
 .law-cal-detail__title a.law-cal-edit:focus {
-	color: #292459;
-	text-decoration: underline;
+  color: #292459;
+  text-decoration: underline;
 }
 
 /* --- Single event view ---------------------------------------------------- */
@@ -666,116 +673,116 @@
    The .law-cal selectors outweigh ".law-cal a { color: inherit }". */
 .law-back-link,
 .law-cal .law-back-link {
-	display: inline-block;
-	margin-bottom: 1rem;
-	font-family: poppins, sans-serif;
-	font-size: 0.9rem;
-	font-weight: 600;
-	line-height: 1.2;
-	color: #ef7d05;
-	text-transform: uppercase;
-	text-decoration: none;
+  display: inline-block;
+  margin-bottom: 1rem;
+  font-family: poppins, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #ef7d05;
+  text-transform: uppercase;
+  text-decoration: none;
 }
 
 .law-back-link::before {
-	content: "";
-	display: inline-block;
-	width: 0.45em;
-	height: 0.45em;
-	margin-right: 0.5em;
-	border-left: 2px solid currentColor;
-	border-bottom: 2px solid currentColor;
-	transform: rotate(45deg);
-	vertical-align: 0.08em;
+  content: "";
+  display: inline-block;
+  width: 0.45em;
+  height: 0.45em;
+  margin-right: 0.5em;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  vertical-align: 0.08em;
 }
 
 .law-back-link:hover,
 .law-back-link:focus,
 .law-cal .law-back-link:hover,
 .law-cal .law-back-link:focus {
-	color: #292459;
+  color: #292459;
 }
 
 .law-cal-detail__admin {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	margin: 0 0 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
 }
 
 .law-cal-detail__admin .law-cal-card__badge {
-	position: static;
-	display: inline-block;
+  position: static;
+  display: inline-block;
 }
 
 .law-cal-detail__actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.75rem;
-	margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 2rem;
 }
 
 .law-cal-detail__actions .button {
-	width: auto;
-	margin: 0;
+  width: auto;
+  margin: 0;
 }
 
 .law-cal-venue {
-	max-width: 48rem;
-	margin-top: 0.25rem;
+  max-width: 48rem;
+  margin-top: 0.25rem;
 }
 
 .law-cal-venue__address {
-	margin: 0 0 0.85rem;
-	color: #292459;
-	font-size: 1rem;
-	line-height: 1.45;
+  margin: 0 0 0.85rem;
+  color: #292459;
+  font-size: 1rem;
+  line-height: 1.45;
 }
 
 .law-cal-venue__map {
-	position: relative;
-	width: 100%;
-	aspect-ratio: 16 / 9;
-	overflow: hidden;
-	border: 1px solid #292459;
-	border-radius: 6px;
-	background: #ece9f5;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid #292459;
+  border-radius: 6px;
+  background: #ece9f5;
 }
 
 .law-cal-venue__map iframe {
-	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
-	border: 0;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
 }
 
 .law-cal-venue__open {
-	margin: 0.55rem 0 0;
-	font-size: 0.8rem;
+  margin: 0.55rem 0 0;
+  font-size: 0.8rem;
 }
 
 .law-cal-venue__open a {
-	color: #ef7d05;
-	font-weight: 600;
+  color: #ef7d05;
+  font-weight: 600;
 }
 
 .law-cal-venue__open a:hover,
 .law-cal-venue__open a:focus {
-	color: #292459;
+  color: #292459;
 }
 
 .law-cal-detail__body {
-	max-width: 65ch;
-	font-size: 1rem;
-	line-height: 1.5;
-	color: #292459;
+  max-width: 65ch;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #292459;
 }
 
 .law-cal-detail__body p,
 .law-cal-detail__body li {
-	margin: 0 0 1rem;
-	line-height: 1.5;
+  margin: 0 0 1rem;
+  line-height: 1.5;
 }
 
 /* --- Speaker cards (parts/events/speaker-card.php) ---
@@ -785,342 +792,342 @@
    Used by the event's own Speakers list and by every session panel, so the
    same rules have to work at both widths. */
 .law-cal-speakers {
-	list-style: none;
-	padding: 0;
-	margin: 0;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
 .law-cal-speakers--cards {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr);
-	gap: 1.75rem 2rem;
-	padding-top: 0.35rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.75rem 2rem;
+  padding-top: 0.35rem;
 }
 
 @media screen and (min-width: 48em) {
-	.law-cal-speakers--cards {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
+  .law-cal-speakers--cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* margin, not just the grid gap: the shared .law-cal-speakers list rules and
    the theme's list resets both set one, and a stray margin would double the
    gap on one axis only. */
 .law-cal-speakers__card {
-	margin: 0;
-	padding: 0.1rem 0 0.2rem 1.25rem;
-	border-left: 3px solid #ef7d05;
-	font-size: 1rem;
-	line-height: 1.4;
+  margin: 0;
+  padding: 0.1rem 0 0.2rem 1.25rem;
+  border-left: 3px solid #ef7d05;
+  font-size: 1rem;
+  line-height: 1.4;
 }
 
 .law-cal-speakers__head {
-	display: flex;
-	gap: 1rem;
-	align-items: center;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
 }
 
 .law-cal-speakers__photo {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex: 0 0 5.5rem;
-	width: 5.5rem;
-	height: 5.5rem;
-	background: rgba(38, 30, 91, 0.15);
-	overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 5.5rem;
+  width: 5.5rem;
+  height: 5.5rem;
+  background: rgba(38, 30, 91, 0.15);
+  overflow: hidden;
 }
 
 /* object-fit because the card asks for the uncropped 'medium' size, not the
    square-cropped thumbnail (law_speaker_card()). */
 .law-cal-speakers__photo img {
-	display: block;
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-	object-position: center top;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
 }
 
 .law-cal-speakers__initials {
-	color: rgba(41, 36, 89, 0.5);
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 1.6rem;
-	letter-spacing: 0.05em;
+  color: rgba(41, 36, 89, 0.5);
+  font-family: poppins, sans-serif;
+  font-weight: 600;
+  font-size: 1.6rem;
+  letter-spacing: 0.05em;
 }
 
 .law-cal-speakers__body {
-	min-width: 0;
-	flex: 1;
-	overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
 }
 
 .law-cal-speakers__name {
-	display: block;
-	color: #ef7d05;
-	font-family: poppins, sans-serif;
-	font-weight: 600;
-	font-size: 1.05rem;
-	line-height: 1.3;
+  display: block;
+  color: #ef7d05;
+  font-family: poppins, sans-serif;
+  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1.3;
 }
 
 /* The role at this event, in brackets after the name: quiet, so the orange
    name keeps the weight and the tag reads as a qualifier of it. */
 .law-cal-speakers__tag {
-	margin-left: 0.3rem;
-	color: #666;
-	font-weight: 400;
-	font-size: 0.8rem;
-	white-space: nowrap;
+  margin-left: 0.3rem;
+  color: #666;
+  font-weight: 400;
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .law-cal-speakers a {
-	color: #ef7d05;
-	font-weight: 600;
+  color: #ef7d05;
+  font-weight: 600;
 }
 
 .law-cal-speakers a:hover,
 .law-cal-speakers a:focus {
-	color: #292459;
+  color: #292459;
 }
 
 .law-cal-speakers__role {
-	display: block;
-	margin-top: 0.15rem;
-	color: #666;
-	font-size: 0.85rem;
-	font-weight: 400;
+  display: block;
+  margin-top: 0.15rem;
+  color: #666;
+  font-size: 0.85rem;
+  font-weight: 400;
 }
 
 .law-cal-speakers__bio {
-	margin: 0.85rem 0 0;
-	color: #292459;
-	font-size: 0.9rem;
-	line-height: 1.5;
+  margin: 0.85rem 0 0;
+  color: #292459;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 /* A link in all but element: .law-cal a never matches a button, and Foundation
    has no button reset, so every inherited property is restated. */
 .law-cal .law-cal-speakers__biolink {
-	display: inline;
-	margin: 0.35rem 0 0;
-	padding: 0;
-	background: none;
-	border: 0;
-	color: #ef7d05;
-	font: inherit;
-	font-size: 0.9rem;
-	font-weight: 600;
-	text-decoration: underline;
-	cursor: pointer;
+  display: inline;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: #ef7d05;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .law-cal .law-cal-speakers__biolink:hover,
 .law-cal .law-cal-speakers__biolink:focus {
-	color: #292459;
+  color: #292459;
 }
 
 .law-cal .law-cal-speakers__biolink:focus-visible {
-	outline: 2px solid #292459;
-	outline-offset: 2px;
+  outline: 2px solid #292459;
+  outline-offset: 2px;
 }
 
 /* Foundation's [hidden] { display: none } and the rule above have the same
    specificity, so without !important a JS-only opener would show through
    before its modal is confirmed (the same reason law-modal.css:10 shouts). */
 [data-law-modal-enhanced][hidden] {
-	display: none !important;
+  display: none !important;
 }
 
 /* The no-JS path (law-modal.js hides it when the script runs). The marker
    rules further down are scoped to .law-cal-session__summary, so this summary
    would otherwise keep the browser's default triangle. */
 .law-cal-speakers__fallback {
-	margin-top: 0.35rem;
+  margin-top: 0.35rem;
 }
 
 .law-cal-speakers__fallback > summary {
-	display: inline-block;
-	color: #ef7d05;
-	font-size: 0.9rem;
-	font-weight: 600;
-	text-decoration: underline;
-	cursor: pointer;
-	list-style: none;
+  display: inline-block;
+  color: #ef7d05;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  list-style: none;
 }
 
 .law-cal-speakers__fallback > summary::-webkit-details-marker {
-	display: none;
+  display: none;
 }
 
 .law-cal-speakers__fallback > summary::marker {
-	content: '';
+  content: "";
 }
 
 .law-cal-speakers__fallback > summary:focus-visible {
-	outline: 2px solid #292459;
-	outline-offset: 2px;
+  outline: 2px solid #292459;
+  outline-offset: 2px;
 }
 
 .law-cal-speakers__fullbio {
-	margin-top: 0.5rem;
-	color: #292459;
-	font-size: 0.9rem;
-	line-height: 1.5;
+  margin-top: 0.5rem;
+  color: #292459;
+  font-size: 0.9rem;
+  line-height: 1.5;
 }
 
 .law-cal-speakers__fullbio p {
-	margin: 0 0 0.75rem;
-	line-height: 1.5;
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
 }
 
 .law-cal-speakers__fullbio p:last-child {
-	margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 /* No 65ch cap here, unlike the prose above it: this section wraps only the
    Speakers heading and the two-column card grid, which needs the whole
    large-8 column. Its one consumer is parts/calendar-body.php. */
 .law-cal-acc {
-	margin-top: 0.5rem;
-	padding: 0;
+  margin-top: 0.5rem;
+  padding: 0;
 }
 
 .law-cal-acc__heading {
-	margin: 0;
-	padding: 20px 0 0.65rem;
-	color: #292459;
-	font-family: poppins, sans-serif;
-	font-size: 1.4rem;
-	font-weight: 600;
-	line-height: 1.1;
+  margin: 0;
+  padding: 20px 0 0.65rem;
+  color: #292459;
+  font-family: poppins, sans-serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.1;
 }
 
 .law-cal-sessions {
-	margin-top: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 .law-cal-session {
-	margin: 0;
-	border-bottom: 1px solid #ef7d05;
+  margin: 0;
+  border-bottom: 1px solid #ef7d05;
 }
 
 .law-cal-session__summary {
-	display: flex;
-	align-items: flex-start;
-	justify-content: space-between;
-	gap: 1rem;
-	padding: 0.85rem 0;
-	color: #292459;
-	cursor: pointer;
-	list-style: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  color: #292459;
+  cursor: pointer;
+  list-style: none;
 }
 
 .law-cal-session__summary::-webkit-details-marker,
 .law-cal-session__summary::marker {
-	display: none;
-	content: none;
+  display: none;
+  content: none;
 }
 
 .law-cal-session__summary:hover,
 .law-cal-session__summary:hover .law-cal-session__title {
-	color: #ef7d05;
+  color: #ef7d05;
 }
 
 .law-cal-session__summary:focus {
-	outline: none;
+  outline: none;
 }
 
 .law-cal-session__summary:focus-visible {
-	outline: 2px solid #292459;
-	outline-offset: 2px;
+  outline: 2px solid #292459;
+  outline-offset: 2px;
 }
 
 .law-cal-session__summary::after {
-	content: '';
-	width: 0.45rem;
-	height: 0.45rem;
-	margin-top: 0.45rem;
-	border-right: 2px solid #ef7d05;
-	border-bottom: 2px solid #ef7d05;
-	transform: rotate(45deg);
-	transition: transform 0.2s ease;
-	flex-shrink: 0;
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-top: 0.45rem;
+  border-right: 2px solid #ef7d05;
+  border-bottom: 2px solid #ef7d05;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
 .law-cal-session[open] .law-cal-session__summary::after {
-	transform: translateY(0.15rem) rotate(-135deg);
+  transform: translateY(0.15rem) rotate(-135deg);
 }
 
 .law-cal-session__heading {
-	display: flex;
-	flex-direction: column;
-	gap: 0.15rem;
-	min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
 }
 
 .law-cal-session__title {
-	margin: 0;
-	color: #292459;
-	font-family: poppins, sans-serif;
-	font-size: 1.05rem;
-	font-weight: 600;
-	line-height: 1.25;
+  margin: 0;
+  color: #292459;
+  font-family: poppins, sans-serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
 }
 
 .law-cal-session__time {
-	margin: 0;
-	color: #666;
-	font-size: 0.85rem;
-	font-weight: 500;
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .law-cal-session__panel {
-	padding: 0 0 1.1rem;
+  padding: 0 0 1.1rem;
 }
 
 /* The 65ch measure sits on the prose rather than on .law-cal-sessions: the
    accordion's summary rows carry the orange rule, so capping the whole list
    would leave short rules over a full-width card grid. */
 .law-cal-session__body {
-	max-width: 65ch;
-	font-size: 1rem;
-	line-height: 1.5;
-	color: #292459;
+  max-width: 65ch;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: #292459;
 }
 
 .law-cal-session__body p,
 .law-cal-session__body li {
-	margin: 0 0 0.75rem;
-	line-height: 1.5;
+  margin: 0 0 0.75rem;
+  line-height: 1.5;
 }
 
 .law-cal-session__body p:last-child {
-	margin-bottom: 0;
+  margin-bottom: 0;
 }
 
 #pages .hero .law-cal-banner-title {
-	margin: 0;
-	color: #ffffff;
-	opacity: 1;
-	text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-	line-height: 1.1;
-	font-family: poppins, sans-serif;
-	font-weight: 500;
-	font-style: normal;
-	font-size: 2.8rem;
+  margin: 0;
+  color: #ffffff;
+  opacity: 1;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  line-height: 1.1;
+  font-family: poppins, sans-serif;
+  font-weight: 500;
+  font-style: normal;
+  font-size: 2.8rem;
 }
 
 .law-cal .button {
-	width: auto;
+  width: auto;
 }
 
 /* Plain .button falls back to Foundation's blue hover; match the day links. */
 .law-cal .button:hover,
 .law-cal .button:focus {
-	background: #ef7d05;
-	border-color: #ef7d05;
-	color: #fff;
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #fff;
 }
 
 /* Bookings (EVENTS_BOOKINGS.md §7.1): the five-state control in the single
@@ -1128,14 +1135,35 @@
 /* The state line ("Bookings open soon", "This event has taken place",
    "You're booked on this event") at the accordion-heading scale: the theme has
    no bespoke display text, and this is its largest in-body idiom. */
-.law-booking-state { font-family: "Poppins", sans-serif; font-size: 1.4rem; font-weight: 600; color: #1a1a3d; margin: 0 0 .35rem; flex-basis: 100%; }
-.law-booking-substate { color: #1a1a3d; margin: 0 0 .75rem; flex-basis: 100%; }
+.law-booking-state {
+  font-family: "Poppins", sans-serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  color: #1a1a3d;
+  margin: 0 0 0.35rem;
+  flex-basis: 100%;
+}
+.law-booking-substate {
+  color: #1a1a3d;
+  margin: 0 0 0.75rem;
+  flex-basis: 100%;
+}
 /* An inert control: visibly disabled, no pointer, out of the interaction set.
    Used by the programme card's placeholder actions. */
-.law-cal .button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; pointer-events: none; }
+.law-cal .button[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 /* The inline (?law_book=1) booking form replaces the action row's buttons. */
-.law-booking-inline { flex-basis: 100%; max-width: 44rem; margin-top: .5rem; }
-.law-booking-inline .law-modal__actions { justify-content: flex-start; }
+.law-booking-inline {
+  flex-basis: 100%;
+  max-width: 44rem;
+  margin-top: 0.5rem;
+}
+.law-booking-inline .law-modal__actions {
+  justify-content: flex-start;
+}
 
 /* --- Event details box (parts/calendar-event-details.php) ------------------ */
 
@@ -1152,13 +1180,13 @@
    width (media queries add no specificity), so padding-top is left alone
    deliberately, letting app.css's 190px/170px steps keep cascading. */
 #pages .hero.law-event-hero .grid-container {
-	padding-bottom: 80px;
+  padding-bottom: 80px;
 }
 
 @media screen and (max-width: 63.9375em) {
-	#pages .hero.law-event-hero .grid-container {
-		padding-bottom: 50px;
-	}
+  #pages .hero.law-event-hero .grid-container {
+    padding-bottom: 50px;
+  }
 }
 
 /* A solid surface is the whole point: body-size text cannot meet 4.5:1 over a
@@ -1167,93 +1195,93 @@
    (.law-event-card), so the detail view opens on the same surface the visitor
    just clicked. Square and shadowless, like every other panel in this file. */
 .law-event-details {
-	margin-top: 2rem;
-	padding: 1.75rem 2rem;
-	background: #ececf1;
-	border-top: 4px solid #ef7d05;
-	border-radius: 0;
-	/* Explicit, not just inherited from the .law-cal class the box also carries:
+  margin-top: 2rem;
+  padding: 1.75rem 2rem;
+  background: #ececf1;
+  border-top: 4px solid #ef7d05;
+  border-radius: 0;
+  /* Explicit, not just inherited from the .law-cal class the box also carries:
 	   body sets color #ffffff for the dark hero, so anything added here later
 	   would otherwise default to white on a near-white panel. */
-	color: #292459;
+  color: #292459;
 }
 
 /* Explicit columns, not auto-fit: an event with only two populated facts would
    stretch two auto-fit cells to ~500px each and look broken. Six facts divide
    cleanly by three, which is why Places remaining is not one of them. */
 .law-event-details__grid {
-	display: grid;
-	gap: 1.75rem 2rem;
-	/* Foundation sets dl { margin-bottom: 1rem; line-height: 1.6 }. */
-	margin: 0;
-	line-height: 1.35;
+  display: grid;
+  gap: 1.75rem 2rem;
+  /* Foundation sets dl { margin-bottom: 1rem; line-height: 1.6 }. */
+  margin: 0;
+  line-height: 1.35;
 }
 
 @media screen and (min-width: 40em) {
-	.law-event-details__grid {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
+  .law-event-details__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media screen and (min-width: 64em) {
-	.law-event-details__grid {
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-	}
+  .law-event-details__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 /* Scoped, not a bare dt: Foundation's "dl dt" is (0,0,2) and sets
    font-weight: bold and margin-bottom: .3rem, which a bare dt cannot beat. */
 .law-event-details__grid dt {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	margin: 0;
-	font-family: "Poppins", sans-serif;
-	font-size: 0.8rem;
-	font-weight: 600;
-	line-height: 1.2;
-	letter-spacing: 0.03em;
-	text-transform: uppercase;
-	/* 6.0:1 on #ececf1. Reuses the muted navy already in event-form.css rather
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-family: "Poppins", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  /* 6.0:1 on #ececf1. Reuses the muted navy already in event-form.css rather
 	   than adding another near-identical hex to a theme with no colour tokens. */
-	color: #5a5a7a;
+  color: #5a5a7a;
 }
 
 .law-event-details__grid dd {
-	margin: 0.3rem 0 0;
-	font-size: 1.1rem;
-	color: #292459;
-	/* Venue is free text and can be one long unbroken string. */
-	overflow-wrap: break-word;
+  margin: 0.3rem 0 0;
+  font-size: 1.1rem;
+  color: #292459;
+  /* Venue is free text and can be one long unbroken string. */
+  overflow-wrap: break-word;
 }
 
 .law-event-details__icon {
-	flex: 0 0 auto;
+  flex: 0 0 auto;
 }
 
 /* .law-cal (which this box carries) strips underlines from links, so the jump
    to the Venue section further down needs its affordance back. */
 .law-event-details .law-event-details__link {
-	color: #292459;
-	text-decoration: underline;
-	text-decoration-thickness: 1px;
-	text-underline-offset: 2px;
+  color: #292459;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
 }
 
 .law-event-details .law-event-details__link:hover,
 .law-event-details .law-event-details__link:focus {
-	color: #ef7d05;
+  color: #ef7d05;
 }
 
 /* The booking control's row. Reuses .law-cal-detail__actions for its flex box
    and its ".button { width: auto }" reset (.button is width: 100% in app.css),
    so this only adds the separation from the facts above. */
 .law-event-details .law-event-details__footer {
-	align-items: center;
-	justify-content: space-between;
-	margin-top: 1.5rem;
-	padding-top: 1.25rem;
-	border-top: 1px solid #d5d2de;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid #d5d2de;
 }
 
 /* The five booking states, not just the bookable one. .law-booking-state and
@@ -1267,40 +1295,40 @@
    places left. You can bring up to 3 colleagues."), which is a sentence and
    must not be sized up like the standalone count. */
 .law-event-details__footer > .law-booking-substate {
-	flex: 1 1 16rem;
-	margin: 0;
-	/* The one emphasised value in the box. Every fact in the grid is the same
+  flex: 1 1 16rem;
+  margin: 0;
+  /* The one emphasised value in the box. Every fact in the grid is the same
 	   size, so availability is what carries the size step: it is the only
 	   number that changes, and the only one that decides anything. */
-	font-size: 1.3rem;
-	font-weight: 500;
-	color: #292459;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #292459;
 }
 
 /* 1.4rem matches .law-cal-acc__heading, the page's h2 size, so inside the box it
    would outshout the content it introduces. */
 .law-event-details .law-booking-state {
-	font-size: 1.15rem;
-	margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  margin: 0 0 0.35rem;
 }
 
 /* Redirect notices (the no-JS booking results) are emitted first and carry no
    flex-basis of their own, so without this they sit inline beside the state
    line and squash. */
 .law-event-details .law-form-notice {
-	flex-basis: 100%;
-	margin-bottom: 0;
+  flex-basis: 100%;
+  margin-bottom: 0;
 }
 
 @media screen and (max-width: 39.9375em) {
-	.law-event-details {
-		padding: 1.25rem;
-	}
+  .law-event-details {
+    padding: 1.25rem;
+  }
 
-	/* Full-width buttons on phones, as the programme cards already do. Three
+  /* Full-width buttons on phones, as the programme cards already do. Three
 	   classes deep so it beats both .law-cal .button and
 	   .law-cal-detail__actions .button rather than relying on source order. */
-	.law-event-details .law-event-details__footer .button {
-		width: 100%;
-	}
+  .law-event-details .law-event-details__footer .button {
+    width: 100%;
+  }
 }
