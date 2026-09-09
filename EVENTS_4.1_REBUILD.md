@@ -413,10 +413,13 @@ special-casing.
 developer):
 
 - `law_event_type`: from field 63 (Event type): Seminar / talk, Social event, Other
-- `law_sector`: from field 60 (Sector), 11 terms
+- `law_sector`: from field 60 (Sector), 10 terms
 - ~~`law_event_category`: from field 116 (Event category): LAW event, Hosted
-  event, Session-level agendas~~ — built for parity, then removed on
-  9 September 2026 as unused (see EVENTS_FUNC.md, `post-types.php`)
+  event, Session-level agendas~~ — built for parity, removed on 9 September
+  2026 as unused, and replaced the same day by two committee-only boolean
+  switches rather than a vocabulary (Denis: "let not use categories at all"):
+  `_law_is_law_event` and `_law_session_agenda`. Hosted is the absence of the
+  first, so there is no Hosted term. See EVENTS_FUNC.md, `meta.php`.
 - `law_year`: programme year (e.g. `2026`). Every event, speaker link and (4.2)
   booking is year-tagged, which is what makes the 4.2 §3.8 archive requirement
   cheap later.
@@ -506,10 +509,13 @@ been all along.
   form 9 (Event > session) fields 4 (Session title) and 5 (Description).
 - Not publicly queryable on their own; rendered inside the event page as now.
 - This is the 4.2 §3.6 enhanced agenda structure. The "enhanced agenda is
-  opt-in per event" switch is simply whether sessions exist. (The
-  `law_event_category` term Session-level agendas was the original explicit
-  flag; the taxonomy was removed on 9 September 2026 as unused, so if LAW
-  wants an explicit switch it needs a new field in 4.2.)
+  opt-in per event" switch is the committee's `_law_session_agenda` flag
+  (9 September 2026), which gates the Session agenda section on both event
+  forms via `law_event_has_session_agenda()`. Until then the section was on
+  every form and the opt-in was merely whether any sessions had been typed
+  into it. The predicate also returns true while an event has `law_session`
+  children, so switching the flag off never strands or deletes an existing
+  agenda.
 
 ### 3.4 Users, roles and co-owners
 
@@ -686,7 +692,7 @@ it lives in the rebuild:
 | Send back with a comment; the clarification loop; `{latest_comment}` emails | Send back requires a comment on the thread; same emails, same loop |
 | Reject with field 67 (Reason for rejection); rejection email | Reject requires a reason; same email |
 | Fee override (fields 87 Override fee + 81 Discounted fee) at review | Fee override controls on the detail view, snapshot at approval unchanged |
-| GravityView 419 inline edit: field 68 (Confirmed slot), field 90 (Committee assignee), status and other fields | A committee-only controls panel on the detail view: confirmed slot picker, assignee (still triggers the assignee email), category, organisations; full field editing on the wp-admin event screen |
+| GravityView 419 inline edit: field 68 (Confirmed slot), field 90 (Committee assignee), status and other fields | A committee-only controls panel on the detail view: confirmed slot picker, assignee (still triggers the assignee email), the run-by-LAW and session-agenda switches, organisations; full field editing on the wp-admin event screen |
 | Committee programme (`/committee/programme/`): all statuses, badges, admin edit links | Unchanged template, CPT data source, edit links point at the event admin screen |
 | wp-admin entry detail, notes, filter by tier | wp-admin event screen (all meta boxes, thread, activity log); list-table filters by status, tier, year (`admin/columns.php`) |
 | Gravity Flow timeline on the entry | The activity log, which is a superset (payments, emails, edits, manual notes) |
@@ -1231,7 +1237,7 @@ active entries against the migration assumptions. Each has defined handling:
 | 3. Create/Publish event steps are no-ops | Whole post-creation story replaced by the CPT itself |
 | 4. Make outage silently completes workflow | Direct Stripe with error state, alert and retry (section 3.7) |
 | 5. Step 30 fee condition saved but off | Decided (Denis, September 2026): the committee approved-email fires on **every** approval for now; the orphaned fee condition is not carried over, and narrowing to paid-only later is a one-line change |
-| `?ec=` category prepopulation dead (EVENTS_4.1_FUNC.md §6) | The custom form reads `?ec=` natively into the category field |
+| `?ec=` category prepopulation dead (EVENTS_4.1_FUNC.md §6) | Moot: the category field it targeted no longer exists. The committee sets the two classification switches directly (9 September 2026) |
 | Fee-waived events get non-sponsor wording | Confirmed-email split on fee = 0, not tier |
 | VAT flag matches price literals | `_law_vat` computed from fee > 0 |
 | Stripe customers created with an empty name (Make maps deleted field 8, section 2.3.1) | Customer name from field 75 (Invoice contact name), business name from field 105 (Host organisation(s)) |
@@ -1416,9 +1422,10 @@ was fixed or dispositioned:
   EDITABLE (allocations within the approved band); sectors, host
   organisations, venue capacity and venue-needed lock alongside title, type,
   slots and fees.
-- The committee detail view gained the manual private note, event category
-  and linked-organisations controls; `?ec=` prepopulates the category on
-  first submission; step 8 (Clarification needed)'s completion notification
+- The committee detail view gained the manual private note, the two
+  classification switches (run by LAW, session agenda — superseding the
+  short-lived event category checkboxes and the `?ec=` prepopulation, both
+  gone on 9 September 2026) and the linked-organisations controls; step 8 (Clarification needed)'s completion notification
   and "Email to Square Eye > event updated" now migrate (13 imports);
   refunds send a dedicated committee email; trashed entries and the Stripe
   config are reported by preflight; the verification panel gained contact
@@ -1459,10 +1466,10 @@ Everything found was fixed:
   `{entry_revision_diff}` and the rest found live; all 13 imported overrides
   now carry zero unmapped tags, and the Emails list flags any future
   "review tags" row in red.
-- The committee dashboard can now CLEAR categories/organisations (hidden
-  sentinel); real migration steps additionally require a passing preflight
+- The committee dashboard can now CLEAR the classification switches and
+  organisations (a hidden sentinel per group); real migration steps additionally require a passing preflight
   from the last 24 hours; the sector qualifier inputs lock visibly with
-  sectors; `?ec=` survives a validation error; invoice retry refuses on
+  sectors;  invoice retry refuses on
   paid/confirmed events; `law_year` is set once at creation and the
   sponsored multi-event rule scopes to the programme year; the migration
   screen warns that re-running steps 7/9 overwrites admin edits; drafts

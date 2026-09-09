@@ -380,6 +380,13 @@ function law_booking_guard_open( $event_id ) {
 	if ( ! $post || LAW_EVENT_CPT !== $post->post_type || 'publish' !== $post->post_status || 'cpt' !== law_events_source() ) {
 		return new WP_Error( 'law_booking_not_bookable', 'This event is not open for booking.' );
 	}
+	// The flagship conference is approval-gated and has its own application
+	// flow (EVENTS_4.2_SPECS.md §5), which is not built yet. Its page renders
+	// no booking control, but this is the guard that matters: hiding a button
+	// is not a control, and every booking and waitlist path comes through here.
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return new WP_Error( 'law_booking_flagship', 'The flagship conference is not booked through this form.' );
+	}
 	if ( null === law_event_tickets_remaining( $event_id ) ) {
 		return new WP_Error( 'law_booking_not_open', 'Booking for this event has not opened yet.' );
 	}

@@ -26,6 +26,13 @@
  *   event   (array) The calendar-mapped event, for the booking control.
  *   preview (bool)  Committee preview: the booking control renders for an
  *                   event of any status, with its button inert.
+ *   booking (bool)  Default true. False renders neither the booking control
+ *                   nor the places fallback row: the flagship page
+ *                   (templates/flagship-event.php) must not offer to book an
+ *                   event whose application flow is a separate, approval-gated
+ *                   journey (EVENTS_4.2_SPECS.md §5). Passed as an arg rather
+ *                   than by withholding 'event', which would also lose the
+ *                   venue row's link to the map below.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -38,6 +45,7 @@ $law_ed_rows    = isset( $args['rows'] ) && is_array( $args['rows'] ) ? $args['r
 $law_ed_places  = isset( $args['places'] ) && is_array( $args['places'] ) ? $args['places'] : array();
 $law_ed_event   = isset( $args['event'] ) && is_array( $args['event'] ) ? $args['event'] : array();
 $law_ed_preview = ! empty( $args['preview'] );
+$law_ed_booking = ! array_key_exists( 'booking', $args ) || ! empty( $args['booking'] );
 
 if ( ! $law_ed_rows ) {
 	return;
@@ -78,7 +86,7 @@ $law_ed_icon = static function ( $key ) use ( $law_ed_icons ) {
 // any status, with an inert button, so the committee sees the row an attendee
 // will see rather than a page missing it.
 $law_ed_cta = '';
-if ( $law_ed_event && function_exists( 'law_booking_render_action' ) ) {
+if ( $law_ed_booking && $law_ed_event && function_exists( 'law_booking_render_action' ) ) {
 	ob_start();
 	law_booking_render_action( $law_ed_event, $law_ed_preview );
 	$law_ed_cta = trim( (string) ob_get_clean() );
@@ -97,7 +105,7 @@ $law_ed_venue_linked = '' !== $law_ed_venue
 	&& law_calendar_venue_is_mappable( $law_ed_venue );
 
 $law_ed_places_value = trim( (string) ( $law_ed_places['value'] ?? '' ) );
-if ( '' === $law_ed_cta && '' !== $law_ed_places_value ) {
+if ( $law_ed_booking && '' === $law_ed_cta && '' !== $law_ed_places_value ) {
 	$law_ed_rows[] = array(
 		'key'   => 'places',
 		'label' => (string) ( $law_ed_places['label'] ?? '' ),

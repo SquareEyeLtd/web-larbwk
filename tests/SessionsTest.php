@@ -25,6 +25,10 @@ class SessionsTest extends LAW_Test_Case {
 
 	/** A complete, valid non-draft form input (mirrors SubmissionFormLockTest). */
 	private function valid_input( array $overrides = array() ): array {
+		// From the settings, not hard-coded: law_events_sanitise_preferred_slots()
+		// drops any label that is not a configured slot, and validation then
+		// fails on "at least one preferred date and time slot".
+		$slot_labels = array_keys( law_events_slot_choices( array() ) );
 		return array_merge(
 			array(
 				'law_form_action'     => 'update',
@@ -32,7 +36,7 @@ class SessionsTest extends LAW_Test_Case {
 				'description'         => 'Sessions test description.',
 				'event_type'          => 'Social event',
 				'host_organisations'  => 'Sessions Org LLP',
-				'preferred_slots'     => array( 'Any slot' ),
+				'preferred_slots'     => $slot_labels ? array( $slot_labels[0] ) : array( 'Any slot' ),
 				'sectors'             => array(),
 				'venue_needed'        => 'Yes, please share our details with venue hosts',
 				'fee_tier'            => 'uk',
@@ -211,14 +215,18 @@ class SessionsTest extends LAW_Test_Case {
 	public function test_clearing_a_sessions_fields_deletes_it_without_a_validation_error(): void {
 		$host  = $this->make_user( 'event_host' );
 		$event = $this->make_event( array(), 'law-proposed', $host );
+		law_event_update_meta( $event, '_law_session_agenda', 1 );
 		law_events_form_save_sessions( $event, array( $this->row( array( 'title' => 'To be cleared' ) ) ) );
 		$ids = $this->sessions( $event );
 
 		// The host empties the row's fields to remove it. The hidden ID is still
-		// posted, and must not make the row count as started.
+		// posted, and must not make the row count as started. law_sessions_present
+		// is the section's sentinel: without it the saver treats the section as
+		// absent and leaves the sessions alone.
 		$result = law_events_form_save(
 			$this->valid_input(
 				array(
+					'law_sessions_present' => '1',
 					'sessions' => array(
 						array( 'id' => (string) $ids[0], 'title' => '', 'start' => '', 'end' => '', 'description' => '' ),
 					),

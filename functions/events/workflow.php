@@ -96,6 +96,19 @@ add_filter(
 		if ( ! empty( $GLOBALS[ $flag ] ) ) {
 			return $data; // The engine is moving the status.
 		}
+		// The flagship conference has no workflow: it is never proposed,
+		// approved or invoiced, and its two statuses mean only "on the
+		// programme" (publish) and "not yet" (law-draft), which is the tick box
+		// on the Flagship screen. Its own saver raises this flag around its
+		// wp_update_post, so the guard's invariant still holds — a status change
+		// only ever comes from a known code path — while the box actually works.
+		// Deliberately a separate flag from the engine's, rather than reusing
+		// law_workflow_transitioning, so nothing here pretends a transition ran.
+		if ( ! empty( $GLOBALS['law_flagship_saving'] ) && LAW_EVENT_CPT === $post_type
+			&& function_exists( 'law_flagship_is' ) && law_flagship_is( $post_id )
+			&& in_array( (string) ( $data['post_status'] ?? '' ), array( 'publish', 'law-draft' ), true ) ) {
+			return $data;
+		}
 		$current = get_post_field( 'post_status', $post_id );
 		if ( 'trash' === $current ) {
 			return $data; // Untrash restores must pass (see the filter below).
@@ -423,6 +436,43 @@ function law_event_log_fee_change( $event_id, $before_override, $before_amount, 
 }
 
 /**
+ * Log a venue capacity band change (called from the committee panel with the
+ * band read immediately before the write).
+ *
+ * Worth its own line: the band is the ceiling every ticket allocation is
+ * checked against, so changing it silently changes what the host may set, and
+ * until now the only trace of a capacity change was the generic "Event details
+ * updated" line. Places available are logged separately by
+ * law_event_tickets_changed(), which also offers freed places to the waitlist.
+ *
+ * @param int    $event_id        law_event post ID.
+ * @param string $before_capacity The band as it was before the write.
+ * @param int    $actor           Who made the change.
+ */
+function law_event_log_capacity_change( $event_id, $before_capacity, $actor ) {
+	$after  = (string) law_event_meta( $event_id, '_law_venue_capacity' );
+	$before = (string) $before_capacity;
+	if ( $before === $after ) {
+		return;
+	}
+	law_event_log(
+		$event_id,
+		sprintf(
+			'Venue capacity changed: %1$s → %2$s.',
+			'' === $before ? '(not set)' : $before,
+			'' === $after ? '(not set)' : $after
+		),
+		array(
+			'action' => 'venue_capacity',
+			'old'    => $before,
+			'new'    => $after,
+			'source' => 'ui',
+		),
+		array( 'user_id' => (int) $actor )
+	);
+}
+
+/**
  * Log linked-organisation changes (called from the admin/committee save paths
  * with the IDs read immediately before the write).
  *
@@ -457,6 +507,58 @@ function law_event_log_organisation_change( $event_id, array $before_ids, $actor
 			'action' => 'organisations',
 			'old'    => $before_ids,
 			'new'    => $after_ids,
+			'source' => 'ui',
+		),
+		array( 'user_id' => (int) $actor )
+	);
+}
+
+/**
+ * Log the committee's classification switches (called from the dashboard
+ * handler and the wp-admin screen with the values read immediately before the
+ * write, exactly like the fee and organisation loggers above).
+ *
+ * ONE entry covering both flags, not one per flag: law_event_log_entries()
+ * orders by comment_date_gmt with no tie-break, so two entries written in the
+ * same second would display in arbitrary order.
+ *
+ * @param int   $event_id     law_event post ID.
+ * @param array $before_flags Meta key => 0|1, read before the write.
+ * @param int   $actor        User making the change.
+ */
+function law_event_log_flag_change( $event_id, array $before_flags, $actor ) {
+	$after = array(
+		'_law_is_law_event'   => (int) law_event_meta( $event_id, '_law_is_law_event' ),
+		'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
+	);
+	$before = array(
+		'_law_is_law_event'   => (int) ( $before_flags['_law_is_law_event'] ?? 0 ),
+		'_law_session_agenda' => (int) ( $before_flags['_law_session_agenda'] ?? 0 ),
+	);
+	if ( $before === $after ) {
+		return;
+	}
+
+	// Plain language, in the same words as the dashboard controls: the activity
+	// log is read by committee members, not developers.
+	$sentences = array(
+		'_law_is_law_event'   => array( 'No longer marked as run by LAW.', 'Marked as run by LAW.' ),
+		'_law_session_agenda' => array( 'Session agenda turned off.', 'Session agenda turned on.' ),
+	);
+	$changed = array();
+	foreach ( $after as $key => $value ) {
+		if ( $before[ $key ] !== $value ) {
+			$changed[] = $sentences[ $key ][ $value ];
+		}
+	}
+
+	law_event_log(
+		$event_id,
+		implode( ' ', $changed ),
+		array(
+			'action' => 'event_flags',
+			'old'    => $before,
+			'new'    => $after,
 			'source' => 'ui',
 		),
 		array( 'user_id' => (int) $actor )

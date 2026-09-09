@@ -75,7 +75,7 @@ $law_sc_dialog = $law_sc_bio['trimmed'] ? law_speaker_dialog_register( $law_sc )
 		</button>
 		<details class="law-cal-speakers__fallback" data-law-modal-fallback>
 			<summary><?php esc_html_e( 'Read full bio', 'law' ); ?></summary>
-			<div class="law-cal-speakers__fullbio"><?php echo wp_kses_post( wpautop( $law_sc_bio['full'] ) ); ?></div>
+			<div class="law-cal-speakers__fullbio"><?php echo law_rich_text_render( $law_sc_bio['full'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_kses'd against the rich-text allowlist. ?></div>
 		</details>
 	<?php endif; ?>
 </li>

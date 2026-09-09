@@ -1,0 +1,62 @@
+/*
+ * Inside the editor's iframe: what a host sees while they type.
+ *
+ * Loaded as TinyMCE's content_css (functions/events/rich-text.php), so it must
+ * style the document itself rather than a wrapper class. It mirrors the front
+ * end's body typography closely enough that the editor is a fair preview,
+ * without pulling in the whole theme stylesheet.
+ */
+
+html {
+	background: #fff;
+}
+
+body#tinymce {
+	margin: 10px 12px;
+	color: #1a1a3d;
+	font-family: poppins, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+	font-size: 15px;
+	line-height: 1.5;
+}
+
+body#tinymce p,
+body#tinymce li {
+	font-size: 15px;
+	line-height: 1.5;
+}
+
+body#tinymce p {
+	margin: 0 0 .9em;
+}
+
+body#tinymce h3,
+body#tinymce h4 {
+	margin: 1.2em 0 .4em;
+	color: #292459;
+	font-weight: 700;
+	line-height: 1.2;
+}
+
+body#tinymce h3 { font-size: 20px; }
+body#tinymce h4 { font-size: 17px; }
+
+body#tinymce ul,
+body#tinymce ol {
+	margin: 0 0 .9em 1.25em;
+	padding: 0;
+}
+
+body#tinymce li {
+	margin-bottom: .25em;
+}
+
+body#tinymce blockquote {
+	margin: 0 0 .9em;
+	padding: .1em 0 .1em 1em;
+	border-left: 3px solid #ef7d05;
+	color: #55556e;
+}
+
+body#tinymce a {
+	color: #ef7d05;
+}

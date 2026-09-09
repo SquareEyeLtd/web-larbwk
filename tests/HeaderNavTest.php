@@ -32,12 +32,15 @@ class HeaderNavTest extends LAW_Test_Case {
 	/**
 	 * The resolved per-role table from the plan. Committee and admins get the
 	 * dashboard IN ADDITION TO the personal links, never instead of them.
+	 *
+	 * 'flagship' joined the committee-only group on 9 September 2026 with the
+	 * Manage flagship dashboard (functions/events/flagship-dashboard.php).
 	 */
 	public static function role_expectations(): array {
 		return array(
-			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'speakers', 'events', 'submit', 'profile', 'signout' ) ),
-			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'speakers', 'events', 'submit', 'profile', 'signout' ) ),
-			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'speakers', 'events', 'submit', 'profile', 'signout' ) ),
+			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'submit', 'profile', 'signout' ) ),
+			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'submit', 'profile', 'signout' ) ),
+			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'submit', 'profile', 'signout' ) ),
 			'event_host'       => array( 'event_host', array( 'events', 'submit', 'profile', 'signout' ) ),
 			'sponsor'          => array( 'sponsor', array( 'events', 'submit', 'profile', 'signout' ) ),
 			'attendee'         => array( 'attendee', array( 'events', 'profile', 'signout' ) ),
@@ -93,9 +96,9 @@ class HeaderNavTest extends LAW_Test_Case {
 		$nav   = law_header_nav();
 		$items = wp_list_pluck( $nav['account']['items'], 'label', 'key' );
 
-		$this->assertSame( 'Manage Events', $items['dashboard'] );
-		$this->assertSame( 'Manage Bookings', $items['bookings'] );
-		$this->assertSame( 'Manage Speakers', $items['speakers'] );
+		$this->assertSame( 'Manage events', $items['dashboard'] );
+		$this->assertSame( 'Manage bookings', $items['bookings'] );
+		$this->assertSame( 'Manage speakers', $items['speakers'] );
 		$this->assertSame(
 			array( 'dashboard', 'bookings', 'speakers' ),
 			array_slice( array_keys( $items ), 0, 3 ),

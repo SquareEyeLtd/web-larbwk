@@ -1,0 +1,391 @@
+/**
+ * The committee's Manage flagship screen (/account/dashboard/flagship/,
+ * templates/account-dashboard-flagship.php).
+ *
+ * The session agenda's fields are the wp-admin field library's, printed by
+ * functions/events/flagship-form.php so the complicated half of the form exists
+ * once for both screens. That means this stylesheet has one job: make those
+ * admin-shaped controls sit inside the light front-end form
+ * (.law-event-form--light in event-form.css) instead of inside a wp-admin
+ * metabox. Everything here is scoped to .law-flagship-dashboard so nothing can
+ * reach the admin screen, whose own look comes from law-admin.css.
+ *
+ * Loaded after law-admin.css (see functions/events/flagship-dashboard.php), so
+ * these rules win on source order at equal specificity.
+ */
+
+/* Layout ------------------------------------------------------------------ */
+
+/* Every field's hint sits the same distance under its control. Without this the
+   Date and Location hints in the same grid row started at different heights: a
+   native date input reports a different intrinsic height from a text input, and
+   the hint was picking up whatever slack that left rather than a fixed offset
+   (Denis, 9 September 2026). */
+.law-flagship-dashboard .law-form-field > input,
+.law-flagship-dashboard .law-form-field > select,
+.law-flagship-dashboard .law-form-field > textarea {
+	margin-bottom: 0;
+}
+
+.law-flagship-dashboard .law-form-field > .law-form-hint {
+	display: block;
+	margin-top: 0.4rem;
+}
+
+/* And the two cells of a pair start at the top, so a two-line hint on one side
+   cannot push its neighbour's control down. */
+.law-flagship-dashboard .law-row-grid {
+	align-items: start;
+}
+
+.law-flagship-dashboard .law-flagship-form {
+	max-width: 60rem;
+}
+
+/* The admin library wraps each control in p.law-field with a <strong> label.
+   Give it the same rhythm and label colour as the theme's own .law-form-field
+   so a row of admin fields and a row of theme fields read as one form. */
+.law-flagship-dashboard .law-field {
+	margin: 0 0 1.1rem;
+}
+
+.law-flagship-dashboard .law-field > strong,
+.law-flagship-dashboard .law-field > label > strong {
+	display: block;
+	margin-bottom: 0.35rem;
+	color: #1a1a3d;
+	font-family: poppins, sans-serif;
+	font-size: 0.95rem;
+	font-weight: 600;
+}
+
+/* wp-admin's own width classes are sized for a metabox column. */
+.law-flagship-dashboard .law-field input.regular-text,
+.law-flagship-dashboard .law-field input.large-text,
+.law-flagship-dashboard .law-field input[type="text"],
+.law-flagship-dashboard .law-field input[type="date"],
+.law-flagship-dashboard .law-field input[type="time"],
+.law-flagship-dashboard .law-field input[type="email"],
+.law-flagship-dashboard .law-field input[type="url"] {
+	width: 100%;
+	max-width: none;
+}
+
+/* Sessions ---------------------------------------------------------------- */
+
+.law-flagship-dashboard .law-flagship-sessions {
+	margin: 0.5rem 0 0;
+}
+
+/* A session is a card on the white dashboard, with the brand orange rule
+   rather than wp-admin blue. */
+.law-flagship-dashboard .law-flagship-session {
+	position: relative;
+	background: #fbfbfd;
+	border: 1px solid #dcdce4;
+	border-left: 4px solid #ef7d05;
+	border-radius: 3px;
+	padding: 1.25rem 1.25rem 0.35rem;
+	margin: 0 0 1rem;
+}
+
+/* The session fields are the event forms' own .law-row-grid of labelled
+   inputs now, so event-form.css lays them out and colours their labels (its
+   .law-event-form--light .law-row .law-row-grid > label rule catches them,
+   because a session card is a .law-row). Only two things are left to say. */
+
+/* The time inputs fill their half of the row, like every other field on the
+   form: capped narrow they sat at the left of a wide empty cell (Denis,
+   9 September 2026). */
+.law-flagship-dashboard .law-flagship-session__head .law-field--time input {
+	width: 100%;
+	max-width: none;
+}
+
+/* The row-label type (0.9rem rather than a full field label's 0.875rem/600)
+   for the three .law-form-label spans this screen adds outside a plain row
+   cell. The colour now comes from event-form.css's --law-form-row-label token
+   via .law-event-form--light, so it is not restated here. */
+.law-flagship-dashboard .law-row .law-row-grid > .law-row-wide > .law-form-label,
+.law-flagship-dashboard .law-rel-item .law-form-label,
+.law-flagship-dashboard .law-field-photo > .law-form-label {
+	color: var(--law-form-row-label, #1a1a3d);
+	font-weight: 600;
+	font-size: 0.9rem;
+	margin-bottom: 0.25rem;
+}
+
+.law-flagship-dashboard .law-flagship-session__description {
+	margin-top: 0.4rem;
+}
+
+.law-flagship-dashboard .law-row-remove {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.6rem;
+	background: none;
+	border: 0;
+	padding: 0.2rem 0.4rem;
+	color: #b32d2e;
+	font-size: 1.25rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.law-flagship-dashboard .law-row-remove:hover,
+.law-flagship-dashboard .law-row-remove:focus {
+	color: #7f1d1e;
+	text-decoration: none;
+}
+
+/* The speaker picker ------------------------------------------------------ */
+
+.law-flagship-dashboard .law-rel {
+	margin-top: 0.5rem;
+}
+
+.law-flagship-dashboard .law-rel-search {
+	width: 100%;
+	max-width: 22rem;
+}
+
+.law-flagship-dashboard .law-rel-results {
+	/* list-style, not just the border rules below: the theme gives a front-end
+	   <ul> its default bullets, so the search results rendered with a marker
+	   beside each speaker. */
+	list-style: none;
+	max-width: 22rem;
+	margin: 0.2rem 0 0;
+	background: #fff;
+	border: 1px solid #c8c8d4;
+	border-radius: 3px;
+	box-shadow: 0 6px 18px rgba(41, 36, 89, 0.12);
+}
+
+.law-flagship-dashboard .law-rel-results li {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	border-bottom: 1px solid #eeeef4;
+}
+
+.law-flagship-dashboard .law-rel-results li:last-child {
+	border-bottom: 0;
+}
+
+.law-flagship-dashboard .law-rel-results .button-link {
+	display: block;
+	width: 100%;
+	padding: 0.5rem 0.7rem;
+	background: none;
+	border: 0;
+	color: #292459;
+	text-align: left;
+	cursor: pointer;
+}
+
+.law-flagship-dashboard .law-rel-results .button-link:hover,
+.law-flagship-dashboard .law-rel-results .button-link:focus {
+	background: #f3f2f8;
+	color: #292459;
+}
+
+.law-flagship-dashboard .law-rel-chosen {
+	max-width: none;
+	margin: 0.6rem 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.law-flagship-dashboard .law-rel-item {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 0.75rem;
+	align-items: flex-start;
+	position: relative;
+	background: #fff;
+	border: 1px solid #dcdce4;
+	border-radius: 3px;
+	padding: 0.9rem 2.25rem 0.9rem 0.9rem;
+	margin: 0 0 0.6rem;
+}
+
+.law-flagship-dashboard .law-rel-item .law-rel-title {
+	flex: 1 0 100%;
+	min-width: 0;
+	color: #1a1a3d;
+	font-family: poppins, sans-serif;
+	font-weight: 600;
+}
+
+.law-flagship-dashboard .law-rel-item input[type="text"],
+.law-flagship-dashboard .law-rel-item input[type="email"],
+.law-flagship-dashboard .law-rel-item input[type="url"],
+.law-flagship-dashboard .law-rel-item select {
+	flex: 1 1 12rem;
+	min-width: 0;
+	border: 1px solid #c8c8d4;
+	border-radius: 2px;
+	padding: 0.4rem 0.5rem;
+}
+
+/* Still flex: 1 0 100% because .law-rel-item is a flex row; the two-column
+   grid itself comes from event-form.css's .law-row-grid, the same rules the
+   event forms' speaker rows use. */
+.law-flagship-dashboard .law-rel-new-fields {
+	flex: 1 0 100%;
+}
+
+.law-flagship-dashboard .law-field-photo {
+	display: block;
+}
+
+/* An unsaved speaker: the same amber cue the admin screen uses, so the two
+   screens teach the same thing. */
+.law-flagship-dashboard .law-rel-item.is-new {
+	border-left: 3px solid #dba617;
+}
+
+.law-flagship-dashboard .law-rel-hint {
+	flex: 1 0 100%;
+	margin: 0;
+	color: #666;
+	font-size: 0.85rem;
+}
+
+.law-flagship-dashboard .law-rel-photo {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+/* The per-appearance photo controls are wp-admin's .button-link, which the
+   front end does not style: without this they read as plain text and a picked
+   speaker's "Choose photo" showed cursor: auto while the identical control on a
+   new-speaker row showed a pointer. */
+.law-flagship-dashboard .law-rel-photo-choose,
+.law-flagship-dashboard .law-rel-photo-clear {
+	background: none;
+	border: 0;
+	padding: 0;
+	color: #292459;
+	font-size: 0.85rem;
+	font-weight: 600;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.law-flagship-dashboard .law-rel-photo-choose:hover,
+.law-flagship-dashboard .law-rel-photo-choose:focus,
+.law-flagship-dashboard .law-rel-photo-clear:hover,
+.law-flagship-dashboard .law-rel-photo-clear:focus {
+	color: #ef7d05;
+}
+
+.law-flagship-dashboard .law-rel-remove {
+	position: absolute;
+	top: 0.6rem;
+	right: 0.6rem;
+	background: none;
+	border: 0;
+	color: #b32d2e;
+	font-size: 1.1rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.law-flagship-dashboard .law-rel-add-new {
+	background: none;
+	border: 0;
+	padding: 0;
+	color: #292459;
+	font-weight: 600;
+	text-decoration: underline;
+	cursor: pointer;
+}
+
+.law-flagship-dashboard .law-rel-add-new:hover,
+.law-flagship-dashboard .law-rel-add-new:focus {
+	color: #ef7d05;
+}
+
+/* The banner image picker ------------------------------------------------- */
+
+/* Three separate things stacked here, and each needed its own breathing room:
+   the field label, then the instruction that belongs with the button, then the
+   button, then the hint about what the image is used for. */
+.law-flagship-dashboard .law-flagship-hero > .law-form-label {
+	display: block;
+	margin-bottom: 0.5rem;
+}
+
+.law-flagship-dashboard .law-field-media {
+	margin: 0;
+}
+
+/* law_field_media()'s own label is an instruction, not a second field label:
+   smaller, lighter, and sitting right on top of its button. */
+.law-flagship-dashboard .law-field-media > strong {
+	display: block;
+	margin-bottom: 0.3rem;
+	color: #666;
+	font-size: 0.85rem;
+	font-weight: 500;
+}
+
+/* law_field_media() prints a <br> after its label, which doubled the gap. */
+.law-flagship-dashboard .law-field-media > br {
+	display: none;
+}
+
+.law-flagship-dashboard .law-field-media .button {
+	margin-bottom: 0.75rem;
+}
+
+.law-flagship-dashboard .law-flagship-hero > .law-form-hint {
+	display: block;
+	margin-top: 0;
+}
+
+.law-flagship-dashboard .law-media-preview img {
+	display: block;
+	max-width: 15rem;
+	height: auto;
+	margin: 0.4rem 0;
+	border: 1px solid #dcdce4;
+	border-radius: 3px;
+}
+
+.law-flagship-dashboard .law-field-media .button {
+	margin-right: 0.4rem;
+}
+
+.law-flagship-dashboard .law-media-preview:empty {
+	display: none;
+}
+
+/* Notices with a list of problems ---------------------------------------- */
+
+.law-flagship-dashboard .law-form-notice ul {
+	margin: 0.4rem 0 0 1.2rem;
+	list-style: disc;
+}
+
+.law-flagship-dashboard .law-form-notice code {
+	background: rgba(41, 36, 89, 0.08);
+	padding: 0.1rem 0.3rem;
+	border-radius: 2px;
+}
+
+@media screen and (max-width: 47.9375em) {
+	/* event-form.css keeps .law-row-grid at two columns on a phone; a labelled
+	   input pair is too narrow there for these fields. */
+	.law-flagship-dashboard .law-rel-item .law-row-grid,
+	.law-flagship-dashboard .law-flagship-session .law-row-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.law-flagship-dashboard .law-flagship-session__head .law-field--time input {
+		width: 100%;
+	}
+}

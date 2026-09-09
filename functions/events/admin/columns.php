@@ -19,6 +19,7 @@ add_filter( 'manage_' . LAW_EVENT_CPT . '_posts_columns', function ( $columns ) 
 		'law_host'        => 'Host',
 		'law_fee'         => 'Fee',
 		'law_payment'     => 'Payment',
+		'law_flags'       => 'Classification',
 		'law_reference'   => 'Reference',
 		'date'            => $columns['date'] ?? 'Date',
 	);
@@ -32,6 +33,19 @@ add_action( 'manage_' . LAW_EVENT_CPT . '_posts_custom_column', function ( $colu
 			break;
 		case 'law_slot':
 			echo esc_html( (string) law_event_meta( $post_id, '_law_slot_label' ) ?: '—' );
+			break;
+		case 'law_flags':
+			// The committee's two switches. Nothing printed for the ordinary case
+			// (a hosted event with no agenda), so the column stays scannable.
+			$flags = array();
+			if ( law_event_meta( $post_id, '_law_is_law_event' ) ) {
+				$flags[] = 'Run by LAW';
+			}
+			$agenda = function_exists( 'law_event_agenda_summary' ) ? law_event_agenda_summary( $post_id ) : '';
+			if ( '' !== $agenda ) {
+				$flags[] = $agenda;
+			}
+			echo $flags ? esc_html( implode( ', ', $flags ) ) : '—';
 			break;
 		case 'law_host':
 			$author = get_user_by( 'id', (int) get_post_field( 'post_author', $post_id ) );

@@ -50,6 +50,12 @@ function law_account_events() {
 	// faux minimal entry so the card helpers keep one code path.
 	if ( 'cpt' === law_events_source() ) {
 		foreach ( law_events_owned_event_ids( $user_id ) as $post_id ) {
+			// The flagship conference is LAW's own, edited on the Flagship screen
+			// in wp-admin, so it never appears in a host's "My events" even though
+			// whoever created the post is nominally its author.
+			if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $post_id ) ) {
+				continue;
+			}
 			$event = law_events_map_post( $post_id, array( '*' ) );
 			if ( ! $event ) {
 				continue;

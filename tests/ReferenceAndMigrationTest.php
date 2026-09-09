@@ -124,7 +124,7 @@ class ReferenceAndMigrationTest extends LAW_Test_Case {
 		$this->assertSame( 'Firm B', $rows[0]['organisation'] );
 		$this->assertSame( 'Partner', $rows[0]['job_title'] );
 		$this->assertSame( 12, $rows[0]['photo_id'] );
-		$this->assertSame( "Two   spaces\nand a line break.", $rows[0]['bio'], 'The biography takes the textarea sanitiser: line breaks and inner runs of spaces survive, unlike the single-line fields.' );
+		$this->assertSame( "Two   spaces\nand a line break.", $rows[0]['bio'], 'The biography takes the rich-text sanitiser: line breaks and inner runs of spaces survive, unlike the single-line fields, and markup would too.' );
 		$this->assertSame( '', $rows[1]['bio'], 'A row with no biography stores an empty string, not a missing key.' );
 		$this->assertSame( 'Legacy Firm', $rows[1]['organisation'], 'A pre-appearance organisation_override is read as the organisation.' );
 	}

@@ -48,6 +48,7 @@ function law_account_paths() {
 		'dashboard' => 'account/dashboard',
 		'bookings'  => 'account/dashboard/bookings',
 		'speakers'  => 'account/dashboard/speakers',
+		'flagship'  => 'account/dashboard/flagship',
 		'events'    => 'account/events',
 		'submit'    => 'account/events/submit',
 		'profile'   => 'account/profile',
@@ -261,19 +262,26 @@ function law_header_nav() {
 	if ( function_exists( 'law_user_is_committee' ) && law_user_is_committee() ) {
 		$items[] = array(
 			'key'   => 'dashboard',
-			'label' => __( 'Manage Events', 'law' ),
+			'label' => __( 'Manage events', 'law' ),
 		);
 		// The cross-event bookings view (EVENTS_BOOKINGS.md §7.6), a child
 		// page of the events dashboard with the same Members restriction.
 		$items[] = array(
 			'key'   => 'bookings',
-			'label' => __( 'Manage Bookings', 'law' ),
+			'label' => __( 'Manage bookings', 'law' ),
 		);
 		// The speaker records behind the programme, and the per-event details
 		// each appearance carries (functions/events/speakers-dashboard.php).
 		$items[] = array(
 			'key'   => 'speakers',
-			'label' => __( 'Manage Speakers', 'law' ),
+			'label' => __( 'Manage speakers', 'law' ),
+		);
+		// The flagship conference is LAW's own event, edited on its own screen
+		// rather than through the review queue, which deliberately excludes it
+		// (functions/events/flagship-dashboard.php).
+		$items[] = array(
+			'key'   => 'flagship',
+			'label' => __( 'Manage flagship', 'law' ),
 		);
 	}
 

@@ -34,12 +34,21 @@
 				if (field.type === 'checkbox' || field.type === 'radio') {
 					field.checked = false; // Its value is the choice itself; only the state resets.
 				} else if (field.tagName === 'SELECT') {
-					field.selectedIndex = 0; // value = '' would select nothing when no option is blank (the speaker Role select).
+					field.selectedIndex = 0; // Its first option, which on the speaker Role select is the blank "Select role" placeholder.
 				} else if (field.type !== 'file') {
 					field.value = '';
 				}
 			});
+			/* The template row's rich-text fields are deliberately left as plain
+			   textareas (law-rich-text.js skips anything inside a template row), so
+			   the clone carries no TinyMCE DOM with it. Their ids are the
+			   template's, though, and an id has to be unique before an editor can
+			   attach to it. */
+			row.querySelectorAll('textarea[data-law-rich]').forEach(function (field) {
+				field.removeAttribute('id');
+			});
 			wrap.insertBefore(row, template);
+			if (window.lawRichText) { window.lawRichText.initAll(row); }
 			syncSessionSpeakers();
 			var first = row.querySelector('input, textarea');
 			if (first) { first.focus(); }
@@ -54,9 +63,21 @@
 	   ticked names preserved so editing a speaker doesn't lose the session. */
 	function speakerNames() {
 		var names = [];
-		document.querySelectorAll('[data-law-rows-group="speakers"] .law-row:not([data-law-row-template]) input[name$="[name]"]').forEach(function (input) {
-			var name = input.value.trim();
-			if (name && names.indexOf(name) === -1) { names.push(name); }
+		var seen = {};
+		/* First and last name are separate inputs, so a row's name is the two
+		   joined - the same "First Last" the saver matches sessions against.
+		   Each entry also carries its speaker row's index, which is what a tick
+		   is remembered by: the name is the very thing a host may be editing, so
+		   remembering by name would lose the session on a rename. */
+		document.querySelectorAll('[data-law-rows-group="speakers"] .law-row:not([data-law-row-template])').forEach(function (row) {
+			var first = row.querySelector('input[name$="[first_name]"]');
+			var last = row.querySelector('input[name$="[last_name]"]');
+			var name = ((first ? first.value : '') + ' ' + (last ? last.value : '')).replace(/\s+/g, ' ').trim();
+			var match = first ? first.name.match(/\[(\d+)\]/) : null;
+			if (name && !seen[name]) {
+				seen[name] = true;
+				names.push({ key: match ? match[1] : name, name: name });
+			}
 		});
 		return names;
 	}
@@ -79,20 +100,25 @@
 				if (!source) { return; }
 				fieldName = source.replace(/\[[a-z_]+\]$/, '[speakers][]');
 			}
+			/* Remembered by the speaker row's key, with the name as a fallback for
+			   a box rendered before the key existed. */
 			var checked = {};
 			list.querySelectorAll('input[type="checkbox"]').forEach(function (box) {
-				if (box.checked) { checked[box.value] = true; }
+				if (box.checked) { checked[box.getAttribute('data-law-speaker-key') || box.value] = true; }
 			});
 			list.textContent = '';
-			names.forEach(function (name) {
+			names.forEach(function (speaker) {
 				var label = document.createElement('label');
 				var box = document.createElement('input');
 				box.type = 'checkbox';
 				box.setAttribute(isTemplate ? 'data-name' : 'name', fieldName);
-				box.value = name;
-				box.checked = !!checked[name];
+				box.setAttribute('data-law-speaker-key', speaker.key);
+				/* The saver resolves "row:<index>" against this same submission's
+				   speaker rows, so a tick survives the host renaming that speaker. */
+				box.value = 'row:' + speaker.key;
+				box.checked = !!(checked[speaker.key] || checked[speaker.name]);
 				label.appendChild(box);
-				label.appendChild(document.createTextNode(' ' + name));
+				label.appendChild(document.createTextNode(' ' + speaker.name));
 				list.appendChild(label);
 			});
 			if (empty) { empty.hidden = names.length > 0; }
@@ -100,14 +126,21 @@
 	}
 
 	document.addEventListener('input', function (event) {
-		if (event.target.name && /^speakers\[\d+\]\[name\]$/.test(event.target.name)) { syncSessionSpeakers(); }
+		if (event.target.name && /^speakers\[\d+\]\[(first|last)_name\]$/.test(event.target.name)) { syncSessionSpeakers(); }
 	});
 	syncSessionSpeakers();
 
 	document.addEventListener('click', function (event) {
 		if (event.target.classList && event.target.classList.contains('law-row-remove')) {
 			setTimeout(syncSessionSpeakers, 0);
-			event.target.closest('.law-row').remove();
+			var doomed = event.target.closest('.law-row');
+			// Detach the row's editors first: TinyMCE keeps its instances in a
+			// global registry, and pulling the DOM out from under one leaves a dead
+			// entry that a later triggerSave() would still try to read.
+			if (window.lawRichText) {
+				doomed.querySelectorAll('textarea[data-law-rich]').forEach(window.lawRichText.remove);
+			}
+			doomed.remove();
 		}
 	});
 
@@ -123,13 +156,18 @@
 
 	/* Conditional fields: a checkbox or radio with data-law-toggles shows/hides
 	   the element with that id (the sector "please specify" inputs, the venue
-	   name field). */
+	   details block). Hiding clears the value so an answer that no longer
+	   applies cannot be saved, EXCEPT where the toggle carries
+	   data-law-toggles-keep: the venue block holds three fields the committee
+	   may own, and a host toggling No -> Yes -> No must not lose what they
+	   typed. Its save path skips the write instead. */
 	document.querySelectorAll('[data-law-toggles]').forEach(function (box) {
 		var target = document.getElementById(box.getAttribute('data-law-toggles'));
 		if (!target) { return; }
+		var keep = box.hasAttribute('data-law-toggles-keep');
 		var sync = function () {
 			target.hidden = !box.checked;
-			if (target.hidden) {
+			if (target.hidden && !keep) {
 				var field = target.querySelector('input');
 				if (field) { field.value = ''; }
 			}

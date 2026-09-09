@@ -75,8 +75,18 @@ function law_speaker_role_display( $role ) {
 }
 
 /**
- * Find an existing speaker: by email first (same email = same person), then
- * by normalised full name.
+ * Find an existing speaker: by email first (same email = same person), then by
+ * normalised full name.
+ *
+ * The name fallback runs ONLY when no usable email was given. An email is an
+ * identity claim, so a row carrying one that matches nothing is a new person,
+ * even if somebody with the same name is already on file: two different
+ * solicitors called "John Smith" at two different firms must not be collapsed
+ * into one shared, publicly-displayed profile that then carries the wrong
+ * email. The fallback still exists for the sources that have no email at all —
+ * the legacy List field 48 rows the migration reads, which pass '' here.
+ * A duplicate record is a nuisance the committee can merge on the Manage
+ * Speakers screen; a wrong merge silently rewrites a real person's profile.
  *
  * @param string $email Email (may be empty).
  * @param string $name  Full display name.
@@ -98,6 +108,7 @@ function law_speaker_find_existing( $email, $name ) {
 		if ( $by_email ) {
 			return (int) $by_email[0];
 		}
+		return 0; // A real, unrecognised email: a new person, not a name match.
 	}
 
 	$normalised = law_speaker_normalise_name( $name );
@@ -114,41 +125,178 @@ function law_speaker_find_existing( $email, $name ) {
 		)
 	);
 	foreach ( $candidates as $candidate ) {
-		if ( law_speaker_normalise_name( get_the_title( $candidate ) ) === $normalised ) {
+		if ( law_speaker_normalise_name( law_speaker_raw_name( $candidate ) ) === $normalised ) {
 			return (int) $candidate;
 		}
 	}
 	return 0;
 }
 
-/** Case- and whitespace-insensitive name key, mirroring the old dedupe. */
+/**
+ * Case- and whitespace-insensitive name key, mirroring the old dedupe. HTML
+ * entities are decoded first, so a name that reached one side of a comparison
+ * through get_the_title() (wptexturize turns an apostrophe into &#8217;) still
+ * matches the same name read raw from the database. Without that, a session's
+ * link to "Crystal O'Donnell" silently failed to match and was dropped on save.
+ */
 function law_speaker_normalise_name( $name ) {
-	return preg_replace( '/\s+/', ' ', mb_strtolower( trim( (string) $name ) ) );
+	$name = html_entity_decode( (string) $name, ENT_QUOTES, 'UTF-8' );
+	// Decoding &#8217; gives a CURLY apostrophe, so the two spellings still would
+	// not match without folding the smart punctuation back to its plain form.
+	$name = strtr(
+		$name,
+		array( "\u{2018}" => "'", "\u{2019}" => "'", "\u{201A}" => "'", "\u{201B}" => "'", "\u{201C}" => '"', "\u{201D}" => '"', "\u{2013}" => '-', "\u{2014}" => '-' )
+	);
+	return preg_replace( '/\s+/', ' ', mb_strtolower( trim( $name ) ) );
+}
+
+/**
+ * A speaker post's stored display name, UNFILTERED.
+ *
+ * get_the_title() runs the_title, and wptexturize rewrites an apostrophe as
+ * &#8217;. That is right for rendering and wrong everywhere else: a form field
+ * prefilled from it shows the raw entity to the host, and saving writes that
+ * entity back into post_title, compounding on every save. The rule in this
+ * module is therefore: get_the_title() to DISPLAY a name, this to MATCH one or
+ * to put one into a form field.
+ *
+ * @param int $post_id Speaker post ID.
+ */
+function law_speaker_raw_name( $post_id ) {
+	return trim( (string) get_post_field( 'post_title', (int) $post_id, 'raw' ) );
+}
+
+/**
+ * Honorific suffixes that belong to the LAST name, so splitting a stored full
+ * name gives "Ali" / "Malek KC" and never "Ali Malek" / "KC". The same list
+ * the legacy list-field migrator uses (functions/migrate-speakers.php).
+ */
+const LAW_SPEAKER_NAME_SUFFIXES = array( 'KC', 'QC', 'SC', 'JP', 'OBE', 'CBE', 'MBE', 'KBE', 'CB', 'CMG', 'CVO', 'GCVO', 'PHD', 'ESQ', 'TBC' );
+
+/**
+ * Split a full name into first and last. This is the FALLBACK only: since
+ * 9 September 2026 (Denis) the forms collect the two separately and store them
+ * on the speaker post, and this reads a record saved before that, or a legacy
+ * source that only ever had one name field. The last token is the last name,
+ * with any honorific suffixes kept on it; a one-word name is all first name,
+ * which is what the old law_speaker_post_profile() split did too.
+ *
+ * @param string $full Full name.
+ * @return array{first:string,last:string}
+ */
+function law_speaker_split_name( $full ) {
+	$full = trim( preg_replace( '/\s+/', ' ', (string) $full ) );
+	if ( '' === $full ) {
+		return array( 'first' => '', 'last' => '' );
+	}
+	$parts    = explode( ' ', $full );
+	$suffixes = array();
+	while ( count( $parts ) > 1 ) {
+		$token = rtrim( (string) end( $parts ), '.,' );
+		if ( in_array( mb_strtoupper( $token ), LAW_SPEAKER_NAME_SUFFIXES, true ) ) {
+			array_unshift( $suffixes, array_pop( $parts ) );
+			continue;
+		}
+		break;
+	}
+	if ( count( $parts ) < 2 ) {
+		// One word, suffixes or not: it is the first name, nothing to split.
+		return array( 'first' => $full, 'last' => '' );
+	}
+	$last = array_pop( $parts );
+	return array(
+		'first' => implode( ' ', $parts ),
+		'last'  => trim( $last . ' ' . implode( ' ', $suffixes ) ),
+	);
+}
+
+/** The display name two parts make: "First Last", collapsed and trimmed. */
+function law_speaker_full_name( $first, $last ) {
+	return trim( preg_replace( '/\s+/', ' ', trim( (string) $first ) . ' ' . trim( (string) $last ) ) );
+}
+
+/**
+ * A speaker post's name in two parts: the stored meta when it has it, else the
+ * post title split (every record saved before the fields were separate).
+ *
+ * @param int $post_id Speaker post ID.
+ * @return array{first:string,last:string}
+ */
+function law_speaker_name_parts( $post_id ) {
+	$first = trim( (string) law_event_meta( $post_id, '_law_speaker_first_name' ) );
+	$last  = trim( (string) law_event_meta( $post_id, '_law_speaker_last_name' ) );
+	if ( '' !== $first || '' !== $last ) {
+		return array( 'first' => $first, 'last' => $last );
+	}
+	// The RAW title, not get_the_title(): these two values are prefilled into the
+	// First/Last name inputs on three different editing screens, and each of
+	// them rebuilds post_title from what comes back.
+	return law_speaker_split_name( law_speaker_raw_name( $post_id ) );
+}
+
+/**
+ * The two parts a submitted row carries. A row that only has the old single
+ * 'name' key (a legacy source, or a saved payload from before the split) is
+ * split, so no caller has to know which shape it holds.
+ *
+ * @param array $row first_name / last_name, or name.
+ * @return array{first:string,last:string}
+ */
+function law_speaker_row_name_parts( array $row ) {
+	$first = trim( (string) ( $row['first_name'] ?? '' ) );
+	$last  = trim( (string) ( $row['last_name'] ?? '' ) );
+	if ( '' !== $first || '' !== $last ) {
+		return array( 'first' => $first, 'last' => $last );
+	}
+	return law_speaker_split_name( (string) ( $row['name'] ?? '' ) );
 }
 
 /**
  * Create or update a speaker from submitted row data. New data fills gaps;
  * it never blanks an existing value (matching the old backfill rule).
  *
- * Only identity fields live on the post: name, email, website. Organisation,
- * job title, photo and biography are per appearance and belong on the event's
- * _law_speakers row (law_events_form_save_speakers()); the featured image and
- * the biography set here are fallbacks only, used when the appearance has
- * none of its own.
+ * Only identity fields live on the post: first name, last name, email,
+ * website. Organisation, job title, photo and biography are per appearance and
+ * belong on the event's _law_speakers row (law_events_form_save_speakers());
+ * the featured image and the biography set here are fallbacks only, used when
+ * the appearance has none of its own.
  *
- * @param array $data name, email, website, bio, photo_id (attachment ID).
- *                    organisation/job_title are accepted and ignored.
+ * @param array $data    first_name, last_name (a single 'name' is split when
+ *                       the parts are absent), email, website, bio, photo_id
+ *                       (attachment ID). organisation/job_title are accepted
+ *                       and ignored.
+ * @param array $log     event_id + actor, for the activity-log line.
+ * @param array $options speaker_id: edit THIS record rather than matching one
+ *                       (the caller must have already checked the row belongs
+ *                       to it). overwrite_identity: write the identity fields
+ *                       outright instead of only filling gaps — see below.
  * @return int Post ID, 0 on failure.
  */
-function law_speaker_upsert( array $data, array $log = array() ) {
-	$name = trim( (string) ( $data['name'] ?? '' ) );
+function law_speaker_upsert( array $data, array $log = array(), array $options = array() ) {
+	// The post title stays the display name every listing prints and every
+	// lookup matches on; the two parts are stored beside it (Denis,
+	// 9 September 2026), and a caller that still passes one 'name' is split.
+	$parts = law_speaker_row_name_parts( $data );
+	$name  = law_speaker_full_name( $parts['first'], $parts['last'] );
 	if ( '' === $name ) {
 		return 0;
 	}
 
-	$post_id  = law_speaker_find_existing( (string) ( $data['email'] ?? '' ), $name );
-	$is_new   = ! $post_id;
-	$filled   = array(); // Fields this submission backfilled on a PRE-EXISTING record.
+	// An explicit record beats matching on email/name: it is the only way a
+	// caller can edit the very fields the match is made on. Callers pass one
+	// only for a speaker the event already holds (law_events_form_save_speakers()).
+	$post_id = 0;
+	if ( ! empty( $options['speaker_id'] ) ) {
+		$target  = get_post( (int) $options['speaker_id'] );
+		$post_id = ( $target && LAW_SPEAKER_CPT === $target->post_type ) ? (int) $target->ID : 0;
+	}
+	if ( ! $post_id ) {
+		$post_id = law_speaker_find_existing( (string) ( $data['email'] ?? '' ), $name );
+	}
+	$is_new    = ! $post_id;
+	$overwrite = ! $is_new && ! empty( $options['overwrite_identity'] );
+	$filled    = array(); // Fields this submission backfilled on a PRE-EXISTING record.
+	$changed   = array(); // Identity fields this submission REPLACED (overwrite mode).
 
 	if ( ! $post_id ) {
 		$post_id = wp_insert_post(
@@ -156,7 +304,7 @@ function law_speaker_upsert( array $data, array $log = array() ) {
 				'post_type'    => LAW_SPEAKER_CPT,
 				'post_status'  => 'publish', // Visibility is derived from events, not from status.
 				'post_title'   => $name,
-				'post_content' => sanitize_textarea_field( (string) ( $data['bio'] ?? '' ) ),
+				'post_content' => law_rich_text_sanitize( $data['bio'] ?? '' ),
 			),
 			true
 		);
@@ -167,21 +315,73 @@ function law_speaker_upsert( array $data, array $log = array() ) {
 		// Backfill an empty biography only.
 		$existing = get_post( $post_id );
 		if ( $existing && '' === trim( $existing->post_content ) && '' !== trim( (string) ( $data['bio'] ?? '' ) ) ) {
-			wp_update_post( array( 'ID' => $post_id, 'post_content' => sanitize_textarea_field( (string) $data['bio'] ) ) );
+			wp_update_post( array( 'ID' => $post_id, 'post_content' => law_rich_text_sanitize( $data['bio'] ) ) );
 			$filled[] = 'biography';
 		}
 	}
 
 	$meta_map = array(
-		'email'   => '_law_speaker_email',
-		'website' => '_law_website',
+		'email'   => array( 'key' => '_law_speaker_email', 'label' => 'email address' ),
+		'website' => array( 'key' => '_law_website', 'label' => 'website' ),
 	);
-	foreach ( $meta_map as $field => $key ) {
-		$value = trim( (string) ( $data[ $field ] ?? '' ) );
-		if ( '' !== $value && '' === (string) law_event_meta( $post_id, $key ) ) {
-			law_event_update_meta( $post_id, $key, 'email' === $field ? mb_strtolower( $value ) : $value );
+	foreach ( $meta_map as $field => $spec ) {
+		$key    = $spec['key'];
+		$value  = trim( (string) ( $data[ $field ] ?? '' ) );
+		$value  = 'email' === $field ? mb_strtolower( $value ) : $value;
+		$stored = (string) law_event_meta( $post_id, $key );
+
+		if ( $overwrite ) {
+			if ( $value === $stored ) {
+				continue;
+			}
+			// The email is the dedupe key, so it must never be moved onto an
+			// address another record already owns: that would quietly merge two
+			// people. Same guard the Manage Speakers screen applies, except that
+			// here the rest of the row still saves — the host gets their name
+			// change, and the clashing email is simply left alone.
+			if ( 'email' === $field && '' !== $value ) {
+				$clash = law_speaker_find_existing( $value, '' );
+				if ( $clash && (int) $clash !== (int) $post_id ) {
+					continue;
+				}
+			}
+			law_event_update_meta( $post_id, $key, $value );
+			$changed[] = sprintf( '%s "%s" → "%s"', $spec['label'], $stored, $value );
+			continue;
+		}
+
+		if ( '' !== $value && '' === $stored ) {
+			law_event_update_meta( $post_id, $key, $value );
 			if ( ! $is_new ) {
 				$filled[] = $field;
+			}
+		}
+	}
+
+	if ( $overwrite ) {
+		// The row belongs to an event the saver is editing, so the name is
+		// written outright rather than gap-filled: the host typed it into a
+		// required field, and silently discarding it is worse than a logged
+		// change on a shared record (Denis, 9 September 2026). post_name is left
+		// alone, so an existing /speakers/<slug>/ link keeps resolving after a
+		// correction — the same rule the Manage Speakers screen follows.
+		$existing_name = law_speaker_raw_name( $post_id );
+		if ( $existing_name !== $name ) {
+			wp_update_post( wp_slash( array( 'ID' => $post_id, 'post_title' => $name ) ) );
+			$changed[] = sprintf( 'name "%s" → "%s"', $existing_name, $name );
+		}
+		foreach ( array( 'first' => '_law_speaker_first_name', 'last' => '_law_speaker_last_name' ) as $part => $key ) {
+			law_event_update_meta( $post_id, $key, $parts[ $part ] );
+		}
+	} else {
+		// The name parts, gap-filled like everything else here: a record created
+		// before the split (or by an import that only had one name field) gets
+		// them on the next submission, and a submission never renames somebody
+		// else's shared record. Not logged as a backfill: the displayed name does
+		// not change, only its stored shape.
+		foreach ( array( 'first' => '_law_speaker_first_name', 'last' => '_law_speaker_last_name' ) as $part => $key ) {
+			if ( '' !== $parts[ $part ] && '' === (string) law_event_meta( $post_id, $key ) ) {
+				law_event_update_meta( $post_id, $key, $parts[ $part ] );
 			}
 		}
 	}
@@ -191,6 +391,18 @@ function law_speaker_upsert( array $data, array $log = array() ) {
 		if ( ! $is_new ) {
 			$filled[] = 'photo';
 		}
+	}
+
+	// A rename or a contact-detail change on a shared, publicly-displayed
+	// profile shows on every event that speaker appears at, so it is always
+	// recorded — the committee can see who changed what, and put it back.
+	if ( $changed && ! empty( $log['event_id'] ) && function_exists( 'law_event_log' ) ) {
+		law_event_log(
+			(int) $log['event_id'],
+			sprintf( 'Speaker profile updated from this submission: %s.', implode( ', ', $changed ) ),
+			array( 'action' => 'speaker_updated', 'speaker' => (int) $post_id, 'changes' => $changed, 'source' => 'submission' ),
+			array( 'user_id' => (int) ( $log['actor'] ?? 0 ) )
+		);
 	}
 
 	// A shared, publicly-displayed speaker profile was altered by a host other
@@ -227,9 +439,9 @@ function law_speaker_post_profile( $post_id, array $event_ids = array() ) {
 	}
 
 	$name  = trim( $post->post_title );
-	$parts = preg_split( '/\s+/', $name );
-	$last  = count( $parts ) > 1 ? array_pop( $parts ) : '';
-	$first = implode( ' ', $parts );
+	$parts = law_speaker_name_parts( $post->ID );
+	$first = $parts['first'];
+	$last  = $parts['last'];
 	$seen  = law_speaker_first_appearance( $post->ID );
 
 	return array(
@@ -630,8 +842,10 @@ function law_speaker_card( $speaker_id, array $row = array(), array $fallback_ro
  * @param int    $words Word limit.
  */
 function law_speaker_bio_excerpt( $bio, $words = 24 ) {
-	$plain = wp_strip_all_tags( strip_shortcodes( (string) $bio ) );
-	return wp_trim_words( $plain, (int) $words, '…' );
+	// law_rich_text_plain(), not wp_strip_all_tags(): a biography is rich text
+	// now, and stripping tags alone would run "<li>One</li><li>Two</li>"
+	// together as "OneTwo". It strips the shortcodes too.
+	return wp_trim_words( law_rich_text_plain( $bio ), (int) $words, '…' );
 }
 
 /**
@@ -643,16 +857,22 @@ function law_speaker_bio_excerpt( $bio, $words = 24 ) {
  * The word split mirrors wp_trim_words()'s own, so the count and the excerpt
  * cannot disagree about where the limit falls.
  *
+ * 'full' keeps the author's markup, because the dialog and the no-JS
+ * <details> block both render it through law_rich_text_render(); the excerpt
+ * and the word count work off the plain text, since a card shows one line and
+ * a half-open <strong> in it would leak into the rest of the page.
+ *
  * @param string $bio   Raw biography.
  * @param int    $words Word limit.
  * @return array{full:string,excerpt:string,trimmed:bool}
  */
 function law_speaker_bio_summary( $bio, $words = 24 ) {
-	$full  = trim( wp_strip_all_tags( strip_shortcodes( (string) $bio ) ) );
-	$parts = '' === $full ? array() : (array) preg_split( '/[\n\r\t ]+/', $full, -1, PREG_SPLIT_NO_EMPTY );
+	$full  = trim( (string) $bio );
+	$plain = law_rich_text_plain( $bio );
+	$parts = '' === $plain ? array() : (array) preg_split( '/[\n\r\t ]+/', $plain, -1, PREG_SPLIT_NO_EMPTY );
 	return array(
-		'full'    => $full,
-		'excerpt' => '' === $full ? '' : law_speaker_bio_excerpt( $bio, $words ),
+		'full'    => '' === $plain ? '' : $full,
+		'excerpt' => '' === $plain ? '' : law_speaker_bio_excerpt( $bio, $words ),
 		'trimmed' => count( $parts ) > (int) $words,
 	);
 }

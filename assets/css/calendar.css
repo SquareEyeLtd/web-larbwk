@@ -449,6 +449,337 @@
   margin-top: 0.5rem;
 }
 
+/* --- The flagship agenda timeline (parts/events/session-timeline.php) ----
+   The accordion below suits an event with two or three sessions a reader may
+   choose to open. A day-long conference agenda is the content itself, so the
+   flagship renders every session open on one vertical rail.
+
+   Deliberately ONE left-aligned rail rather than cards alternating either side
+   of a centre line: the alternating variant collapses awkwardly on a phone and
+   costs the reader the single line their eye follows down a schedule. The line
+   and the markers are pseudo-elements, because they are decoration; the time
+   beside them is the real information, in a <time> element.
+
+   The geometry is three custom properties, so the marker and the line cannot
+   drift from the time column's width. Mobile-first: one column with the rail at
+   the far left, and from 48em the time moves into its own right-aligned column
+   with the rail between the two. */
+
+.law-timeline-section {
+  padding-bottom: 0.5rem;
+}
+
+.law-timeline {
+  --law-tl-time: 0rem;
+  --law-tl-gap: 1.75rem;
+  --law-tl-dot: 0.8rem;
+  list-style: none;
+  /* Clear of the "Agenda" heading: .law-cal-acc__heading's own bottom padding
+     is sized for the accordion's first summary bar, which carries its own
+     background, and a bare first timestamp sat too close under it. */
+  margin: 1.25rem 0 0;
+  padding: 0;
+}
+
+.law-timeline__item {
+  position: relative;
+  padding: 0 0 1.75rem var(--law-tl-gap);
+}
+
+.law-timeline__item:last-child {
+  padding-bottom: 0.25rem;
+}
+
+/* The marker. Filled brand orange for a session, and the white ring lifts it
+   off the line it sits on. */
+.law-timeline__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.3rem;
+  width: var(--law-tl-dot);
+  height: var(--law-tl-dot);
+  border-radius: 50%;
+  background: #ef7d05;
+  box-shadow: 0 0 0 3px #fff;
+  z-index: 1;
+}
+
+/* The connector, stopping at the last item so the rail does not dangle. */
+.law-timeline__item::after {
+  content: "";
+  position: absolute;
+  left: calc((var(--law-tl-dot) - 2px) / 2);
+  top: 0.3rem;
+  bottom: -0.3rem;
+  width: 2px;
+  background: #dcdcdc;
+}
+
+.law-timeline__item:last-child::after {
+  display: none;
+}
+
+.law-timeline__time {
+  margin: 0 0 0.15rem;
+  color: #292459;
+  font-family: poppins, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.law-timeline__dash {
+  padding: 0 0.15rem;
+}
+
+.law-timeline__title {
+  margin: 0 0 0.35rem;
+  color: #292459;
+  font-family: poppins, sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.law-timeline__body {
+  color: #333;
+}
+
+.law-timeline__body p {
+  margin: 0 0 0.6rem;
+}
+
+.law-timeline__body p:last-child {
+  margin-bottom: 0;
+}
+
+/* A break (registration, coffee, lunch): no description and nobody speaking.
+   A hollow, smaller marker and lighter type, so the shape of the day reads at a
+   glance instead of eight equal-weight rows. #666 on white is about 5.7:1,
+   comfortably past the 4.5:1 minimum for body text. */
+.law-timeline__item--break::before {
+  background: #fff;
+  border: 2px solid #c9c7d6;
+  width: calc(var(--law-tl-dot) - 0.15rem);
+  height: calc(var(--law-tl-dot) - 0.15rem);
+  top: 0.35rem;
+}
+
+.law-timeline__item--break {
+  padding-bottom: 1.25rem;
+}
+
+.law-timeline__item--break .law-timeline__time,
+.law-timeline__item--break .law-timeline__title {
+  color: #666;
+  font-weight: 500;
+}
+
+.law-timeline__item--break .law-timeline__title {
+  font-size: 1rem;
+}
+
+/* The speaker cards already carry their own grid; inside a timeline item they
+   only need separating from the description above them. */
+.law-timeline__speakers {
+  margin-top: 0.9rem;
+}
+
+@media screen and (min-width: 48em) {
+  .law-timeline {
+    /* Wide enough for a 12-hour range on one line ("11:40am – 12:40pm"): at
+       7.5rem every time wrapped onto two. */
+    --law-tl-time: 9.75rem;
+    --law-tl-gap: 2.25rem;
+  }
+
+  .law-timeline__item {
+    display: grid;
+    grid-template-columns: var(--law-tl-time) minmax(0, 1fr);
+    column-gap: var(--law-tl-gap);
+    padding-left: 0;
+  }
+
+  .law-timeline__time {
+    margin: 0;
+    padding-top: 0.1rem;
+    text-align: right;
+  }
+
+  /* Both derived from the same two properties as the columns, so the rail
+     always lands in the middle of the gap between them. */
+  .law-timeline__item::before {
+    left: calc(var(--law-tl-time) + (var(--law-tl-gap) - var(--law-tl-dot)) / 2);
+  }
+
+  .law-timeline__item::after {
+    left: calc(var(--law-tl-time) + var(--law-tl-gap) / 2 - 1px);
+  }
+
+  .law-timeline__item--break::before {
+    left: calc(var(--law-tl-time) + (var(--law-tl-gap) - var(--law-tl-dot) + 0.15rem) / 2);
+  }
+}
+
+/* A timeline is a list of times; a stacked date is not something to animate or
+   collapse, so nothing here depends on JavaScript. */
+
+/* --- The flagship conference's block (parts/events/flagship-card.php) ----
+   Pinned under its own day on the programme, so it has to read as the main
+   event of the week rather than one more card: reversed onto brand navy, with
+   the photograph carrying the left two-fifths from tablet up and stacking
+   above the text on a phone. Colour choices are contrast-led: white on navy
+   (about 14:1) and orange on navy (about 5.1:1) both clear AA, while white on
+   orange is only about 2.8:1, which is why the badge is an orange outline and
+   the button inverts to navy-on-orange rather than white-on-orange. */
+
+.law-flagship-card {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 1.5rem;
+  background: #292459;
+  border: 2px solid #292459;
+  color: #fff;
+  overflow: hidden;
+}
+
+.law-flagship-card__media {
+  flex: 0 0 auto;
+}
+
+.law-flagship-card__media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  aspect-ratio: 16 / 9;
+}
+
+.law-flagship-card__body {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 1.5rem 1.75rem;
+}
+
+.law-flagship-card__badge {
+  display: inline-block;
+  margin: 0 0 0.6rem;
+  padding: 3px 8px;
+  border: 1px solid #ef7d05;
+  border-radius: 10px;
+  color: #ef7d05;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.law-flagship-card__title {
+  font-family: poppins, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 0.5rem;
+  color: #fff;
+}
+
+.law-flagship-card__title a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.law-flagship-card__title a:hover,
+.law-flagship-card__title a:focus {
+  color: #ef7d05;
+  text-decoration: underline;
+}
+
+.law-flagship-card__meta {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: #fff;
+  opacity: 0.9;
+}
+
+.law-flagship-card__sessions {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+}
+
+.law-flagship-card__sessions li {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.95rem;
+}
+
+.law-flagship-card__session-time {
+  /* Holds a 12-hour range on one line, as the agenda timeline does. */
+  flex: 0 0 9.75rem;
+  color: #ef7d05;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.law-flagship-card__session-title {
+  min-width: 0;
+}
+
+.law-flagship-card__actions {
+  margin-top: 1rem;
+}
+
+.law-flagship-card .button {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
+.law-flagship-card .button:hover,
+.law-flagship-card .button:focus {
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #292459;
+}
+
+/* The committee's status pill, which is absolutely positioned on an ordinary
+   card, sits in the flow here alongside the flagship label. */
+.law-flagship-card .law-cal-card__badge {
+  position: static;
+  display: inline-block;
+  margin: 0 0.5rem 0.6rem 0;
+}
+
+@media (min-width: 48em) {
+  .law-flagship-card {
+    flex-direction: row;
+  }
+
+  .law-flagship-card__media {
+    flex: 0 0 40%;
+  }
+
+  .law-flagship-card__media img {
+    aspect-ratio: auto;
+    min-height: 100%;
+  }
+}
+
+@media (max-width: 47.9375em) {
+  .law-flagship-card__sessions li {
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .law-flagship-card__session-time {
+    flex: 0 0 auto;
+  }
+}
+
 /* --- Host events dashboard (templates/account-events.php) ----------------- */
 
 .law-account-events__toolbar {
@@ -595,6 +926,16 @@
   background: #f4f2fa;
   color: #292459;
   border: 1px solid #c9c5d6;
+}
+
+/* Identity, not status: LAW runs this event itself. Deliberately the only
+   OUTLINE badge in the set — a filled navy pill would be pixel-identical to
+   --confirmed, and an identity tag that looks like a status tag is worse than
+   no tag at all. */
+.law-cal-card__badge--law {
+  background: #fff;
+  color: #292459;
+  border: 1px solid #292459;
 }
 
 .law-cal-card__badge--sent-back {

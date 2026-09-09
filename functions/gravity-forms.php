@@ -69,7 +69,14 @@ function law_prepopulate_orgid( $value ) {
 /* Retire preferred-slot choices without wiping existing entries __________________________________________ */
 
 /**
- * Preferred slots (form 2, field 77).
+ * Preferred slots (form 2 (Event > submit an event), field 77 (Preferred date &
+ * time slots)).
+ *
+ * This constant governs the legacy Gravity Forms route only. The custom module
+ * keeps the same information as a per-slot `retired` flag in the events
+ * settings slot list (see law_events_slots()); step 7 of the migration copies
+ * these four labels into it, so retire a slot in LAW > Events settings from now
+ * on and treat this list as history.
  *
  * Do not delete a choice in the form editor — Gravity Forms only saves values
  * that still exist as choices, so editing an entry that had the retired slot

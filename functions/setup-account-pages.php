@@ -2,9 +2,12 @@
 /**
  * One-time setup for the account pages rework (September 2026).
  *
- * Assigns the hero page templates to the account pages and removes the
+ * Assigns the hero page templates to the account pages, removes the
  * [law_login] shortcode block from the Login page content (the login
- * template renders the forms itself now).
+ * template renders the forms itself now), and makes sure the flagship
+ * conference post exists (functions/events/flagship.php), which is the
+ * flagship's equivalent of a page: it is a law_event post, so its page
+ * template is its permalink and there is nothing to assign.
  *
  * Trigger it as an administrator by visiting:
  *
@@ -49,6 +52,7 @@ function law_setup_account_pages() {
 		$setup['account/dashboard/bookings'] = 'templates/account-bookings-dashboard.php';
 		// The committee's Manage Speakers view (functions/events/speakers-dashboard.php).
 		$setup['account/dashboard/speakers'] = 'templates/account-speakers-dashboard.php';
+		$setup['account/dashboard/flagship'] = 'templates/account-dashboard-flagship.php';
 		// Phase D: the custom profile form replaces the form 3 embed.
 		$setup['account/profile']       = 'templates/account-profile.php';
 	}
@@ -113,6 +117,17 @@ function law_setup_account_pages() {
 	$report[] = 'ACCESS   /account/events/ attendee role: ' . law_setup_account_events_attendee_access();
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
+	$report[] = 'ACCESS   /account/dashboard/flagship/ committee restriction: ' . law_setup_flagship_dashboard_access();
+
+	// The flagship conference. A law_event post rather than a page, so a git
+	// deploy carries the code but not the record; this and the migration's step
+	// 10 both create it, and the Flagship screen creates it on first open, so no
+	// environment needs a manual step after a push. function_exists() because
+	// functions.php requires this file before the events module.
+	if ( function_exists( 'law_flagship_ensure_post' ) ) {
+		$flagship = law_flagship_ensure_post();
+		$report[] = ( $flagship['created'] ? 'CREATED  ' : 'OK       ' ) . '/events/flagship/ ' . $flagship['message'];
+	}
 
 	$login_page = get_page_by_path( 'login' );
 	if ( $login_page instanceof WP_Post ) {
@@ -265,6 +280,11 @@ function law_setup_bookings_dashboard_access() {
 /** The Manage Speakers dashboard's Members restriction. */
 function law_setup_speakers_dashboard_access() {
 	return law_setup_dashboard_child_access( 'account/dashboard/speakers' );
+}
+
+/** The Manage flagship dashboard's Members restriction. */
+function law_setup_flagship_dashboard_access() {
+	return law_setup_dashboard_child_access( 'account/dashboard/flagship' );
 }
 
 /**

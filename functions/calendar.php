@@ -82,14 +82,54 @@ function law_calendar_status_badge( $event ) {
 }
 
 /**
+ * The "LAW" identity tag for an event LAW runs itself, for committee views.
+ *
+ * Deliberately NOT one of the status colours: --law is an outline pill, where
+ * every status variant is filled. A solid navy tag would be pixel-identical to
+ * --confirmed, and the committee would read an identity tag as a status.
+ *
+ * @param int $event_id law_event post ID.
+ */
+function law_event_law_badge( $event_id ) {
+	if ( ! law_event_meta( $event_id, '_law_is_law_event' ) ) {
+		return;
+	}
+	// "LAW" alone is guessable at best, and the badge component uppercases for
+	// us, so the visible text stays short and the screen-reader text explains.
+	echo '<span class="law-cal-card__badge law-cal-card__badge--law">LAW<span class="show-for-sr"> event, run by LAW</span></span>';
+}
+
+/**
+ * "Session agenda: 3 sessions" / "on, none added yet", or '' when it is off.
+ *
+ * Text rather than a pill, and with the count, because a flag switched on with
+ * no sessions is the state that needs chasing and a binary badge would render
+ * it identically to a finished agenda.
+ *
+ * @param int $event_id law_event post ID.
+ */
+function law_event_agenda_summary( $event_id ) {
+	$count = count( law_event_session_ids( $event_id ) );
+	if ( ! law_event_meta( $event_id, '_law_session_agenda' ) && ! $count ) {
+		return '';
+	}
+	return $count
+		? sprintf( _n( 'Session agenda: %d session', 'Session agenda: %d sessions', $count, 'law' ), $count )
+		: __( 'Session agenda: on, none added yet', 'law' );
+}
+
+/**
  * Programme filters from the query string. Fully theme-owned: the calendar
  * queries entries with GFAPI and filters mapped events in PHP, with no
  * GravityView involvement.
  *
  * @return array{kw:string,sector:string,type:string}
  */
-function law_calendar_filters() {
+function law_calendar_filters( $reset = false ) {
 	static $filters = null;
+	if ( $reset ) {
+		$filters = null;
+	}
 	if ( null !== $filters ) {
 		return $filters;
 	}
@@ -167,7 +207,7 @@ function law_calendar_event_matches_filters( $event, $filters ) {
 					$event['venue'],
 					$event['type'],
 					implode( ' ', (array) $event['sectors'] ),
-					wp_strip_all_tags( (string) $event['description'] ),
+					law_rich_text_plain( $event['description'] ),
 				)
 			)
 		);
@@ -348,7 +388,10 @@ function law_calendar_normalise_time( $time ) {
 }
 
 function law_calendar_excerpt( $html, $words = 18 ) {
-	$text = wp_strip_all_tags( (string) $html );
+	// Descriptions are rich text (functions/events/rich-text.php), so block
+	// boundaries have to become spaces before the tags go; wp_strip_all_tags()
+	// alone would run a bulleted list together into one word.
+	$text = law_rich_text_plain( $html );
 	$text = preg_replace( '/\s+/', ' ', $text );
 	return wp_trim_words( trim( $text ), $words, '…' );
 }
@@ -361,9 +404,12 @@ function law_calendar_excerpt( $html, $words = 18 ) {
  *
  * @return array<int, array>
  */
-function law_calendar_events() {
+function law_calendar_events( $reset = false ) {
 	static $cache = array();
-	$key          = law_calendar_context();
+	if ( $reset ) {
+		$cache = array();
+	}
+	$key = law_calendar_context();
 	if ( isset( $cache[ $key ] ) ) {
 		return $cache[ $key ];
 	}
@@ -373,6 +419,14 @@ function law_calendar_events() {
 	$events  = array();
 	if ( 'cpt' === law_events_source() ) {
 		foreach ( law_events_cpt_mapped_events( $allowed ) as $mapped ) {
+			// The flagship never appears as an ordinary card: it is pinned to its
+			// own day as a block of its own (parts/events/flagship-card.php),
+			// regardless of the filters, and it holds no slot to sit under. Every
+			// day grouping, slot bar and per-day count derives from this function,
+			// so excluding it here is enough to keep it out of all of them.
+			if ( ! empty( $mapped['is_flagship'] ) ) {
+				continue;
+			}
 			if ( law_calendar_event_matches_filters( $mapped, $filters ) ) {
 				$events[] = $mapped;
 			}
@@ -777,13 +831,19 @@ function law_calendar_map_entry( $entry, $allowed = null ) {
 		'end'         => $slot['end'],
 		'time_label'   => $slot['time_label'],
 		'unscheduled'  => '' === $slot['date'],
+		// The flagship is a CPT-only feature (there is no legacy entry for it),
+		// carried here purely so both maps return the same shape.
+		'is_flagship'  => false,
 		'is_sponsored' => law_calendar_is_sponsored_event( $entry ),
 		'sort'         => ( $slot['date'] ? $slot['date'] : '9999-99-99' ) . ' ' . ( $slot['start'] ? $slot['start'] : '99:99' ) . ' ' . strtolower( $title ),
 	);
 }
 
-function law_calendar_event_by_id( $entry_id ) {
+function law_calendar_event_by_id( $entry_id, $reset = false ) {
 	static $cache = array();
+	if ( $reset ) {
+		$cache = array();
+	}
 
 	$entry_id = (int) $entry_id;
 	if ( $entry_id < 1 ) {
@@ -923,6 +983,82 @@ function law_calendar_day_nav_label( $date ) {
 		return (string) $date;
 	}
 	return date_i18n( 'l, j M', $ts );
+}
+
+/**
+ * The flagship conference for the programme, or null.
+ *
+ * Resolved through law_calendar_event_by_id(), which applies the public status
+ * filter everywhere but the committee calendar template, so an
+ * APPROVED-but-not-Confirmed flagship renders for the committee with its status
+ * badge and comes back null on the public programme. That is why there is no
+ * explicit 'publish' test here.
+ *
+ * A flagship still in law-draft is null in BOTH places, which is easy to
+ * misread: the committee calendar passes array() to law_events_map_post(), and
+ * that means "any status EXCEPT law-draft" — only the array( '*' ) sentinel
+ * includes drafts, and nothing on the programme path passes it. The committee
+ * previews the block by ticking "Show on the programme", and previews the page
+ * itself from the Flagship screen, which does resolve a draft for whoever can
+ * edit it (templates/flagship-event.php).
+ *
+ * Hydrated, because the block lists the session titles and times.
+ *
+ * @param bool $reset Clear the memo (tests).
+ */
+function law_calendar_flagship_event( $reset = false ) {
+	static $cache = array();
+	if ( $reset ) {
+		$cache = array();
+	}
+	if ( 'cpt' !== law_events_source() || ! function_exists( 'law_flagship_event_id' ) ) {
+		return null;
+	}
+
+	$key = law_calendar_context();
+	if ( array_key_exists( $key, $cache ) ) {
+		return $cache[ $key ];
+	}
+
+	$flagship_id  = law_flagship_event_id();
+	$cache[ $key ] = $flagship_id ? law_calendar_event_by_id( $flagship_id ) : null;
+	return $cache[ $key ];
+}
+
+/**
+ * True when a programme day has nothing to show.
+ *
+ * One rule, two consumers (parts/calendar-events.php skips the day section,
+ * parts/calendar-filters.php greys out its tab), because the flagship makes
+ * "empty" mean more than "no cards": its block is pinned to its own day
+ * whatever the filters say, so that day is never empty while it is published.
+ *
+ * @param string $date Y-m-d key from law_calendar_week_days().
+ */
+function law_calendar_day_is_empty( $date ) {
+	$grouped = law_calendar_events_by_date();
+	if ( ! empty( $grouped[ (string) $date ] ) ) {
+		return false;
+	}
+	$flagship = law_calendar_flagship_event();
+	if ( $flagship && (string) ( $flagship['date'] ?? '' ) === (string) $date ) {
+		return false;
+	}
+	return true;
+}
+
+/**
+ * Clear every request-scoped calendar cache. Production renders one template
+ * per request and never needs this; the tests create events mid-request and do.
+ */
+function law_calendar_reset_caches() {
+	law_calendar_filters( true );
+	law_calendar_events( true );
+	law_calendar_event_by_id( 1, true );
+	law_calendar_flagship_event( true );
+	if ( function_exists( 'law_flagship_event_id' ) ) {
+		law_flagship_event_id( true );
+	}
 }
 
 function law_calendar_events_by_date() {

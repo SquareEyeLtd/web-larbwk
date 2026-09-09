@@ -407,11 +407,16 @@ nav#new-nav .menu {
    Signed in: one account dropdown reading "Logged in as [name]", a native
    <details> enhanced by assets/js/header-nav.js.
 
-   Every control is the site's outlined white button, the same treatment
-   the header's original "MY ACCOUNT" button had: transparent, 1px white
-   border, uppercase Poppins, orange fill on hover (the .button.white
-   recipe). Restated here rather than reusing .button, which is width:100%
-   and carries a transition:all this component does not want.
+   Every control is a borderless white chip: white fill, dark purple
+   sentence-case Poppins, filling to the theme orange with white text on
+   hover, on focus and while the panel is open — the same orange fill the
+   theme's own buttons take on hover (.button.primary:hover,
+   .button.white:hover, .button.active). The labels carry their own casing from
+   law_header_nav(), so nothing here transforms them, and the type is
+   deliberately a size down from the main menu beside it, this being
+   secondary to the navigation. Restated here rather than reusing .button,
+   which is width:100% and carries a transition:all this component does not
+   want.
 
    Desktop: a row of buttons above the main menu. Mobile: one small button
    in the logo row, to the left of the burger.
@@ -463,45 +468,54 @@ nav#new-nav .menu {
     justify-content: center;
     gap: 0.5rem;
     box-sizing: border-box;
-    min-height: 42px;
+    min-height: 34px;
     margin: 0;
-    padding: 0 1.4rem;
-    background-color: transparent;
-    border: 1px solid #fff;
+    padding: 0 1rem;
+    background-color: #fff;
+    border: none;
     border-radius: 0;
-    color: #fff;
+    color: #292459;
     font-family: poppins, sans-serif;
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
     line-height: 1;
-    text-transform: uppercase;
     text-decoration: none;
     white-space: nowrap;
     cursor: pointer;
-    transition: background-color 0.25s ease, border-color 0.25s ease;
+    transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .nav .law-topnav__button:hover,
 .nav .law-topnav__button:focus,
 .nav .law-topnav__account[open] > .law-topnav__trigger {
     background-color: #ef7d05;
-    border-color: #ef7d05;
     color: #fff;
     text-decoration: none;
 }
 
-.nav .law-topnav__button:focus-visible,
+/* The ring sits outside the button, over the hero image, so the white button
+   takes the dark ring and the dark panel keeps the yellow one. It stays dark
+   purple now the fill is orange: an orange ring on an orange fill would not
+   be visible. */
+.nav .law-topnav__button:focus-visible {
+    outline: 2px solid #292459;
+    outline-offset: 2px;
+}
+
 .nav .law-topnav__panel-link:focus-visible {
     outline: 2px solid rgba(255, 204, 2, 0.85);
     outline-offset: 2px;
 }
 
-/* <summary> marker, both forms: WebKit still uses the pseudo-element. */
+/* The account trigger tightens the button's gap so "Logged in as" reads as
+   one phrase with the name; the caret takes the slack back as a margin, so
+   it keeps the 0.5rem the other buttons use. */
 .nav .law-topnav__trigger {
+    gap: 0.3rem;
     list-style: none;
 }
 
+/* The <summary> marker, both forms: WebKit still uses the pseudo-element. */
 .nav .law-topnav__trigger::-webkit-details-marker {
     display: none;
 }
@@ -523,8 +537,11 @@ nav#new-nav .menu {
     text-overflow: ellipsis;
 }
 
+/* A CSS triangle in currentColor, so it follows the text from dark purple to
+   white when the button fills. */
 .nav .law-topnav__caret {
     flex: 0 0 auto;
+    margin-left: 0.2rem;
     width: 0;
     height: 0;
     border-style: solid;
@@ -555,8 +572,8 @@ nav#new-nav .menu {
     min-width: 100%;
     width: max-content;
     max-width: calc(100vw - 2rem);
-    /* Flush with the button: the borders overlap by a pixel. */
-    margin: -1px 0 0;
+    /* Flush with the button, which no longer has a border to overlap. */
+    margin: 0;
     padding: 0.35rem 0;
     list-style: none;
     text-align: left;
@@ -651,6 +668,8 @@ nav#new-nav .menu {
     }
 
     .nav .law-topnav--mobile .law-topnav__caret {
+        /* The grid's column-gap already spaces this from the name. */
+        margin-left: 0;
         border-width: 4px 3.5px 0;
     }
 
@@ -1320,6 +1339,31 @@ nav div.main_list .button.primary {
     background: rgba(38, 30, 91, 0.8);
     mix-blend-mode: unset;
     -webkit-mask-image:none
+}
+
+/*
+ * Solid hero: no photograph, overlay at full opacity.
+ *
+ * For heroes that carry a form (sign in, forgot/reset password, register,
+ * profile, submit/edit an event). A translucent overlay leaves the photograph
+ * showing through behind labels, inputs and validation messages, which costs
+ * contrast and buys nothing once the hero is mostly form. Set it with the
+ * 'solid' arg on parts/layout/hero-title.php, or by adding the class to a
+ * hand-rolled hero section. The image is dropped rather than covered, so the
+ * browser never fetches it; !important because a hero may still carry an
+ * inline background-image from its template.
+ */
+.hero.hero-solid {
+    background-image: none !important;
+    background-color: #292459;
+}
+
+.hero.hero-solid .overlay,
+#pages .hero.hero-solid .overlay {
+    background: #292459;
+    mix-blend-mode: unset;
+    -webkit-mask-image: none;
+    mask-image: none;
 }
 .hero .hero-text {
     position: absolute;

@@ -246,9 +246,12 @@ function law_speakers_dashboard_rows( array $filters, $limit = LAW_SPEAKERS_DASH
 		}
 
 		$photo_id = law_speaker_display_photo_id( (int) $speaker->ID, (int) $headline['photo_id'] );
+		$name     = law_speaker_name_parts( (int) $speaker->ID );
 		$rows[]   = array(
 			'id'           => (int) $speaker->ID,
 			'name'         => $speaker->post_title,
+			'first_name'   => $name['first'],
+			'last_name'    => $name['last'],
 			'email'        => $email,
 			'website'      => $website,
 			'organisation' => $headline['organisation'],
@@ -283,13 +286,14 @@ function law_speakers_dashboard_export_rows( array $filters ) {
 
 	foreach ( $data['rows'] as $row ) {
 		if ( ! $row['appearances'] ) {
-			$rows[] = array( $row['id'], $row['name'], $row['email'], $row['website'], '', '', '', '', '', '', '', '' );
+			$rows[] = array( $row['id'], $row['first_name'], $row['last_name'], $row['email'], $row['website'], '', '', '', '', '', '', '', '' );
 			continue;
 		}
 		foreach ( $row['appearances'] as $appearance ) {
 			$rows[] = array(
 				$row['id'],
-				$row['name'],
+				$row['first_name'],
+				$row['last_name'],
 				$row['email'],
 				$row['website'],
 				$appearance['event_title'],
@@ -299,7 +303,9 @@ function law_speakers_dashboard_export_rows( array $filters ) {
 				law_speaker_role_display( $appearance['role'] ),
 				$appearance['organisation'],
 				$appearance['job_title'],
-				$appearance['bio'],
+				// Plain text: the biography is rich text now, and a CSV or PDF cell
+				// would otherwise carry its markup as visible source.
+				law_rich_text_plain( $appearance['bio'] ),
 			);
 		}
 	}
@@ -320,7 +326,7 @@ function law_speakers_dashboard_export_rows( array $filters ) {
 
 	return array(
 		'title'   => 'Speakers: ' . implode( ', ', $scope ),
-		'columns' => array( 'Speaker ID', 'Name', 'Email', 'Website', 'Event', 'Event date', 'Reference', 'Event status', 'Role', 'Organisation', 'Job title', 'Biography' ),
+		'columns' => array( 'Speaker ID', 'First name', 'Last name', 'Email', 'Website', 'Event', 'Event date', 'Reference', 'Event status', 'Role', 'Organisation', 'Job title', 'Biography' ),
 		'rows'    => $rows,
 	);
 }
@@ -433,6 +439,34 @@ function law_speakers_dashboard_field_labels() {
  */
 add_action( 'admin_post_law_speaker_manage', 'law_speakers_dashboard_save_handler' );
 add_action( 'admin_post_nopriv_law_speaker_manage', 'law_events_nopriv_json' );
+/**
+ * The identity fields, written outright onto the speaker post.
+ *
+ * Deliberately NOT law_speaker_upsert(): that helper only ever fills gaps and
+ * never blanks a value, so it could not clear a wrong website. This screen is
+ * where a name is corrected, so it must be able to change one. post_name is
+ * left alone, so an existing /speakers/<slug>/ link keeps resolving after a
+ * correction.
+ *
+ * Split out of the save handler so it can be tested: the handler itself ends in
+ * a redirect and an exit.
+ *
+ * @param int   $speaker_id Speaker post ID.
+ * @param array $input      name, first_name, last_name, email, website.
+ */
+function law_speakers_dashboard_write_identity( $speaker_id, array $input ) {
+	$speaker_id = (int) $speaker_id;
+	// law_speaker_raw_name(), not get_the_title(): the two values being compared
+	// have to be the same shape, and the posted name came from a form field.
+	if ( trim( (string) $input['name'] ) !== law_speaker_raw_name( $speaker_id ) ) {
+		wp_update_post( wp_slash( array( 'ID' => $speaker_id, 'post_title' => (string) $input['name'] ) ) );
+	}
+	law_event_update_meta( $speaker_id, '_law_speaker_first_name', $input['first_name'] );
+	law_event_update_meta( $speaker_id, '_law_speaker_last_name', $input['last_name'] );
+	law_event_update_meta( $speaker_id, '_law_speaker_email', $input['email'] );
+	law_event_update_meta( $speaker_id, '_law_website', $input['website'] );
+}
+
 function law_speakers_dashboard_save_handler() {
 	// Its own rate surface: a committee member tidying a speaker who appears at
 	// a dozen events must not spend the event-submission budget.
@@ -458,17 +492,23 @@ function law_speakers_dashboard_save_handler() {
 
 	$raw_email = trim( (string) wp_unslash( $_POST['email'] ?? '' ) );
 	$input     = array(
-		'name'        => sanitize_text_field( (string) wp_unslash( $_POST['name'] ?? '' ) ),
+		'first_name'  => sanitize_text_field( (string) wp_unslash( $_POST['first_name'] ?? '' ) ),
+		'last_name'   => sanitize_text_field( (string) wp_unslash( $_POST['last_name'] ?? '' ) ),
 		'email'       => mb_strtolower( sanitize_email( $raw_email ) ),
 		'website'     => esc_url_raw( trim( (string) wp_unslash( $_POST['website'] ?? '' ) ) ),
 		'appearances' => (array) wp_unslash( $_POST['appearances'] ?? array() ),
 	);
+	// The display name every listing prints, rebuilt from the two parts.
+	$input['name'] = law_speaker_full_name( $input['first_name'], $input['last_name'] );
 
 	/* Validation ______________________________________________________ */
 
 	$errors = array();
-	if ( '' === trim( $input['name'] ) ) {
-		$errors['name'] = 'Please give the speaker a full name.';
+	if ( '' === trim( $input['first_name'] ) ) {
+		$errors['first_name'] = 'Please give the speaker a first name.';
+	}
+	if ( '' === trim( $input['last_name'] ) ) {
+		$errors['last_name'] = 'Please give the speaker a last name.';
 	}
 	if ( '' !== $raw_email && '' === $input['email'] ) {
 		$errors['email'] = 'That does not look like an email address.';
@@ -502,15 +542,7 @@ function law_speakers_dashboard_save_handler() {
 
 	/* Identity: one write, every event __________________________________ */
 
-	// Deliberately NOT law_speaker_upsert(): that helper only ever fills gaps
-	// and never blanks a value, so it could not clear a wrong website. post_name
-	// is left alone as well, so an existing /speakers/<slug>/ link keeps
-	// resolving after a name correction.
-	if ( trim( $input['name'] ) !== trim( $speaker->post_title ) ) {
-		wp_update_post( array( 'ID' => $speaker_id, 'post_title' => $input['name'] ) );
-	}
-	law_event_update_meta( $speaker_id, '_law_speaker_email', $input['email'] );
-	law_event_update_meta( $speaker_id, '_law_website', $input['website'] );
+	law_speakers_dashboard_write_identity( $speaker_id, $input );
 
 	/* Appearances: each block to its own event __________________________ */
 
@@ -562,7 +594,7 @@ function law_speakers_dashboard_save_handler() {
 			'organisation' => sanitize_text_field( (string) ( $posted['organisation'] ?? '' ) ),
 			'job_title'    => sanitize_text_field( (string) ( $posted['job_title'] ?? '' ) ),
 			'photo_id'     => $photo_id,
-			'bio'          => sanitize_textarea_field( (string) ( $posted['bio'] ?? '' ) ),
+			'bio'          => law_rich_text_sanitize( $posted['bio'] ?? '' ),
 		);
 
 		$changed = law_speakers_dashboard_write_row( $event_id, $speaker_id, $values );

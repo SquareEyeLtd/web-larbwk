@@ -31,3 +31,6 @@ EVENTS_4.1_FUNC.md
 /.phpunit.cache/
 /.playwright/
 /.playwright-cli/
+
+.playwright/
+.playwright-cli/

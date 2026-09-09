@@ -32,18 +32,9 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 	return $law_values[ $key ] ?? $default;
 };
 
-$law_sections = array(
-	'details'  => 'Event details',
-	'speakers' => 'Speakers',
-	'venue'    => 'Venue',
-	'owners'   => 'Owners & contacts',
-	'fees'     => 'Fees',
-	'agenda'   => 'Session agenda',
-	'finish'   => 'Finish',
-);
 ?>
 
-<section class="hero auth-hero law-event-form-hero" style="background-image: url('<?php echo law_asset( 'assets/images/patrons-and-committee-bg.jpg' ); ?>');">
+<section class="hero auth-hero law-event-form-hero hero-solid">
 	<div class="overlay"></div>
 	<div class="grid-container">
 		<div class="grid-x grid-padding-x">
@@ -68,6 +59,14 @@ $law_sections = array(
 				<div class="large-9 cell auth-intro"><p>Sorry, you are not allowed to edit this event.</p></div>
 			<?php else : ?>
 
+			<?php
+			// Built here, not at the top of the template: before the
+			// $law_can_edit guard above, this read the meta and sessions of
+			// whatever ?law_event= named, including an event the viewer does
+			// not own. The Session agenda entry is dropped unless the
+			// committee has switched the agenda on for this event.
+			$law_sections = law_events_form_sections( $law_post );
+			?>
 			<nav class="large-3 cell law-form-nav" aria-label="Form sections">
 				<ol>
 					<?php foreach ( $law_sections as $law_key => $law_label ) : ?>

@@ -39,15 +39,9 @@ $law_errors = (array) ( $law_state['errors'] ?? array() );
 $law_locked = law_events_locked_fields( $law_post );
 $law_status = law_event_status_label( $law_post );
 
-$law_sections = array(
-	'details'  => 'Event details',
-	'speakers' => 'Speakers',
-	'venue'    => 'Venue',
-	'owners'   => 'Owners & contacts',
-	'fees'     => 'Fees',
-	'agenda'   => 'Session agenda',
-	'finish'   => 'Finish',
-);
+// The Session agenda entry is dropped unless this event has the agenda
+// switched on (law_events_form_sections() in submission-form.php).
+$law_sections = law_events_form_sections( $law_post );
 ?>
 
 <h1 class="law-dashboard__title"><?php echo esc_html( $law_post->post_title ); ?>

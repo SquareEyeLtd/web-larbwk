@@ -55,7 +55,7 @@ $law_countries = law_registration_country_choices();
 	<p class="law-form-field<?php echo esc_attr( $law_pf_class( 'country' ) ); ?>"><label for="law-reg-country">Country of residence *</label>
 		<?php if ( $law_countries ) : ?>
 			<select id="law-reg-country" name="country" autocomplete="country-name" required>
-				<option value="">Choose…</option>
+				<option value="">Select country</option>
 				<?php foreach ( $law_countries as $law_country ) : ?>
 					<option value="<?php echo esc_attr( $law_country ); ?>" <?php selected( $law_pf_value( 'country' ), $law_country ); ?>><?php echo esc_html( $law_country ); ?></option>
 				<?php endforeach; ?>

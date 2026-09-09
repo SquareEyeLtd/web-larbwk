@@ -10,9 +10,10 @@
  * account dropdown reading "Logged in as [name]". What appears is decided by
  * law_header_nav() (functions/header-nav.php); this file only draws it.
  *
- * Every control is the site's outlined white button (see .law-topnav__button
- * in assets/css/app.css), the same treatment the header's original
- * "MY ACCOUNT" button had.
+ * Every control is a small borderless white chip with dark purple text
+ * (see .law-topnav__button in assets/css/app.css), filling to the theme
+ * orange with white text on hover, on focus and while the account panel is
+ * open, the way the theme's own buttons highlight.
  *
  * Both variants are in the DOM at once. The desktop copy sits inside the
  * .show-for-large grid cell above the main menu; the mobile copy is a

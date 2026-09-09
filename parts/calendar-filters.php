@@ -23,7 +23,13 @@ $law_types     = law_calendar_field_choices( 63 );
 
 	<nav class="law-cal-daynav" aria-label="<?php esc_attr_e( 'Jump to a day', 'law' ); ?>">
 		<?php foreach ( $law_days as $law_date => $law_heading ) : ?>
-			<?php $law_day_empty = empty( $law_by_date[ $law_date ] ); ?>
+			<?php
+			// Shared with parts/calendar-events.php: the flagship's day is never
+			// empty while it is published, however the list is filtered.
+			$law_day_empty = function_exists( 'law_calendar_day_is_empty' )
+				? law_calendar_day_is_empty( $law_date )
+				: empty( $law_by_date[ $law_date ] );
+			?>
 			<a
 				class="law-cal-daynav__link<?php echo $law_day_empty ? ' is-empty' : ''; ?>"
 				href="#day-<?php echo esc_attr( $law_date ); ?>"

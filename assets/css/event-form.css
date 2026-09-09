@@ -11,25 +11,77 @@
 	.law-event-form-hero { padding-bottom: 140px; }
 }
 .law-event-form fieldset { border: 0; padding: 0; margin: 0 0 2.5rem; }
-.law-event-form legend { color: #ffcc02; font-size: 1.4rem; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem; }
+.law-event-form legend { color: var(--law-form-legend); font-size: 1.4rem; font-weight: 700; text-transform: uppercase; margin-bottom: 1rem; }
 .law-form-field { margin-bottom: 1.1rem; }
 /* The single field-label style for every custom form (event form, register,
    profile, committee dashboard; .law-auth-field in auth.css matches it). The
    size is stated rather than inherited so it can't drift with Foundation's
    own `label { font-size: .875rem }`. */
 .law-form-field label, .law-form-label { display: block; font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
-/* Yellow labels belong to the purple hero form only. */
-.law-event-form .law-form-field label, .law-event-form .law-form-label { color: #ffcc02; }
+/* Yellow on the hero, dark on the light form — see the token block above. */
+.law-event-form .law-form-field label, .law-event-form .law-form-label { color: var(--law-form-label-colour); }
 /* One control height for every single-line control on every custom form, so a
    <select> can never render a few pixels shorter than the text input beside it
    (the bug: selects were pinned to Foundation's 39px while the register and
    profile text inputs took auth.css's 2.75rem). auth.css states the same value
    for the sign-in/forgot/reset forms, which load without this file. */
 :root { --law-field-height: 2.75rem; }
+/* The two-palette contract -----------------------------------------------
+   Every custom form in the module is authored ONCE, dark-hero-first, against
+   the tokens below. The committee/booking variant (.law-event-form--light)
+   then redefines the same tokens in a single block at the end of this file
+   and inherits them down, instead of restating each rule at a higher
+   specificity.
+   That restating is what kept breaking: a light rule and the dark rule it
+   shadowed had to tie on specificity AND win on source order, so a base rule
+   written with an extra selector (a :has() clause, a > child combinator) went
+   on quietly painting hero colours on the white dashboard. The session
+   Description and speaker Biography labels rendered white-on-white for exactly
+   that reason.
+   So: NEVER add a `.law-event-form--light .foo { color: … }` override. Give
+   .foo a token here, use it in the base rule, and set the light value in the
+   --light block. A new colour that differs between the two palettes needs a
+   new token, not a new override. */
+:root {
+	/* Type */
+	--law-form-legend: #ffcc02;
+	--law-form-label-colour: #ffcc02;
+	/* Checkbox/radio option labels, which are lighter than a field label. */
+	--law-form-choice-label: #fff;
+	/* Repeater-row labels (speakers, sessions, owners, contacts), including the
+	   .law-form-label span the rich-text rows carry in place of a <label>. */
+	--law-form-row-label: #fff;
+	--law-form-hint-colour: #d7d7ea;
+	--law-form-status-colour: #d7d7ea;
+	--law-form-status-strong: #ffcc02;
+	--law-form-locked-note: #d7d7ea;
+	/* Controls. The hero's inputs are borderless white on purple; the light
+	   form needs a real border or the field vanishes into the card. The
+	   "cleared" value is what an .is-touched control falls back to once its
+	   red invalid border goes: it must keep the SAME width as the border it
+	   replaces, or the text inside shifts as the host types. */
+	--law-form-input-border: 0;
+	--law-form-input-border-cleared: 2px solid transparent;
+	/* Errors: the strip behind an inline message, its left rule and its text.
+	   The accent doubles as the invalid control's border. */
+	--law-form-error-bg: rgba(255, 255, 255, .12);
+	--law-form-error-accent: #ff5c4d;
+	--law-form-error-text: #fff;
+	/* Repeater rows: a translucent panel on the hero photo, a pale card on white. */
+	--law-form-row-bg: rgba(255, 255, 255, .16);
+	--law-form-row-border: rgba(255, 255, 255, .28);
+	/* Destructive text buttons: the row's × and the photo's Clear link. */
+	--law-form-destructive: #ff8f84;
+	--law-form-destructive-soft: #ffb3ab;
+	/* The sticky section nav, which sits OUTSIDE the form element, so its
+	   light values are set on .law-dashboard rather than in the --light block. */
+	--law-form-nav-link: #fff;
+	--law-form-nav-border: rgba(255, 255, 255, .15);
+}
 .law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
 .law-event-form input[type="password"],
 .law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select, .law-event-form textarea {
-	width: 100%; border: 0; border-radius: 0; padding: .6rem .75rem; background: #fff; color: #1a1a3d; margin: 0;
+	width: 100%; border: var(--law-form-input-border); border-radius: 0; padding: .6rem .75rem; background: #fff; color: #1a1a3d; margin: 0;
 	/* box-sizing so the padding and any error border are inside the stated
 	   height, not added to it. */
 	box-sizing: border-box; line-height: 1.5; font-size: 1rem; font-family: inherit;
@@ -82,7 +134,7 @@
 .law-form-field.is-invalid input:focus, .law-form-field.is-invalid select:focus,
 .law-form-field.is-invalid textarea:focus,
 .law-form-field:has(> .law-form-error) input:focus, .law-form-field:has(> .law-form-error) select:focus,
-.law-form-field:has(> .law-form-error) textarea:focus { border-color: #ff5c4d; }
+.law-form-field:has(> .law-form-error) textarea:focus { border-color: var(--law-form-error-accent); }
 /* Locked fields: a text input is rendered readonly and a select disabled (a
    readonly select isn't a thing), so both attributes have to paint the same
    grey. Foundation's own rules cover only some of these combinations. */
@@ -123,7 +175,7 @@
 /* Only the colour of a choice option is theme-specific (white on the purple
    hero form, dark in the light committee panel). Everything below it is layout,
    so it is stated once for both and every custom form shares one option rhythm. */
-.law-event-form .law-choices label { color: #fff; }
+.law-event-form .law-choices label { color: var(--law-form-choice-label); }
 /* Checkbox/radio options everywhere on the form (choice groups and the inline
    radio/checkbox lists in Venue, Fees and Finish): keep the box tight to its
    own label, and keep the gap BETWEEN options no larger than that (the bug was
@@ -136,7 +188,7 @@
 .law-dashboard__controls label:has(> input[type="checkbox"]),
 .law-dashboard__controls label:has(> input[type="radio"]) { display: block; margin: 0 0 .2rem; line-height: 1.3; font-weight: 400; }
 .law-event-form label:has(> input[type="checkbox"]),
-.law-event-form label:has(> input[type="radio"]) { color: #fff; }
+.law-event-form label:has(> input[type="radio"]) { color: var(--law-form-choice-label); }
 /* Full margin reset: Foundation ships radios/checkboxes with margin:0 0 1rem,
    and that 1rem bottom margin was opening a gap between options wider than the
    box-to-label gap. Keep only the small right margin to the label. */
@@ -171,7 +223,7 @@
 	background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%231a1a3d' d='M0 0h12L6 8z'/%3E%3C/svg%3E") no-repeat right .7rem center;
 	background-size: .7rem; padding-right: 2rem;
 }
-.law-form-hint { color: #d7d7ea; font-size: .9rem; }
+.law-form-hint { color: var(--law-form-hint-colour); font-size: .9rem; }
 /* Inline field errors share the error notice's design (light strip, red
    left border, small text); high specificity so the hero's large white
    paragraph styles cannot swallow them. */
@@ -179,8 +231,8 @@
 .law-thread-view .law-form-error, p.law-form-error, span.law-form-error {
 	/* Same type as the form-level notice above the form (inherited size, normal
 	   weight): the inline message is the same voice, not a louder one. */
-	display: block; background: rgba(255, 255, 255, .12); border-left: 4px solid #ff5c4d;
-	color: #fff; font-weight: 400; padding: .45rem .75rem; margin: .4rem 0 0;
+	display: block; background: var(--law-form-error-bg); border-left: 4px solid var(--law-form-error-accent);
+	color: var(--law-form-error-text); font-weight: 400; padding: .45rem .75rem; margin: .4rem 0 0;
 }
 /* A field with an error is itself highlighted, by a red border on its control.
    :has() pairs a field with the message it renders, so nothing has to tag the
@@ -190,12 +242,12 @@
 .law-form-field.is-invalid input, .law-form-field.is-invalid select, .law-form-field.is-invalid textarea,
 .law-form-field:has(> .law-form-error) input, .law-form-field:has(> .law-form-error) select,
 .law-form-field:has(> .law-form-error) textarea {
-	border: 2px solid #ff5c4d;
+	border: 2px solid var(--law-form-error-accent);
 }
 /* Cleared as soon as the host edits the control (event-form.js adds
    .is-touched), so a corrected field stops shouting at them. */
 .law-form-field.is-touched input, .law-form-field.is-touched select, .law-form-field.is-touched textarea {
-	border-color: transparent;
+	border: var(--law-form-input-border-cleared);
 }
 /* Password strength: WordPress core's own indicator design — a solid
    pastel bar with a matching border and dark centred text. Hidden while
@@ -217,10 +269,10 @@ p.law-pass-strength.is-good { background: #f5e6ab; border-color: #f0c33c; }
 p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-form-notice { background: rgba(255, 255, 255, .12); border-left: 4px solid #ffcc02; color: #fff; padding: .8rem 1rem; margin-bottom: 1.2rem; }
 .law-form-notice.is-error { border-left-color: #ff5c4d; }
-.law-form-status { color: #d7d7ea; }
-.law-form-status strong { color: #ffcc02; }
+.law-form-status { color: var(--law-form-status-colour); }
+.law-form-status strong { color: var(--law-form-status-strong); }
 .is-locked input, .is-locked select, .is-locked textarea { opacity: .55; }
-.law-locked-note { display: inline-block; color: #d7d7ea; font-size: .8rem; font-style: italic; margin-top: .2rem; }
+.law-locked-note { display: inline-block; color: var(--law-form-locked-note); font-size: .8rem; font-style: italic; margin-top: .2rem; }
 .law-hp { position: absolute !important; left: -9999px; height: 1px; overflow: hidden; }
 
 /* Section nav */
@@ -235,14 +287,14 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-form-nav a,
 .law-form-nav a:visited,
 .law-form-nav a:focus,
-.law-form-nav a:active { color: #fff; display: block; padding: .35rem 0; border-bottom: 1px solid rgba(255, 255, 255, .15); }
+.law-form-nav a:active { color: var(--law-form-nav-link); display: block; padding: .35rem 0; border-bottom: 1px solid var(--law-form-nav-border); }
 .law-form-nav a:hover { color: #ffcc02; }
 @media screen and (max-width: 63.9375em) { .law-form-nav { display: none; } }
 
 /* Repeater rows */
 /* Each repeated row needs a visible boundary: at 8% tint it vanished against
    the hero photo, so a multi-speaker panel ran together. */
-.law-row { position: relative; background: rgba(255, 255, 255, .16); border: 1px solid rgba(255, 255, 255, .28); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
+.law-row { position: relative; background: var(--law-form-row-bg); border: 1px solid var(--law-form-row-border); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
 .law-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1rem; }
 .law-row-grid--three { grid-template-columns: 1fr 1fr 1fr; }
 /* Repeater rows (speakers, sessions, additional owners, event contacts): their
@@ -255,13 +307,18 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    address), and an unscoped rule flattened those real field labels.
    Scoped to DIRECT children so it never reaches the option labels inside a
    choice group in a row (the session speaker checkboxes), which stay 400. */
-.law-row .law-row-grid > label { color: #fff; font-weight: 600; font-size: .9rem; }
+.law-row .law-row-grid > label { color: var(--law-form-row-label); font-weight: 600; font-size: .9rem; }
 .law-row-wide { grid-column: 1 / -1; }
+/* A rich-text field cannot live inside its own <label>: TinyMCE moves the
+   control out of it and the label would then point at nothing. Those rows
+   carry a .law-form-label span instead, which has to read as the row labels
+   beside it rather than as a full-size purple-form field label. */
+.law-row .law-row-grid > .law-row-wide > .law-form-label { color: var(--law-form-row-label); font-weight: 600; font-size: .9rem; margin-bottom: .25rem; }
 /* The session speaker picker sits inside a repeater row, so its group label
    matches the row's own labels rather than a full-size field label. */
-.law-row .law-session-speakers .law-form-label { color: #fff; font-weight: 600; font-size: .9rem; }
+.law-row .law-session-speakers .law-form-label { color: var(--law-form-row-label); font-weight: 600; font-size: .9rem; }
 .law-session-speakers .law-form-hint { margin: 0; }
-.law-row-remove { position: absolute; top: .4rem; right: .6rem; background: none; border: 0; color: #ffb3ab; font-size: 1.3rem; cursor: pointer; line-height: 1; }
+.law-row-remove { position: absolute; top: .4rem; right: .6rem; background: none; border: 0; color: var(--law-form-destructive); font-size: 1.3rem; cursor: pointer; line-height: 1; }
 .law-row-add { margin-top: .25rem; }
 /* The shared "Add …" button falls back to Foundation's blue on hover; give it
    the same orange hover as the event-card buttons (.law-cal .button:hover).
@@ -272,17 +329,22 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    orange, giving no distinct focus affordance). */
 .law-row-add:focus-visible { outline: 2px solid #ffcc02; outline-offset: 2px; }
 /* Grow the tiny remove hit area and drop the ad-hoc pink for the brand error red. */
-.law-row-remove { padding: .1rem .35rem; color: #ff8f84; }
+.law-row-remove { padding: .1rem .35rem; color: var(--law-form-destructive); }
 .law-row-remove:hover, .law-row-remove:focus { color: #ff5c4d; }
 /* Clear button for a chosen speaker photo. [hidden] must win over the authored
    display, or the button shows before any file is chosen. */
 .law-file-clear[hidden] { display: none !important; }
-.law-file-clear { display: inline-block; margin-top: .25rem; background: none; border: 0; padding: 0; color: #ffb3ab; font-size: .8rem; text-decoration: underline; cursor: pointer; }
+.law-file-clear { display: inline-block; margin-top: .25rem; background: none; border: 0; padding: 0; color: var(--law-form-destructive-soft); font-size: .8rem; text-decoration: underline; cursor: pointer; }
 .law-file-clear:hover, .law-file-clear:focus { color: #ff5c4d; }
+/* The "current photo" note sits on its own line under the file input, with the
+   thumbnail beside it: inline flow let the caption wrap raggedly around the
+   40px thumb instead of reading as one line of text. */
+.law-current-photo { display: flex; align-items: center; gap: .5rem; margin-top: .4rem; font-size: .8rem; line-height: 1.3; }
+.law-current-photo img { flex: 0 0 auto; border-radius: 2px; }
 @media screen and (max-width: 39.9375em) { .law-row-grid, .law-row-grid--three { grid-template-columns: 1fr; } }
 
 .law-form-buttons .button { margin-right: .75rem; }
-.law-terms label { color: #fff; font-weight: 400; }
+.law-terms label { color: var(--law-form-choice-label); font-weight: 400; }
 .law-terms a { color: #ffcc02; text-decoration: underline; }
 
 /* Light-section colour reset: the theme's global styles paint body text,
@@ -402,6 +464,12 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__people--plain li { display: block; }
 .law-dashboard__person-photo { width: 56px; height: 56px; object-fit: cover; border-radius: 50%; flex-shrink: 0; }
 .law-dashboard__person-bio { margin: .3rem 0 0; font-size: .9rem; color: #444; }
+/* Both preview blocks hold rendered rich text now, so the paragraphs inside
+   them carry the sizing the single <p> used to. */
+.law-dashboard__person-bio p, .law-dashboard__person-bio li { margin-bottom: .3rem; font-size: .9rem; }
+.law-dashboard__person-bio > :last-child, .law-dashboard__session-body > :last-child { margin-bottom: 0; }
+.law-dashboard__session-body { margin: .2rem 0 0; }
+.law-dashboard__session-body p, .law-dashboard__session-body li { margin-bottom: .3rem; }
 .law-dashboard__person-role { font-size: .85rem; color: #666; }
 .law-dashboard__sessions { list-style: none; margin: .5rem 0 0; }
 .law-dashboard__sessions li { padding: .5rem 0; border-bottom: 1px solid #eee; }
@@ -412,64 +480,46 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-dashboard__log .law-log li { padding: .3rem 0; border-bottom: 1px solid #eee; }
 .law-dashboard__log .law-log__date { color: #757575; margin-right: .4rem; }
 
-/* The committee edit view (--light): the form CSS above is dark-hero-first
-   (yellow legends/labels, borderless white inputs, white choice labels), all
-   of which is invisible or illegible on the dashboard's white background, so
-   the committee variant repaints text dark and gives controls a real border.
-   The orange hover/focus rings and the red invalid borders read fine on white
-   and are left alone. */
-.law-event-form--light legend { color: #1a1a3d; }
-.law-event-form--light .law-form-field label, .law-event-form--light .law-form-label { color: #1a1a3d; }
-/* Mirror the base rules' :has() selectors exactly: the dark-hero rule
-   `.law-event-form label:has(> input[type="checkbox"])` is 0,2,2, so a plain
-   `.law-choices label` override (0,2,1) loses to it whatever the source
-   order — the checkbox/radio overrides must carry the same :has() clause. */
-.law-event-form--light .law-choices label,
-.law-event-form--light label:has(> input[type="checkbox"]),
-.law-event-form--light label:has(> input[type="radio"]) { color: #1a1a3d; }
-.law-event-form--light input[type="text"], .law-event-form--light input[type="email"],
-.law-event-form--light input[type="url"], .law-event-form--light input[type="password"],
-.law-event-form--light input[type="number"], .law-event-form--light input[type="time"],
-.law-event-form--light select, .law-event-form--light textarea {
-	border: 1px solid #c8c8d4;
+/* The committee/booking variant (--light) ---------------------------------
+   The whole light palette, and nothing else. Every rule above is authored
+   once against the tokens; this block just says what those tokens mean on a
+   white card. Nothing here re-states a rule from above: where a colour
+   differs between the two palettes it is a token, not an override. (The
+   `.law-event-form--light .law-booking-*` rules further down are not that
+   pattern; those elements have no dark counterpart to fork, because the
+   booking form only ever renders light.) See the token block at the top of
+   the file for why this matters.
+   Doubled class (0,2,0) so the redefinition wins over the :root defaults
+   whatever the source order, and over anything else that ever sets these on
+   the form element itself.
+   The orange hover/focus rings read fine on white and are shared, so they
+   are not tokenised. */
+.law-event-form.law-event-form--light {
+	--law-form-legend: #1a1a3d;
+	--law-form-label-colour: #1a1a3d;
+	--law-form-choice-label: #1a1a3d;
+	--law-form-row-label: #1a1a3d;
+	--law-form-hint-colour: #55556e;
+	--law-form-status-colour: #55556e;
+	--law-form-status-strong: #1a1a3d;
+	--law-form-locked-note: #6a6a80;
+	/* A real border, or a borderless white input disappears into the card.
+	   The cleared value keeps that same 1px so an .is-touched control settles
+	   back to the resting border rather than to nothing. */
+	--law-form-input-border: 1px solid #c8c8d4;
+	--law-form-input-border-cleared: 1px solid #c8c8d4;
+	/* The darker red: #ff5c4d is a hero colour and fails contrast on white. */
+	--law-form-error-bg: #fcf0f1;
+	--law-form-error-accent: #b32d2e;
+	--law-form-error-text: #1a1a3d;
+	--law-form-row-bg: #f7f7fb;
+	--law-form-row-border: #e3e3ec;
+	--law-form-destructive: #b32d2e;
+	--law-form-destructive-soft: #b32d2e;
 }
-/* The base invalid/touched border rules (red 2px, cleared to transparent on
-   edit) tie my bordered-inputs rule above on specificity and sit earlier in
-   the file, so they must be restated for the light form or an invalid field
-   would never show its red border here. Touched restores the grey border
-   (not transparent — these inputs are bordered, unlike the hero's). */
-.law-event-form--light .law-form-field.is-invalid input,
-.law-event-form--light .law-form-field.is-invalid select,
-.law-event-form--light .law-form-field.is-invalid textarea,
-.law-event-form--light .law-form-field:has(> .law-form-error) input,
-.law-event-form--light .law-form-field:has(> .law-form-error) select,
-.law-event-form--light .law-form-field:has(> .law-form-error) textarea {
-	border: 2px solid #b32d2e;
-}
-.law-event-form--light .law-form-field.is-touched input,
-.law-event-form--light .law-form-field.is-touched select,
-.law-event-form--light .law-form-field.is-touched textarea {
-	border: 1px solid #c8c8d4;
-}
-.law-event-form--light .law-form-hint { color: #55556e; }
-.law-event-form--light .law-form-status { color: #55556e; }
-.law-event-form--light .law-form-status strong { color: #1a1a3d; }
-.law-event-form--light .law-locked-note { color: #6a6a80; }
-.law-event-form--light .law-form-error {
-	background: #fcf0f1; border-left-color: #b32d2e; color: #1a1a3d;
-}
-/* Repeater rows: translucent white on the hero, a pale card on white. */
-.law-event-form--light .law-row { background: #f7f7fb; border-color: #e3e3ec; }
-.law-event-form--light .law-row .law-row-grid > label,
-.law-event-form--light .law-row .law-session-speakers .law-form-label { color: #1a1a3d; }
-.law-event-form--light .law-row-remove { color: #b32d2e; }
-.law-event-form--light .law-row-remove:hover, .law-event-form--light .law-row-remove:focus { color: #ff5c4d; }
-.law-event-form--light .law-file-clear { color: #b32d2e; }
-/* The section nav next to the light form (same white context). */
-.law-dashboard .law-form-nav a,
-.law-dashboard .law-form-nav a:visited,
-.law-dashboard .law-form-nav a:focus,
-.law-dashboard .law-form-nav a:active { color: #1a1a3d; border-bottom-color: #e3e3ec; }
+/* The section nav sits OUTSIDE the <form> (a sibling cell in the grid), so it
+   never inherits the tokens above; the white context it shares is .law-dashboard. */
+.law-dashboard { --law-form-nav-link: #1a1a3d; --law-form-nav-border: #e3e3ec; }
 .law-dashboard .law-form-nav a:hover { color: #ef7d05; }
 
 /* Bookings (EVENTS_BOOKINGS.md §7.2): the booking form's own bits, shared by
@@ -509,6 +559,12 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-booking-cancelled { margin-top: 2rem; }
 .law-booking-cancelled > summary { cursor: pointer; color: #5a5a7a; margin-bottom: 1rem; }
 .law-dashboard .law-cal-export { margin: 0 0 1.5rem; }
+.law-dashboard__result-count { color: #55556e; font-size: .85rem; margin: 0 0 .6rem; }
+
+/* Secondary fact under an event's title/reference (the session-agenda state).
+   Quiet on purpose: it is context for the row, not a second heading. */
+.law-dashboard__row-note { color: #55556e; font-size: .8rem; }
+
 .law-dashboard__row-actions { white-space: nowrap; }
 .law-dashboard__row-actions .button { margin-right: .35rem; }
 /* The bookings table: one row per booking, which is one row per attendee

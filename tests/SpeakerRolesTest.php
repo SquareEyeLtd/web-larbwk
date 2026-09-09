@@ -53,8 +53,8 @@ class SpeakerRolesTest extends LAW_Test_Case {
 		law_events_form_save_speakers(
 			$event,
 			array(
-				array( 'name' => 'Role Form Testspeaker', 'email' => 'role-form-test@example.test', 'organisation' => 'Firm C', 'job_title' => 'Partner', 'role' => 'Host' ),
-				array( 'name' => 'Role Form Second Testspeaker', 'email' => 'role-form-test-2@example.test', 'organisation' => 'Firm D', 'job_title' => 'Counsel' ),
+				array( 'first_name' => 'Role Form', 'last_name' => 'Testspeaker', 'email' => 'role-form-test@example.test', 'organisation' => 'Firm C', 'job_title' => 'Partner', 'role' => 'Host' ),
+				array( 'first_name' => 'Role Form Second', 'last_name' => 'Testspeaker', 'email' => 'role-form-test-2@example.test', 'organisation' => 'Firm D', 'job_title' => 'Counsel' ),
 			),
 			array()
 		);

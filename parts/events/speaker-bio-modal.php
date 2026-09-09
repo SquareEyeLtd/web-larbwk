@@ -63,7 +63,7 @@ $law_bm_bio   = trim( (string) ( $law_bm_speaker['bio'] ?? '' ) );
 		// and label to announce it with.
 		?>
 		<div class="law-modal__bio" tabindex="0" role="group" aria-label="<?php esc_attr_e( 'Biography', 'law' ); ?>">
-			<?php echo wp_kses_post( wpautop( wp_strip_all_tags( strip_shortcodes( $law_bm_bio ) ) ) ); ?>
+			<?php echo law_rich_text_render( $law_bm_bio ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_kses'd against the rich-text allowlist. ?>
 		</div>
 		<?php if ( ! empty( $law_bm_speaker['url'] ) ) : ?>
 			<?php

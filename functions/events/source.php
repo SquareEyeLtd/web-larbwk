@@ -72,17 +72,24 @@ function law_events_map_post( $post, $allowed = null ) {
 		return null;
 	}
 
+	// The flagship conference is the one event whose date is fixed rather than
+	// slotted, and whose times are derived from its sessions. Before anyone has
+	// written its agenda it has no start at all, and it must NOT then drop off
+	// the programme the way an unslotted host submission does: its block is
+	// pinned to its own day (functions/calendar.php).
+	$is_flagship = function_exists( 'law_flagship_is' ) && law_flagship_is( $post->ID );
+
 	$start = (string) law_event_meta( $post->ID, '_law_start' );
 	$end   = (string) law_event_meta( $post->ID, '_law_end' );
 	$slot  = array(
-		'date'       => $start ? substr( $start, 0, 10 ) : '',
+		'date'       => $start ? substr( $start, 0, 10 ) : ( $is_flagship ? law_flagship_date( $post->ID ) : '' ),
 		'start'      => $start ? substr( $start, 11, 5 ) : '',
 		'end'        => $end ? substr( $end, 11, 5 ) : '',
 		'time_label' => '',
 	);
 	$slot['time_label'] = $slot['start']
 		? ( $slot['end'] ? $slot['start'] . '-' . $slot['end'] : $slot['start'] . ' onwards' )
-		: 'Slot not confirmed';
+		: ( $is_flagship ? 'Times to be announced' : 'Slot not confirmed' );
 
 	if ( '' === $slot['date'] && ! $all ) {
 		return null; // Public calendar hides unscheduled events, as before.
@@ -121,6 +128,7 @@ function law_events_map_post( $post, $allowed = null ) {
 		'end'          => $slot['end'],
 		'time_label'   => $slot['time_label'],
 		'unscheduled'  => '' === $slot['date'],
+		'is_flagship'  => $is_flagship,
 		'is_sponsored' => law_events_post_is_sponsored( $post ),
 		'sort'         => ( $slot['date'] ?: '9999-99-99' ) . ' ' . ( $slot['start'] ?: '99:99' ) . ' ' . strtolower( $title ),
 	);
@@ -452,6 +460,16 @@ function law_events_resolve_event_post_id( $id ) {
  */
 add_filter( 'template_include', function ( $template ) {
 	if ( 'cpt' === law_events_source() && is_singular( LAW_EVENT_CPT ) ) {
+		// The flagship conference renders the same body through its own
+		// template, which trims the details box to date, time and location and
+		// suppresses the booking control (it is approval-gated, with its own
+		// application flow to come: EVENTS_4.2_SPECS.md §5).
+		if ( function_exists( 'law_flagship_is' ) && law_flagship_is( get_queried_object_id() ) ) {
+			$flagship = get_theme_file_path( 'templates/flagship-event.php' );
+			if ( file_exists( $flagship ) ) {
+				return $flagship;
+			}
+		}
 		$single = get_theme_file_path( 'templates/event-single.php' );
 		if ( file_exists( $single ) ) {
 			return $single;

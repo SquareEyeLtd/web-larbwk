@@ -432,7 +432,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is nearly full: {event_title}',
-			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
+			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nIf LAW arranged your venue, the places are set by the committee, so please reply to this email and we will raise them for you.\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
 		),
 	);
 }
@@ -475,7 +475,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 				$summary .= $summary_label . ': ' . $summary_value . "\n";
 			}
 		}
-		$summary .= "\n" . wp_trim_words( wp_strip_all_tags( $post->post_content ), 60, '…' );
+		$summary .= "\n" . wp_trim_words( law_rich_text_plain( $post->post_content ), 60, '…' );
 	}
 
 	$placeholders = array(

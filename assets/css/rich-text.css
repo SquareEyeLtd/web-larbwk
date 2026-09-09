@@ -1,0 +1,132 @@
+/*
+ * The WYSIWYG editor on the events forms (functions/events/rich-text.php,
+ * assets/js/law-rich-text.js).
+ *
+ * TinyMCE brings its own skin, so this file only does two jobs: make the
+ * editor sit in the form the way the plain textarea it replaced did (same
+ * white box inside the same grey border, same orange focus ring, same red
+ * border when the field is in error), and undo the handful of Foundation and
+ * theme rules that leak into the toolbar because its controls are ordinary
+ * <button> and <div> elements.
+ */
+
+/* The wrapper is inline by default because it is printed inside a <p> or a
+   <label>; it has to be a block for the editor to take the field's width. */
+.law-rich-text {
+	display: block;
+	width: 100%;
+}
+
+/* Before the editor attaches — and forever, for anyone without JavaScript —
+   the textarea is the field, so it keeps the theme's own textarea styling and
+   simply behaves as it did before this became a rich-text field. */
+.law-rich-text .law-rich-text__area {
+	width: 100%;
+	margin: 0;
+}
+
+/* TinyMCE's container. It takes a real border, like the bordered controls in
+   .law-event-form--light and in wp-admin: the toolbar band and the white
+   writing area otherwise bleed into the white page behind them, so the field
+   has no edges at all. 1px grey to match those controls; an error swaps in a
+   2px red one, exactly as they do. */
+.law-rich-text .mce-tinymce,
+.law-rich-text .wp-editor-container {
+	width: 100% !important;
+	border: 1px solid #c8c8d4;
+	border-radius: 0;
+	box-shadow: none;
+	background: #fff;
+}
+
+/* The focus ring the rest of the form draws on :focus. TinyMCE keeps the real
+   focus inside its iframe, so the ring is driven by the class the editor puts
+   on its own container instead. */
+.law-rich-text .mce-tinymce.mce-container:focus-within,
+.law-rich-text .mce-edit-focus,
+.law-rich-text .mce-panel.mce-edit-focus {
+	outline: 2px solid #ef7d05;
+	outline-offset: 1px;
+}
+
+.law-rich-text .mce-toolbar-grp,
+.law-rich-text .mce-menubar {
+	background: #f4f4f7;
+	border-bottom: 1px solid #dcdce4;
+}
+
+/* Foundation gives every <button> its own padding, colour and hover state,
+   and app.css sets a font on them. Left alone, the toolbar icons end up as
+   fat orange blocks. */
+.law-rich-text .mce-toolbar .mce-btn button,
+.law-rich-text .mce-toolbar .mce-btn button:hover,
+.law-rich-text .mce-toolbar .mce-btn button:focus {
+	margin: 0;
+	padding: 2px 3px;
+	border-radius: 0;
+	background: transparent;
+	color: inherit;
+	font-family: inherit;
+	font-size: 13px;
+	line-height: 20px;
+	text-transform: none;
+	letter-spacing: normal;
+}
+
+/* The block-format dropdown ("Paragraph / Heading / Subheading") is a button
+   with a text label, so it needs a width the words actually fit in. */
+.law-rich-text .mce-toolbar .mce-btn.mce-listbox button {
+	padding-right: 20px;
+	text-align: left;
+}
+
+.law-rich-text .mce-btn.mce-active button,
+.law-rich-text .mce-btn.mce-active:hover button {
+	color: #292459;
+}
+
+/* An invalid field: the same red the other controls take, on the container
+   rather than the hidden textarea, and the same 2px they thicken to.
+   --law-form-error-accent is event-form.css's palette token, so the light
+   form's darker red follows automatically and this needs no --light twin.
+   The literal fallback is for wp-admin, which loads this file without
+   event-form.css and therefore without the token.
+   Three wrappers, because law-rich-text.js's wrapper() marks whichever it
+   finds first: a .law-form-field ancestor for a standalone field, but inside a
+   repeater row (the session Description and speaker Biography) there is no
+   .law-form-field above the editor, so the class lands on the .law-rich-text
+   span itself. Without that third selector those two fields stayed at their
+   resting 1px grey border when empty and required — the invalid state was
+   announced by the message alone. */
+.law-form-field.is-invalid .law-rich-text .mce-tinymce,
+.law-form-field:has(> .law-form-error) .law-rich-text .mce-tinymce,
+.law-rich-text.is-invalid .mce-tinymce,
+.law-row.is-invalid .law-rich-text .mce-tinymce {
+	border: 2px solid var(--law-form-error-accent, #ff5c4d);
+}
+
+/* The message law-rich-text.js prints when a required description is empty
+   sits after the editor, where the server-rendered .law-form-error would.
+   In a repeater row it lands INSIDE the .law-rich-text span (see the note
+   above), so that placement needs its own selector — outside .law-event-form,
+   i.e. in wp-admin, nothing else would give the span a block box. */
+.law-rich-text + .law-form-error,
+.law-rich-text > .law-form-error[data-law-rich-error],
+.law-form-field > .law-form-error[data-law-rich-error] {
+	display: block;
+}
+
+/* Inside a repeater row the editor is one of several stacked controls, and the
+   row's label sits above it; 220px of editor would dwarf a three-line bio. */
+.law-row .law-rich-text .mce-tinymce iframe,
+.law-rich-text--compact .mce-tinymce iframe {
+	min-height: 120px;
+}
+
+/* wp-admin: the same field inside the event screen's speaker rows. The admin
+   already loads TinyMCE's skin and needs none of the Foundation unpicking,
+   only the width, because .law-rel-bio was a full-width textarea. */
+.law-rel-item .law-rich-text {
+	flex: 1 1 100%;
+	width: 100%;
+}

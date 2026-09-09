@@ -176,6 +176,8 @@ function law_migration_admin_page() {
 
 		<?php law_events_repair_owner_panel(); ?>
 
+		<?php law_events_backfill_agenda_panel(); ?>
+
 		<h2>Cutover: front-end data source</h2>
 		<form method="post">
 			<?php wp_nonce_field( 'law_migration_source', 'law_migration_source_nonce' ); ?>

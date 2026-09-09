@@ -32,6 +32,54 @@ function law_committee_events( array $overrides = array() ) {
 	if ( '' !== $keyword ) {
 		$query['s'] = $keyword;
 	}
+
+	// The two committee flag filters. The "off" side of each needs BOTH limbs:
+	// an event the committee has never saved has no meta row at all, while one
+	// saved with the box unticked carries a literal '0', because
+	// law_event_update_meta() only deletes on '' and the 'flag' sanitiser
+	// returns integer 0. With only NOT EXISTS, every event the committee has
+	// ever opened would drop out of the "Run by a host" filter.
+	$meta_query = array();
+	$run_by     = sanitize_key( $_GET['law_run_by'] ?? '' );
+	if ( 'law' === $run_by ) {
+		$meta_query[] = array( 'key' => '_law_is_law_event', 'value' => '1' );
+	} elseif ( 'host' === $run_by ) {
+		$meta_query[] = array(
+			'relation' => 'OR',
+			array( 'key' => '_law_is_law_event', 'compare' => 'NOT EXISTS' ),
+			array( 'key' => '_law_is_law_event', 'value' => '1', 'compare' => '!=' ),
+		);
+	}
+	$agenda = sanitize_key( $_GET['law_agenda'] ?? '' );
+	if ( 'yes' === $agenda ) {
+		$meta_query[] = array( 'key' => '_law_session_agenda', 'value' => '1' );
+	} elseif ( 'no' === $agenda ) {
+		$meta_query[] = array(
+			'relation' => 'OR',
+			array( 'key' => '_law_session_agenda', 'compare' => 'NOT EXISTS' ),
+			array( 'key' => '_law_session_agenda', 'value' => '1', 'compare' => '!=' ),
+		);
+	}
+	if ( $meta_query ) {
+		// AND so the two axes compose: "our own events that have an agenda" is
+		// the question a single mixed filter could not answer.
+		$query['meta_query'] = array_merge( array( 'relation' => 'AND' ), $meta_query ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+	}
+
+	// The flagship conference is not a host submission: it has no workflow, fee,
+	// slot or invoice, and it is edited on its own screen (Events > Flagship),
+	// so it does not belong in the committee's review queue. Excluded by ID
+	// rather than a NOT EXISTS meta clause deliberately: the meta_query above is
+	// replaced wholesale by a caller's own, and a second LEFT JOIN on every
+	// dashboard query buys nothing over one memoised ID lookup.
+	$flagship = function_exists( 'law_flagship_event_id' ) ? law_flagship_event_id() : 0;
+	if ( $flagship ) {
+		$query['post__not_in'] = array( $flagship );
+	}
+
+	// NB: a caller passing its own meta_query in $overrides would replace the
+	// filters above, not add to them. The export (the only caller that passes
+	// anything) only overrides posts_per_page.
 	return get_posts( array_merge( $query, $overrides ) );
 }
 
@@ -47,6 +95,18 @@ function law_committee_status_counts() {
 		}
 		$counts[ $status ] = (int) ( $totals->{$status} ?? 0 );
 	}
+
+	// wp_count_posts() counts every law_event, including the flagship, which
+	// law_committee_events() excludes. Left alone, its status chip would be one
+	// higher than the list it filters.
+	$flagship = function_exists( 'law_flagship_event_id' ) ? law_flagship_event_id() : 0;
+	if ( $flagship ) {
+		$status = (string) get_post_status( $flagship );
+		if ( isset( $counts[ $status ] ) ) {
+			$counts[ $status ] = max( 0, $counts[ $status ] - 1 );
+		}
+	}
+
 	return $counts;
 }
 
@@ -54,6 +114,13 @@ function law_committee_status_counts() {
 function law_committee_requested_event() {
 	$event_id = absint( $_GET['event'] ?? 0 );
 	if ( ! $event_id ) {
+		return null;
+	}
+	// The flagship is never in this list, so an ?event=<flagship id> here is a
+	// stale link or a guess. Refused rather than rendered, because the detail
+	// view offers workflow actions and a slot the flagship does not have; the
+	// dashboard's notice points at the screen that does edit it.
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
 		return null;
 	}
 	$post = get_post( $event_id );
@@ -127,6 +194,51 @@ function law_committee_refuse( $event_id, $is_ajax, $message, $code = 400 ) {
 	exit;
 }
 
+/**
+ * Check a posted venue capacity band and places-available pair.
+ *
+ * Kept out of the handler so the rules can be tested (and reused) rather than
+ * only exercised through a request that exits. The band ceiling is inclusive,
+ * matching law_events_venue_capacity_bands(); "251+" and "TBC" map to null,
+ * which means no ceiling.
+ *
+ * @param string $capacity Posted band, '' for "not set".
+ * @param string $tickets  Posted places, '' for "no limit".
+ * @return string An empty string when the pair is acceptable, else the message
+ *                to refuse it with.
+ */
+function law_committee_venue_input_error( $capacity, $tickets ) {
+	$bands    = law_events_venue_capacity_bands();
+	$capacity = (string) $capacity;
+	$tickets  = trim( (string) $tickets );
+
+	// Only reachable from a tampered or stale select. Refused rather than
+	// stored, because an unrecognised band is read as "no ceiling" everywhere it
+	// is checked, which silently uncaps the ticket allocation.
+	// array_key_exists, not isset: "251+" and "TBC" map to NULL (no ceiling),
+	// and isset() reads a null value as an absent key, so isset() would refuse
+	// the two perfectly valid uncapped bands.
+	if ( '' !== $capacity && ! array_key_exists( $capacity, $bands ) ) {
+		return 'That is not one of the venue capacity bands. Please reload the page and try again.';
+	}
+	if ( '' === $tickets ) {
+		return '';
+	}
+	if ( ! ctype_digit( $tickets ) || (int) $tickets < 1 ) {
+		return 'Places available must be a whole number of 1 or more, or blank for no limit.';
+	}
+	// Checked against the band being saved in this very post, not the stored one.
+	$limit = $bands[ $capacity ] ?? null;
+	if ( null !== $limit && (int) $tickets > $limit ) {
+		return sprintf(
+			'Places available cannot exceed the venue capacity band (%1$s allows at most %2$d).',
+			$capacity,
+			$limit
+		);
+	}
+	return '';
+}
+
 function law_committee_action_handler() {
 	$is_ajax = ! empty( $_POST['law_ajax'] );
 
@@ -160,6 +272,23 @@ function law_committee_action_handler() {
 	$before_override = (int) law_event_meta( $event_id, '_law_fee_override' );
 	$before_amount   = (float) law_event_meta( $event_id, '_law_fee_override_amount' );
 	$before_assignee = (int) law_event_meta( $event_id, '_law_assignee' );
+
+	// The venue capacity band and places available, validated here rather than
+	// at their write below for the same reason the fee override is: a refusal
+	// must leave the event exactly as it was, and the writes further down would
+	// already have landed. The sentinel says the control was on the form, so a
+	// blank field means "cleared" rather than "not asked".
+	$venue_present = ! empty( $_POST['law_venue_present'] );
+	$capacity_new  = '';
+	$tickets_new   = '';
+	if ( $venue_present ) {
+		$capacity_new = sanitize_text_field( wp_unslash( $_POST['law_venue_capacity'] ?? '' ) );
+		$tickets_new  = trim( (string) wp_unslash( $_POST['law_tickets_available'] ?? '' ) );
+		$venue_error  = law_committee_venue_input_error( $capacity_new, $tickets_new );
+		if ( '' !== $venue_error ) {
+			law_committee_refuse( $event_id, $is_ajax, $venue_error );
+		}
+	}
 
 	// The host fee override is checked BEFORE any write, so a refusal leaves the
 	// event exactly as it was: the other field writes below and the workflow
@@ -220,6 +349,27 @@ function law_committee_action_handler() {
 		}
 	}
 
+	// Validated above. The band and the places available are the committee's at
+	// every status: on an event LAW found the venue for, the host is never shown
+	// these two at all (law_events_venue_details_visible()), so this panel and
+	// wp-admin are the only places they can be set.
+	if ( $venue_present ) {
+		$before_capacity = (string) law_event_meta( $event_id, '_law_venue_capacity' );
+		$before_places   = (int) law_event_meta( $event_id, '_law_tickets_available' );
+		law_event_update_meta( $event_id, '_law_venue_capacity', $capacity_new );
+		law_event_update_meta( $event_id, '_law_tickets_available', $tickets_new );
+		law_event_log_capacity_change( $event_id, $before_capacity, $actor );
+		// Writes the "Places available changed" line, and raising them is what
+		// offers the new places to anyone waiting.
+		law_event_tickets_changed(
+			$event_id,
+			$before_places,
+			(int) law_event_meta( $event_id, '_law_tickets_available' ),
+			$actor,
+			'committee_panel'
+		);
+	}
+
 	// The sentinel says the control was on the form, so an absent input means
 	// "cleared" (an empty multi-select posts nothing).
 	if ( ! empty( $_POST['law_orgs_present'] ) ) {
@@ -228,13 +378,39 @@ function law_committee_action_handler() {
 		law_event_log_organisation_change( $event_id, (array) $before_orgs, $actor );
 	}
 
+	// The committee's two classification switches. Its own sentinel, not
+	// law_orgs_present above: the groups must be independently absent-safe,
+	// and an unticked checkbox posts nothing, so without a sentinel a flag
+	// could be switched on and then never off.
+	if ( ! empty( $_POST['law_flags_present'] ) ) {
+		$before_flags = array(
+			'_law_is_law_event'   => (int) law_event_meta( $event_id, '_law_is_law_event' ),
+			'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
+		);
+		law_event_update_meta( $event_id, '_law_is_law_event', ! empty( $_POST['law_is_law_event'] ) );
+		law_event_update_meta( $event_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
+		law_event_log_flag_change( $event_id, $before_flags, $actor );
+
+		// Which notice the redirect below should use. Turning the agenda on puts
+		// a new section on a DIFFERENT screen (the edit form), so "Changes saved."
+		// would leave the committee hunting for fields on this one; turning it
+		// off while sessions exist does not remove the section, which reads as a
+		// control with no effect unless we say so.
+		$agenda_now = (int) law_event_meta( $event_id, '_law_session_agenda' );
+		if ( $before_flags['_law_session_agenda'] !== $agenda_now ) {
+			$agenda_notice = $agenda_now
+				? 'agenda-on'
+				: ( law_event_session_ids( $event_id ) ? 'agenda-off-kept' : 'agenda-off' );
+		}
+	}
+
 	// A private note goes straight to the activity log (§3.6 manual notes).
 	$private_note = trim( (string) wp_unslash( $_POST['law_private_note'] ?? '' ) );
 	if ( '' !== $private_note ) {
 		law_event_log( $event_id, $private_note, array( 'action' => 'note', 'source' => 'ui' ), array( 'manual' => true, 'user_id' => $actor ) );
 	}
 
-	$notice = 'saved';
+	$notice = $agenda_notice ?? 'saved';
 	$action = sanitize_key( $_POST['law_action'] ?? '' );
 
 	// The AJAX caller is always a modal action, so an empty action means the

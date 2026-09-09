@@ -1,0 +1,150 @@
+/**
+ * The WordPress media modal, made readable on the front end.
+ *
+ * The theme is dark-hero-first: `body { color: #ffffff }` in app.css, with
+ * `h1` and `h4` white and `h3` yellow. wp.media appends its modal to <body>,
+ * outside every page section, so on the front end it inherited white text on
+ * its own white background — the tabs, the "Drop files to upload" heading and
+ * the field labels were all invisible, though the modal worked perfectly
+ * (found by a browser pass on the committee's Manage flagship screen,
+ * 9 September 2026, the first front-end screen to open it).
+ *
+ * The theme's rules are element selectors (specificity 0,0,1), so one class
+ * ancestor is enough to win. The values are WordPress's own greys, so the
+ * modal looks like the media library the committee already knows rather than
+ * like a themed approximation of it.
+ *
+ * These selectors are deliberately NOT scoped to a page wrapper: the modal is a
+ * sibling of the page content, so an ancestor selector could never reach it.
+ * The file is instead enqueued only by the screens that call
+ * wp_enqueue_media() on the front end, which is why it is its own stylesheet
+ * and not part of any one screen's CSS.
+ */
+
+.media-modal,
+.media-frame,
+.media-modal-content,
+.media-frame-content,
+.media-frame-title,
+.media-frame-router,
+.media-frame-toolbar,
+.media-sidebar,
+.media-menu,
+.media-router,
+.media-toolbar,
+.attachments-browser,
+.media-modal .setting,
+.media-modal .attachment-info {
+	color: #3c434a;
+}
+
+/* Headings: the theme colours h1/h4 white and h3 yellow, and gives h3 a 2rem
+   bottom margin that would push the modal's own layout apart. */
+.media-modal h1,
+.media-modal h2,
+.media-modal h3,
+.media-modal h4,
+.media-frame h1,
+.media-frame h2,
+.media-frame h3,
+.media-frame h4,
+.media-frame-title h1 {
+	color: #1d2327;
+	margin-bottom: 0;
+	font-family: inherit;
+}
+
+.media-modal .upload-ui h2,
+.media-modal .uploader-inline h2 {
+	color: #1d2327;
+}
+
+.media-modal p,
+.media-modal label,
+.media-modal .setting span,
+.media-modal .attachment-details label,
+.media-modal .media-toolbar-secondary label,
+.media-modal .search,
+.media-modal .describe {
+	color: #3c434a;
+}
+
+/* The left menu and the Upload files / Media Library tabs. WordPress renders
+   these as <button class="media-menu-item"> in current versions and as <a> in
+   older ones, so both are covered by the shared class as well as the elements;
+   a bare <button> also inherits nothing from body, but the theme's own button
+   rules do reach it. */
+.media-frame .media-menu-item,
+.media-frame .media-menu > a,
+.media-frame .media-menu > button,
+.media-frame .media-menu .separator + a,
+.media-frame .media-router > a,
+.media-frame .media-router > button {
+	color: #2c3338;
+	background: transparent;
+}
+
+.media-frame .media-menu-item.active,
+.media-frame .media-menu-item[aria-selected="true"],
+.media-frame .media-menu > a.active,
+.media-frame .media-router > a.active,
+.media-frame .media-router > a.selected,
+.media-frame .media-router > button.active {
+	color: #1d2327;
+	background: #fff;
+}
+
+.media-modal a:not(.button) {
+	color: #2271b1;
+}
+
+.media-modal a:not(.button):hover,
+.media-modal a:not(.button):focus {
+	color: #135e96;
+}
+
+.media-modal-close,
+.media-modal-close .media-modal-icon::before {
+	color: #646970;
+}
+
+.media-modal-close:hover .media-modal-icon::before,
+.media-modal-close:focus .media-modal-icon::before {
+	color: #135e96;
+}
+
+/* The drag-and-drop overlay and the "no items" state. */
+.media-frame .uploader-inline-content .upload-instructions,
+.media-frame .attachments-browser .no-media,
+.media-frame .attachment-details .details {
+	color: #3c434a;
+}
+
+/* The modal's own title, which sits in .media-frame-title and inherits the
+   theme's white h1. */
+.media-frame-title,
+.media-frame-title h1,
+.media-frame-title h2 {
+	color: #1d2327;
+}
+
+/* The right-hand sidebar: attachment details, its labels and its links. */
+.media-sidebar .attachment-details,
+.media-sidebar .attachment-info,
+.media-sidebar .setting label,
+.media-sidebar .setting span,
+.media-sidebar .details,
+.media-sidebar h2 {
+	color: #3c434a;
+}
+
+/* Attachment captions in the grid, and the selected tick. */
+.media-frame .attachment .filename,
+.media-frame .attachment-preview .filename,
+.media-frame .attachments-browser .media-toolbar-primary label,
+.media-frame .attachments-browser .media-toolbar-secondary label {
+	color: #3c434a;
+}
+
+/* The footer's Select button is core's; only its disabled state is faint, which
+   is correct. Nothing here overrides button colours. */

@@ -35,7 +35,7 @@ function law_event_ics( $event_id ) {
 		$end = gmdate( 'Y-m-d H:i', (int) strtotime( $start ) + 2 * HOUR_IN_SECONDS );
 	}
 
-	$description = wp_trim_words( wp_strip_all_tags( $post->post_content ), 40, '…' );
+	$description = wp_trim_words( law_rich_text_plain( $post->post_content ), 40, '…' );
 	if ( 'publish' === $post->post_status ) {
 		$description .= "\n" . get_permalink( $post );
 	}

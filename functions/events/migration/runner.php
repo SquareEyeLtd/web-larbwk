@@ -27,7 +27,7 @@ function law_migration_steps() {
 		'counters'      => array( 'label' => 'Step 7: counters and settings seed', 'gated' => true ),
 		'redirects'     => array( 'label' => 'Step 8: redirect map', 'gated' => true ),
 		'notifications' => array( 'label' => 'Step 9: notifications', 'gated' => true ),
-		'pages'         => array( 'label' => 'Step 10: account page templates', 'gated' => true ),
+		'pages'         => array( 'label' => 'Step 10: account page templates and the flagship event', 'gated' => true ),
 	);
 }
 
@@ -307,6 +307,28 @@ function law_migration_preflight() {
 		}
 		$check( 'Slot values parse', empty( $bad_slots ), $bad_slots ? 'Unparseable: ' . implode( ', ', $bad_slots ) : 'Every confirmed slot value parses' );
 
+		// Preferred slots (field 77) are punctuated differently from the
+		// confirmed-slot choices (field 68) the settings list is seeded from, so
+		// each one is mapped onto its canonical label at migration time. Report
+		// any value that maps onto nothing: it will be carried across verbatim
+		// and will not tick a checkbox on the host form.
+		$slot_keys = array_map( 'law_events_slot_label_key', law_migration_slot_labels() );
+		$unmatched = array();
+		foreach ( law_migration_entries( 2, 0, 500 ) as $entry ) {
+			$preferred = json_decode( (string) rgar( $entry, '77' ), true );
+			foreach ( (array) ( is_array( $preferred ) ? $preferred : array() ) as $raw ) {
+				$raw = trim( (string) $raw );
+				if ( '' !== $raw && ! in_array( law_events_slot_label_key( $raw ), $slot_keys, true ) ) {
+					$unmatched[ $raw ] = true;
+				}
+			}
+		}
+		$check(
+			'Preferred slot values match a slot choice',
+			empty( $unmatched ),
+			$unmatched ? 'No matching choice for: ' . implode( '; ', array_keys( $unmatched ) ) : 'Every preferred slot value maps onto a confirmed-slot choice'
+		);
+
 		// Speaker photo files on disk.
 		$missing_photos = 0;
 		$with_photos    = 0;
@@ -397,6 +419,33 @@ function law_migration_run_co_owners( $dry ) {
 
 /* Step 2: speakers __________________________________________________________ */
 
+/**
+ * Give an already-migrated speaker post the first/last name it was created
+ * without (see the skip branch in step 2). Gap-fill only: a name corrected on
+ * the WordPress side since the migration is never overwritten from the source.
+ *
+ * @param int   $post_id Speaker post ID.
+ * @param array $child   Its source form 8 (Event > speaker) entry.
+ * @param bool  $dry     Report only.
+ * @return bool Whether anything was (or would be) written.
+ */
+function law_migration_backfill_speaker_name( $post_id, array $child, $dry ) {
+	if ( '' !== trim( (string) law_event_meta( $post_id, '_law_speaker_first_name' ) )
+		|| '' !== trim( (string) law_event_meta( $post_id, '_law_speaker_last_name' ) ) ) {
+		return false;
+	}
+	$first = trim( (string) rgar( $child, '1.3' ) );
+	$last  = trim( (string) rgar( $child, '1.6' ) );
+	if ( '' === law_speaker_full_name( $first, $last ) ) {
+		return false;
+	}
+	if ( ! $dry ) {
+		law_event_update_meta( $post_id, '_law_speaker_first_name', $first );
+		law_event_update_meta( $post_id, '_law_speaker_last_name', $last );
+	}
+	return true;
+}
+
 function law_migration_run_speakers( $dry ) {
 	$map     = law_migration_map();
 	$created = 0;
@@ -407,7 +456,20 @@ function law_migration_run_speakers( $dry ) {
 		$ref      = 'form 8 entry ' . $entry_id;
 
 		if ( ! empty( $map['speakers'][ $entry_id ] ) && get_post( $map['speakers'][ $entry_id ] ) ) {
-			law_migration_log( 'speakers', 'skipped', $ref, 'Already migrated to post ' . $map['speakers'][ $entry_id ] . '.' );
+			// Already migrated, but a database migrated BEFORE 9 September 2026 has
+			// no first/last name meta on its speaker posts, only the joined title.
+			// Reading one falls back to splitting that title, which gets a
+			// multi-word surname wrong, so a re-run repairs it from the source
+			// fields (1.3 First / 1.6 Last) that always had the two apart.
+			$backfilled = law_migration_backfill_speaker_name( (int) $map['speakers'][ $entry_id ], $child, $dry );
+			law_migration_log(
+				'speakers',
+				$backfilled ? ( $dry ? 'dry-run' : 'info' ) : 'skipped',
+				$ref,
+				$backfilled
+					? sprintf( '%s the first/last name on already-migrated post %d from the source entry.', $dry ? 'Would set' : 'Set', $map['speakers'][ $entry_id ] )
+					: 'Already migrated to post ' . $map['speakers'][ $entry_id ] . '.'
+			);
 			continue;
 		}
 		// Revision entries are not speakers.
@@ -421,7 +483,12 @@ function law_migration_run_speakers( $dry ) {
 			continue;
 		}
 
-		$name  = trim( rgar( $child, '1.3' ) . ' ' . rgar( $child, '1.6' ) );
+		// Form 8 field 1 (Name) is a Gravity Forms name field: 1.3 is First and
+		// 1.6 is Last. They migrate into the speaker post's own first/last name
+		// meta, so nothing has to be re-split on the other side.
+		$first = trim( (string) rgar( $child, '1.3' ) );
+		$last  = trim( (string) rgar( $child, '1.6' ) );
+		$name  = law_speaker_full_name( $first, $last );
 		$email = sanitize_email( (string) rgar( $child, '8' ) );
 		if ( '' === $name ) {
 			law_migration_log( 'speakers', 'warning', $ref, 'No name; skipped.' );
@@ -443,11 +510,12 @@ function law_migration_run_speakers( $dry ) {
 		$photo_id  = law_migration_import_photo( rgar( $child, '6' ), 'speakers', $ref );
 		$speaker_id = law_speaker_upsert(
 			array(
-				'name'     => $name,
-				'email'    => $email,
-				'website'  => (string) rgar( $child, '5' ),
-				'bio'      => (string) rgar( $child, '7' ),
-				'photo_id' => $photo_id,
+				'first_name' => $first,
+				'last_name'  => $last,
+				'email'      => $email,
+				'website'    => (string) rgar( $child, '5' ),
+				'bio'        => (string) rgar( $child, '7' ),
+				'photo_id'   => $photo_id,
 			)
 		);
 		if ( ! $speaker_id ) {
@@ -596,13 +664,98 @@ function law_migration_derive_payment( $legacy_status, $fee_pence, $invoice_url 
 	return 'unpaid';
 }
 
+/**
+ * The canonical slot labels: the choices on form 2 (Event > submit an event)
+ * field 68 (Confirmed slot), which is also exactly what step 7 seeds into the
+ * settings slot list.
+ *
+ * Read from the form rather than from the settings because step 3 (events)
+ * runs before step 7 (counters and settings seed), so during the event pass
+ * the settings list is usually still empty.
+ *
+ * @return string[] Labels, in form order.
+ */
+function law_migration_slot_labels() {
+	static $labels = null;
+	if ( null !== $labels ) {
+		return $labels;
+	}
+
+	$labels = array();
+	if ( ! class_exists( 'GFAPI' ) ) {
+		return $labels;
+	}
+
+	$form = GFAPI::get_form( 2 );
+	foreach ( (array) ( $form['fields'] ?? array() ) as $field ) {
+		if ( 68 !== (int) $field->id ) {
+			continue;
+		}
+		foreach ( (array) $field->choices as $choice ) {
+			$labels[] = html_entity_decode( (string) $choice['text'], ENT_QUOTES );
+		}
+	}
+	return $labels;
+}
+
+/**
+ * Map a legacy slot value onto its canonical label.
+ *
+ * Field 68 (Confirmed slot) and field 77 (Preferred date & time slots) hold the
+ * same twelve slots with different punctuation: en dashes on 68, plain hyphens
+ * on 77. Left alone, a migrated event's preferred slots would match no
+ * configured slot and the host form would render them all unchecked. Anything
+ * that matches no choice is kept verbatim rather than dropped.
+ *
+ * @param string $label Raw entry value.
+ * @return string Canonical label, or the trimmed input when unrecognised.
+ */
+function law_migration_normalise_slot_label( $label ) {
+	$label = trim( (string) $label );
+	if ( '' === $label ) {
+		return '';
+	}
+
+	$key = law_events_slot_label_key( $label );
+	foreach ( law_migration_slot_labels() as $canonical ) {
+		if ( law_events_slot_label_key( $canonical ) === $key ) {
+			return $canonical;
+		}
+	}
+	return $label;
+}
+
+/**
+ * Whether a slot was retired on form 2 (Event > submit an event) field 77
+ * (Preferred date & time slots) by LAW_GF_RETIRED_PREFERRED_SLOTS, the constant
+ * that hid withdrawn choices from hosts while Gravity Forms was still the
+ * submission route. Those retirements are real programme decisions, so they
+ * have to survive the cutover as the settings list's own retired flag.
+ *
+ * @param string $label Slot label.
+ * @return bool
+ */
+function law_migration_slot_was_retired( $label ) {
+	if ( ! defined( 'LAW_GF_RETIRED_PREFERRED_SLOTS' ) ) {
+		return false;
+	}
+
+	$key = law_events_slot_label_key( $label );
+	foreach ( (array) LAW_GF_RETIRED_PREFERRED_SLOTS as $retired ) {
+		if ( law_events_slot_label_key( $retired ) === $key ) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /** All the meta, taxonomy and relationship writes for one migrated event. */
 function law_migration_populate_event( $post_id, array $entry, $payment_status ) {
 	$entry_id = (int) $entry['id'];
 	$map      = law_migration_map();
 
 	// Slot: parse the label into real datetimes (handles the en dash).
-	$slot_label = trim( (string) rgar( $entry, '68' ) );
+	$slot_label = law_migration_normalise_slot_label( rgar( $entry, '68' ) );
 	$slot       = $slot_label ? law_calendar_parse_slot( $slot_label ) : null;
 	law_event_update_meta( $post_id, '_law_slot_label', $slot_label );
 	if ( $slot ) {
@@ -610,9 +763,16 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 		law_event_update_meta( $post_id, '_law_end', $slot['end'] ? $slot['date'] . ' ' . $slot['end'] : '' );
 	}
 
-	// Preferred slots: JSON multiselect.
+	// Preferred slots: JSON multiselect. Field 77 (Preferred date & time slots)
+	// stores hyphenated labels where the settings list is seeded from field 68
+	// (Confirmed slot) with en dashes, so every value is mapped onto its
+	// canonical label or the host form would show them all unchecked.
 	$preferred = json_decode( (string) rgar( $entry, '77' ), true );
-	law_event_update_meta( $post_id, '_law_preferred_slots', is_array( $preferred ) ? $preferred : array() );
+	$preferred = array_values( array_filter( array_map(
+		'law_migration_normalise_slot_label',
+		is_array( $preferred ) ? $preferred : array()
+	) ) );
+	law_event_update_meta( $post_id, '_law_preferred_slots', $preferred );
 
 	// Fee tier from the product value "UK office|1200".
 	$tier_value = strtolower( trim( explode( '|', (string) rgar( $entry, '53' ) )[0] ) );
@@ -893,6 +1053,9 @@ function law_migration_run_legacy_lists( $dry ) {
 				law_migration_log( 'speakers', 'dry-run', $ref, 'Would create a speaker from the legacy list (no email, no photo).' );
 				continue;
 			}
+			// The legacy List field 48 has ONE name column, so the upsert splits it
+			// on the last word (law_speaker_split_name(), honorifics kept on the
+			// last name). Nested form 8 rows above carry the two parts properly.
 			$speaker_id = law_speaker_upsert(
 				array(
 					'name'         => $row['name'],
@@ -1245,26 +1408,32 @@ function law_migration_run_counters( $dry ) {
 
 	$sequence = (int) $wpdb->get_var( "SELECT current FROM {$wpdb->prefix}gpui_sequence WHERE form_id = 2 AND field_id = 70" );
 
-	// Slot choices from form 2 field 68 (Confirmed slot).
-	$slots = array();
-	if ( class_exists( 'GFAPI' ) ) {
-		$form = GFAPI::get_form( 2 );
-		foreach ( (array) ( $form['fields'] ?? array() ) as $field ) {
-			if ( 68 !== (int) $field->id ) {
-				continue;
-			}
-			foreach ( (array) $field->choices as $choice ) {
-				$label  = html_entity_decode( (string) $choice['text'], ENT_QUOTES );
-				$parsed = law_calendar_parse_slot( $label );
-				$slots[] = array(
-					'label'   => $label,
-					'date'    => $parsed['date'] ?? '',
-					'start'   => $parsed['start'] ?? '',
-					'end'     => $parsed['end'] ?? '',
-					'retired' => false,
-				);
-			}
+	// Slot choices from form 2 (Event > submit an event) field 68 (Confirmed
+	// slot). A slot counts as retired if LAW_GF_RETIRED_PREFERRED_SLOTS hid it
+	// on field 77 (Preferred date & time slots), or if it is already flagged
+	// retired in the settings - this step rewrites the whole slot list, so
+	// without the second test a re-run would quietly un-retire a slot the
+	// committee had withdrawn by hand.
+	$retired_keys = array();
+	foreach ( law_events_slots( true ) as $existing_label => $existing_slot ) {
+		if ( ! empty( $existing_slot['retired'] ) ) {
+			$retired_keys[ law_events_slot_label_key( $existing_label ) ] = true;
 		}
+	}
+
+	$slots   = array();
+	$retired = 0;
+	foreach ( law_migration_slot_labels() as $label ) {
+		$parsed     = law_calendar_parse_slot( $label );
+		$is_retired = law_migration_slot_was_retired( $label ) || isset( $retired_keys[ law_events_slot_label_key( $label ) ] );
+		$retired   += $is_retired ? 1 : 0;
+		$slots[]    = array(
+			'label'   => $label,
+			'date'    => $parsed['date'] ?? '',
+			'start'   => $parsed['start'] ?? '',
+			'end'     => $parsed['end'] ?? '',
+			'retired' => $is_retired,
+		);
 	}
 
 	// Committee recipients from the current form 2 notifications.
@@ -1286,9 +1455,10 @@ function law_migration_run_counters( $dry ) {
 
 	if ( $dry ) {
 		law_migration_log( 'counters', 'dry-run', 'settings', sprintf(
-			'Would seed: reference counter %d, %d slot choices, %d committee recipients.',
+			'Would seed: reference counter %d, %d slot choices (%d retired), %d committee recipients.',
 			$sequence,
 			count( $slots ),
+			$retired,
 			count( $committee )
 		) );
 		return array( 'done' => true, 'summary' => 'Dry run.' );
@@ -1321,9 +1491,10 @@ function law_migration_run_counters( $dry ) {
 	law_events_seed_terms();
 
 	law_migration_log( 'counters', 'created', 'settings', sprintf(
-		'Seeded: reference counter %d, %d slot choices, %d committee recipients, taxonomy terms.',
+		'Seeded: reference counter %d, %d slot choices (%d retired), %d committee recipients, taxonomy terms.',
 		$sequence,
 		count( $slots ),
+		$retired,
 		count( $committee )
 	) );
 	return array( 'done' => true, 'summary' => 'Settings seeded.' );
@@ -1550,7 +1721,7 @@ function law_migration_run_notifications( $dry ) {
 	return array( 'done' => true, 'summary' => $migrated . ' notifications imported.' );
 }
 
-/* Step 10: account page templates _____________________________________________ */
+/* Step 10: account page templates and the flagship event ______________________ */
 
 /**
  * The pages the rebuild re-templated (or created) locally, keyed by path.
@@ -1567,6 +1738,7 @@ function law_migration_page_map() {
 		'account/dashboard'          => array( 'title' => 'Events dashboard', 'template' => 'templates/account-dashboard.php' ),
 		'account/dashboard/bookings' => array( 'title' => 'Bookings dashboard', 'template' => 'templates/account-bookings-dashboard.php' ),
 		'account/dashboard/speakers' => array( 'title' => 'Speakers dashboard', 'template' => 'templates/account-speakers-dashboard.php' ),
+		'account/dashboard/flagship' => array( 'title' => 'Flagship dashboard', 'template' => 'templates/account-dashboard-flagship.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
 		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
 		'account/events/submit'      => array( 'title' => 'Submit an event', 'template' => 'templates/account-event-form.php' ),
@@ -1580,6 +1752,10 @@ function law_migration_page_map() {
  * it is missing. Existing page content is never touched (the templates render
  * their own markup and ignore it). Idempotent: a correct page is reported and
  * skipped.
+ *
+ * The flagship conference is provisioned at the end of the same step. It is
+ * not in the page map because it is not a page: it is one law_event post whose
+ * slug gives it /events/flagship/ (functions/events/flagship.php).
  */
 function law_migration_run_pages( $dry ) {
 	$updated = 0;
@@ -1653,8 +1829,37 @@ function law_migration_run_pages( $dry ) {
 	if ( ! $dry && function_exists( 'law_setup_speakers_dashboard_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/dashboard/speakers/', 'Committee restriction: ' . law_setup_speakers_dashboard_access() . '.' );
 	}
+	// And Manage flagship, the fourth committee dashboard.
+	if ( ! $dry && function_exists( 'law_setup_flagship_dashboard_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/flagship/', 'Committee restriction: ' . law_setup_flagship_dashboard_access() . '.' );
+	}
 
-	return array( 'done' => true, 'summary' => sprintf( '%d templates assigned, %d pages created.', $updated, $created ) );
+	// The flagship conference. Not a page: it is a law_event post whose slug
+	// gives it /events/flagship/, so there is no template to assign, only the
+	// record to create. Here as well as in the ?setup-account-pages trigger,
+	// because a deployed environment must work without either being run by
+	// hand (FLAGSHIP_UI.md §4.9), and idempotent, so a re-run reports "exists".
+	$flagship_summary = 'not available';
+	if ( function_exists( 'law_flagship_ensure_post' ) ) {
+		$flagship = law_flagship_ensure_post( $dry );
+		law_migration_log(
+			'pages',
+			$dry ? 'dry-run' : ( $flagship['created'] ? 'created' : 'skipped' ),
+			'/events/flagship/',
+			$flagship['message']
+		);
+		if ( $flagship['created'] ) {
+			$created++;
+			$flagship_summary = 'created';
+		} else {
+			$flagship_summary = $dry ? 'checked' : 'already present';
+		}
+	}
+
+	return array(
+		'done'    => true,
+		'summary' => sprintf( '%d templates assigned, %d pages created, flagship event %s.', $updated, $created, $flagship_summary ),
+	);
 }
 
 /* Step dispatcher ____________________________________________________________ */

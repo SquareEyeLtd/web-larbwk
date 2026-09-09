@@ -28,6 +28,8 @@ function law_committee_export_columns() {
 		'Sector',
 		'Linked organisations',
 		'Sponsored',
+		'Run by LAW',
+		'Session agenda',
 		'Event fee',
 		'Discounted fee',
 		'Venue capacity',
@@ -64,6 +66,9 @@ function law_committee_export_row( WP_Post $post ) {
 		law_event_sector_summary( $id ),
 		implode( '; ', law_event_organisation_names( $id ) ),
 		law_events_post_is_sponsored( $post ) ? 'Yes' : '',
+		// Yes/blank, matching Sponsored above rather than Yes/No.
+		law_event_meta( $id, '_law_is_law_event' ) ? 'Yes' : '',
+		law_event_meta( $id, '_law_session_agenda' ) ? 'Yes' : '',
 		law_events_format_pence( $fee_pence ),
 		law_event_meta( $id, '_law_fee_override' ) ? '£' . number_format( (float) law_event_meta( $id, '_law_fee_override_amount' ), 2 ) : '',
 		(string) law_event_meta( $id, '_law_venue_capacity' ),

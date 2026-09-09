@@ -75,6 +75,8 @@ class SpeakersDashboardTest extends LAW_Test_Case {
 
 		$this->assertNotNull( $row, 'The speaker is listed.' );
 		$this->assertSame( 'Ada Dashboardspeaker', $row['name'] );
+		$this->assertSame( 'Ada', $row['first_name'], 'No stored parts on this fixture: the title is split.' );
+		$this->assertSame( 'Dashboardspeaker', $row['last_name'] );
 		$this->assertSame( 'ada.dashboard@example.test', $row['email'] );
 		$this->assertSame( 'https://example.test/ada', $row['website'] );
 		$this->assertCount( 2, $row['appearances'], 'A Proposed event counts as an appearance here, unlike on the public archive.' );
@@ -168,17 +170,22 @@ class SpeakersDashboardTest extends LAW_Test_Case {
 		$export = law_speakers_dashboard_export_rows( $this->filters( array( 'law_kw' => 'Dashboardspeaker' ) ) );
 
 		$this->assertSame(
-			array( 'Speaker ID', 'Name', 'Email', 'Website', 'Event', 'Event date', 'Reference', 'Event status', 'Role', 'Organisation', 'Job title', 'Biography' ),
+			array( 'Speaker ID', 'First name', 'Last name', 'Email', 'Website', 'Event', 'Event date', 'Reference', 'Event status', 'Role', 'Organisation', 'Job title', 'Biography' ),
 			$export['columns']
 		);
 		$this->assertCount( 2, $export['rows'], 'One row per appearance, not per speaker.' );
 		$this->assertStringContainsString( 'Dashboardspeaker', $export['title'] );
 
-		$roles = array_map( fn( $row ) => $row[8], $export['rows'] );
+		// The name exports in two columns; this fixture's speaker has no stored
+		// parts, so they come from splitting the post title.
+		$this->assertSame( 'Ada', $export['rows'][0][1] );
+		$this->assertSame( 'Dashboardspeaker', $export['rows'][0][2] );
+
+		$roles = array_map( fn( $row ) => $row[9], $export['rows'] );
 		sort( $roles );
 		$this->assertSame( array( 'Host', 'Moderator' ), $roles, 'The role label, not the stored key.' );
 
-		$statuses = array_map( fn( $row ) => $row[7], $export['rows'] );
+		$statuses = array_map( fn( $row ) => $row[8], $export['rows'] );
 		sort( $statuses );
 		$this->assertSame( array( 'Confirmed', 'Proposed' ), $statuses );
 	}
@@ -190,7 +197,7 @@ class SpeakersDashboardTest extends LAW_Test_Case {
 		$export = law_speakers_dashboard_export_rows( $this->filters( array( 'law_kw' => 'Noappearances' ) ) );
 		$this->assertCount( 1, $export['rows'] );
 		$this->assertSame( $speaker, $export['rows'][0][0] );
-		$this->assertSame( '', $export['rows'][0][4], 'The event columns are blank rather than the speaker missing.' );
+		$this->assertSame( '', $export['rows'][0][5], 'The event columns are blank rather than the speaker missing.' );
 	}
 
 	public function test_event_picker_lists_only_events_carrying_a_speaker(): void {
@@ -260,5 +267,62 @@ class SpeakersDashboardTest extends LAW_Test_Case {
 
 		unset( $_GET['law_speaker'] );
 		$this->assertSame( 0, law_speakers_dashboard_requested_speaker() );
+	}
+
+	/**
+	 * The identity write behind "Save changes". Unlike law_speaker_upsert()'s
+	 * gap-fill this replaces outright, because this screen is where a name is
+	 * corrected and a wrong website cleared. post_name is deliberately left
+	 * alone, so an existing /speakers/<slug>/ link survives a rename.
+	 */
+	public function test_the_dashboard_renames_a_speaker_and_keeps_the_profile_url(): void {
+		$speaker       = law_speaker_upsert( array( 'first_name' => 'Dashboard', 'last_name' => 'Testbefore', 'email' => 'dashboard-rename@example.test', 'website' => 'https://wrong.example.test' ) );
+		$this->posts[] = $speaker;
+		$slug          = get_post( $speaker )->post_name;
+
+		law_speakers_dashboard_write_identity(
+			$speaker,
+			array(
+				'name'       => 'Dashboard Testafter',
+				'first_name' => 'Dashboard',
+				'last_name'  => 'Testafter',
+				'email'      => 'dashboard-renamed@example.test',
+				'website'    => '',
+			)
+		);
+
+		$this->assertSame( 'Dashboard Testafter', get_post( $speaker )->post_title );
+		$this->assertSame( array( 'first' => 'Dashboard', 'last' => 'Testafter' ), law_speaker_name_parts( $speaker ) );
+		$this->assertSame( 'dashboard-renamed@example.test', (string) law_event_meta( $speaker, '_law_speaker_email' ) );
+		$this->assertSame( '', (string) law_event_meta( $speaker, '_law_website' ), 'A wrong website can be cleared, which the gap-filling upsert could never do.' );
+		$this->assertSame( $slug, get_post( $speaker )->post_name, 'The slug is untouched, so the old profile link keeps resolving.' );
+	}
+
+	/** An apostrophe must not turn into &#8217; when the screen saves it back. */
+	public function test_the_dashboard_does_not_corrupt_an_apostrophe_on_an_untouched_save(): void {
+		$speaker = wp_insert_post(
+			array(
+				'post_type'   => LAW_SPEAKER_CPT,
+				'post_status' => 'publish',
+				'post_title'  => "Niamh O'Testsullivan",
+			)
+		);
+		$this->posts[] = $speaker;
+
+		// Exactly what the edit view prefills, saved straight back.
+		$parts = law_speaker_name_parts( $speaker );
+		law_speakers_dashboard_write_identity(
+			$speaker,
+			array(
+				'name'       => law_speaker_full_name( $parts['first'], $parts['last'] ),
+				'first_name' => $parts['first'],
+				'last_name'  => $parts['last'],
+				'email'      => '',
+				'website'    => '',
+			)
+		);
+
+		$this->assertSame( "Niamh O'Testsullivan", get_post( $speaker )->post_title );
+		$this->assertSame( "O'Testsullivan", (string) law_event_meta( $speaker, '_law_speaker_last_name' ) );
 	}
 }

@@ -142,6 +142,110 @@ function law_events_slots( $include_retired = false ) {
 }
 
 /**
+ * Comparison key for a slot label: entities decoded, en/em dashes folded to a
+ * plain hyphen, the spaces around that hyphen dropped, whitespace collapsed,
+ * lower-cased.
+ *
+ * Legacy form 2 (Event > submit an event) held the same twelve slots in two
+ * fields with different punctuation: field 68 (Confirmed slot) used en dashes
+ * ("Tue 1st Dec: 08:30-10:00" with an en dash) and field 77 (Preferred date &
+ * time slots) plain hyphens. The settings slot list is seeded from field 68, so
+ * a stored preferred slot has to be compared loosely or it matches no
+ * configured slot at all - which silently emptied the host form's checkboxes.
+ *
+ * @param string $label Raw label.
+ * @return string Comparison key ('' when the label is empty).
+ */
+function law_events_slot_label_key( $label ) {
+	$label = html_entity_decode( (string) $label, ENT_QUOTES, 'UTF-8' );
+	$label = str_replace( array( "\xe2\x80\x93", "\xe2\x80\x94", "\xe2\x88\x92" ), '-', $label );
+	$label = preg_replace( '/\s*-\s*/', '-', $label );
+	$label = preg_replace( '/\s+/', ' ', $label );
+	return strtolower( trim( (string) $label ) );
+}
+
+/**
+ * Map a stored or submitted slot label onto the configured slot label.
+ *
+ * @param string $label Raw label.
+ * @return string The configured label, or '' when it matches no configured slot.
+ */
+function law_events_normalise_slot_label( $label ) {
+	$key = law_events_slot_label_key( $label );
+	if ( '' === $key ) {
+		return '';
+	}
+	foreach ( law_events_slots( true ) as $slot_label => $slot ) {
+		if ( law_events_slot_label_key( $slot_label ) === $key ) {
+			return (string) $slot_label;
+		}
+	}
+	return '';
+}
+
+/**
+ * Slot choices to offer on the submission/edit form: every active slot, plus
+ * any retired slot the event already holds.
+ *
+ * A retired slot is hidden from new choices but must stay visible (and
+ * checked) on an event that already chose it, exactly as
+ * law_gf_hide_retired_preferred_slots() did on form 2 (Event > submit an
+ * event) field 77 (Preferred date & time slots). Omitting the checkbox
+ * altogether meant the host's own choice vanished from the form and was
+ * dropped on the next save.
+ *
+ * @param array $selected Labels already stored on the event.
+ * @return array<string,array{label:string,date:string,start:string,end:string,retired:bool}>
+ */
+function law_events_slot_choices( array $selected = array() ) {
+	$selected_keys = array();
+	foreach ( $selected as $label ) {
+		$selected_keys[ law_events_slot_label_key( $label ) ] = true;
+	}
+
+	$out = array();
+	foreach ( law_events_slots( true ) as $slot_label => $slot ) {
+		if ( empty( $slot['retired'] ) || isset( $selected_keys[ law_events_slot_label_key( $slot_label ) ] ) ) {
+			$out[ $slot_label ] = $slot;
+		}
+	}
+	return $out;
+}
+
+/**
+ * Sanitise submitted preferred slots against the configured list.
+ *
+ * Returns configured labels, in settings order, keeping a retired slot only
+ * when the event already held it - the equivalent of
+ * law_gf_strip_retired_on_new_submissions(), which stopped a tampered POST
+ * from re-selecting a withdrawn slot on form 2 (Event > submit an event).
+ * Falls back to plain sanitisation when no slots are configured yet, so a
+ * site whose settings have not been seeded cannot be locked out of the form.
+ *
+ * @param array $submitted Raw submitted labels.
+ * @param array $existing  Labels already stored on the event.
+ * @return string[]
+ */
+function law_events_sanitise_preferred_slots( array $submitted, array $existing = array() ) {
+	if ( ! law_events_slots( true ) ) {
+		return array_values( array_filter( array_map( 'sanitize_text_field', $submitted ) ) );
+	}
+
+	$submitted_keys = array();
+	foreach ( $submitted as $label ) {
+		$submitted_keys[ law_events_slot_label_key( $label ) ] = true;
+	}
+
+	$out = array();
+	foreach ( law_events_slot_choices( $existing ) as $slot_label => $slot ) {
+		if ( isset( $submitted_keys[ law_events_slot_label_key( $slot_label ) ] ) ) {
+			$out[] = (string) $slot_label;
+		}
+	}
+	return $out;
+}
+
+/**
  * Apply a confirmed slot label to an event: write _law_start/_law_end from the
  * slot's date/time, or clear them when the label is emptied. Shared by the
  * committee dashboard and the wp-admin event screen so the two save paths can't
@@ -153,6 +257,10 @@ function law_events_slots( $include_retired = false ) {
  */
 function law_event_apply_slot_label( $event_id, $slot_label ) {
 	$slot_label = (string) $slot_label;
+	// A label stored before the punctuation was normalised (or posted from an
+	// older cached page) still has to resolve to its configured slot, or the
+	// event would keep stale datetimes.
+	$slot_label = law_events_normalise_slot_label( $slot_label ) ?: $slot_label;
 	$slots      = law_events_slots( true );
 	if ( isset( $slots[ $slot_label ] ) && $slots[ $slot_label ]['date'] ) {
 		$slot = $slots[ $slot_label ];

@@ -108,8 +108,9 @@ function law_field_media( $name, $label, $attachment_id ) {
  * @param string $label   Group label.
  * @param array  $rows    Existing row values.
  * @param array  $columns subfield => [label, type].
+ * @param string $add_label Label for the add-row button.
  */
-function law_field_repeater( $name, $label, array $rows, array $columns ) {
+function law_field_repeater( $name, $label, array $rows, array $columns, $add_label = 'Add row' ) {
 	echo '<div class="law-field law-repeater" data-law-repeater><strong>' . esc_html( $label ) . '</strong>';
 	echo '<table class="widefat striped"><thead><tr>';
 	foreach ( $columns as $column ) {
@@ -133,7 +134,7 @@ function law_field_repeater( $name, $label, array $rows, array $columns ) {
 		echo '<td><button type="button" class="button-link-delete law-row-remove" aria-label="Remove row">×</button></td></tr>';
 	}
 
-	echo '</tbody></table><p><button type="button" class="button law-row-add">Add row</button></p></div>';
+	echo '</tbody></table><p><button type="button" class="button law-row-add">' . esc_html( $add_label ) . '</button></p></div>';
 }
 
 /**
@@ -148,21 +149,51 @@ function law_field_repeater( $name, $label, array $rows, array $columns ) {
  * @param array  $rows      Existing speaker rows (or int IDs when $simple).
  * @param string $post_type Searched post type.
  * @param bool   $simple    IDs only (no role/org columns).
+ * @param array  $args      Optional:
+ *                          'render_row' callable( $name, $i, array $row ) that
+ *                          replaces law_field_relationship_row() for every row.
+ *                          The Flagship screen uses it to render its own
+ *                          "new speaker" rows, which carry identity fields and
+ *                          no speaker_id yet, alongside ordinary picked rows.
+ *                          'after_list' a callable that PRINTS whatever should
+ *                          follow the chosen list, e.g. its "Add new speaker"
+ *                          button. A callable rather than a string of markup
+ *                          on purpose: a string would have to be echoed
+ *                          unescaped, and "the caller escaped it" is a
+ *                          convention the next caller can break by
+ *                          interpolating a title or a search term into it.
+ *                          Owning its own output means each caller escapes at
+ *                          the point it prints.
  */
-function law_field_relationship( $name, $label, array $rows, $post_type, $simple = false ) {
+function law_field_relationship( $name, $label, array $rows, $post_type, $simple = false, array $args = array() ) {
+	$render_row = isset( $args['render_row'] ) && is_callable( $args['render_row'] ) ? $args['render_row'] : null;
+	$after_list = isset( $args['after_list'] ) && is_callable( $args['after_list'] ) ? $args['after_list'] : null;
+
 	echo '<div class="law-field law-rel" data-law-rel data-law-rel-type="' . esc_attr( $post_type ) . '" data-law-rel-name="' . esc_attr( $name ) . '" data-law-rel-simple="' . ( $simple ? '1' : '0' ) . '">';
 	echo '<strong>' . esc_html( $label ) . '</strong>';
 	echo '<p><input type="search" class="regular-text law-rel-search" placeholder="Search…" autocomplete="off"><span class="spinner"></span></p>';
 	echo '<ul class="law-rel-results" hidden></ul>';
 	echo '<ol class="law-rel-chosen" data-law-rel-chosen>';
 	foreach ( $rows as $i => $row ) {
+		// The empty-ID skip belongs to the DEFAULT renderer only: a custom one
+		// may legitimately render a row that has no post behind it yet, and
+		// dropping it here would lose what the user typed when a save comes
+		// back with a validation error.
+		if ( $render_row ) {
+			call_user_func( $render_row, $name, $i, $simple ? array( 'speaker_id' => (int) $row ) : (array) $row );
+			continue;
+		}
 		$id = $simple ? (int) $row : (int) ( $row['speaker_id'] ?? 0 );
 		if ( ! $id ) {
 			continue;
 		}
 		law_field_relationship_row( $name, $i, $id, $simple ? array() : (array) $row, $simple );
 	}
-	echo '</ol></div>';
+	echo '</ol>';
+	if ( $after_list ) {
+		call_user_func( $after_list );
+	}
+	echo '</div>';
 }
 
 function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
@@ -173,11 +204,12 @@ function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
 		printf( '<input type="hidden" name="%s[]" value="%d">', esc_attr( $name ), (int) $id );
 	} else {
 		printf( '<input type="hidden" name="%s[%d][speaker_id]" value="%d">', esc_attr( $name ), (int) $i, (int) $id );
-		// The role at this event. A stored '' (rows saved before roles existed)
-		// selects Speaker, the default; on a session row that also means "inherit
-		// the event's" at read time, which the explicit Speaker option overrides.
-		$role    = law_speaker_role_key( $row['role'] ?? '' ) ?: 'speaker';
-		$options = '';
+		// The role at this event. There is no default (Denis, 9 September 2026): a
+		// stored '' (rows saved before roles existed, or simply left unset) selects
+		// the blank "Select role" placeholder. On a session row '' still means
+		// "inherit the event's" at read time, which an explicit choice overrides.
+		$role    = law_speaker_role_key( $row['role'] ?? '' );
+		$options = sprintf( '<option value=""%s>Select role</option>', selected( $role, '', false ) );
 		foreach ( law_speaker_roles() as $key => $label ) {
 			$options .= sprintf( '<option value="%s"%s>%s</option>', esc_attr( $key ), selected( $role, $key, false ), esc_html( $label ) );
 		}
@@ -203,11 +235,18 @@ function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
 		// Last, and on its own full-width line (law-admin.css): the biography
 		// this speaker gave for this event. Empty here means the single event
 		// view falls back to the speaker post's editor content.
-		printf(
-			'<textarea name="%s[%d][bio]" rows="3" placeholder="Biography for this event" class="law-rel-bio">%s</textarea>',
-			esc_attr( $name ),
-			(int) $i,
-			esc_textarea( (string) ( $row['bio'] ?? '' ) )
+		// Rich text, the same editor the host's own form and the committee's
+		// Manage speakers screen give this field (functions/events/rich-text.php).
+		// law-admin.js builds the same markup for a row added via the search.
+		law_rich_text_field(
+			array(
+				'name'  => sprintf( '%s[%d][bio]', $name, (int) $i ),
+				'id'    => sprintf( 'law-rel-bio-%s-%d', sanitize_html_class( $name ), (int) $i ),
+				'value' => (string) ( $row['bio'] ?? '' ),
+				'rows'  => 3,
+				'class' => 'law-rel-bio',
+				'label' => 'Biography for this event',
+			)
 		);
 	}
 	echo '<button type="button" class="button-link-delete law-rel-remove" aria-label="Remove">×</button></li>';
@@ -219,9 +258,12 @@ function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
  * Remove. law-admin.js builds the same markup for rows added via search.
  */
 function law_field_relationship_photo( $name, $i, $photo_id ) {
+	// $i is an int for a real row and a placeholder string ("__j__") inside a
+	// clone template, so it is escaped as a string, never cast to int, which
+	// would silently turn every template row into row 0.
 	$thumb = $photo_id ? (string) wp_get_attachment_image_url( $photo_id, 'thumbnail' ) : '';
 	echo '<span class="law-rel-photo" data-law-rel-photo>';
-	printf( '<input type="hidden" name="%s[%d][photo_id]" value="%d" class="law-rel-photo-id">', esc_attr( $name ), (int) $i, (int) $photo_id );
+	printf( '<input type="hidden" name="%s[%s][photo_id]" value="%d" class="law-rel-photo-id">', esc_attr( $name ), esc_attr( (string) $i ), (int) $photo_id );
 	printf( '<img class="law-rel-photo-thumb" src="%s" alt="" width="32" height="32"%s>', esc_url( $thumb ), $thumb ? '' : ' hidden' );
 	echo '<button type="button" class="button-link law-rel-photo-choose">' . ( $thumb ? 'Change photo' : 'Choose photo' ) . '</button>';
 	echo '<button type="button" class="button-link law-rel-photo-clear"' . ( $thumb ? '' : ' hidden' ) . '>Remove photo</button>';
@@ -272,8 +314,15 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 	}
 
 	wp_enqueue_media();
-	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.4' );
-	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.4', true );
+	// The per-appearance biography is rich text here too, so a committee edit in
+	// wp-admin does not flatten what a host wrote. Only the two screens that
+	// render a relationship row (law_field_relationship()) need the editor: the
+	// event screen and the session screen.
+	if ( $screen && in_array( $screen->post_type ?? '', array( LAW_EVENT_CPT, LAW_SESSION_CPT ), true ) ) {
+		law_rich_text_enqueue();
+	}
+	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.6' );
+	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.6', true );
 	wp_localize_script(
 		'law-events-admin',
 		'lawEventsAdmin',

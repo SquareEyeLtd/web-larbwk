@@ -2,7 +2,7 @@
 /**
  * Shared Full list / Day markup for public and committee calendars.
  *
- * Set these before including; all five are optional:
+ * Set these before including; all are optional:
  *   $law_cal_show_status (bool)   Committee mode: status pills, and the
  *                                 "all submissions" note on the list view.
  *   $law_cal_hero_title  (string) Hero title for the list view.
@@ -26,6 +26,24 @@
  *                                 renders for an event of any status with its
  *                                 button inert, so the preview shows the row
  *                                 an attendee will see instead of omitting it.
+ *   $law_cal_details_rows (array) Allow-list of details-box row keys, from
+ *                                 'date', 'time', 'venue', 'host', 'type' and
+ *                                 'sector'; unset means every row. The
+ *                                 flagship page (templates/flagship-event.php)
+ *                                 passes date/time/venue: it has no host
+ *                                 organisation, type or sector to state.
+ *   $law_cal_no_booking  (bool)   Render no booking control and no places
+ *                                 fallback. The flagship is approval-gated
+ *                                 through its own application flow
+ *                                 (EVENTS_4.2_SPECS.md §5), so this page must
+ *                                 not offer to book it.
+ *   $law_cal_sessions_style (string) 'accordion' (the default) or 'timeline'.
+ *                                 An accordion suits an event with two or
+ *                                 three sessions a reader might open; a
+ *                                 day-long conference agenda is the content
+ *                                 itself, so the flagship renders every
+ *                                 session open on a vertical timeline
+ *                                 (parts/events/session-timeline.php).
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -36,6 +54,9 @@ $law_cal_show_status = ! empty( $law_cal_show_status );
 $law_cal_event       = isset( $law_cal_event ) && is_array( $law_cal_event ) ? $law_cal_event : null;
 $law_cal_back        = isset( $law_cal_back ) && is_array( $law_cal_back ) ? $law_cal_back : array();
 $law_cal_preview     = ! empty( $law_cal_preview );
+$law_cal_details_rows = isset( $law_cal_details_rows ) && is_array( $law_cal_details_rows ) ? $law_cal_details_rows : null;
+$law_cal_no_booking   = ! empty( $law_cal_no_booking );
+$law_cal_sessions_style = ( isset( $law_cal_sessions_style ) && 'timeline' === $law_cal_sessions_style ) ? 'timeline' : 'accordion';
 
 $page_id = get_queried_object_id();
 $calendar_blocked = function_exists( 'members_can_current_user_view_post' )
@@ -85,6 +106,27 @@ if ( $event ) {
 	// availability in two of its five states ("N places left" when bookable,
 	// "fully booked" when sold out), so an already-booked attendee wondering
 	// whether to bring colleagues would otherwise lose the number entirely.
+	$law_cal_rows = array(
+		array( 'key' => 'date', 'label' => 'Date', 'value' => $event['date'] ? law_calendar_day_heading( $event['date'] ) : 'Slot not confirmed' ),
+		// Keyed off the date, not the start time: an event with a date but no
+		// times still has something to say (the flagship's "Times to be
+		// announced" until its agenda is written), and time_label is what
+		// law_calendar_event_time_label() falls back to.
+		array( 'key' => 'time', 'label' => 'Time', 'value' => $event['date'] ? law_calendar_event_time_label( $event ) : '' ),
+		array( 'key' => 'venue', 'label' => 'Location', 'value' => $event['venue'] ),
+		array( 'key' => 'host', 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
+		array( 'key' => 'type', 'label' => 'Type', 'value' => $event['type'] ),
+		array( 'key' => 'sector', 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
+	);
+	if ( null !== $law_cal_details_rows ) {
+		$law_cal_rows = array_values(
+			array_filter(
+				$law_cal_rows,
+				fn( $law_cal_row ) => in_array( $law_cal_row['key'], $law_cal_details_rows, true )
+			)
+		);
+	}
+
 	ob_start();
 	get_template_part(
 		'parts/calendar-event-details',
@@ -93,14 +135,8 @@ if ( $event ) {
 			'event'   => $event,
 			'preview' => $law_cal_preview,
 			'places'  => $law_places_meta,
-			'rows'    => array(
-				array( 'key' => 'date', 'label' => 'Date', 'value' => $event['date'] ? law_calendar_day_heading( $event['date'] ) : 'Slot not confirmed' ),
-				array( 'key' => 'time', 'label' => 'Time', 'value' => $event['start'] ? law_calendar_event_time_label( $event ) : '' ),
-				array( 'key' => 'venue', 'label' => 'Location', 'value' => $event['venue'] ),
-				array( 'key' => 'host', 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
-				array( 'key' => 'type', 'label' => 'Type', 'value' => $event['type'] ),
-				array( 'key' => 'sector', 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
-			),
+			'booking' => ! $law_cal_no_booking,
+			'rows'    => $law_cal_rows,
 		)
 	);
 
@@ -109,6 +145,18 @@ if ( $event ) {
 		'classes'     => 'law-event-hero',
 		'after_title' => (string) ob_get_clean(),
 	);
+
+	// A banner photograph chosen for this event wins over the theme's default
+	// one. Only the flagship carries _law_hero_image_id today, and the guard is
+	// on the source because in legacy mode $event['id'] is a Gravity Forms
+	// entry ID, not a post ID. Leaving the key unset keeps hero-title.php's own
+	// default, which is the same picture the programme block falls back to.
+	if ( 'cpt' === law_events_source() && function_exists( 'law_event_hero_image_url' ) ) {
+		$law_cal_hero_image = law_event_hero_image_url( $event['id'], 'large' );
+		if ( '' !== $law_cal_hero_image ) {
+			$hero_args['image'] = $law_cal_hero_image;
+		}
+	}
 } else {
 	$hero_args = array();
 	if ( ! empty( $law_cal_hero_title ) ) {
@@ -161,34 +209,15 @@ if ( $event ) {
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
-							<?php if ( $event['venue'] ) : ?>
-								<section class="law-cal-venue" aria-labelledby="law-cal-venue-heading">
-									<h2 id="law-cal-venue-heading" class="law-cal-acc__heading">Venue</h2>
-									<p class="law-cal-venue__address"><?php echo esc_html( $event['venue'] ); ?></p>
-									<?php
-									$maps_url  = law_calendar_maps_url( $event['venue'] );
-									$embed_url = law_calendar_maps_embed_url( $event['venue'] );
-									$show_map  = law_calendar_venue_is_mappable( $event['venue'] ) && $embed_url;
-									?>
-									<?php if ( $show_map ) : ?>
-										<div class="law-cal-venue__map">
-											<iframe
-												title="<?php echo esc_attr( sprintf( __( 'Map of %s', 'law' ), $event['venue'] ) ); ?>"
-												src="<?php echo esc_url( $embed_url ); ?>"
-												loading="lazy"
-												referrerpolicy="no-referrer-when-downgrade"
-												allowfullscreen
-											></iframe>
-										</div>
-										<?php if ( $maps_url ) : ?>
-											<p class="law-cal-venue__open">
-												<a href="<?php echo esc_url( $maps_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Open in Google Maps', 'law' ); ?></a>
-											</p>
-										<?php endif; ?>
-									<?php endif; ?>
-								</section>
-							<?php endif; ?>
-							<?php if ( ! empty( $event['sessions'] ) ) : ?>
+							<?php if ( ! empty( $event['sessions'] ) && 'timeline' === $law_cal_sessions_style ) : ?>
+								<?php
+								get_template_part(
+									'parts/events/session-timeline',
+									null,
+									array( 'sessions' => $event['sessions'] )
+								);
+								?>
+							<?php elseif ( ! empty( $event['sessions'] ) ) : ?>
 								<section class="law-cal-sessions" aria-labelledby="law-cal-sessions-heading">
 									<h2 id="law-cal-sessions-heading" class="law-cal-acc__heading">Sessions</h2>
 									<?php foreach ( $event['sessions'] as $session ) : ?>
@@ -198,7 +227,14 @@ if ( $event ) {
 											$session_label = $session['time_label'] ? $session['time_label'] : __( 'Session', 'law' );
 										}
 										?>
-										<details class="law-cal-session" name="law-cal-sessions">
+										<?php
+										// Deliberately no name="" attribute: a shared name would
+										// make these an exclusive accordion, so opening one
+										// session would slam the previous one shut. Readers
+										// compare sessions side by side, so each one opens and
+										// closes on its own.
+										?>
+										<details class="law-cal-session">
 											<summary class="law-cal-session__summary">
 												<span class="law-cal-session__heading">
 													<span class="law-cal-session__title"><?php echo esc_html( $session_label ); ?></span>
@@ -235,6 +271,14 @@ if ( $event ) {
 									</ul>
 								</section>
 							<?php endif; ?>
+							<?php
+							// Venue last, after the sessions and speakers: the running
+							// order and the people are what the reader came for, and the
+							// address is a detail they need once (Denis, 9 September
+							// 2026). The details box in the hero links down to this
+							// section, so the address is still one click from the top.
+							?>
+							<?php get_template_part( 'parts/events/event-venue', null, array( 'venue' => $event['venue'] ) ); ?>
 							<?php
 							// The "Read full bio" dialogs the cards above registered, printed
 							// here and nowhere else: they must land outside the sessions

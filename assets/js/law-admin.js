@@ -1,6 +1,12 @@
 /**
  * Admin behaviours for the events module meta boxes: repeaters, the
  * relationship picker (AJAX search) and the media-library photo field.
+ *
+ * The relationship and media bindings are exposed as
+ * window.lawAdminFields.initAll( root ), because the Flagship screen
+ * (assets/js/law-flagship-admin.js) adds session rows AFTER load, each with a
+ * speaker picker and a photo field inside it. A picker that is only bound at
+ * DOM ready would leave a cloned row with a dead search box.
  */
 (function () {
 	'use strict';
@@ -35,8 +41,15 @@
 		});
 	});
 
-	/* Relationship pickers. */
-	document.querySelectorAll('[data-law-rel]').forEach(function (picker) {
+	/* Relationship pickers. Idempotent and re-callable: a picker is bound once,
+	   and one sitting inside a clone template is skipped entirely, because the
+	   clone would inherit the "already bound" marker and never get handlers. */
+	function initRel(picker) {
+		if (picker.hasAttribute('data-law-rel-ready') || picker.closest('[data-law-row-template]')) {
+			return;
+		}
+		picker.setAttribute('data-law-rel-ready', '1');
+
 		var search = picker.querySelector('.law-rel-search');
 		var results = picker.querySelector('.law-rel-results');
 		var chosen = picker.querySelector('[data-law-rel-chosen]');
@@ -50,14 +63,19 @@
 		}
 
 		/* The Role select, same options as law_field_relationship_row() in
-		   fields.php (localised as roleChoices so the two cannot drift). The
-		   first choice, Speaker, is the default for a new row. */
+		   fields.php (localised as roleChoices so the two cannot drift). A new
+		   row starts on the blank "Select role" placeholder: there is no
+		   default role (Denis, 9 September 2026). */
 		function roleSelect(fieldName) {
 			var choices = (window.lawEventsAdmin && lawEventsAdmin.roleChoices) || { speaker: 'Speaker' };
 			var select = document.createElement('select');
 			select.name = fieldName;
 			select.className = 'law-rel-role';
 			select.setAttribute('aria-label', 'Role at this event');
+			var placeholder = document.createElement('option');
+			placeholder.value = '';
+			placeholder.textContent = 'Select role';
+			select.appendChild(placeholder);
 			Object.keys(choices).forEach(function (key) {
 				var option = document.createElement('option');
 				option.value = key;
@@ -84,11 +102,16 @@
 						'<button type="button" class="button-link law-rel-photo-choose">Choose photo</button>' +
 						'<button type="button" class="button-link law-rel-photo-clear" hidden>Remove photo</button>' +
 					'</span>' +
-					'<textarea name="' + name + '[' + i + '][bio]" rows="3" placeholder="Biography for this event" class="law-rel-bio"></textarea>';
+					// Same markup as law_rich_text_field() in functions/events/rich-text.php.
+					'<span class="law-rich-text"><textarea name="' + name + '[' + i + '][bio]" rows="3" ' +
+						'aria-label="Biography for this event" class="law-rich-text__area law-rel-bio" data-law-rich></textarea></span>';
 			li.innerHTML = '<span class="law-rel-title"></span>' + fields +
 				'<button type="button" class="button-link-delete law-rel-remove" aria-label="Remove">×</button>';
 			li.querySelector('.law-rel-title').textContent = title;
 			chosen.appendChild(li);
+			// After the append, never before it: TinyMCE measures and replaces an
+			// element that has to already be in the document.
+			if (window.lawRichText) { window.lawRichText.initAll(li); }
 		}
 
 		search.addEventListener('input', function () {
@@ -133,7 +156,13 @@
 
 		picker.addEventListener('click', function (event) {
 			if (event.target.classList.contains('law-rel-remove')) {
-				event.target.closest('.law-rel-item').remove();
+				var doomed = event.target.closest('.law-rel-item');
+				// Detach the biography's editor before the row goes, or TinyMCE is
+				// left holding an instance whose element no longer exists.
+				if (window.lawRichText) {
+					doomed.querySelectorAll('textarea[data-law-rich]').forEach(window.lawRichText.remove);
+				}
+				doomed.remove();
 				return;
 			}
 			var control = event.target.closest('[data-law-rel-photo]');
@@ -160,7 +189,7 @@
 				frame.open();
 			}
 		});
-	});
+	}
 
 	/* Test mode: reveal the address field and validate it over AJAX. */
 	(function () {
@@ -229,8 +258,13 @@
 		}
 	})();
 
-	/* Media picker. */
-	document.querySelectorAll('[data-law-media]').forEach(function (field) {
+	/* Media picker. Same idempotent, re-callable shape as initRel(). */
+	function initMedia(field) {
+		if (field.hasAttribute('data-law-media-ready') || field.closest('[data-law-row-template]')) {
+			return;
+		}
+		field.setAttribute('data-law-media-ready', '1');
+
 		var input = field.querySelector('input[type=hidden]');
 		var preview = field.querySelector('.law-media-preview');
 		var removeButton = field.querySelector('.law-media-remove');
@@ -253,5 +287,17 @@
 			preview.innerHTML = '';
 			removeButton.style.display = 'none';
 		});
-	});
+	}
+
+	/* Bind everything on this screen, then expose the same entry point so a
+	   script that inserts markup later can bind just its new subtree. */
+	function initAll(root) {
+		var scope = root || document;
+		scope.querySelectorAll('[data-law-rel]').forEach(initRel);
+		scope.querySelectorAll('[data-law-media]').forEach(initMedia);
+	}
+
+	initAll(document);
+
+	window.lawAdminFields = { initRel: initRel, initMedia: initMedia, initAll: initAll };
 })();

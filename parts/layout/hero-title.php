@@ -10,6 +10,12 @@
  *   image    (string|false) Background image URL. Defaults to the shared page
  *                     banner; pass false or '' to render without one.
  *   classes  (string) Extra classes on the <section>, e.g. 'register-page'.
+ *   solid    (bool)   Render the hero on flat brand navy: no photograph, and
+ *                     the overlay at full opacity instead of the translucent
+ *                     one. Use it on pages whose hero carries a form (sign in,
+ *                     register, profile, submit/edit an event), where the
+ *                     photograph showing through costs contrast on the labels
+ *                     and inputs and buys nothing. Implies image => false.
  *   content  (bool)   Output the_content() below the title.
  *   text     (string) HTML to output below the title instead of the_content(),
  *                     e.g. an ACF banner text field.
@@ -28,11 +34,18 @@ $args = isset( $args ) && is_array( $args ) ? $args : array();
 
 $law_hero_title    = array_key_exists( 'title', $args ) ? (string) $args['title'] : get_the_title();
 $law_hero_is_event = ! empty( $args['is_event'] );
-$law_hero_image    = array_key_exists( 'image', $args ) ? (string) $args['image'] : law_asset( 'assets/images/patrons-and-committee-bg.jpg' );
-$law_hero_classes  = trim( 'hero ' . (string) ( $args['classes'] ?? '' ) );
+$law_hero_solid    = ! empty( $args['solid'] );
+$law_hero_image    = array_key_exists( 'image', $args ) ? (string) $args['image'] : law_hero_default_image_url();
+$law_hero_classes  = trim( 'hero ' . ( $law_hero_solid ? 'hero-solid ' : '' ) . (string) ( $args['classes'] ?? '' ) );
 $law_hero_content  = ! empty( $args['content'] );
 $law_hero_text     = isset( $args['text'] ) ? (string) $args['text'] : '';
 $law_hero_after    = isset( $args['after_title'] ) ? (string) $args['after_title'] : '';
+
+// A fully opaque overlay hides the photograph, so don't make the browser
+// fetch it at all.
+if ( $law_hero_solid ) {
+	$law_hero_image = '';
+}
 ?>
 <section class="<?php echo esc_attr( $law_hero_classes ); ?>"<?php if ( $law_hero_image ) : ?> style="background-image: url('<?php echo esc_url( $law_hero_image ); ?>');"<?php endif; ?>>
 	<div class="overlay"></div>

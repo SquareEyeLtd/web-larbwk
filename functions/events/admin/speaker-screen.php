@@ -18,6 +18,13 @@ add_action( 'add_meta_boxes_' . LAW_SPEAKER_CPT, function () {
 
 function law_speaker_box_details( $post ) {
 	wp_nonce_field( 'law_speaker_admin_save', 'law_speaker_admin_nonce' );
+	// The name in two parts (Denis, 9 September 2026). A record created before
+	// the split has none stored, so its title is split for the prefill; saving
+	// writes both and rebuilds the title above from them.
+	$name = law_speaker_name_parts( (int) $post->ID );
+	law_field_text( 'law_speaker_first_name', 'First name', $name['first'] );
+	law_field_text( 'law_speaker_last_name', 'Last name', $name['last'] );
+	echo '<p class="description">The title above is the display name every listing prints; it is rebuilt from these two fields on save.</p>';
 	law_field_text( 'law_speaker_email', 'Email (the dedupe key)', (string) law_event_meta( $post->ID, '_law_speaker_email' ), array( 'type' => 'email' ) );
 	law_field_text( 'law_website', 'Website profile URL', (string) law_event_meta( $post->ID, '_law_website' ), array( 'type' => 'url' ) );
 	echo '<p class="description">Biography, organisation, job title and photo are per event: edit them on each event (or session) under Speakers. The editor content and featured image here are only fallbacks, used for an event whose Speakers row leaves them blank.</p>';
@@ -58,11 +65,30 @@ add_action( 'save_post_' . LAW_SPEAKER_CPT, function ( $post_id ) {
 	}
 
 	foreach ( array(
-		'law_speaker_email' => '_law_speaker_email',
-		'law_website'       => '_law_website',
+		'law_speaker_first_name' => '_law_speaker_first_name',
+		'law_speaker_last_name'  => '_law_speaker_last_name',
+		'law_speaker_email'      => '_law_speaker_email',
+		'law_website'            => '_law_website',
 	) as $field => $key ) {
 		if ( isset( $_POST[ $field ] ) ) {
 			law_event_update_meta( $post_id, $key, wp_unslash( $_POST[ $field ] ) );
 		}
+	}
+
+	// Keep the display name in step with the parts just saved. The static guard
+	// stops the wp_update_post() below re-entering this same save_post hook; the
+	// empty check stops a record that has never had parts losing its title.
+	static $renaming = false;
+	if ( $renaming || ( ! isset( $_POST['law_speaker_first_name'] ) && ! isset( $_POST['law_speaker_last_name'] ) ) ) {
+		return;
+	}
+	$name = law_speaker_full_name(
+		(string) law_event_meta( $post_id, '_law_speaker_first_name' ),
+		(string) law_event_meta( $post_id, '_law_speaker_last_name' )
+	);
+	if ( '' !== $name && $name !== trim( (string) get_post_field( 'post_title', $post_id ) ) ) {
+		$renaming = true;
+		wp_update_post( array( 'ID' => $post_id, 'post_title' => $name ) );
+		$renaming = false;
 	}
 } );

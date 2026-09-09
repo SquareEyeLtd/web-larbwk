@@ -15,6 +15,7 @@ require_once __DIR__ . '/settings.php';
 require_once __DIR__ . '/post-types.php';
 require_once __DIR__ . '/statuses.php';
 require_once __DIR__ . '/meta.php';
+require_once __DIR__ . '/rich-text.php';
 require_once __DIR__ . '/countries.php';
 require_once __DIR__ . '/capabilities.php';
 require_once __DIR__ . '/fees.php';
@@ -32,6 +33,9 @@ require_once __DIR__ . '/test-mode.php';
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/speakers.php';
 require_once __DIR__ . '/speakers-dashboard.php';
+require_once __DIR__ . '/flagship.php';
+require_once __DIR__ . '/flagship-form.php';
+require_once __DIR__ . '/flagship-dashboard.php';
 require_once __DIR__ . '/source.php';
 require_once __DIR__ . '/edit-lock.php';
 require_once __DIR__ . '/submission-form.php';
@@ -46,12 +50,14 @@ require_once __DIR__ . '/admin/event-screen.php';
 require_once __DIR__ . '/admin/booking-screen.php';
 require_once __DIR__ . '/admin/speaker-screen.php';
 require_once __DIR__ . '/admin/session-screen.php';
+require_once __DIR__ . '/admin/flagship-screen.php';
 require_once __DIR__ . '/admin/columns.php';
 require_once __DIR__ . '/admin/emails-screen.php';
 require_once __DIR__ . '/migration/report.php';
 require_once __DIR__ . '/migration/runner.php';
 require_once __DIR__ . '/migration/page.php';
 require_once __DIR__ . '/migration/repair-owners.php';
+require_once __DIR__ . '/migration/backfill-session-agenda.php';
 
 /**
  * Which data source the front end reads: 'gf' (legacy Gravity Forms entries)

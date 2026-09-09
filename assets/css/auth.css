@@ -17,7 +17,9 @@
  */
 body.page-template-templateslogin-php,
 body.page-template-templatesregister-php,
-body.page-template-templatesaccount-php {
+body.page-template-templatesaccount-php,
+body.page-template-templatesaccount-profile-php,
+body.page-template-templatesaccount-event-form-php {
 	display: flex;
 	flex-direction: column;
 	min-height: 100vh;
@@ -49,9 +51,14 @@ body.page-template-templatesaccount-php {
 }
 
 
-/* #pages prefix: must beat the masked multiply overlay from #pages .hero .overlay. */
-.hero.auth-hero .overlay,
-#pages .hero.auth-hero .overlay {
+/*
+ * #pages prefix: must beat the masked multiply overlay from #pages .hero .overlay.
+ * :not(.hero-solid) so the fully opaque overlay from app.css's .hero-solid wins
+ * on the form pages; auth.css loads after app.css, so without it this rule would
+ * take the tie on source order.
+ */
+.hero.auth-hero:not(.hero-solid) .overlay,
+#pages .hero.auth-hero:not(.hero-solid) .overlay {
 	background: rgba(38, 30, 91, 0.8);
 	mix-blend-mode: unset;
 	-webkit-mask-image: none;

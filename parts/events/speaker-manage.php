@@ -90,12 +90,28 @@ get_template_part( 'parts/layout/back-link', null, array(
 				<legend><?php esc_html_e( 'The speaker', 'law' ); ?></legend>
 				<p class="law-form-hint"><?php esc_html_e( 'Shared across every event this person appears at.', 'law' ); ?></p>
 
-				<p class="law-form-field">
-					<label for="law-sm-name"><?php esc_html_e( 'Full name *', 'law' ); ?></label>
-					<input type="text" id="law-sm-name" name="name" required
-						value="<?php echo esc_attr( $law_sm_value( 'name', $law_sm_speaker->post_title ) ); ?>">
-					<?php $law_sm_error( 'name' ); ?>
-				</p>
+				<?php
+				// First and last name separately (Denis, 9 September 2026). A record
+				// created before the split has no stored parts, so its post title is
+				// split for the prefill; saving here writes both and rebuilds the
+				// title from them, which is how a legacy record gains real parts.
+				$law_sm_name = law_speaker_name_parts( $law_sm_id );
+				?>
+				<div class="law-row-grid">
+					<p class="law-form-field">
+						<label for="law-sm-first-name"><?php esc_html_e( 'First name *', 'law' ); ?></label>
+						<input type="text" id="law-sm-first-name" name="first_name" required
+							value="<?php echo esc_attr( $law_sm_value( 'first_name', $law_sm_name['first'] ) ); ?>">
+						<?php $law_sm_error( 'first_name' ); ?>
+					</p>
+
+					<p class="law-form-field">
+						<label for="law-sm-last-name"><?php esc_html_e( 'Last name *', 'law' ); ?></label>
+						<input type="text" id="law-sm-last-name" name="last_name" required
+							value="<?php echo esc_attr( $law_sm_value( 'last_name', $law_sm_name['last'] ) ); ?>">
+						<?php $law_sm_error( 'last_name' ); ?>
+					</p>
+				</div>
 
 				<div class="law-row-grid">
 					<p class="law-form-field">
@@ -124,7 +140,7 @@ get_template_part( 'parts/layout/back-link', null, array(
 				$law_sm_event  = (int) $law_sm_appearance['event_id'];
 				$law_sm_status = law_event_status_label( $law_sm_appearance['event_status'] );
 				$law_sm_photo  = (int) $law_sm_appearance['photo_id'];
-				$law_sm_role   = law_speaker_role_key( $law_sm_row_value( $law_sm_event, 'role', $law_sm_appearance['role'] ) ) ?: 'speaker';
+				$law_sm_role   = law_speaker_role_key( $law_sm_row_value( $law_sm_event, 'role', $law_sm_appearance['role'] ) );
 				// A draft belongs to its host: the committee dashboard neither
 				// lists nor previews one (templates/account-dashboard.php), so
 				// this offers no links to it either. Its details are still
@@ -146,7 +162,10 @@ get_template_part( 'parts/layout/back-link', null, array(
 							<span class="law-speaker-appearance__when"><?php echo esc_html( date_i18n( 'D j M Y, H:i', strtotime( $law_sm_appearance['event_start'] ) ) ); ?></span>
 						<?php endif; ?>
 						<?php if ( ! $law_sm_is_draft ) : ?>
-							<a href="<?php echo esc_url( $law_sm_preview ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Preview event', 'law' ); ?></a>
+							<?php // Confirmed events link to their real permalink, so the link says View event there, as on the committee dashboard. ?>
+							<a href="<?php echo esc_url( $law_sm_preview ); ?>" target="_blank" rel="noopener"><?php
+								echo esc_html( 'publish' === $law_sm_appearance['event_status'] ? __( 'View event', 'law' ) : __( 'Preview event', 'law' ) );
+							?></a>
 							<a href="<?php echo esc_url( $law_sm_edit ); ?>"><?php esc_html_e( 'Edit event', 'law' ); ?></a>
 						<?php endif; ?>
 					</p>
@@ -155,6 +174,7 @@ get_template_part( 'parts/layout/back-link', null, array(
 						<p class="law-form-field">
 							<label for="law-sm-role-<?php echo esc_attr( (string) $law_sm_event ); ?>"><?php esc_html_e( 'Role', 'law' ); ?></label>
 							<select id="law-sm-role-<?php echo esc_attr( (string) $law_sm_event ); ?>" name="appearances[<?php echo esc_attr( (string) $law_sm_event ); ?>][role]">
+								<option value="" <?php selected( $law_sm_role, '' ); ?>><?php esc_html_e( 'Select role', 'law' ); ?></option>
 								<?php foreach ( law_speaker_roles() as $law_sm_key => $law_sm_label ) : ?>
 									<option value="<?php echo esc_attr( $law_sm_key ); ?>" <?php selected( $law_sm_role, $law_sm_key ); ?>><?php echo esc_html( $law_sm_label ); ?></option>
 								<?php endforeach; ?>
@@ -194,11 +214,25 @@ get_template_part( 'parts/layout/back-link', null, array(
 						</p>
 					</div>
 
-					<p class="law-form-field">
+					<?php
+					// The same stored value the host's own form edits, so it gets the
+					// same WYSIWYG editor (functions/events/rich-text.php). A plain
+					// textarea here would flatten a host's formatting the first time
+					// the committee corrected a job title on the same screen.
+					?>
+					<div class="law-form-field">
 						<label for="law-sm-bio-<?php echo esc_attr( (string) $law_sm_event ); ?>"><?php esc_html_e( 'Biography', 'law' ); ?></label>
-						<textarea id="law-sm-bio-<?php echo esc_attr( (string) $law_sm_event ); ?>" rows="5"
-							name="appearances[<?php echo esc_attr( (string) $law_sm_event ); ?>][bio]"><?php echo esc_textarea( $law_sm_row_value( $law_sm_event, 'bio', $law_sm_appearance['bio'] ) ); ?></textarea>
-					</p>
+						<?php
+						law_rich_text_field(
+							array(
+								'name'  => 'appearances[' . $law_sm_event . '][bio]',
+								'id'    => 'law-sm-bio-' . $law_sm_event,
+								'value' => (string) $law_sm_row_value( $law_sm_event, 'bio', $law_sm_appearance['bio'] ),
+								'rows'  => 5,
+							)
+						);
+						?>
+					</div>
 				</fieldset>
 			<?php endforeach; ?>
 

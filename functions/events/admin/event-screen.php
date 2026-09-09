@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 add_action( 'add_meta_boxes_' . LAW_EVENT_CPT, function () {
 	add_meta_box( 'law-event-workflow', 'Workflow', 'law_event_box_workflow', LAW_EVENT_CPT, 'side', 'high' );
 	add_meta_box( 'law-event-fee', 'Fee & invoice', 'law_event_box_fee', LAW_EVENT_CPT, 'side' );
+	add_meta_box( 'law-event-flags', 'Classification', 'law_event_box_flags', LAW_EVENT_CPT, 'side' );
 	add_meta_box( 'law-event-facts', 'Event details', 'law_event_box_facts', LAW_EVENT_CPT, 'normal', 'high' );
 	add_meta_box( 'law-event-invoice-contact', 'Invoice contact', 'law_event_box_invoice_contact', LAW_EVENT_CPT, 'normal' );
 	add_meta_box( 'law-event-people', 'Owners & contacts', 'law_event_box_people', LAW_EVENT_CPT, 'normal' );
@@ -63,6 +64,40 @@ function law_event_box_workflow( $post ) {
 	echo '</p>';
 	law_field_textarea( 'law_workflow_note', 'Comment / reason (required for Send back, Reject and Cancel)', '', 3 );
 	echo '<p class="description">Choose an action and Update. Guards apply: an action illegal for the current status is refused with a notice.</p>';
+}
+
+/**
+ * The committee's two classification switches, mirroring the dashboard
+ * sidebar so wp-admin ("Full editing in wp-admin") is not a dead end.
+ *
+ * Its own box rather than an addition to the Workflow box: that one returns
+ * early when no workflow actions apply, so anything appended to it would
+ * silently vanish on cancelled and rejected events. And a benign config flag
+ * does not belong beside the irreversible Approve / Reject / Cancel radios.
+ */
+function law_event_box_flags( $post ) {
+	law_field_checkbox( 'law_is_law_event', 'Run by LAW, not an external host', (bool) law_event_meta( $post->ID, '_law_is_law_event' ) );
+	law_field_checkbox( 'law_session_agenda', 'This event has a session agenda', (bool) law_event_meta( $post->ID, '_law_session_agenda' ) );
+
+	$sessions = count( law_event_session_ids( $post->ID ) );
+	if ( $sessions && ! law_event_meta( $post->ID, '_law_session_agenda' ) ) {
+		// law_event_has_session_agenda() keeps the form section while sessions
+		// exist, so the unticked box is not the whole story.
+		printf(
+			'<p class="description">%s</p>',
+			esc_html(
+				sprintf(
+					_n(
+						'This event still has %d session, so the Session agenda section stays on its form until it is deleted.',
+						'This event still has %d sessions, so the Session agenda section stays on its form until they are deleted.',
+						$sessions,
+						'law'
+					),
+					$sessions
+				)
+			)
+		);
+	}
 }
 
 function law_event_box_fee( $post ) {
@@ -125,7 +160,10 @@ function law_event_box_facts( $post ) {
 	foreach ( law_events_slots( true ) as $slot ) {
 		$slots[ $slot['label'] ] = $slot['label'] . ( $slot['retired'] ? ' (retired)' : '' );
 	}
-	law_field_select( 'law_slot_label', 'Confirmed slot', (string) law_event_meta( $post->ID, '_law_slot_label' ), $slots, array( 'placeholder' => 'Slot not confirmed' ) );
+	// Normalised, so a slot stored with different dash punctuation still shows
+	// as the selected option rather than reading as "not confirmed".
+	$slot_current = law_events_normalise_slot_label( law_event_meta( $post->ID, '_law_slot_label' ) );
+	law_field_select( 'law_slot_label', 'Confirmed slot', $slot_current, $slots, array( 'placeholder' => 'Slot not confirmed' ) );
 	law_field_datetime( 'law_start', 'Start (set from the slot when chosen)', (string) law_event_meta( $post->ID, '_law_start' ) );
 	law_field_datetime( 'law_end', 'End', (string) law_event_meta( $post->ID, '_law_end' ) );
 
@@ -163,8 +201,29 @@ function law_event_box_invoice_contact( $post ) {
 	law_field_text( 'law_invoice_name', 'Invoice contact name', (string) law_event_meta( $post->ID, '_law_invoice_name' ) );
 	law_field_text( 'law_invoice_email', 'Invoice contact email', (string) law_event_meta( $post->ID, '_law_invoice_email' ), array( 'type' => 'email' ) );
 	$address = law_event_meta( $post->ID, '_law_invoice_address' );
-	foreach ( array( 'line1' => 'Address line 1', 'line2' => 'Address line 2', 'city' => 'City', 'state' => 'County / state', 'postal_code' => 'Postcode', 'country' => 'Country' ) as $part => $label ) {
+	foreach ( array( 'line1' => 'Address line 1', 'line2' => 'Address line 2', 'city' => 'City', 'state' => 'County / state', 'postal_code' => 'Postcode' ) as $part => $label ) {
 		law_field_text( 'law_invoice_address_' . $part, $label, (string) ( $address[ $part ] ?? '' ) );
+	}
+	// Country matches the front-end forms: the registration country list with a
+	// "Select country" placeholder, so a typo here can never break the ISO
+	// derivation. A stored value that is not on the list is kept as its own
+	// option (migrated events), and with no list available (Gravity Forms gone)
+	// the field falls back to free text.
+	$country   = (string) ( $address['country'] ?? '' );
+	$countries = law_registration_country_choices();
+	if ( $countries && '' !== $country && ! in_array( $country, $countries, true ) ) {
+		$countries[] = $country;
+	}
+	if ( $countries ) {
+		law_field_select(
+			'law_invoice_address_country',
+			'Country',
+			$country,
+			array_combine( $countries, $countries ),
+			array( 'placeholder' => 'Select country' )
+		);
+	} else {
+		law_field_text( 'law_invoice_address_country', 'Country', $country );
 	}
 	law_field_text( 'law_country_iso', 'Country ISO (derived from the country name on save; only used when the name cannot be matched)', (string) law_event_meta( $post->ID, '_law_country_iso' ), array( 'class' => 'small-text' ) );
 	law_field_text( 'law_vat_number', 'VAT number', (string) law_event_meta( $post->ID, '_law_vat_number' ) );
@@ -176,7 +235,7 @@ function law_event_box_people( $post ) {
 		'organisation' => array( 'label' => 'Organisation' ),
 		'email'        => array( 'label' => 'Email', 'type' => 'email' ),
 	);
-	law_field_repeater( 'law_co_owner_rows', 'Additional event owners (accounts are created on approval)', law_event_meta( $post->ID, '_law_co_owner_rows' ), $columns );
+	law_field_repeater( 'law_co_owner_rows', 'Additional event owners (accounts are created on approval)', law_event_meta( $post->ID, '_law_co_owner_rows' ), $columns, 'Add co-owner' );
 
 	$co_owner_ids = law_event_meta( $post->ID, '_law_co_owner_ids' );
 	if ( $co_owner_ids ) {
@@ -191,7 +250,7 @@ function law_event_box_people( $post ) {
 		echo wp_kses_post( implode( ', ', $links ) ) . '</p>';
 	}
 
-	law_field_repeater( 'law_contacts', 'Event contacts', law_event_meta( $post->ID, '_law_contacts' ), $columns );
+	law_field_repeater( 'law_contacts', 'Event contacts', law_event_meta( $post->ID, '_law_contacts' ), $columns, 'Add contact' );
 }
 
 function law_event_box_speakers( $post ) {
@@ -290,6 +349,17 @@ function law_event_admin_save( $post_id, $post ) {
 	$before_tickets  = (int) law_event_meta( $post_id, '_law_tickets_available' );
 	$before_tier     = (string) law_event_meta( $post_id, '_law_fee_tier' );
 	$before_orgs     = (array) law_event_meta( $post_id, '_law_organisation_ids' );
+	$before_flags    = array(
+		'_law_is_law_event'   => (int) law_event_meta( $post_id, '_law_is_law_event' ),
+		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
+	);
+
+	// The flagship conference derives its start, end and speakers from its
+	// sessions (law_flagship_recompute()), and holds no slot, so this screen
+	// must not write those keys for it: the slot select would blank its
+	// datetimes on the first Update. Everything else on the screen still saves,
+	// and the derived values are refreshed at the end of this handler.
+	$is_flagship = function_exists( 'law_flagship_is' ) && law_flagship_is( $post_id );
 
 	$plain = array(
 		'law_fee_tier'            => '_law_fee_tier',
@@ -307,6 +377,9 @@ function law_event_admin_save( $post_id, $post ) {
 		'law_invoice_email'       => '_law_invoice_email',
 		'law_vat_number'          => '_law_vat_number',
 	);
+	if ( $is_flagship ) {
+		unset( $plain['law_slot_label'], $plain['law_start'], $plain['law_end'] );
+	}
 	foreach ( $plain as $field => $key ) {
 		if ( isset( $_POST[ $field ] ) ) {
 			law_event_update_meta( $post_id, $key, wp_unslash( $_POST[ $field ] ) );
@@ -336,7 +409,9 @@ function law_event_admin_save( $post_id, $post ) {
 
 	// A chosen slot fills the start/end datetimes; an emptied slot clears them
 	// (shared helper, so this matches the committee dashboard save path).
-	law_event_apply_slot_label( $post_id, sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ?? '' ) ) );
+	if ( ! $is_flagship ) {
+		law_event_apply_slot_label( $post_id, sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ?? '' ) ) );
+	}
 
 	// Invoice address parts + derived ISO.
 	$address = array();
@@ -362,6 +437,15 @@ function law_event_admin_save( $post_id, $post ) {
 	law_event_update_meta( $post_id, '_law_speakers', law_events_rows_from_post( 'law_speakers' ) );
 	law_event_update_meta( $post_id, '_law_organisation_ids', array_map( 'absint', (array) ( $_POST['law_organisation_ids'] ?? array() ) ) );
 	law_event_log_organisation_change( $post_id, $before_orgs, $actor );
+
+	// Written unconditionally, NOT through the $plain map above: that loop is
+	// guarded by isset( $_POST[ $field ] ) and an unticked checkbox posts
+	// nothing, so a flag could be switched on here and then never off. The
+	// nonce gate at the top of this handler already guarantees the box was on
+	// the form (quick edit and bulk edit never carry law_event_admin_nonce).
+	law_event_update_meta( $post_id, '_law_is_law_event', ! empty( $_POST['law_is_law_event'] ) );
+	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
+	law_event_log_flag_change( $post_id, $before_flags, $actor );
 
 	// Payment status change is an explicit, logged act.
 	$new_payment = sanitize_key( $_POST['law_payment_status'] ?? '' );
@@ -442,8 +526,37 @@ function law_event_admin_save( $post_id, $post ) {
 		}
 	}
 
+	// Last: the flagship's derived start, end and speakers union, in case this
+	// save changed its date meta or one of its sessions was edited alongside it.
+	if ( $is_flagship ) {
+		law_flagship_recompute( $post_id );
+	}
+
 	$running = false;
 }
+
+/**
+ * The flagship is in the Events list like any other event, so it can be opened
+ * on this screen; its own fields (description, date, location, banner image and
+ * the whole session agenda) live on the Flagship screen, which is where an edit
+ * belongs.
+ */
+add_action(
+	'admin_notices',
+	function () {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || 'post' !== $screen->base || LAW_EVENT_CPT !== ( $screen->post_type ?? '' ) ) {
+			return;
+		}
+		if ( ! function_exists( 'law_flagship_is' ) || ! law_flagship_is( get_the_ID() ) ) {
+			return;
+		}
+		printf(
+			'<div class="notice notice-info"><p>This is the flagship conference. Its description, date, location, banner image and session agenda are edited on the <a href="%s">Flagship screen</a>; its start and end times are worked out from its sessions, so the slot and time fields here do not apply.</p></div>',
+			esc_url( law_flagship_admin_url() )
+		);
+	}
+);
 
 /**
  * The classic editor's submit box misleads on this CPT (core knows nothing
@@ -493,10 +606,10 @@ function law_events_rows_from_post( $field ) {
 		$clean = array();
 		foreach ( $row as $key => $value ) {
 			$value = wp_unslash( is_scalar( $value ) ? (string) $value : '' );
-			// A speaker's biography is a paragraph, and sanitize_text_field()
-			// collapses its line breaks — before the meta schema's textarea
+			// A speaker's biography is rich text, and sanitize_text_field() would
+			// collapse its markup and line breaks — before the meta schema's own
 			// sanitiser ever sees the value. Everything else here is single-line.
-			$clean[ $key ] = 'bio' === $key ? sanitize_textarea_field( $value ) : sanitize_text_field( $value );
+			$clean[ $key ] = 'bio' === $key ? law_rich_text_sanitize( $value ) : sanitize_text_field( $value );
 		}
 		$rows[] = $clean;
 	}

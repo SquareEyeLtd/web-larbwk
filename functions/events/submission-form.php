@@ -51,6 +51,118 @@ function law_events_locked_fields( $post, $user_id = 0 ) {
 	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed' );
 }
 
+
+/**
+ * Whether the Venue detail fields (venue name/address, capacity band, places
+ * available) are on this submitter's form.
+ *
+ * A deliberate divergence from form 2 (Event > submit an event), where only
+ * field 21 (Venue) was conditional on field 103 (Venue needed) and field 55
+ * (Venue capacity) / field 54 (Tickets available) carried no conditional logic
+ * at all: a host who has just asked LAW to find them a venue cannot answer any
+ * of the three, and any number they give is a guess, so they are asked none of
+ * them (Denis, 9 September 2026). The committee always sees the block, because
+ * setting the venue and its capacity band once the event has been placed is
+ * their job. Keyed on the capability rather than on the template's 'context'
+ * arg, which is copy/voice only, so a committee member submitting their own
+ * event through the host form gets the same block.
+ *
+ * @param string $venue_needed The Venue needed answer to judge (stored value
+ *                             when the field is locked, else the posted one).
+ * @param int    $user_id      Defaults to the current user.
+ */
+function law_events_venue_details_visible( $venue_needed, $user_id = 0 ) {
+	$user_id = $user_id ? (int) $user_id : get_current_user_id();
+	if ( law_user_is_committee( $user_id ) ) {
+		return true;
+	}
+	return 0 === strpos( (string) $venue_needed, 'No,' );
+}
+
+
+/**
+ * The Venue needed answer to judge visibility by.
+ *
+ * The field is in the host lock list, and a disabled radio posts nothing, so
+ * post-approval a host's posted value is always ''. Reading the stored value
+ * in that case is what keeps the venue name editable for a host whose event
+ * has a venue -- the same fallback the ticket/band check uses.
+ *
+ * @param WP_Post|null $post   Event being saved (null on a new submission).
+ * @param array        $locked law_events_locked_fields() for this save.
+ * @param array        $input  Unslashed POST data.
+ */
+function law_events_venue_needed_value( $post, array $locked, array $input ) {
+	if ( in_array( 'venue_needed', $locked, true ) && $post ) {
+		return (string) law_event_meta( $post->ID, '_law_venue_needed' );
+	}
+	return (string) ( $input['venue_needed'] ?? '' );
+}
+
+/**
+ * Whether the Session agenda section is available on this event's form.
+ *
+ * The committee's _law_session_agenda switch is the opt-in (4.2 §3.6 calls the
+ * enhanced agenda "opt-in per event and configured by LAW admin"), replacing
+ * the earlier arrangement where the section was always on the form and the
+ * opt-in was merely whether any sessions had been typed into it.
+ *
+ * An event that already HAS sessions always keeps the section, whatever the
+ * switch says. Two reasons: hiding it would strand an existing agenda with no
+ * way to edit or remove it, and law_events_form_save_sessions() deletes the
+ * rows the form did not post, so a hidden section on an opted-out event is
+ * exactly the shape that silently destroys a host's agenda. To take an agenda
+ * away, the committee deletes the sessions and then unticks the box.
+ *
+ * A brand-new event returns false: it does not exist yet, so there is no
+ * switch to read and no committee member has seen it.
+ *
+ * Deliberately NOT memoised. The gate is consulted a few times per render, so
+ * a static cache looked worth having, but any caller that writes the switch and
+ * then asks again in the same request (the committee handler deciding which
+ * save notice to show, the backfill, a test) would get the stale answer. Two
+ * small reads are cheaper than that class of bug, and post meta is already
+ * served from the object cache after the first read.
+ *
+ * @param WP_Post|int|null $post Event post or ID.
+ */
+function law_event_has_session_agenda( $post ) {
+	$event_id = $post instanceof WP_Post ? (int) $post->ID : (int) $post;
+	if ( ! $event_id || LAW_EVENT_CPT !== get_post_type( $event_id ) ) {
+		return false;
+	}
+	return (bool) law_event_meta( $event_id, '_law_session_agenda' )
+		|| (bool) law_event_session_ids( $event_id );
+}
+
+/**
+ * The form's sections, in order: key => nav label.
+ *
+ * One list for both consumers (templates/account-event-form.php and
+ * parts/events/committee-event-form.php), which each hard-coded their own copy
+ * until the Session agenda section became conditional and the two would have
+ * had to drift apart. Mirrors the fieldset ids in
+ * parts/events/event-form-fields.php plus each template's own
+ * law-section-finish, which remain a separate list.
+ *
+ * @param WP_Post|int|null $post Event being edited, or null on a new one.
+ */
+function law_events_form_sections( $post = null ) {
+	$sections = array(
+		'details'  => 'Event details',
+		'speakers' => 'Speakers',
+		'venue'    => 'Venue',
+		'owners'   => 'Owners & contacts',
+		'fees'     => 'Fees',
+		'agenda'   => 'Session agenda',
+		'finish'   => 'Finish',
+	);
+	if ( ! law_event_has_session_agenda( $post ) ) {
+		unset( $sections['agenda'] );
+	}
+	return $sections;
+}
+
 /**
  * Validation + persistence for one form post.
  *
@@ -63,14 +175,40 @@ function law_events_locked_fields( $post, $user_id = 0 ) {
 function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	$is_new = ! $post;
 	$locked = $post ? law_events_locked_fields( $post, $user_id ) : array();
+	// Read once, here, so the save guard below and anything else that asks
+	// cannot disagree with the form that was rendered.
+	$has_agenda = law_event_has_session_agenda( $post );
 	$errors = new WP_Error();
 	// Read before the writes: raising the places is what offers them to the
 	// waitlist (see the call after the writes loop).
 	$before_tickets = $post ? (int) law_event_meta( $post->ID, '_law_tickets_available' ) : 0;
 
 	$title       = sanitize_text_field( $input['event_title'] ?? '' );
-	$description = wp_kses_post( $input['description'] ?? '' );
+	// The narrower events allowlist, not wp_kses_post(): a host may emphasise
+	// and structure a description, not embed media or layout (rich-text.php).
+	$description = law_rich_text_sanitize( $input['description'] ?? '' );
 	$is_draft    = 'draft' === ( $input['law_form_action'] ?? '' );
+
+	// The repeater rows' rich-text fields, normalised before anything else reads
+	// them. An emptied editor posts "<p>&nbsp;</p>" rather than an empty string,
+	// which would otherwise make a cleared row look filled and sail through the
+	// "each session needs a description" check below.
+	foreach ( array( 'speakers' => 'bio', 'sessions' => 'description' ) as $law_group => $law_rich_field ) {
+		foreach ( (array) ( $input[ $law_group ] ?? array() ) as $law_row_index => $law_row ) {
+			if ( is_array( $law_row ) && isset( $law_row[ $law_rich_field ] ) ) {
+				$input[ $law_group ][ $law_row_index ][ $law_rich_field ] = law_rich_text_sanitize( $law_row[ $law_rich_field ] );
+			}
+		}
+	}
+
+	// Preferred slots are checked against the configured list before they are
+	// validated, so a tampered POST cannot smuggle in a label that is not a
+	// slot (or re-select a retired one the event never held), and validation
+	// sees exactly what will be written.
+	$preferred_slots = law_events_sanitise_preferred_slots(
+		(array) ( $input['preferred_slots'] ?? array() ),
+		$post ? (array) law_event_meta( $post->ID, '_law_preferred_slots' ) : array()
+	);
 
 	// Even a draft needs a title: an untitled post would be invisible on the
 	// host dashboard (and core refuses fully empty posts with a raw error).
@@ -78,7 +216,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		$errors->add( 'event_title', $is_draft ? 'Please give the event a title before saving a draft.' : 'Please give the event a title.' );
 	}
 	if ( ! $is_draft ) {
-		if ( '' === trim( wp_strip_all_tags( $description ) ) ) {
+		if ( law_rich_text_is_empty( $description ) ) {
 			$errors->add( 'description', 'Please describe the event.' );
 		}
 		// The required set below mirrors form 2 (Event > submit an event) field
@@ -94,7 +232,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		if ( ! in_array( 'host_organisations', $locked, true ) && '' === trim( (string) ( $input['host_organisations'] ?? '' ) ) ) {
 			$errors->add( 'host_organisations', 'Please give the host organisation(s).' );
 		}
-		if ( ! in_array( 'preferred_slots', $locked, true ) && ! array_filter( (array) ( $input['preferred_slots'] ?? array() ) ) ) {
+		if ( ! in_array( 'preferred_slots', $locked, true ) && ! $preferred_slots ) {
 			$errors->add( 'preferred_slots', 'Please choose at least one preferred date and time slot.' );
 		}
 		if ( ! in_array( 'sectors', $locked, true ) ) {
@@ -117,8 +255,13 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		// Tickets can never exceed the approved venue capacity band. The band
 		// itself is locked after approval (and a disabled <select> posts nothing),
 		// so on an approved event the stored value is the one to check against —
-		// hosts keep editing ticket allocations WITHIN that band.
-		$tickets = trim( (string) ( $input['tickets_available'] ?? '' ) );
+		// hosts keep editing ticket allocations WITHIN that band. A submitter who
+		// was never asked for places is not judged on them either: their posted
+		// value is ignored on save, so refusing it here would block the rest of
+		// their form over a field they cannot see.
+		$tickets = law_events_venue_details_visible( law_events_venue_needed_value( $post, $locked, $input ), $user_id )
+			? trim( (string) ( $input['tickets_available'] ?? '' ) )
+			: '';
 		if ( '' !== $tickets ) {
 			$capacity = in_array( 'venue_capacity', $locked, true ) && $post
 				? (string) law_event_meta( $post->ID, '_law_venue_capacity' )
@@ -182,7 +325,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		// (Event > speaker), 6 (Event > co-owner), 4 (Event > host contact) and
 		// 9 (Event > session) required their own fields.
 		$row_rules = array(
-			'speakers'  => array( 'label' => 'speaker', 'fields' => array( 'name' => 'a name', 'email' => 'an email address', 'organisation' => 'an organisation', 'job_title' => 'a job title' ) ),
+			'speakers'  => array( 'label' => 'speaker', 'fields' => array( 'first_name' => 'a first name', 'last_name' => 'a last name', 'email' => 'an email address', 'organisation' => 'an organisation', 'job_title' => 'a job title' ) ),
 			'co_owners' => array( 'label' => 'additional event owner', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
 			'contacts'  => array( 'label' => 'event contact', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
 			'sessions'  => array( 'label' => 'session', 'fields' => array( 'title' => 'a title', 'start' => 'a start time', 'description' => 'a description' ) ),
@@ -190,10 +333,11 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		foreach ( $row_rules as $group => $rule ) {
 			foreach ( (array) ( $input[ $group ] ?? array() ) as $i => $row ) {
 				// Machinery, not host input: photo_id is a display-only echo of the
-				// stored photo and id is the session's post ID. Neither makes an
-				// emptied row count as started, or clearing a row to delete it
-				// would fail validation instead.
-				$machinery = array( 'photo_id', 'id' );
+				// stored photo, speaker_id is the speaker post being edited and id is
+				// the session's post ID. None of them makes an emptied row count as
+				// started, or clearing a row to delete it would fail validation
+				// instead.
+				$machinery = array( 'photo_id', 'speaker_id', 'id' );
 				$filled    = is_array( $row ) ? array_filter( $row, function ( $v, $k ) use ( $machinery ) { return ! in_array( $k, $machinery, true ) && is_scalar( $v ) && '' !== trim( (string) $v ); }, ARRAY_FILTER_USE_BOTH ) : array();
 				if ( ! $filled ) {
 					continue; // Untouched row: dropped on save, so nothing to require.
@@ -281,15 +425,21 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	}
 
 	// Plain meta.
-	$writes = array(
-		'_law_venue'              => $input['venue'] ?? '',
-		'_law_tickets_available'  => $input['tickets_available'] ?? '',
-	);
+	$writes = array();
 	if ( ! in_array( 'venue_needed', $locked, true ) ) {
 		$writes['_law_venue_needed'] = $input['venue_needed'] ?? '';
 	}
-	if ( ! in_array( 'venue_capacity', $locked, true ) ) {
-		$writes['_law_venue_capacity'] = $input['venue_capacity'] ?? '';
+	// A hidden field posts nothing, and an absent value must never be read as a
+	// cleared one: on an event LAW has placed, the venue, its capacity band and
+	// the places available belong to the committee, so a host's save has to
+	// leave all three exactly as they are. Judged with the same predicate the
+	// form template renders by, so the two cannot disagree about what was asked.
+	if ( law_events_venue_details_visible( law_events_venue_needed_value( $post, $locked, $input ), $user_id ) ) {
+		$writes['_law_venue']             = $input['venue'] ?? '';
+		$writes['_law_tickets_available'] = $input['tickets_available'] ?? '';
+		if ( ! in_array( 'venue_capacity', $locked, true ) ) {
+			$writes['_law_venue_capacity'] = $input['venue_capacity'] ?? '';
+		}
 	}
 	if ( ! in_array( 'host_organisations', $locked, true ) ) {
 		$writes['_law_host_organisations'] = $input['host_organisations'] ?? '';
@@ -299,7 +449,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		$writes['_law_sector_other']        = $input['sector_other'] ?? '';
 	}
 	if ( ! in_array( 'preferred_slots', $locked, true ) ) {
-		$writes['_law_preferred_slots'] = (array) ( $input['preferred_slots'] ?? array() );
+		$writes['_law_preferred_slots'] = $preferred_slots;
 	}
 	if ( ! in_array( 'fee_tier', $locked, true ) ) {
 		$writes['_law_fee_tier'] = $input['fee_tier'] ?? '';
@@ -351,8 +501,56 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	// rows, so a separate pre-parser here only risked sanitising differently.
 	law_event_update_meta( $event_id, '_law_co_owner_rows', $input['co_owners'] ?? array() );
 	law_event_update_meta( $event_id, '_law_contacts', $input['contacts'] ?? array() );
-	law_events_form_save_speakers( $event_id, (array) ( $input['speakers'] ?? array() ), $files );
-	law_events_form_save_sessions( $event_id, (array) ( $input['sessions'] ?? array() ) );
+	// The speakers the event held BEFORE this save. law_events_form_save_speakers()
+	// is about to replace them wholesale, and the session saver needs the
+	// difference: a speaker who WAS on the event and is not any more was
+	// deliberately removed by the host, so they must leave the sessions too,
+	// whereas one who was NEVER on the event (attached to a session on its own,
+	// from the wp-admin session screen) was never offered in the host's picker
+	// and must not be destroyed by a host who could not see it.
+	$speakers_before = array_map(
+		fn( $row ) => (int) $row['speaker_id'],
+		law_event_meta( $event_id, '_law_speakers' )
+	);
+	$speaker_ids = law_events_form_save_speakers( $event_id, (array) ( $input['speakers'] ?? array() ), $files );
+	// Sessions are only reconciled when the Session agenda section was actually
+	// on the form. Both conditions are load bearing and for different reasons:
+	// $has_agenda is the authorisation check (without it a forged sentinel would
+	// write sessions onto an event the committee never opted in), and the
+	// sentinel distinguishes "the section was not rendered" from "the host
+	// cleared every row" — law_events_form_save_sessions() deletes whatever the
+	// posted rows do not claim, so an absent section would otherwise wipe the
+	// agenda on the next save of any other field.
+	if ( $has_agenda && ! empty( $input['law_sessions_present'] ) ) {
+		law_events_form_save_sessions( $event_id, (array) ( $input['sessions'] ?? array() ), $speaker_ids, $speakers_before );
+	} elseif ( ! empty( $input['law_sessions_present'] ) ) {
+		// The section was on the form when it was opened but the gate has closed
+		// since (the committee unticked the box while this form was open; the
+		// committee handler does not take the edit lock). Never silent: the saver
+		// itself logs failures rather than reporting a success it did not achieve.
+		$discarded = 0;
+		foreach ( (array) ( $input['sessions'] ?? array() ) as $row ) {
+			if ( is_array( $row ) && ( '' !== trim( (string) ( $row['title'] ?? '' ) ) || '' !== trim( (string) ( $row['description'] ?? '' ) ) ) ) {
+				$discarded++;
+			}
+		}
+		if ( $discarded ) {
+			law_event_log(
+				$event_id,
+				sprintf(
+					_n(
+						'%d session row was discarded on save: the session agenda has been switched off for this event.',
+						'%d session rows were discarded on save: the session agenda has been switched off for this event.',
+						$discarded,
+						'law'
+					),
+					$discarded
+				),
+				array( 'action' => 'sessions_discarded', 'source' => 'form', 'rows' => $discarded ),
+				array( 'user_id' => (int) $user_id )
+			);
+		}
+	}
 
 	// If the event is already approved/published and this saver is a host,
 	// the committee hears about the edit (host-only alert: staff edits are
@@ -431,10 +629,17 @@ function law_events_validate_photos( array $files ) {
  * on the row; the speaker post keeps only identity, plus a fallback photo and
  * biography for rows that carry none. A re-save without a fresh upload keeps
  * the photo already on this event's row for the same speaker.
+ *
+ * @return array<int,int> Posted row index => speaker post ID, so the session
+ *                        saver can resolve a session's ticks to real speakers
+ *                        without going through their names.
  */
 function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
+	$resolved = array(); // Posted row index => speaker post ID.
 	$previous = array(); // speaker_id => photo_id already on this event.
+	$owned    = array(); // speaker_id => true, the records this event already holds.
 	foreach ( law_event_meta( $event_id, '_law_speakers' ) as $old ) {
+		$owned[ (int) $old['speaker_id'] ] = true;
 		if ( ! empty( $old['photo_id'] ) ) {
 			$previous[ (int) $old['speaker_id'] ] = (int) $old['photo_id'];
 		}
@@ -443,7 +648,13 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 	$relationships = array();
 	$sort          = 0;
 	foreach ( $rows as $i => $row ) {
-		if ( ! is_array( $row ) || '' === trim( (string) ( $row['name'] ?? '' ) ) ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+		// First and last name are separate inputs (Denis, 9 September 2026); a
+		// payload carrying the old single 'name' is split rather than dropped.
+		$name = law_speaker_row_name_parts( $row );
+		if ( '' === law_speaker_full_name( $name['first'], $name['last'] ) ) {
 			continue;
 		}
 
@@ -461,15 +672,29 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 			);
 		}
 
-		$speaker_id = law_speaker_upsert(
+		// The form round-trips the speaker post ID of every row already on this
+		// event, and a posted ID is honoured only when this event genuinely holds
+		// it — the same rule the session rows follow, so a forged ID cannot reach
+		// an unrelated speaker. Given one, the row EDITS that record: name, email
+		// and website are written outright instead of gap-filled, because the
+		// form shows them as editable required fields and dropping the change was
+		// silent data loss (Denis, 9 September 2026). Every change is logged on
+		// the event, since the profile is shared across events. A brand-new row
+		// carries no ID and keeps the old match-or-create, backfill-only rule.
+		$posted_speaker = (int) ( $row['speaker_id'] ?? 0 );
+		$speaker_id     = law_speaker_upsert(
 			array(
-				'name'     => (string) $row['name'],
-				'email'    => (string) ( $row['email'] ?? '' ),
-				'website'  => (string) ( $row['website'] ?? '' ),
-				'bio'      => (string) ( $row['bio'] ?? '' ),
-				'photo_id' => $photo_id, // Fallback featured image only, set once.
+				'first_name' => $name['first'],
+				'last_name'  => $name['last'],
+				'email'      => (string) ( $row['email'] ?? '' ),
+				'website'    => (string) ( $row['website'] ?? '' ),
+				'bio'        => (string) ( $row['bio'] ?? '' ),
+				'photo_id'   => $photo_id, // Fallback featured image only, set once.
 			),
-			array( 'event_id' => (int) $event_id, 'actor' => get_current_user_id() )
+			array( 'event_id' => (int) $event_id, 'actor' => get_current_user_id() ),
+			isset( $owned[ $posted_speaker ] )
+				? array( 'speaker_id' => $posted_speaker, 'overwrite_identity' => true )
+				: array()
 		);
 		if ( $speaker_id ) {
 			$relationships[] = array(
@@ -481,9 +706,11 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 				'bio'          => (string) ( $row['bio'] ?? '' ),
 				'sort'         => $sort++,
 			);
+			$resolved[ (int) $i ] = (int) $speaker_id;
 		}
 	}
 	law_event_update_meta( $event_id, '_law_speakers', $relationships );
+	return $resolved;
 }
 
 /** One validated file → attachment ID (hosts have no upload_files cap; the module validates instead). */
@@ -519,7 +746,7 @@ function law_events_sideload_upload( array $file ) {
 
 /**
  * Session rows: reconcile the event's law_session children with the submitted
- * set. Session speakers are matched by name against the event's speakers.
+ * set.
  *
  * An UPSERT, not a wipe-and-rebuild: the form round-trips each session's post
  * ID, so an edited session keeps its ID and its meta (`_law_gf_entry_id`
@@ -527,8 +754,18 @@ function law_events_sideload_upload( array $file ) {
  * migrated), and only rows the host actually removed are deleted. A posted ID
  * is honoured only when this event already owns it, so a forged ID cannot
  * re-parent another event's session; anything else inserts a new one.
+ *
+ * @param int        $speaker_ids     Posted speaker row index => speaker post
+ *                                    ID, from law_events_form_save_speakers().
+ *                                    The picker posts "row:<index>", so a tick
+ *                                    resolves through this rather than through
+ *                                    a name (see the speaker block below).
+ * @param int[]      $speakers_before Speaker IDs the event held before this
+ *                                    save, which is what distinguishes a
+ *                                    speaker the host just removed from one the
+ *                                    host was never shown.
  */
-function law_events_form_save_sessions( $event_id, array $rows ) {
+function law_events_form_save_sessions( $event_id, array $rows, array $speaker_ids = array(), array $speakers_before = array() ) {
 	$event_id = (int) $event_id;
 	$owned    = array_map( 'intval', law_event_session_ids( $event_id ) );
 	$kept     = array();
@@ -544,7 +781,7 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 			continue;
 		}
 		$title = sanitize_text_field( (string) ( $row['title'] ?? '' ) );
-		$desc  = sanitize_textarea_field( (string) ( $row['description'] ?? '' ) );
+		$desc  = law_rich_text_sanitize( $row['description'] ?? '' );
 		if ( '' === $title && '' === $desc ) {
 			continue;
 		}
@@ -602,33 +839,76 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 		law_event_update_meta( $session_id, '_law_start_time', $row['start'] ?? '' );
 		law_event_update_meta( $session_id, '_law_end_time', $row['end'] ?? '' );
 
-		// The session's chosen speakers, matched to this event's speaker rows by
-		// name. The picker posts an array of names taken from those same rows, so
-		// a match is guaranteed; the comma-separated string is still accepted for
-		// anything saved before the picker replaced the free-text field.
+		// The session's chosen speakers. The picker posts "row:<index>", naming a
+		// SPEAKER ROW of this same submission rather than a name, because the name
+		// is the one thing about a speaker a host can change in the very save that
+		// is being resolved. A plain string is still accepted (a legacy
+		// comma-separated value, or a hand-made POST) and matched by name.
 		$submitted = $row['speakers'] ?? '';
 		$wanted    = is_array( $submitted )
 			? array_filter( array_map( 'trim', array_map( 'strval', $submitted ) ) )
 			: array_filter( array_map( 'trim', explode( ',', (string) $submitted ) ) );
+
+		// speaker_id => the event's appearance row, so a resolved tick can copy
+		// the event's role/organisation/job title/photo/biography onto the session.
+		$by_id = array();
+		foreach ( $event_speakers as $relationship ) {
+			$by_id[ (int) $relationship['speaker_id'] ] = $relationship;
+		}
+
 		$linked = array();
-		foreach ( $wanted as $name ) {
-			foreach ( $event_speakers as $relationship ) {
-				if ( law_speaker_normalise_name( get_the_title( $relationship['speaker_id'] ) ) === law_speaker_normalise_name( $name ) ) {
-					// The session row carries the event's appearance details too, the
-					// role included: the host form has no per-session role control.
-					$linked[] = array(
-						'speaker_id'   => (int) $relationship['speaker_id'],
-						'role'         => (string) ( $relationship['role'] ?? '' ),
-						'organisation' => (string) ( $relationship['organisation'] ?? '' ),
-						'job_title'    => (string) ( $relationship['job_title'] ?? '' ),
-						'photo_id'     => (int) ( $relationship['photo_id'] ?? 0 ),
-						'bio'          => (string) ( $relationship['bio'] ?? '' ),
-						'sort'         => count( $linked ),
-					);
-					break;
+		$seen   = array();
+		foreach ( $wanted as $tick ) {
+			$speaker_id = 0;
+			if ( preg_match( '/^row:(\d+)$/', $tick, $match ) ) {
+				$speaker_id = (int) ( $speaker_ids[ (int) $match[1] ] ?? 0 );
+			} else {
+				foreach ( $event_speakers as $relationship ) {
+					if ( law_speaker_normalise_name( law_speaker_raw_name( $relationship['speaker_id'] ) ) === law_speaker_normalise_name( $tick ) ) {
+						$speaker_id = (int) $relationship['speaker_id'];
+						break;
+					}
 				}
 			}
+			// Only a speaker this event actually holds, and only once: a forged
+			// index or a stale name reaches nothing.
+			if ( ! $speaker_id || ! isset( $by_id[ $speaker_id ] ) || isset( $seen[ $speaker_id ] ) ) {
+				continue;
+			}
+			$seen[ $speaker_id ] = true;
+			$relationship        = $by_id[ $speaker_id ];
+			// The session row carries the event's appearance details too, the
+			// role included: the host form has no per-session role control.
+			$linked[] = array(
+				'speaker_id'   => $speaker_id,
+				'role'         => (string) ( $relationship['role'] ?? '' ),
+				'organisation' => (string) ( $relationship['organisation'] ?? '' ),
+				'job_title'    => (string) ( $relationship['job_title'] ?? '' ),
+				'photo_id'     => (int) ( $relationship['photo_id'] ?? 0 ),
+				'bio'          => (string) ( $relationship['bio'] ?? '' ),
+				'sort'         => count( $linked ),
+			);
 		}
+
+		// Anything already on the session whose speaker this event has NEVER held
+		// is carried over untouched. The wp-admin session screen can attach any
+		// speaker in the site, with no requirement that they be on the parent
+		// event, so those links are invisible in the host's picker — and wiping
+		// what a host was never shown is not a save, it is data loss. A speaker
+		// the host genuinely removed from the event IS in $speakers_before, so
+		// they still drop out of every session, which is the behaviour that keeps
+		// the agenda honest.
+		foreach ( law_event_meta( $session_id, '_law_speakers' ) as $existing ) {
+			$existing_id = (int) ( $existing['speaker_id'] ?? 0 );
+			if ( ! $existing_id || isset( $seen[ $existing_id ] ) || isset( $by_id[ $existing_id ] )
+				|| in_array( $existing_id, $speakers_before, true ) ) {
+				continue;
+			}
+			$seen[ $existing_id ] = true;
+			$existing['sort']     = count( $linked );
+			$linked[]             = $existing;
+		}
+
 		law_event_update_meta( $session_id, '_law_speakers', $linked );
 	}
 
@@ -814,9 +1094,17 @@ function law_events_form_values( $post, array $state ) {
 		// (the appearance row); name, email and website are the person's. The
 		// biography falls back to the speaker post's editor content for rows saved
 		// before biographies became per appearance.
-		$row_bio    = trim( (string) ( $row['bio'] ?? '' ) );
-		$speakers[] = array(
-			'name'         => get_the_title( $speaker_id ),
+		$row_bio      = trim( (string) ( $row['bio'] ?? '' ) );
+		$speaker_name = law_speaker_name_parts( $speaker_id );
+		$speakers[]   = array(
+			// Round-tripped so a re-save edits THIS record rather than re-matching
+			// on the very fields the host may have just corrected.
+			'speaker_id'   => $speaker_id,
+			// 'name' is what the previews and the session picker print; the parts
+			// are what the form's own First/Last name inputs are prefilled from.
+			'name'         => law_speaker_raw_name( $speaker_id ),
+			'first_name'   => $speaker_name['first'],
+			'last_name'    => $speaker_name['last'],
 			'role'         => law_speaker_role_key( $row['role'] ?? '' ),
 			'email'        => (string) law_event_meta( $speaker_id, '_law_speaker_email' ),
 			'organisation' => (string) ( $row['organisation'] ?? '' ),
@@ -875,6 +1163,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-dashboard.php' )
 		|| is_page_template( 'templates/account-bookings-dashboard.php' )
 		|| is_page_template( 'templates/account-speakers-dashboard.php' )
+		|| is_page_template( 'templates/account-dashboard-flagship.php' )
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {
@@ -897,6 +1186,16 @@ add_action( 'wp_enqueue_scripts', function () {
 			$deps[] = 'heartbeat';
 		}
 		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, filemtime( get_theme_file_path( 'assets/js/event-form.js' ) ), true );
+
+		// The WYSIWYG editor behind the descriptive fields
+		// (functions/events/rich-text.php). Only the screens that actually render
+		// one: TinyMCE is a couple of hundred kilobytes, and asking for it on the
+		// bookings dashboard or the register form would be pure weight.
+		if ( is_page_template( 'templates/account-event-form.php' )
+			|| ( is_page_template( 'templates/account-dashboard.php' ) && ! empty( $_GET['law_edit'] ) )
+			|| ( is_page_template( 'templates/account-speakers-dashboard.php' ) && ! empty( $_GET['law_speaker'] ) ) ) {
+			law_rich_text_enqueue();
+		}
 	}
 	// The committee dashboard's confirmation dialogs (parts/layout/modal.php).
 	// The partial enqueues these itself, but by then the head is already out,

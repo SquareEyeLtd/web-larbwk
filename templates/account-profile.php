@@ -22,7 +22,7 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
-<section class="hero auth-hero law-event-form-hero" style="background-image: url('<?php echo law_asset( 'assets/images/patrons-and-committee-bg.jpg' ); ?>');">
+<section class="hero auth-hero law-event-form-hero hero-solid">
 	<div class="overlay"></div>
 	<div class="grid-container">
 		<div class="grid-x grid-padding-x">

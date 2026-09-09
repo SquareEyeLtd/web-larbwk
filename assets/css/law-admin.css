@@ -41,3 +41,40 @@
 .law-test-mode__status.is-error { color: #b32d2e; }
 .law-test-mode__status.is-idle { color: #757575; }
 .law-badge--warning { background: #fcf9e8; border-color: #dba617; color: #664d03; }
+
+/* The Flagship screen (functions/events/admin/flagship-screen.php): a sessions
+   repeater whose rows each hold a rich-text description and a speaker picker,
+   which the meta-box table repeater has no styles for. */
+.law-flagship-form { max-width: 960px; }
+.law-flagship-form .description { max-width: 640px; margin-top: -8px; }
+.law-flagship-sessions { margin: 12px 0; }
+.law-flagship-session { position: relative; background: #fff; border: 1px solid #c3c4c7; border-left: 4px solid #2271b1; padding: 12px 16px 4px; margin: 0 0 12px; }
+/* The session and new-speaker rows use the front-end event forms' markup
+   vocabulary (.law-row-grid of <label>Name<input></label> pairs, .law-row-wide
+   for full-width cells) so both screens lay a session out the same way.
+   event-form.css is not loaded in wp-admin, so the grid is defined here too. */
+.law-flagship-session .law-row-grid,
+.law-rel-item.is-new .law-row-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px; align-items: end; }
+.law-flagship-session .law-row-grid > label,
+.law-rel-item.is-new .law-row-grid > label { display: block; font-weight: 600; color: #1d2327; }
+.law-flagship-session .law-row-grid > label input,
+.law-flagship-session .law-row-grid > label select,
+.law-rel-item.is-new .law-row-grid > label input,
+.law-rel-item.is-new .law-row-grid > label select { display: block; width: 100%; margin-top: 4px; font-weight: 400; }
+.law-flagship-session .law-row-wide,
+.law-rel-item.is-new .law-row-wide { grid-column: 1 / -1; }
+.law-flagship-session .law-form-label,
+.law-rel-item.is-new .law-form-label { display: block; margin-bottom: 4px; font-weight: 600; color: #1d2327; }
+/* Full width in their own cell, like every other field: capped narrow they sat
+   at the left of a wide empty cell. */
+.law-flagship-session__head .law-field--time input { width: 100%; max-width: none; }
+.law-flagship-session__description { margin-top: 10px; }
+.law-rel-item.is-new .law-field-photo { display: block; }
+.law-rel-item.is-new .law-rel-photo { display: flex; align-items: center; gap: 8px; }
+.law-flagship-session .law-row-remove { position: absolute; top: 8px; right: 8px; font-size: 18px; line-height: 1; }
+.law-rel-item.is-new { border-left: 3px solid #dba617; padding-left: 8px; }
+/* Still flex: 1 0 100% because .law-rel-item is a flex row; the grid itself
+   comes from the .law-row-grid rules above, which both screens share. */
+.law-rel-new-fields { flex: 1 0 100%; }
+.law-rel-hint { flex: 1 0 100%; margin: 0 0 4px; }
+.law-flagship-hero .law-media-preview img { max-width: 240px; height: auto; }

@@ -11,6 +11,12 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 
 	/** A complete, valid non-draft form input for an existing event. */
 	private function valid_input( array $overrides = array() ): array {
+		// Read the configured slots rather than hard-coding a label: once real
+		// slots exist in the settings, law_events_sanitise_preferred_slots()
+		// drops anything that is not one of them and validation then fails on
+		// "at least one preferred date and time slot". Same approach as
+		// SpeakerNamesTest.
+		$slot_labels = array_keys( law_events_slot_choices( array() ) );
 		return array_merge(
 			array(
 				'law_form_action'     => 'update',
@@ -18,7 +24,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 				'description'         => 'Edited description.',
 				'event_type'          => 'Social event',
 				'host_organisations'  => 'Edited Org LLP',
-				'preferred_slots'     => array( 'Any slot' ),
+				'preferred_slots'     => $slot_labels ? array( $slot_labels[0] ) : array( 'Any slot' ),
 				'sectors'             => array(),
 				'venue_needed'        => 'Yes, please share our details with venue hosts',
 				'fee_tier'            => 'uk',

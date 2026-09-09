@@ -50,6 +50,26 @@ function law_event_meta_schema() {
 		'_law_co_owner_ids'         => 'int_array',
 		'_law_speakers'             => 'speaker_rows',
 		'_law_registration_state'   => 'registration_state',
+		// Committee-only classification switches (Denis, 9 September 2026).
+		// _law_is_law_event: LAW runs this event itself rather than an external
+		// host. Absent or 0 means hosted, which is every host submission, so
+		// nothing is written at submission time and the "hosted" filter has to
+		// treat a missing key as false.
+		// _law_session_agenda: this event has a session-level agenda, which is
+		// what puts the Session agenda section on the event form
+		// (law_event_has_session_agenda() in submission-form.php).
+		'_law_is_law_event'         => 'flag',
+		'_law_session_agenda'       => 'flag',
+		// The flagship conference (functions/events/flagship.php). Exactly one
+		// law_event post carries _law_is_flagship; it is edited on the Flagship
+		// screen, its date is fixed (2 December by default) and its _law_start /
+		// _law_end are DERIVED from its sessions, so _law_slot_label stays empty
+		// and law_event_apply_slot_label() is never called for it.
+		// _law_hero_image_id is the optional banner/preview photograph, used by
+		// both the programme block and the hero on the flagship page.
+		'_law_is_flagship'          => 'flag',
+		'_law_flagship_date'        => 'date',
+		'_law_hero_image_id'        => 'int',
 		'_law_gf_entry_id'          => 'int',
 		'_law_rejection_reason'     => 'multiline',
 		'_law_cancellation_reason'  => 'multiline',
@@ -68,11 +88,16 @@ function law_event_meta_schema() {
  */
 function law_speaker_meta_schema() {
 	return array(
-		'_law_speaker_email'    => 'email',
-		'_law_website'          => 'url',
-		'_law_organisation_ids' => 'int_array', // Reserved for 4.2 additional organisations.
-		'_law_gf_entry_id'      => 'int',
-		'_law_gf_entry_ids'     => 'int_array', // All merged source child entry IDs.
+		// The name in two parts (Denis, 9 September 2026). post_title stays the
+		// display name every listing prints and every lookup matches on; these
+		// are the structured form the archive sorts by and the forms edit.
+		'_law_speaker_first_name' => 'text',
+		'_law_speaker_last_name'  => 'text',
+		'_law_speaker_email'      => 'email',
+		'_law_website'            => 'url',
+		'_law_organisation_ids'   => 'int_array', // Reserved for 4.2 additional organisations.
+		'_law_gf_entry_id'        => 'int',
+		'_law_gf_entry_ids'       => 'int_array', // All merged source child entry IDs.
 	);
 }
 
@@ -169,8 +194,24 @@ function law_events_sanitize_value( $value, $type ) {
 			$value = strtoupper( sanitize_text_field( (string) ( is_scalar( $value ) ? $value : '' ) ) );
 			return preg_match( '/^[A-Z]{2}$/', $value ) ? $value : '';
 		case 'time':
+			// Zero-padded on the way in ("9:30" becomes "09:30"), because the
+			// flagship's derived start/end and law_event_session_ids() both compare
+			// these strings, and "9:30" sorts after "14:00".
 			$value = trim( (string) ( is_scalar( $value ) ? $value : '' ) );
-			return preg_match( '/^\d{1,2}:\d{2}$/', $value ) ? $value : '';
+			if ( ! preg_match( '/^(\d{1,2}):(\d{2})$/', $value, $m ) ) {
+				return '';
+			}
+			if ( (int) $m[1] > 23 || (int) $m[2] > 59 ) {
+				return '';
+			}
+			return sprintf( '%02d:%s', (int) $m[1], $m[2] );
+		case 'date':
+			// A calendar date, Y-m-d, real dates only: the flagship's fixed date.
+			$value = trim( (string) ( is_scalar( $value ) ? $value : '' ) );
+			if ( ! preg_match( '/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m ) ) {
+				return '';
+			}
+			return checkdate( (int) $m[2], (int) $m[3], (int) $m[1] ) ? $value : '';
 		case 'datetime':
 			$value = trim( (string) ( is_scalar( $value ) ? $value : '' ) );
 			if ( '' === $value ) {
@@ -245,7 +286,11 @@ function law_events_sanitize_value( $value, $type ) {
 					'organisation' => sanitize_text_field( $organisation ),
 					'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
 					'photo_id'     => absint( $row['photo_id'] ?? 0 ),
-					'bio'          => sanitize_textarea_field( (string) ( $row['bio'] ?? '' ) ),
+					// Rich text (functions/events/rich-text.php), not plain: the host
+					// form, the committee's Manage speakers screen and wp-admin all give
+					// this field a WYSIWYG editor, and sanitize_textarea_field() would
+					// strip the markup back out on every save.
+					'bio'          => law_rich_text_sanitize( $row['bio'] ?? '' ),
 					'sort'         => isset( $row['sort'] ) ? absint( $row['sort'] ) : $sort,
 				);
 				$sort++;

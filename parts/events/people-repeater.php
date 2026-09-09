@@ -2,16 +2,20 @@
 /**
  * Repeatable name / organisation / email rows for the event form.
  *
- * Args: group (POST array name), label, rows.
+ * Args: group (POST array name), label, rows, add_label.
  */
 
-$law_group = (string) ( $args['group'] ?? '' );
-$law_label = (string) ( $args['label'] ?? '' );
-$law_rows  = (array) ( $args['rows'] ?? array() );
-$law_error = (string) ( $args['error'] ?? '' );
+$law_group     = (string) ( $args['group'] ?? '' );
+$law_label     = (string) ( $args['label'] ?? '' );
+$law_rows      = (array) ( $args['rows'] ?? array() );
+$law_error     = (string) ( $args['error'] ?? '' );
+$law_add_label = (string) ( $args['add_label'] ?? 'Add row' );
 if ( '' === $law_group ) {
 	return;
 }
+// array_values first: posted row indexes are not contiguous once a row has been
+// removed, and the "last row is the template" test counts rather than reads keys.
+$law_rows   = array_values( $law_rows );
 $law_rows[] = array(); // Blank template row.
 ?>
 <div class="law-form-field law-people">
@@ -35,5 +39,5 @@ $law_rows[] = array(); // Blank template row.
 	<?php if ( '' !== $law_error ) : ?>
 		<span class="law-form-error" role="alert"><?php echo esc_html( $law_error ); ?></span>
 	<?php endif; ?>
-	<button type="button" class="button law-row-add" data-law-add="<?php echo esc_attr( $law_group ); ?>">Add row</button>
+	<button type="button" class="button law-row-add" data-law-add="<?php echo esc_attr( $law_group ); ?>"><?php echo esc_html( $law_add_label ); ?></button>
 </div>
