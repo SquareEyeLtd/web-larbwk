@@ -22,7 +22,7 @@ $law_back_url = add_query_arg( 'event', $law_post->ID, get_permalink() );
 
 get_template_part( 'parts/layout/back-link', null, array(
 	'url'   => $law_back_url,
-	'label' => __( '< Back to the event', 'law' ),
+	'label' => __( 'Back to event', 'law' ),
 ) );
 
 // Drafts belong to their host: the dashboard list excludes them, but the URL
@@ -95,8 +95,6 @@ if ( $law_locked_by ) {
 			<?php law_events_honeypot_field(); ?>
 
 			<?php
-			// No law_ec field here: the ?ec= category mechanism applies on
-			// first save only, and this form only ever edits existing events.
 			get_template_part( 'parts/events/event-form-fields', null, array(
 				'post'    => $law_post,
 				'values'  => $law_values,

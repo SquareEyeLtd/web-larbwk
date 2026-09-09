@@ -9,6 +9,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Event cap for an all-status scan of speaker rows (the Manage Speakers
+ * dashboard). House style is never -1 on a screen path; the confirmed-only
+ * pass keeps its own 500, which is the size of a programme year.
+ */
+const LAW_SPEAKERS_EVENT_SCAN_CAP = 1000;
+
+/**
  * The role a person has at ONE event (Trevor, 3 September 2026): Speaker,
  * Host or Moderator. Per appearance like the organisation and job title,
  * since the same person hosts one event and moderates another. Stored on the
@@ -255,26 +262,39 @@ function law_speakers_confirmed_event_map() {
 }
 
 /**
- * The single pass over the published events' speaker rows, memoised per
- * request. Returns two maps: 'events' (speaker_id => event IDs) and
- * 'appearances' (speaker_id => [event_id => the row for that event]).
+ * The single pass over a set of events' speaker rows, memoised per status set.
+ * Returns two maps: 'events' (speaker_id => event IDs) and 'appearances'
+ * (speaker_id => [event_id => the row for that event]).
  *
- * @param bool $reset Rebuild (tests create events mid-request).
+ * Extracted from law_speakers_confirmed_maps() so the committee's Manage
+ * Speakers dashboard can walk EVERY status with the same code: a speaker post
+ * exists from the first draft save onwards, and the committee edits appearances
+ * long before an event is confirmed. The public archive still asks for
+ * 'publish' only, through the wrapper below.
+ *
+ * @param string[] $statuses post_status values to walk.
+ * @param int      $limit    Event cap (house style: never -1 on a screen path).
+ * @param bool     $reset    Rebuild (tests create events mid-request).
  * @return array{events:array<int,int[]>,appearances:array<int,array<int,array>>}
  */
-function law_speakers_confirmed_maps( $reset = false ) {
-	static $maps = null;
-	if ( null !== $maps && ! $reset ) {
-		return $maps;
+function law_speakers_event_maps( array $statuses, $limit = 500, $reset = false ) {
+	$cache = &law_speakers_event_maps_cache();
+	$key   = implode( ',', $statuses ) . '|' . (int) $limit;
+	if ( $reset ) {
+		// Every key, not just this one: whatever invalidated one status set
+		// (a test creating an event, a save mid-request) invalidated the rest.
+		$cache = array();
+	} elseif ( isset( $cache[ $key ] ) ) {
+		return $cache[ $key ];
 	}
 	$maps = array( 'events' => array(), 'appearances' => array() );
 
 	$events = get_posts(
 		array(
 			'post_type'      => LAW_EVENT_CPT,
-			'post_status'    => 'publish',
+			'post_status'    => $statuses,
 			'fields'         => 'ids',
-			'posts_per_page' => 500,
+			'posts_per_page' => (int) $limit,
 		)
 	);
 
@@ -283,7 +303,7 @@ function law_speakers_confirmed_maps( $reset = false ) {
 		foreach ( law_event_meta( $event_id, '_law_speakers' ) as $row ) {
 			$speaker_id = (int) ( $row['speaker_id'] ?? 0 );
 			if ( $speaker_id ) {
-				$maps['events'][ $speaker_id ][]                  = $event_id;
+				$maps['events'][ $speaker_id ][]                 = $event_id;
 				$maps['appearances'][ $speaker_id ][ $event_id ] = $row;
 			}
 		}
@@ -306,19 +326,54 @@ function law_speakers_confirmed_maps( $reset = false ) {
 		}
 	}
 
+	$cache[ $key ] = $maps;
+
 	return $maps;
 }
 
+/** The memo behind law_speakers_event_maps(), by reference so it can be flushed. */
+function &law_speakers_event_maps_cache() {
+	static $cache = array();
+	return $cache;
+}
+
+/** Drop every memoised speaker map (a save, or a test creating events mid-request). */
+function law_speakers_flush_maps() {
+	$cache = &law_speakers_event_maps_cache();
+	$cache = array();
+}
+
 /**
- * A speaker's confirmed appearances, first submitted first: one row per event
- * with the role, organisation, job title, photo and biography they had at
- * THAT event.
+ * The published-events pass the public archive and profile read: a thin wrapper
+ * over law_speakers_event_maps(), kept because every existing caller (and
+ * tests/SpeakerRolesTest.php) names it and passes $reset.
  *
- * @param int $speaker_id Speaker post ID.
+ * @param bool $reset Rebuild (tests create events mid-request).
+ * @return array{events:array<int,int[]>,appearances:array<int,array<int,array>>}
+ */
+function law_speakers_confirmed_maps( $reset = false ) {
+	return law_speakers_event_maps( array( 'publish' ), 500, $reset );
+}
+
+/**
+ * A speaker's appearances, first submitted first: one row per event with the
+ * role, organisation, job title, photo and biography they had at THAT event.
+ *
+ * Confirmed events only by default, which is what the public archive and the
+ * profile mean by an appearance. The committee's Manage Speakers dashboard
+ * passes every status instead, because a speaker record exists from the first
+ * draft save and an appearance is most worth correcting before the event is
+ * confirmed.
+ *
+ * @param int           $speaker_id Speaker post ID.
+ * @param string[]|null $statuses   Event statuses to read; null = publish only.
  * @return array<int,array{event_id:int,role:string,organisation:string,job_title:string,photo_id:int,bio:string}>
  */
-function law_speaker_appearances( $speaker_id ) {
-	$rows = law_speakers_confirmed_maps()['appearances'][ (int) $speaker_id ] ?? array();
+function law_speaker_appearances( $speaker_id, ?array $statuses = null ) {
+	$maps = null === $statuses
+		? law_speakers_confirmed_maps()
+		: law_speakers_event_maps( $statuses, LAW_SPEAKERS_EVENT_SCAN_CAP );
+	$rows = $maps['appearances'][ (int) $speaker_id ] ?? array();
 
 	$appearances = array();
 	foreach ( $rows as $event_id => $row ) {
@@ -373,13 +428,15 @@ function law_speaker_display_photo_id( $speaker_id, $row_photo_id = 0 ) {
  * the next appearance when the earlier row leaves it empty (so a row without a
  * photo does not blank the card). Used by the archive card and the profile.
  *
+ * @param int           $speaker_id Speaker post ID.
+ * @param string[]|null $statuses   Event statuses to read; null = publish only.
  * @return array{organisation:string,job_title:string,photo_id:int,bio:string,event_id:int}
  */
-function law_speaker_first_appearance( $speaker_id ) {
+function law_speaker_first_appearance( $speaker_id, ?array $statuses = null ) {
 	$first  = array( 'organisation' => '', 'job_title' => '', 'photo_id' => 0, 'bio' => '', 'event_id' => 0 );
 	// No role: it is what the person was at ONE event, never a headline fact.
 	$fields = array( 'organisation', 'job_title', 'photo_id', 'bio' );
-	foreach ( law_speaker_appearances( $speaker_id ) as $appearance ) {
+	foreach ( law_speaker_appearances( $speaker_id, $statuses ) as $appearance ) {
 		if ( ! $first['event_id'] ) {
 			$first['event_id'] = $appearance['event_id'];
 		}
@@ -444,7 +501,14 @@ function law_speaker_photo_url( $speaker_id, $photo_id, $size = 'thumbnail' ) {
 }
 
 /**
- * Session post IDs for an event, in menu order.
+ * Session post IDs for an event: start time first, then the host's row order
+ * from the sessions repeater (menu_order), then post ID.
+ *
+ * The menu_order tie-break is what orders parallel tracks that start at the
+ * same time. Post ID cannot do it: sessions are upserted now, so an edited
+ * session keeps the ID it was first created with. Sessions saved before
+ * menu_order was written all hold 0 and fall through to the ID order they
+ * used to have.
  *
  * @return int[]
  */
@@ -458,8 +522,7 @@ function law_event_session_ids( $event_id ) {
 			'post_parent'    => (int) $event_id,
 			'fields'         => 'ids',
 			'posts_per_page' => 50,
-			'orderby'        => 'ID',
-			'order'          => 'ASC',
+			'orderby'        => array( 'menu_order' => 'ASC', 'ID' => 'ASC' ),
 		)
 	);
 	usort(
@@ -467,7 +530,9 @@ function law_event_session_ids( $event_id ) {
 		function ( $a, $b ) {
 			$time_a = (string) law_event_meta( $a, '_law_start_time' );
 			$time_b = (string) law_event_meta( $b, '_law_start_time' );
-			return strcmp( $time_a ?: '99:99', $time_b ?: '99:99' ) ?: $a <=> $b;
+			return strcmp( $time_a ?: '99:99', $time_b ?: '99:99' )
+				?: ( (int) get_post_field( 'menu_order', $a ) <=> (int) get_post_field( 'menu_order', $b ) )
+				?: $a <=> $b;
 		}
 	);
 	return $ids;
@@ -654,6 +719,9 @@ function law_event_session_rows( $event_id ) {
 		}
 
 		$sessions[] = array(
+			// The post ID: the edit form round-trips it so a save updates the
+			// session in place instead of deleting and re-creating it.
+			'id'          => (int) $session_id,
 			'title'       => $title,
 			'start'       => $start,
 			'end'         => $end,

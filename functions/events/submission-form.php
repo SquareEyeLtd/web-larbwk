@@ -189,8 +189,12 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		);
 		foreach ( $row_rules as $group => $rule ) {
 			foreach ( (array) ( $input[ $group ] ?? array() ) as $i => $row ) {
-				// photo_id is a display-only echo of the stored photo, not host input.
-				$filled = is_array( $row ) ? array_filter( $row, function ( $v, $k ) { return 'photo_id' !== $k && is_scalar( $v ) && '' !== trim( (string) $v ); }, ARRAY_FILTER_USE_BOTH ) : array();
+				// Machinery, not host input: photo_id is a display-only echo of the
+				// stored photo and id is the session's post ID. Neither makes an
+				// emptied row count as started, or clearing a row to delete it
+				// would fail validation instead.
+				$machinery = array( 'photo_id', 'id' );
+				$filled    = is_array( $row ) ? array_filter( $row, function ( $v, $k ) use ( $machinery ) { return ! in_array( $k, $machinery, true ) && is_scalar( $v ) && '' !== trim( (string) $v ); }, ARRAY_FILTER_USE_BOTH ) : array();
 				if ( ! $filled ) {
 					continue; // Untouched row: dropped on save, so nothing to require.
 				}
@@ -269,17 +273,6 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	// roll to 2027 must not re-file it into the new programme year.
 	if ( $is_new ) {
 		wp_set_object_terms( $event_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
-	}
-
-	// ?ec= category prepopulation (the old dead field 113/116 mechanism,
-	// rebuilt): a matching law_event_category term carried in the hidden
-	// field is applied on first save only. Committee-managed thereafter.
-	$ec = sanitize_text_field( (string) ( $input['law_ec'] ?? '' ) );
-	if ( $is_new && '' !== $ec ) {
-		$term = get_term_by( 'name', $ec, 'law_event_category' ) ?: get_term_by( 'slug', $ec, 'law_event_category' );
-		if ( $term ) {
-			wp_set_object_terms( $event_id, array( (int) $term->term_id ), 'law_event_category', false );
-		}
 	}
 
 	// Plain meta.
@@ -520,14 +513,24 @@ function law_events_sideload_upload( array $file ) {
 }
 
 /**
- * Session rows: replace the event's law_session children with the submitted
+ * Session rows: reconcile the event's law_session children with the submitted
  * set. Session speakers are matched by name against the event's speakers.
+ *
+ * An UPSERT, not a wipe-and-rebuild: the form round-trips each session's post
+ * ID, so an edited session keeps its ID and its meta (`_law_gf_entry_id`
+ * included, which is how the migrator knows a session has already been
+ * migrated), and only rows the host actually removed are deleted. A posted ID
+ * is honoured only when this event already owns it, so a forged ID cannot
+ * re-parent another event's session; anything else inserts a new one.
  */
 function law_events_form_save_sessions( $event_id, array $rows ) {
-	$existing = law_event_session_ids( $event_id );
-	foreach ( $existing as $session_id ) {
-		wp_delete_post( $session_id, true );
-	}
+	$event_id = (int) $event_id;
+	$owned    = array_map( 'intval', law_event_session_ids( $event_id ) );
+	$kept     = array();
+	// menu_order carries the host's row order, which is the tie-break when two
+	// sessions start at the same time (parallel tracks). Post IDs cannot do that
+	// job any more now that an edited session keeps its ID.
+	$position = 0;
 
 	$event_speakers = law_event_meta( $event_id, '_law_speakers' );
 
@@ -541,17 +544,55 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 			continue;
 		}
 
-		$session_id = wp_insert_post(
-			array(
-				'post_type'    => LAW_SESSION_CPT,
-				'post_status'  => 'publish',
-				'post_parent'  => $event_id,
-				'post_title'   => $title,
-				'post_content' => $desc,
-			)
-		);
-		if ( ! $session_id || is_wp_error( $session_id ) ) {
-			continue;
+		$posted_id  = absint( $row['id'] ?? 0 );
+		$session_id = ( $posted_id && in_array( $posted_id, $owned, true ) && ! in_array( $posted_id, $kept, true ) )
+			? $posted_id
+			: 0;
+
+		if ( $session_id ) {
+			// Claimed BEFORE the write, not after it succeeds: a row that named an
+			// existing session is never a removal, so a failed update must cost the
+			// host their edit and not the session itself to the sweep below.
+			$kept[]  = $session_id;
+			$updated = wp_update_post(
+				array(
+					'ID'           => $session_id,
+					'post_title'   => $title,
+					'post_content' => $desc,
+					'menu_order'   => $position++,
+				),
+				true
+			);
+			if ( is_wp_error( $updated ) ) {
+				// Never silent: the host is redirected as though the save worked.
+				law_event_log(
+					$event_id,
+					sprintf( 'Could not save the changes to session "%s". The session is unchanged.', $title ),
+					array(
+						'action'     => 'session_save_failed',
+						'source'     => 'form',
+						'session_id' => $session_id,
+						'error'      => $updated->get_error_message(),
+					)
+				);
+				continue;
+			}
+		} else {
+			$session_id = wp_insert_post(
+				array(
+					'post_type'    => LAW_SESSION_CPT,
+					'post_status'  => 'publish',
+					'post_parent'  => $event_id,
+					'post_title'   => $title,
+					'post_content' => $desc,
+					'menu_order'   => $position++,
+				)
+			);
+			if ( ! $session_id || is_wp_error( $session_id ) ) {
+				continue;
+			}
+			$session_id = (int) $session_id;
+			$kept[]     = $session_id;
 		}
 		law_event_update_meta( $session_id, '_law_start_time', $row['start'] ?? '' );
 		law_event_update_meta( $session_id, '_law_end_time', $row['end'] ?? '' );
@@ -584,6 +625,12 @@ function law_events_form_save_sessions( $event_id, array $rows ) {
 			}
 		}
 		law_event_update_meta( $session_id, '_law_speakers', $linked );
+	}
+
+	// Whatever the host removed from the repeater. $kept holds every session a
+	// row claimed, successful write or not, so only genuine removals reach here.
+	foreach ( array_diff( $owned, $kept ) as $orphan ) {
+		wp_delete_post( $orphan, true );
 	}
 }
 
@@ -770,6 +817,7 @@ function law_events_form_values( $post, array $state ) {
 	$sessions = array();
 	foreach ( law_event_session_rows( $post->ID ) as $session ) {
 		$sessions[] = array(
+			'id'          => (int) $session['id'],
 			'title'       => $session['title'],
 			'start'       => $session['start'],
 			'end'         => $session['end'],
@@ -814,6 +862,7 @@ add_action( 'wp_enqueue_scripts', function () {
 	if ( is_page_template( 'templates/account-event-form.php' )
 		|| is_page_template( 'templates/account-dashboard.php' )
 		|| is_page_template( 'templates/account-bookings-dashboard.php' )
+		|| is_page_template( 'templates/account-speakers-dashboard.php' )
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {

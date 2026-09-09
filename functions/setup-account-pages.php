@@ -47,6 +47,8 @@ function law_setup_account_pages() {
 		$setup['account/dashboard']     = 'templates/account-dashboard.php';
 		// The committee's cross-event bookings view (EVENTS_BOOKINGS.md §7.6).
 		$setup['account/dashboard/bookings'] = 'templates/account-bookings-dashboard.php';
+		// The committee's Manage Speakers view (functions/events/speakers-dashboard.php).
+		$setup['account/dashboard/speakers'] = 'templates/account-speakers-dashboard.php';
 		// Phase D: the custom profile form replaces the form 3 embed.
 		$setup['account/profile']       = 'templates/account-profile.php';
 	}
@@ -57,7 +59,17 @@ function law_setup_account_pages() {
 		$page = get_page_by_path( $path );
 
 		if ( ! $page instanceof WP_Post ) {
-			$report[] = "MISSING  /{$path}/ — page not found, nothing changed";
+			// The module's own pages are created here rather than only reported.
+			// Without this the only route to a page the module adds after
+			// cutover is migration step 10, which refuses to run without a
+			// fresh snapshot AND a passing preflight — a heavy gate for
+			// "create one page", and the preflight reads legacy Gravity Forms
+			// data that may no longer be there. Anything outside
+			// law_migration_page_map() (the Login page, say) is still only
+			// reported: a page absent from an environment on purpose must not
+			// be conjured up by a setup trigger.
+			$created = law_setup_create_account_page( $path, $template );
+			$report[] = $created['message'];
 			continue;
 		}
 
@@ -100,6 +112,7 @@ function law_setup_account_pages() {
 	// content honest.
 	$report[] = 'ACCESS   /account/events/ attendee role: ' . law_setup_account_events_attendee_access();
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
+	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
 
 	$login_page = get_page_by_path( 'login' );
 	if ( $login_page instanceof WP_Post ) {
@@ -152,17 +165,81 @@ function law_setup_account_events_attendee_access() {
 }
 
 /**
- * The Bookings dashboard (EVENTS_BOOKINGS.md §7.6) is a child page of the
- * events dashboard and must carry the same Members restriction (committee,
- * editor, administrator). A page created by the migration's pages step has
- * no restriction at all, which the Members plugin reads as public — so this
- * copies the parent's role rows onto the child whenever the child has none.
- * Idempotent; shared by the setup trigger and migration step 10.
+ * Create one of the module's account pages under its parent, with its template.
  *
+ * The title comes from law_migration_page_map(), so the migration and this
+ * trigger cannot disagree about what a page is called, and that map is also the
+ * allow-list: a path it does not name is reported, never created.
+ *
+ * @param string $path     Page path.
+ * @param string $template Page template to assign.
+ * @return array{status:string,page_id:int,message:string}
+ */
+function law_setup_create_account_page( $path, $template ) {
+	$map = function_exists( 'law_migration_page_map' ) ? law_migration_page_map() : array();
+	if ( ! isset( $map[ $path ] ) ) {
+		return array(
+			'status'  => 'missing',
+			'page_id' => 0,
+			'message' => "MISSING  /{$path}/ — page not found, nothing changed",
+		);
+	}
+
+	$parent_path = dirname( $path );
+	$parent      = '.' === $parent_path ? null : get_page_by_path( $parent_path );
+	if ( '.' !== $parent_path && ! $parent instanceof WP_Post ) {
+		return array(
+			'status'  => 'blocked',
+			'page_id' => 0,
+			'message' => "MISSING  /{$path}/ — parent /{$parent_path}/ does not exist; create that first",
+		);
+	}
+
+	$page_id = wp_insert_post(
+		array(
+			'post_type'   => 'page',
+			'post_status' => 'publish',
+			'post_title'  => (string) $map[ $path ]['title'],
+			'post_name'   => basename( $path ),
+			'post_parent' => $parent ? $parent->ID : 0,
+		),
+		true
+	);
+	if ( is_wp_error( $page_id ) || ! $page_id ) {
+		$why = is_wp_error( $page_id ) ? $page_id->get_error_message() : 'unknown error';
+		return array(
+			'status'  => 'error',
+			'page_id' => 0,
+			'message' => "ERROR    /{$path}/ — could not be created: {$why}",
+		);
+	}
+
+	update_post_meta( $page_id, '_wp_page_template', $template );
+
+	return array(
+		'status'  => 'created',
+		'page_id' => (int) $page_id,
+		'message' => "CREATED  /{$path}/ (ID {$page_id}) with {$template}",
+	);
+}
+
+/**
+ * A child page of the events dashboard must carry the same Members restriction
+ * as its parent (committee, editor, administrator). A page created by the
+ * migration's pages step has no restriction at all, which the Members plugin
+ * reads as public — so this copies the parent's role rows onto the child
+ * whenever the child has none. Idempotent; shared by the setup trigger and
+ * migration step 10.
+ *
+ * One helper, two children: the Bookings dashboard (EVENTS_BOOKINGS.md §7.6)
+ * and Manage Speakers. The named wrappers below are what the setup report and
+ * the migration step call, so neither has to know the path.
+ *
+ * @param string $path Child page path under account/dashboard.
  * @return string ok | updated | unrestricted | missing.
  */
-function law_setup_bookings_dashboard_access() {
-	$page   = get_page_by_path( 'account/dashboard/bookings' );
+function law_setup_dashboard_child_access( $path ) {
+	$page   = get_page_by_path( $path );
 	$parent = get_page_by_path( 'account/dashboard' );
 	if ( ! $page instanceof WP_Post || ! $parent instanceof WP_Post ) {
 		return 'missing';
@@ -178,6 +255,16 @@ function law_setup_bookings_dashboard_access() {
 		add_post_meta( $page->ID, '_members_access_role', $role );
 	}
 	return 'updated';
+}
+
+/** The Bookings dashboard's Members restriction. */
+function law_setup_bookings_dashboard_access() {
+	return law_setup_dashboard_child_access( 'account/dashboard/bookings' );
+}
+
+/** The Manage Speakers dashboard's Members restriction. */
+function law_setup_speakers_dashboard_access() {
+	return law_setup_dashboard_child_access( 'account/dashboard/speakers' );
 }
 
 /**

@@ -173,6 +173,64 @@ function law_event_sector_summary( $event_id ) {
 }
 
 /**
+ * ID => title map of every organisation post.
+ *
+ * Built in one query rather than a get_post() per linked ID, so the committee
+ * export stays free of N+1 lookups. Private posts are included to match
+ * law_calendar_sponsor_organisation_ids(), which can already flag an event
+ * sponsored from a private organisation.
+ *
+ * @return array<int, string>
+ */
+function law_events_organisation_titles() {
+	// Keyed on the posts cache generation rather than a plain static, so a
+	// request that creates or renames an organisation (a save handler, a
+	// migration step, the test suite) does not go on reading a stale map.
+	static $titles = array();
+
+	$generation = wp_cache_get_last_changed( 'posts' );
+	if ( isset( $titles[ $generation ] ) ) {
+		return $titles[ $generation ];
+	}
+
+	$map   = array();
+	$posts = get_posts(
+		array(
+			'post_type'      => 'organisation',
+			'post_status'    => array( 'publish', 'private' ),
+			'posts_per_page' => -1,
+			'orderby'        => 'title',
+			'order'          => 'ASC',
+			'no_found_rows'  => true,
+		)
+	);
+	foreach ( $posts as $org ) {
+		$map[ (int) $org->ID ] = $org->post_title;
+	}
+
+	$titles = array( $generation => $map ); // One generation is enough; drop the old one.
+	return $map;
+}
+
+/**
+ * Titles of the organisations linked to an event, in the stored order.
+ *
+ * An ID with no matching post falls back to "#<id>" so a stale link stays
+ * visible in the summary, the export and the activity log rather than
+ * disappearing silently.
+ *
+ * @return string[]
+ */
+function law_event_organisation_names( $event_id ) {
+	$titles = law_events_organisation_titles();
+	$names  = array();
+	foreach ( array_map( 'intval', law_event_meta( $event_id, '_law_organisation_ids' ) ) as $org_id ) {
+		$names[] = $titles[ $org_id ] ?? '#' . $org_id;
+	}
+	return $names;
+}
+
+/**
  * Sponsored tag (parity with law_calendar_is_sponsored_event()): sponsor tier
  * or zero fee, a sponsor-category organisation, or a submitter with more than
  * one Approved/Confirmed event this year.
@@ -430,9 +488,17 @@ add_action( 'template_redirect', function () {
 		}
 	}
 
-	// /speakers/<legacy numeric id>/ → speaker permalink.
+	// /speakers/<legacy numeric id>/ → speaker permalink, ONLY on the public
+	// Speakers page, which is where that rewrite lands
+	// (functions/speakers.php sets pagename=speakers&law_speaker=<id>). The
+	// same scoping the ?event= branch above needs, and for the same reason:
+	// law_speaker is a registered public query var, so any other page carrying
+	// it was being intercepted. The committee's Manage Speakers dashboard
+	// addresses a speaker as ?law_speaker=<post ID>, and entry IDs and post IDs
+	// overlap numerically, so an unscoped redirect sent an Edit link to a
+	// different speaker's public profile (found 9 September 2026).
 	$speaker_query = get_query_var( 'law_speaker' );
-	if ( $speaker_query && is_numeric( $speaker_query ) ) {
+	if ( $speaker_query && is_numeric( $speaker_query ) && is_page_template( 'templates/speakers.php' ) ) {
 		$map     = get_option( 'law_events_entry_map', array() );
 		$post_id = absint( $map['speakers'][ absint( $speaker_query ) ] ?? 0 );
 		if ( $post_id && get_post_type( $post_id ) === LAW_SPEAKER_CPT ) {

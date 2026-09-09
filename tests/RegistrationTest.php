@@ -58,6 +58,28 @@ class RegistrationTest extends LAW_Test_Case {
 		);
 	}
 
+	public function test_welcome_email_matches_the_roles_ticked(): void {
+		$this->assertSame( 'user_welcome_registered', law_registration_welcome_slug( array( 'attendee' ) ) );
+		$this->assertSame( 'user_welcome_registered', law_registration_welcome_slug( array() ), 'No roles means the attendee floor.' );
+		$this->assertSame( 'user_welcome_registered_host', law_registration_welcome_slug( array( 'event_host' ) ) );
+		$this->assertSame( 'user_welcome_registered_host', law_registration_welcome_slug( array( 'sponsor' ) ) );
+		$this->assertSame(
+			'user_welcome_registered_host',
+			law_registration_welcome_slug( array( 'event_host', 'attendee' ) ),
+			'Host wins over attendee, so a host is not asked for dietary requirements up front.'
+		);
+	}
+
+	public function test_the_two_welcome_templates_read_for_their_audience(): void {
+		$attendee = law_events_email( 'user_welcome_registered' );
+		$host     = law_events_email( 'user_welcome_registered_host' );
+		$this->assertNotNull( $host, 'The host welcome is in the registry, so it is editable on the Emails screen.' );
+		$this->assertTrue( (bool) $host['active'] );
+		$this->assertStringContainsString( '{submit_link}', $host['body'] );
+		$this->assertStringNotContainsString( '{submit_link}', $attendee['body'] );
+		$this->assertStringContainsString( 'browse the programme', $attendee['body'] );
+	}
+
 	public function test_registration_rate_limit_is_per_ip_for_anonymous(): void {
 		$_SERVER['REMOTE_ADDR'] = '203.0.113.77';
 		$allowed = 0;

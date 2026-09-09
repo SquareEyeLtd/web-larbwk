@@ -51,7 +51,7 @@ function law_events_register_post_types() {
 				'has_archive'         => false,
 				'rewrite'             => array( 'slug' => 'events', 'with_front' => false ),
 				'supports'            => array( 'title', 'editor', 'author', 'revisions' ),
-				'taxonomies'          => array( 'law_event_type', 'law_sector', 'law_event_category', 'law_year' ),
+				'taxonomies'          => array( 'law_event_type', 'law_sector', 'law_year' ),
 			)
 		)
 	);
@@ -149,9 +149,6 @@ function law_events_register_taxonomies() {
 	register_taxonomy( 'law_sector', LAW_EVENT_CPT, array_merge( $shared, array(
 		'labels' => array( 'name' => 'Sectors', 'singular_name' => 'Sector' ),
 	) ) );
-	register_taxonomy( 'law_event_category', LAW_EVENT_CPT, array_merge( $shared, array(
-		'labels' => array( 'name' => 'Event categories', 'singular_name' => 'Event category' ),
-	) ) );
 	register_taxonomy( 'law_year', array( LAW_EVENT_CPT, LAW_SPEAKER_CPT ), array_merge( $shared, array(
 		'labels' => array( 'name' => 'Programme years', 'singular_name' => 'Programme year' ),
 	) ) );
@@ -185,7 +182,6 @@ function law_events_seed_terms() {
 			'Trade & Commodities',
 			'Other / sector-neutral',
 		),
-		'law_event_category' => array( 'LAW event', 'Hosted event', 'Session-level agendas' ),
 		'law_year'           => array( (string) law_events_setting( 'year', 2026 ) ),
 	);
 

@@ -403,13 +403,28 @@ function law_events_email_registry() {
 			'body'    => "Dear {attendee_name},\n\nA place opened up at {event_title} {event_when} and we tried to book it for you, but could not:\n\n{blocked_reason}\n\nYou are still on the waitlist and keep your place in the queue. If you sort this out, for example by cancelling the booking that overlaps, we will offer you a place as soon as your turn comes round again.\n\nMy bookings: {bookings_link}",
 		),
 
+		// Two welcome templates, picked by the roles ticked at registration
+		// (law_registration_handler()): host or sponsor wins over attendee. The
+		// attendee copy asks for dietary and accessibility requirements, which
+		// reads oddly to someone registering only to submit an event, so the
+		// convention here is one slug per audience (as with
+		// user_attendee_invited / user_attendee_added) rather than a
+		// conditional inside one body.
 		'user_welcome_registered' => array(
-			'name'    => 'Email to user > welcome after registration',
-			'trigger' => 'user registration',
+			'name'    => 'Email to attendee > welcome after registration',
+			'trigger' => 'user registration (attendee only)',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
 			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nYour events and bookings live here: {bookings_link}",
+		),
+		'user_welcome_registered_host' => array(
+			'name'    => 'Email to host or sponsor > welcome after registration',
+			'trigger' => 'user registration (event host or sponsor)',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Welcome to {site_name}',
+			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can submit an event for the programme, then follow it through review, payment and publication: {submit_link}\n\nYour events live here, along with the bookings people make for them: {bookings_link}\n\nYou can also book places at other events in the programme. If you do, please add any dietary or accessibility requirements to your profile so the organisers can look after you: {profile_link}",
 		),
 		'host_capacity_warning' => array(
 			'name'    => 'Email to host > event nearly full',
@@ -520,6 +535,10 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{waitlist_count}'    => '',
 		'{bookings_link}'     => home_url( '/account/events/' ),
 		'{profile_link}'      => home_url( '/account/profile/' ),
+		// law_account_url() resolves the real permalink and falls back to the
+		// literal path, so a renamed page gives an honest 404 rather than a
+		// link to the home page.
+		'{submit_link}'       => function_exists( 'law_account_url' ) ? law_account_url( 'submit' ) : home_url( '/account/events/submit/' ),
 	);
 
 	$start = (string) law_event_meta( $event_id, '_law_start' );

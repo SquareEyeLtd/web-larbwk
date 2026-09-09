@@ -2,7 +2,30 @@
 /**
  * Shared Full list / Day markup for public and committee calendars.
  *
- * Set $law_cal_show_status before including.
+ * Set these before including; all five are optional:
+ *   $law_cal_show_status (bool)   Committee mode: status pills, and the
+ *                                 "all submissions" note on the list view.
+ *   $law_cal_hero_title  (string) Hero title for the list view.
+ *   $law_cal_event       (array)  A pre-resolved, already-hydrated event array
+ *                                 to render, instead of resolving $_GET['event']
+ *                                 through law_calendar_event_by_id(). The
+ *                                 committee preview (?preview-event=<id> on
+ *                                 templates/account-dashboard.php) passes one,
+ *                                 because that resolver applies the public
+ *                                 status filter anywhere but the committee
+ *                                 calendar template, so an unconfirmed event
+ *                                 would come back null.
+ *   $law_cal_back        (array)  array( 'url' => …, 'label' => … ) overriding
+ *                                 BOTH ways back off the single event view --
+ *                                 the chevron link at the top and the button at
+ *                                 the foot of the article -- so the two cannot
+ *                                 drift. Defaults to law_calendar_url() with
+ *                                 "Back to programme" / "Back to events
+ *                                 calendar".
+ *   $law_cal_preview     (bool)   Committee preview: the booking control
+ *                                 renders for an event of any status with its
+ *                                 button inert, so the preview shows the row
+ *                                 an attendee will see instead of omitting it.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -10,18 +33,31 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 $law_cal_show_status = ! empty( $law_cal_show_status );
+$law_cal_event       = isset( $law_cal_event ) && is_array( $law_cal_event ) ? $law_cal_event : null;
+$law_cal_back        = isset( $law_cal_back ) && is_array( $law_cal_back ) ? $law_cal_back : array();
+$law_cal_preview     = ! empty( $law_cal_preview );
 
 $page_id = get_queried_object_id();
 $calendar_blocked = function_exists( 'members_can_current_user_view_post' )
 	&& $page_id
 	&& ! members_can_current_user_view_post( $page_id );
 
-$event_id = $calendar_blocked ? 0 : law_calendar_requested_event_id();
-$event    = $event_id ? law_calendar_event_by_id( $event_id ) : null;
+if ( $law_cal_event && ! $calendar_blocked ) {
+	$event    = $law_cal_event;
+	$event_id = (int) ( $event['id'] ?? 0 );
+} else {
+	$event_id = $calendar_blocked ? 0 : law_calendar_requested_event_id();
+	$event    = $event_id ? law_calendar_event_by_id( $event_id ) : null;
+}
+
+$law_cal_back_url   = (string) ( $law_cal_back['url'] ?? '' );
+$law_cal_back_label = (string) ( $law_cal_back['label'] ?? '' );
 
 get_header();
 
-$days = $calendar_blocked ? array() : law_calendar_week_days();
+// Only the list view needs the week; the single event view never reads $days,
+// so the query is skipped there.
+$days = ( $calendar_blocked || $event ) ? array() : law_calendar_week_days();
 
 if ( $event ) {
 	$host_list = $event['host'] ? array_filter( array_map( 'trim', preg_split( '/;/', $event['host'] ) ) ) : array();
@@ -54,9 +90,10 @@ if ( $event ) {
 		'parts/calendar-event-details',
 		null,
 		array(
-			'event'  => $event,
-			'places' => $law_places_meta,
-			'rows'   => array(
+			'event'   => $event,
+			'preview' => $law_cal_preview,
+			'places'  => $law_places_meta,
+			'rows'    => array(
 				array( 'key' => 'date', 'label' => 'Date', 'value' => $event['date'] ? law_calendar_day_heading( $event['date'] ) : 'Slot not confirmed' ),
 				array( 'key' => 'time', 'label' => 'Time', 'value' => $event['start'] ? law_calendar_event_time_label( $event ) : '' ),
 				array( 'key' => 'venue', 'label' => 'Location', 'value' => $event['venue'] ),
@@ -103,8 +140,8 @@ if ( $event ) {
 					'parts/layout/back-link',
 					null,
 					array(
-						'url'   => law_calendar_url(),
-						'label' => __( 'Back to programme', 'law' ),
+						'url'   => $law_cal_back_url ? $law_cal_back_url : law_calendar_url(),
+						'label' => $law_cal_back_label ? $law_cal_back_label : __( 'Back to programme', 'law' ),
 					)
 				);
 				?>
@@ -215,7 +252,7 @@ if ( $event ) {
 								// count, so the decision and the means to act on it are in
 								// one place. See parts/calendar-event-details.php.
 								?>
-								<a class="button" href="<?php echo esc_url( law_calendar_url() ); ?>"><?php esc_html_e( 'Back to events calendar', 'law' ); ?></a>
+								<a class="button" href="<?php echo esc_url( $law_cal_back_url ? $law_cal_back_url : law_calendar_url() ); ?>"><?php echo esc_html( $law_cal_back_label ? $law_cal_back_label : __( 'Back to events calendar', 'law' ) ); ?></a>
 							</div>
 						</div>
 					</div>

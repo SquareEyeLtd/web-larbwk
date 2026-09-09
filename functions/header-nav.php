@@ -18,7 +18,7 @@
  *      instead, so this file cannot drift away from the pages it links to.
  *   2. Access is additive, never either/or. Committee members and
  *      administrators hold bookings and run events of their own, so the
- *      Events dashboard link is added to the personal links rather than
+ *      Manage Events link is added to the personal links rather than
  *      replacing them.
  *
  * The markup lives in parts/layout/top-nav.php; this file only decides what
@@ -47,6 +47,7 @@ function law_account_paths() {
 		'account'   => 'account',
 		'dashboard' => 'account/dashboard',
 		'bookings'  => 'account/dashboard/bookings',
+		'speakers'  => 'account/dashboard/speakers',
 		'events'    => 'account/events',
 		'submit'    => 'account/events/submit',
 		'profile'   => 'account/profile',
@@ -260,13 +261,19 @@ function law_header_nav() {
 	if ( function_exists( 'law_user_is_committee' ) && law_user_is_committee() ) {
 		$items[] = array(
 			'key'   => 'dashboard',
-			'label' => __( 'Events dashboard', 'law' ),
+			'label' => __( 'Manage Events', 'law' ),
 		);
 		// The cross-event bookings view (EVENTS_BOOKINGS.md §7.6), a child
 		// page of the events dashboard with the same Members restriction.
 		$items[] = array(
 			'key'   => 'bookings',
-			'label' => __( 'Bookings dashboard', 'law' ),
+			'label' => __( 'Manage Bookings', 'law' ),
+		);
+		// The speaker records behind the programme, and the per-event details
+		// each appearance carries (functions/events/speakers-dashboard.php).
+		$items[] = array(
+			'key'   => 'speakers',
+			'label' => __( 'Manage Speakers', 'law' ),
 		);
 	}
 

@@ -55,6 +55,58 @@ class FeesTest extends LAW_Test_Case {
 		$this->assertSame( 0, law_event_calculate_vat( 0 ) );
 	}
 
+	public function test_override_lock_follows_approval(): void {
+		$pending = $this->make_event( array( '_law_fee_tier' => 'uk' ) );
+		$this->assertFalse( law_event_fee_override_locked( $pending ) );
+
+		// _law_approved_at is written by the approve transition and never
+		// cleared, so it is what "the fee has been snapshotted" means.
+		$approved = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09' ), 'law-approved' );
+		$this->assertTrue( law_event_fee_override_locked( $approved ) );
+	}
+
+	public function test_resnapshot_refreezes_an_unpaid_approved_fee(): void {
+		$event = $this->make_event(
+			array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09', '_law_payment_status' => 'unpaid' ),
+			'law-approved'
+		);
+		law_event_snapshot_fee( $event );
+		$this->assertSame( 120000, (int) law_event_meta( $event, '_law_fee_pence' ) );
+
+		// The committee agrees a discount after approval, in wp-admin.
+		law_event_update_meta( $event, '_law_fee_override', 1 );
+		law_event_update_meta( $event, '_law_fee_override_amount', 600 );
+
+		$resnapshot = law_event_resnapshot_fee( $event );
+		$this->assertSame( 120000, $resnapshot['was'] );
+		$this->assertSame( 60000, $resnapshot['fee_pence'] );
+		$this->assertSame( 60000, (int) law_event_meta( $event, '_law_fee_pence' ) );
+
+		// A waiver takes the VAT flag down with it.
+		law_event_update_meta( $event, '_law_fee_override_amount', 0 );
+		$waived = law_event_resnapshot_fee( $event );
+		$this->assertSame( 0, $waived['fee_pence'] );
+		$this->assertSame( 0, (int) law_event_meta( $event, '_law_vat' ) );
+	}
+
+	public function test_resnapshot_refuses_once_the_fee_is_settled(): void {
+		foreach ( array( 'paid', 'refunded' ) as $status ) {
+			$event = $this->make_event(
+				array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09', '_law_payment_status' => $status ),
+				'publish'
+			);
+			law_event_snapshot_fee( $event );
+			law_event_update_meta( $event, '_law_fee_override', 1 );
+			law_event_update_meta( $event, '_law_fee_override_amount', 600 );
+
+			$result = law_event_resnapshot_fee( $event );
+			$this->assertInstanceOf( WP_Error::class, $result, $status . ' must not re-snapshot' );
+			$this->assertSame( 'law_fee_settled', $result->get_error_code() );
+			// The snapshot the invoice was paid against is untouched.
+			$this->assertSame( 120000, (int) law_event_meta( $event, '_law_fee_pence' ) );
+		}
+	}
+
 	public function test_snapshot_writes_meta(): void {
 		$event    = $this->make_event( array( '_law_fee_tier' => 'international' ) );
 		$snapshot = law_event_snapshot_fee( $event );

@@ -723,7 +723,7 @@ field 11, limited to `attendee`, `sponsor` and `event_host`. The profile form
 The header's top bar is built by the theme, not by Appearance > Menus:
 `functions/header-nav.php` decides what appears and `parts/layout/top-nav.php`
 draws it. Signed out: Sign in and Create an account. Signed in: one "Logged in
-as [name]" dropdown holding, in order, Events dashboard (committee, editors,
+as [name]" dropdown holding, in order, Manage Events (committee, editors,
 administrators), My events (host-like users) or My bookings (everyone else),
 Submit an event (`law_events_user_can_submit()`), My profile and Sign out.
 Access is additive, so committee members get the dashboard *and* their own

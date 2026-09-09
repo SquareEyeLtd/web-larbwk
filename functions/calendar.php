@@ -445,9 +445,14 @@ function law_calendar_sponsor_category_slugs() {
  * @return int[]
  */
 function law_calendar_sponsor_organisation_ids() {
-	static $ids = null;
-	if ( null !== $ids ) {
-		return $ids;
+	// Keyed on the posts cache generation, not a plain static: a request that
+	// creates or recategorises an organisation (a save handler, a migration
+	// step, the test suite) must not go on reading a stale sponsor list.
+	static $cache = array();
+
+	$generation = wp_cache_get_last_changed( 'posts' );
+	if ( isset( $cache[ $generation ] ) ) {
+		return $cache[ $generation ];
 	}
 
 	$ids = get_posts(
@@ -467,7 +472,8 @@ function law_calendar_sponsor_organisation_ids() {
 		)
 	);
 
-	$ids = array_values( array_filter( array_map( 'intval', (array) $ids ) ) );
+	$ids   = array_values( array_filter( array_map( 'intval', (array) $ids ) ) );
+	$cache = array( $generation => $ids ); // One generation is enough; drop the old one.
 	return $ids;
 }
 

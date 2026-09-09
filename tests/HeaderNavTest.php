@@ -35,9 +35,9 @@ class HeaderNavTest extends LAW_Test_Case {
 	 */
 	public static function role_expectations(): array {
 		return array(
-			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'events', 'submit', 'profile', 'signout' ) ),
-			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'events', 'submit', 'profile', 'signout' ) ),
-			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'events', 'submit', 'profile', 'signout' ) ),
+			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'speakers', 'events', 'submit', 'profile', 'signout' ) ),
+			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'speakers', 'events', 'submit', 'profile', 'signout' ) ),
+			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'speakers', 'events', 'submit', 'profile', 'signout' ) ),
 			'event_host'       => array( 'event_host', array( 'events', 'submit', 'profile', 'signout' ) ),
 			'sponsor'          => array( 'sponsor', array( 'events', 'submit', 'profile', 'signout' ) ),
 			'attendee'         => array( 'attendee', array( 'events', 'profile', 'signout' ) ),
@@ -84,6 +84,23 @@ class HeaderNavTest extends LAW_Test_Case {
 
 		$this->assertSame( 'Grace Brewster Hopper', $nav['account']['name'] );
 		$this->assertSame( 'Grace', $nav['account']['short_name'] );
+	}
+
+	/** The committee's three management links, in the order the dropdown offers them. */
+	public function test_committee_management_links_are_labelled_and_ordered(): void {
+		wp_set_current_user( $this->make_committee_user() );
+
+		$nav   = law_header_nav();
+		$items = wp_list_pluck( $nav['account']['items'], 'label', 'key' );
+
+		$this->assertSame( 'Manage Events', $items['dashboard'] );
+		$this->assertSame( 'Manage Bookings', $items['bookings'] );
+		$this->assertSame( 'Manage Speakers', $items['speakers'] );
+		$this->assertSame(
+			array( 'dashboard', 'bookings', 'speakers' ),
+			array_slice( array_keys( $items ), 0, 3 ),
+			'The management links lead the dropdown, before the personal ones.'
+		);
 	}
 
 	/** An attendee's route to their bookings, and the label that describes it. */

@@ -677,7 +677,7 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 	$org_ids = law_calendar_entry_ids_from_value( rgar( $entry, '109' ) );
 	law_event_update_meta( $post_id, '_law_organisation_ids', $org_ids );
 
-	// Taxonomies: sectors (60.x checkbox inputs), type (63), category (116.x), year.
+	// Taxonomies: sectors (60.x checkbox inputs), type (63), year.
 	$sectors = array();
 	foreach ( $entry as $key => $value ) {
 		if ( 0 === strpos( (string) $key, '60.' ) && '' !== $value ) {
@@ -686,13 +686,6 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 	}
 	law_events_set_terms_by_name( $post_id, 'law_sector', $sectors );
 	law_events_set_terms_by_name( $post_id, 'law_event_type', array( (string) rgar( $entry, '63' ) ) );
-	$categories = array();
-	foreach ( $entry as $key => $value ) {
-		if ( 0 === strpos( (string) $key, '116.' ) && '' !== $value ) {
-			$categories[] = (string) $value;
-		}
-	}
-	law_events_set_terms_by_name( $post_id, 'law_event_category', $categories );
 	wp_set_object_terms( $post_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
 
 	// Contacts (form 4 children) and co-owner rows (form 6 children).
@@ -1573,6 +1566,7 @@ function law_migration_page_map() {
 		'register'                   => array( 'title' => 'Register for an Account', 'template' => 'templates/register.php' ),
 		'account/dashboard'          => array( 'title' => 'Events dashboard', 'template' => 'templates/account-dashboard.php' ),
 		'account/dashboard/bookings' => array( 'title' => 'Bookings dashboard', 'template' => 'templates/account-bookings-dashboard.php' ),
+		'account/dashboard/speakers' => array( 'title' => 'Speakers dashboard', 'template' => 'templates/account-speakers-dashboard.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
 		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
 		'account/events/submit'      => array( 'title' => 'Submit an event', 'template' => 'templates/account-event-form.php' ),
@@ -1654,6 +1648,10 @@ function law_migration_run_pages( $dry ) {
 	// its committee-only Members restriction (a freshly created page has none).
 	if ( ! $dry && function_exists( 'law_setup_bookings_dashboard_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/dashboard/bookings/', 'Committee restriction: ' . law_setup_bookings_dashboard_access() . '.' );
+	}
+	// Manage Speakers, the other child of the events dashboard, the same way.
+	if ( ! $dry && function_exists( 'law_setup_speakers_dashboard_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/speakers/', 'Committee restriction: ' . law_setup_speakers_dashboard_access() . '.' );
 	}
 
 	return array( 'done' => true, 'summary' => sprintf( '%d templates assigned, %d pages created.', $updated, $created ) );

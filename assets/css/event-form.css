@@ -340,6 +340,12 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 /* The committee dashboard ------------------------------------------------ */
 .law-dashboard { padding: 1rem 0 3rem; }
 .law-dashboard__title { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
+/* The Edit event details / Preview event pair under the title. .button is
+   width: 100% in app.css and style.css only resets that inside a <form>, so an
+   inline row of button links has to opt out itself, the way
+   .law-dashboard__table and .law-cal-detail__actions already do. */
+.law-dashboard__event-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0 0; }
+.law-dashboard__event-actions .button { width: auto; margin: 0; }
 .law-dashboard__facts { display: grid; grid-template-columns: 180px 1fr; gap: .3rem .8rem; margin: 1.2rem 0; }
 .law-dashboard__facts dt { font-weight: 700; }
 /* min-width: 0 + overflow-wrap: a grid item's min-width defaults to auto, so
@@ -520,8 +526,12 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-booking-table__move { padding: .25rem .5rem; font-size: .9rem; line-height: 1; margin: 0; }
 /* Foundation dims a disabled button to 0.25, which is a ghost at this size, and
    the theme's own :hover rules out-specify its [disabled]:hover, so a dead
-   button lights up orange under the cursor. */
-.law-cal .button[disabled], .law-dashboard .button[disabled] { opacity: .45; }
+   button lights up orange under the cursor. pointer-events settles that at the
+   source rather than by out-painting every hover rule -- it also stops the
+   cascade race with calendar.css's .law-cal .button[aria-disabled="true"],
+   which ties on specificity and whose load order relative to this file is not
+   fixed. The :hover/:focus repaint below stays as the belt to that braces. */
+.law-cal .button[disabled], .law-dashboard .button[disabled] { opacity: .45; cursor: not-allowed; pointer-events: none; }
 .law-cal .button[disabled]:hover, .law-cal .button[disabled]:focus,
 .law-dashboard .button[disabled]:hover, .law-dashboard .button[disabled]:focus {
 	background: #292459; border-color: #292459; color: #fff;
@@ -548,3 +558,35 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-booking-table td.law-booking-table__event { white-space: normal; min-width: 14rem; }
 .law-booking-table td.law-booking-table__booking { white-space: nowrap; min-width: 0; }
 .law-cal-filter-form__field--event select { min-width: 16rem; }
+
+/* Manage Speakers (/account/dashboard/speakers/) __________________________ */
+
+/* The list. Same table idiom as the bookings dashboard; the two extra rules
+   are the photo cell (fixed width so the names line up) and the two long
+   columns, which wrap rather than force a wider horizontal scroll. */
+.law-speakers-dashboard__summary { color: #1a1a3d; margin: 0 0 1rem; }
+.law-speakers-dashboard__truncated { color: #8a4b00; margin: 0 0 1rem; }
+.law-speakers-table__name small, .law-speakers-table__events small { color: #5a5a7a; }
+.law-speakers-table td.law-speakers-table__photo { width: 3.5rem; min-width: 0; }
+.law-speakers-table__photo img { width: 40px; height: 40px; object-fit: cover; border-radius: 50%; display: block; }
+.law-speakers-table__initials {
+	display: flex; align-items: center; justify-content: center;
+	width: 40px; height: 40px; border-radius: 50%;
+	background: #eceaf5; color: #292459; font-weight: 700; font-size: .75rem; letter-spacing: .03em;
+}
+.law-speakers-table td.law-speakers-table__name { white-space: normal; min-width: 12rem; }
+.law-speakers-table td.law-speakers-table__events { white-space: normal; min-width: 16rem; }
+.law-speakers-table td.law-speakers-table__actions { white-space: nowrap; min-width: 0; }
+.law-speakers-table__actions .button { margin: 0; }
+
+/* The editor. One fieldset per event, visibly separated so it is obvious
+   which fields belong to which event — the whole point of the screen. */
+.law-speaker-form { max-width: 60rem; }
+.law-speaker-appearance { border-top: 2px solid #eceaf5; }
+.law-speaker-appearance legend .law-cal-card__badge {
+	position: static; display: inline-block; vertical-align: middle; margin-left: .5rem;
+}
+.law-speaker-appearance__meta { display: flex; flex-wrap: wrap; gap: 1rem; margin: -.5rem 0 1rem; font-size: .9rem; }
+.law-speaker-appearance__meta .law-speaker-appearance__when { color: #55556e; }
+.law-speaker-appearance__photo img { border-radius: 4px; margin: .25rem 0; }
+.law-speaker-appearance__remove { display: block; font-size: .9rem; margin-top: .35rem; }

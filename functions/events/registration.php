@@ -27,6 +27,22 @@ function law_registration_roles() {
 }
 
 /**
+ * Which welcome email a new registration gets. Two templates, one per
+ * audience: event host or sponsor wins over attendee, so someone who ticked
+ * both is welcomed as a host rather than being asked for dietary and
+ * accessibility requirements up front. The floor matches
+ * law_registration_sync_roles(): no roles means attendee.
+ *
+ * @param string[] $roles The stored self-service roles.
+ * @return string A law_events_email_registry() slug.
+ */
+function law_registration_welcome_slug( array $roles ) {
+	return array_intersect( array( 'event_host', 'sponsor' ), $roles ?: array( 'attendee' ) )
+		? 'user_welcome_registered_host'
+		: 'user_welcome_registered';
+}
+
+/**
  * Accessibility choices (form 1 field 17 / form 3 field 13): stored VALUE =>
  * displayed label. The short values are the canonical stored format — the GF
  * fields, ACF field 435 (Accessibility) and every existing user's meta all
@@ -308,7 +324,12 @@ function law_registration_handler() {
 	// The welcome to the new user (settled, EVENTS_BOOKINGS.md). Like the two
 	// admin notices above it has no event, so it is the one send the activity
 	// log cannot record (law_event_log() needs an event to attach to).
-	law_events_send( 'user_welcome_registered', 0, array( 'to' => array( $user->user_email ), 'placeholders' => $placeholders ) );
+	//
+	// Host/sponsor and attendee get different copy. $stored_roles is the right
+	// input, not law_account_user_is_host_like(), which reads the current user
+	// and folds in committee/administrator/editor.
+	$welcome_slug = law_registration_welcome_slug( $stored_roles );
+	law_events_send( $welcome_slug, 0, array( 'to' => array( $user->user_email ), 'placeholders' => $placeholders ) );
 
 	// Auto-login (replacing GW Auto Login) + the form 1 confirmation redirect.
 	wp_set_current_user( $user_id );

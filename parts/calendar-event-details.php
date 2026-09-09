@@ -18,12 +18,14 @@
  * this class the notices would render white on a light box.
  *
  * Args:
- *   rows   (array) Each array( 'key' => 'date', 'label' => 'Date', 'value' => '…' ).
- *                  Empty values are skipped, so an event with no venue drops the
- *                  item rather than rendering a blank one.
- *   places (array) array( 'label' => …, 'value' => … ). Appended as a final
- *                  grid item only when the booking control renders nothing.
- *   event  (array) The calendar-mapped event, for the booking control.
+ *   rows    (array) Each array( 'key' => 'date', 'label' => 'Date', 'value' => '…' ).
+ *                   Empty values are skipped, so an event with no venue drops the
+ *                   item rather than rendering a blank one.
+ *   places  (array) array( 'label' => …, 'value' => … ). Appended as a final
+ *                   grid item only when the booking control renders nothing.
+ *   event   (array) The calendar-mapped event, for the booking control.
+ *   preview (bool)  Committee preview: the booking control renders for an
+ *                   event of any status, with its button inert.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -32,9 +34,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 $args = isset( $args ) && is_array( $args ) ? $args : array();
 
-$law_ed_rows   = isset( $args['rows'] ) && is_array( $args['rows'] ) ? $args['rows'] : array();
-$law_ed_places = isset( $args['places'] ) && is_array( $args['places'] ) ? $args['places'] : array();
-$law_ed_event  = isset( $args['event'] ) && is_array( $args['event'] ) ? $args['event'] : array();
+$law_ed_rows    = isset( $args['rows'] ) && is_array( $args['rows'] ) ? $args['rows'] : array();
+$law_ed_places  = isset( $args['places'] ) && is_array( $args['places'] ) ? $args['places'] : array();
+$law_ed_event   = isset( $args['event'] ) && is_array( $args['event'] ) ? $args['event'] : array();
+$law_ed_preview = ! empty( $args['preview'] );
 
 if ( ! $law_ed_rows ) {
 	return;
@@ -70,13 +73,14 @@ $law_ed_icon = static function ( $key ) use ( $law_ed_icons ) {
 };
 
 // The booking control (five states, functions/account-bookings.php). Buffered so
-// the footer row is skipped entirely when it renders nothing: it returns early on
-// the legacy source and for any non-published event, which is every committee
-// preview of an unapproved submission.
+// the footer row is skipped entirely when it renders nothing, which now means
+// only the legacy source: in preview mode the control renders for an event of
+// any status, with an inert button, so the committee sees the row an attendee
+// will see rather than a page missing it.
 $law_ed_cta = '';
 if ( $law_ed_event && function_exists( 'law_booking_render_action' ) ) {
 	ob_start();
-	law_booking_render_action( $law_ed_event );
+	law_booking_render_action( $law_ed_event, $law_ed_preview );
 	$law_ed_cta = trim( (string) ob_get_clean() );
 }
 
@@ -86,8 +90,7 @@ if ( $law_ed_event && function_exists( 'law_booking_render_action' ) ) {
 // place"). A separate places fact alongside it would duplicate the count in the
 // bookable state and, worse, advertise "100 places remaining" on an event that
 // has already happened. So the fact is shown only as a fallback, when the
-// control renders nothing at all: the legacy source, and committee previews of
-// events that are not yet published.
+// control renders nothing at all, which is now just the legacy source.
 $law_ed_venue = trim( (string) ( $law_ed_event['venue'] ?? '' ) );
 $law_ed_venue_linked = '' !== $law_ed_venue
 	&& function_exists( 'law_calendar_venue_is_mappable' )

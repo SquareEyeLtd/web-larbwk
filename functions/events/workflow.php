@@ -407,7 +407,7 @@ function law_event_log_fee_change( $event_id, $before_override, $before_amount, 
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Fee override %s (amount £%s → £%s).',
+			'Host fee override %s (amount £%s → £%s).',
 			$after_override ? 'enabled' : 'disabled',
 			number_format( (float) $before_amount, 2 ),
 			number_format( $after_amount, 2 )
@@ -416,6 +416,47 @@ function law_event_log_fee_change( $event_id, $before_override, $before_amount, 
 			'action' => 'fee_override',
 			'old'    => array( 'override' => (int) $before_override, 'amount' => (float) $before_amount ),
 			'new'    => array( 'override' => $after_override, 'amount' => $after_amount ),
+			'source' => 'ui',
+		),
+		array( 'user_id' => (int) $actor )
+	);
+}
+
+/**
+ * Log linked-organisation changes (called from the admin/committee save paths
+ * with the IDs read immediately before the write).
+ *
+ * Worth logging even though it is a quiet field: a sponsor-category
+ * organisation is one of the three routes to the public "Sponsored" badge, so
+ * a change here is visible to the world.
+ */
+function law_event_log_organisation_change( $event_id, array $before_ids, $actor ) {
+	$before_ids = array_values( array_map( 'intval', $before_ids ) );
+	$after_ids  = array_values( array_map( 'intval', law_event_meta( $event_id, '_law_organisation_ids' ) ) );
+	if ( $before_ids === $after_ids ) {
+		return;
+	}
+
+	$titles = law_events_organisation_titles();
+	$name   = static function ( array $ids ) use ( $titles ) {
+		$names = array();
+		foreach ( $ids as $org_id ) {
+			$names[] = $titles[ $org_id ] ?? '#' . $org_id;
+		}
+		return implode( ', ', $names ) ?: '(none)';
+	};
+
+	law_event_log(
+		$event_id,
+		sprintf(
+			'Linked organisations changed from "%s" to "%s".',
+			$name( $before_ids ),
+			$name( $after_ids )
+		),
+		array(
+			'action' => 'organisations',
+			'old'    => $before_ids,
+			'new'    => $after_ids,
 			'source' => 'ui',
 		),
 		array( 'user_id' => (int) $actor )

@@ -77,7 +77,7 @@ All confirmed by Denis on 7 September 2026.
 - **Country** is shown on the per-event list and in every export, read live from the
   profile like dietary and accessibility (spec §4.3 names it; it was missed in v1).
 - **A cross-event Bookings dashboard** for the committee at `/account/dashboard/bookings/`
-  (§7.6), linked from the header account dropdown as "Bookings dashboard".
+  (§7.6), linked from the header account dropdown as "Manage Bookings".
 - **Max 3 additional attendees per booking** (the spec's cap, section 6.3). With the
   duplicate guard this means one active booking per person per event, so a party is at most
   4 places: the booker plus 3 colleagues. The owner can add and remove attendees on their
@@ -618,8 +618,8 @@ needs exactly that export). Spec §7.5's "visible to LAW for customer service" i
   `law_setup_account_pages()`. `law_setup_bookings_dashboard_access()` copies the parent's
   Members roles onto the child when it has none (a page the migration creates carries no
   restriction, which Members reads as public); the template also checks
-  `law_user_is_committee()`. Header dropdown item "Bookings dashboard", committee only,
-  after "Events dashboard" (`law_account_paths()` key `bookings`; HeaderNavTest pins it).
+  `law_user_is_committee()`. Header dropdown item "Manage Bookings", committee only,
+  after "Manage Events" (`law_account_paths()` key `bookings`; HeaderNavTest pins it).
 - **Filters**: keyword (name, email, organisation, job title, booking number as `#12` or
   `12`, event title; case-insensitive, applied in PHP over the fetched set, never a LIKE over
   serialised meta), event (only events holding a booking, ordered by start), status (active
@@ -652,8 +652,11 @@ needs exactly that export). Spec §7.5's "visible to LAW for customer service" i
   bounce and the error-state redirects, so the locked state and destination hold across a
   failed validation round-trip.
 - `law_registration_handler()` uses the validated `redirect_to` on the success and honeypot
-  redirects, falling back to `/account/?action=registered`, and fires the new
-  `user_welcome_registered` email after the admin notifications.
+  redirects, falling back to `/account/?action=registered`, and fires the new welcome
+  email after the admin notifications. `law_registration_welcome_slug()` picks between
+  `user_welcome_registered` (attendee) and `user_welcome_registered_host` (event host or
+  sponsor): host or sponsor wins over attendee, so a host is not asked for dietary and
+  accessibility requirements up front, and no roles at all falls back to the attendee copy.
 - Login needs no change: `law_auth_redirect_to()` already round-trips `redirect_to`, and the
   committee override only applies when no explicit target is set.
 
@@ -680,7 +683,8 @@ All in `law_events_email_registry()`, editable on the Emails screen, sent throug
 | `user_attendee_removed_self` | dynamic | self-removal confirmation |
 | `user_booking_cancelled_attendee` | dynamic (each seated attendee) | the owner cancelled the whole booking |
 | `user_booking_event_cancelled` | dynamic (each attendee) | the event was cancelled (sweep) |
-| `user_welcome_registered` | dynamic | self-registration |
+| `user_welcome_registered` | dynamic | self-registration as an attendee only |
+| `user_welcome_registered_host` | dynamic | self-registration as an event host or sponsor; leads with `{submit_link}` and mentions requirements only in the context of booking a place |
 | `host_capacity_warning` | host | remaining places at 5 or fewer with a positive limit, one-shot |
 | `user_booking_registered` | dynamic (the registered person) | a host or committee member registered them (existing account); names `{registered_by}`; **.ics attached** |
 | `user_booking_registered_invited` | dynamic (new account) | as above when an account was created: carries the set-password link in the same email, so one email not two; **.ics attached** |

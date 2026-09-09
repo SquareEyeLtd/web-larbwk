@@ -42,7 +42,7 @@ add_action( 'wp_enqueue_scripts', function () {
 	// Speaker profiles and both events dashboards (host and committee) reuse
 	// the calendar's banner title, event cards and status badges.
 	if ( law_calendar_is_calendar_page() || law_speakers_is_single() || law_account_events_is_template()
-		|| is_page_template( array( 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php' ) ) ) {
+		|| is_page_template( array( 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php' ) ) ) {
 		wp_enqueue_style(
 			'law-calendar',
 			get_theme_file_uri( '/assets/css/calendar.css' ),
@@ -92,7 +92,7 @@ add_action( 'wp_enqueue_scripts', function () {
 
 	// Programme and committee-dashboard filters: AJAX filtering, keyword
 	// debounce, mobile filter modal.
-	if ( law_calendar_is_calendar_page() || is_page_template( array( 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php' ) ) ) {
+	if ( law_calendar_is_calendar_page() || is_page_template( array( 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php' ) ) ) {
 		wp_enqueue_script( 'law-calendar-filters', $uri . '/assets/js/calendar-filters.js', array(), $v( '/assets/js/calendar-filters.js' ), true );
 	}
 }, 20 );

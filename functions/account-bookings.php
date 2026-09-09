@@ -11,10 +11,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/** Whether the current view is a single event (permalink or ?event= on the programme). */
+/**
+ * Whether this request needs the single event view's booking assets: the modal
+ * component, the fetch layer and the shared form styles.
+ *
+ * Four surfaces render parts/calendar-body.php's single-event body, and three
+ * of them offer a live booking control. The fourth, the committee preview
+ * (?preview-event= on the events dashboard), renders that control inert -- a
+ * disabled button, no dialogs deferred to wp_footer -- so it deliberately
+ * needs none of these and is not named here. See law_booking_render_opener().
+ */
 function law_booking_is_event_view() {
-	return is_singular( LAW_EVENT_CPT )
-		|| ( is_page_template( 'templates/calendar.php' ) && ! empty( $_GET['event'] ) );
+	if ( is_singular( LAW_EVENT_CPT ) ) {
+		return true;
+	}
+	// The public programme and the committee programme both render the single
+	// event body from ?event=. Before 9 September 2026 this named only
+	// templates/calendar.php, so the committee programme's single view rendered
+	// the booking control with neither law-modal nor booking-form.js behind it,
+	// and without event-form.css for the modal form.
+	return is_page_template( array( 'templates/calendar.php', 'templates/calendar-committee.php' ) )
+		&& ! empty( $_GET['event'] );
 }
 
 /**
@@ -221,25 +238,41 @@ function law_account_user_is_host_like() {
  * replacing the placeholder Register anchor. Six states, in this order:
  * you're booked → you're on the waitlist → bookings open soon → the event has
  * taken place → sold out (join the waitlist) → register. Renders nothing on
- * the legacy source or for a non-Confirmed event (committee previews carry no
- * booking UI).
+ * the legacy source.
  *
- * @param array $event The calendar-mapped event array (law_events_map_post()).
+ * @param array $event   The calendar-mapped event array (law_events_map_post()).
+ * @param bool  $preview Committee preview: render the last four states for an
+ *                       event of any status, with the button inert.
  */
-function law_booking_render_action( $event ) {
+function law_booking_render_action( $event, $preview = false ) {
 	if ( 'cpt' !== law_events_source() || empty( $event['id'] ) ) {
 		return;
 	}
 	$event_id = (int) $event['id'];
 	$post     = get_post( $event_id );
-	if ( ! $post || 'publish' !== $post->post_status ) {
+	if ( ! $post ) {
+		return;
+	}
+	// $preview is the committee preview (?preview-event= on the events
+	// dashboard). It renders the availability wording and the button an
+	// attendee will see even though the event is not published yet, with the
+	// button inert: the point of a preview is what the finished page looks
+	// like, and a control that is simply absent misrepresents its layout
+	// (Denis, 9 September 2026). The viewer's OWN booking states and the
+	// redirect notices are skipped for the same reason -- a preview answers
+	// "what will an attendee see", not "what do I see".
+	if ( ! $preview && 'publish' !== $post->post_status ) {
 		return;
 	}
 
-	// The redirect-with-notice results (no-JS booking, mostly).
-	law_booking_notice_render();
+	if ( ! $preview ) {
+		// The redirect-with-notice results (no-JS booking, mostly).
+		law_booking_notice_render();
+	}
 
-	$user_id = get_current_user_id();
+	// A preview reports the event's availability, never the viewer's own place
+	// on it, so the per-user states below are skipped by having no user.
+	$user_id = $preview ? 0 : get_current_user_id();
 	if ( $user_id ) {
 		// State: this person already has a place, or is waiting for one. Their
 		// own booking decides; colleagues they brought are managed from the
@@ -301,6 +334,8 @@ function law_booking_render_action( $event ) {
 		}
 	}
 
+	// The four availability states below are shared with the preview, which
+	// shows the same wording; only the opener differs.
 	// State: no ticket number yet.
 	$remaining = law_event_tickets_remaining( $event_id );
 	if ( null === $remaining ) {
@@ -321,7 +356,7 @@ function law_booking_render_action( $event ) {
 	if ( 0 === $remaining ) {
 		echo '<p class="law-booking-state">' . esc_html__( 'This event is fully booked.', 'law' ) . '</p>';
 		echo '<p class="law-booking-substate">' . esc_html__( "Join the waitlist and we'll email you as soon as a place opens up.", 'law' ) . '</p>';
-		law_booking_render_opener( $event, 'waitlist' );
+		law_booking_render_opener( $event, 'waitlist', $preview );
 		return;
 	}
 
@@ -330,7 +365,7 @@ function law_booking_render_action( $event ) {
 		'<p class="law-booking-substate">%s</p>',
 		esc_html( sprintf( _n( '%s place left', '%s places left', $remaining, 'law' ), number_format_i18n( $remaining ) ) )
 	);
-	law_booking_render_opener( $event, 'book' );
+	law_booking_render_opener( $event, 'book', $preview );
 }
 
 /**
@@ -338,13 +373,31 @@ function law_booking_render_action( $event ) {
  * real link to the inline no-JS form; booking-form.js upgrades it to open the
  * modal instead.
  *
- * @param string $mode 'book' or 'waitlist'.
+ * @param string $mode    'book' or 'waitlist'.
+ * @param bool   $preview Committee preview: render the button inert instead,
+ *                        and defer no dialogs.
  */
-function law_booking_render_opener( array $event, $mode = 'book' ) {
+function law_booking_render_opener( array $event, $mode = 'book', $preview = false ) {
 	$event_id  = (int) $event['id'];
 	$waitlist  = 'waitlist' === $mode;
 	$param     = $waitlist ? 'law_waitlist' : 'law_book';
 	$dialog_id = $waitlist ? 'law-waitlist-modal' : 'law-booking-modal';
+	$label     = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' );
+
+	// The preview shows the button exactly where the attendee will find it, but
+	// it must never be actuable from a page whose event may not even be
+	// approved. A disabled <button> is inert by every route -- pointer,
+	// keyboard, assistive tech and form submission -- where an <a> with only
+	// aria-disabled would still follow its href on Enter. It carries no href and
+	// no data-law-modal-open, and neither dialog is deferred to wp_footer, so
+	// there is nothing for law-modal.js to open even if it is on the page.
+	if ( $preview ) {
+		printf(
+			'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
+			esc_html( $label )
+		);
+		return;
+	}
 
 	// Both dialogs are position:fixed with z-index 10050 (law-modal.css). This
 	// control renders inside the hero's event details box, and the hero's
@@ -362,7 +415,7 @@ function law_booking_render_opener( array $event, $mode = 'book' ) {
 		'<a class="button orange" href="%s" data-law-modal-open="%s">%s</a>',
 		esc_url( add_query_arg( $param, 1, get_permalink( $event_id ) ) ),
 		esc_attr( $dialog_id ),
-		esc_html( $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' ) )
+		esc_html( $label )
 	);
 	law_booking_footer_modal( $event, 'modal', $mode );
 }

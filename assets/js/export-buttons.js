@@ -83,7 +83,7 @@
 				}));
 
 				window.pdfMake.createPdf({
-					// The dashboard's 17 columns need A3 landscape to stay
+					// The dashboard's 19 columns need A3 landscape to stay
 					// legible (it still prints on A4 with "fit to page"); the
 					// narrower bookings export sits comfortably on A4.
 					pageSize: d.columns.length > 10 ? 'A3' : 'A4',

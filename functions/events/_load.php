@@ -31,6 +31,7 @@ require_once __DIR__ . '/bookings-dashboard.php';
 require_once __DIR__ . '/test-mode.php';
 require_once __DIR__ . '/notifications.php';
 require_once __DIR__ . '/speakers.php';
+require_once __DIR__ . '/speakers-dashboard.php';
 require_once __DIR__ . '/source.php';
 require_once __DIR__ . '/submission-form.php';
 require_once __DIR__ . '/registration.php';

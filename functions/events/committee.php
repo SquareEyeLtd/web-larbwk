@@ -102,6 +102,31 @@ add_action( 'admin_post_nopriv_law_committee_action', function () {
 	exit;
 } );
 
+/**
+ * Refuse a dashboard post and stop. On the AJAX path the message travels in
+ * the response, because the transient would only be consumed by this same
+ * request's aftermath and lost; a plain submit gets it back on the detail
+ * panel through law_committee_take_error(). Never returns.
+ *
+ * @param int    $event_id law_event post ID (the panel to land back on).
+ * @param bool   $is_ajax  Whether the caller posted law_ajax.
+ * @param string $message  What to tell the committee member.
+ * @param int    $code     HTTP status for the JSON path.
+ */
+function law_committee_refuse( $event_id, $is_ajax, $message, $code = 400 ) {
+	if ( $is_ajax ) {
+		wp_send_json_error( array( 'message' => $message ), $code );
+	}
+	set_transient( 'law_dashboard_error_' . get_current_user_id(), $message, 60 );
+	wp_safe_redirect(
+		add_query_arg(
+			array( 'event' => (int) $event_id, 'law_notice' => 'action-failed' ),
+			home_url( '/account/dashboard/' )
+		)
+	);
+	exit;
+}
+
 function law_committee_action_handler() {
 	$is_ajax = ! empty( $_POST['law_ajax'] );
 
@@ -136,9 +161,44 @@ function law_committee_action_handler() {
 	$before_amount   = (float) law_event_meta( $event_id, '_law_fee_override_amount' );
 	$before_assignee = (int) law_event_meta( $event_id, '_law_assignee' );
 
+	// The host fee override is checked BEFORE any write, so a refusal leaves the
+	// event exactly as it was: the other field writes below and the workflow
+	// action further down never run.
 	if ( isset( $_POST['law_fee_override_amount'] ) ) {
-		law_event_update_meta( $event_id, '_law_fee_override', ! empty( $_POST['law_fee_override'] ) );
-		law_event_update_meta( $event_id, '_law_fee_override_amount', wp_unslash( $_POST['law_fee_override_amount'] ) );
+		$override_on = ! empty( $_POST['law_fee_override'] );
+		$amount_raw  = trim( (string) wp_unslash( $_POST['law_fee_override_amount'] ) );
+
+		// A ticked box with an empty amount used to sanitise to £0.00, which
+		// waives the fee, skips the invoice and auto-confirms the event. Far too
+		// consequential to be what an empty box means, so it is refused; a
+		// deliberately typed 0 still waives the fee.
+		if ( $override_on && '' === $amount_raw ) {
+			law_committee_refuse(
+				$event_id,
+				$is_ajax,
+				'Enter the new host fee in pounds. Type 0 to waive the fee entirely, or untick "Override the host fee" to charge the tier price.'
+			);
+		}
+
+		// Only reachable from a hand-made request: the control renders read-only
+		// once the fee is snapshotted. Logged, as the module logs every refusal.
+		if ( law_event_fee_override_locked( $event_id ) ) {
+			law_event_log(
+				$event_id,
+				'Refused a host fee override change: the fee was snapshotted at approval, so the change would reach neither the snapshot nor the invoice.',
+				array( 'action' => 'refused', 'attempted' => 'fee_override', 'source' => 'ui' ),
+				array( 'user_id' => $actor )
+			);
+			law_committee_refuse(
+				$event_id,
+				$is_ajax,
+				'The host fee was snapshotted when this event was approved, so it can no longer be changed here. Use "Full editing in wp-admin" for a post-approval fee change.',
+				403
+			);
+		}
+
+		law_event_update_meta( $event_id, '_law_fee_override', $override_on );
+		law_event_update_meta( $event_id, '_law_fee_override_amount', $amount_raw );
 		law_event_log_fee_change( $event_id, $before_override, $before_amount, $actor );
 	}
 	if ( isset( $_POST['law_assignee'] ) ) {
@@ -160,11 +220,12 @@ function law_committee_action_handler() {
 		}
 	}
 
-	// The sentinel says the controls were on the form, so absent inputs mean
-	// "cleared" (unchecked boxes and empty multi-selects post nothing).
-	if ( ! empty( $_POST['law_terms_present'] ) ) {
-		law_events_set_terms_by_name( $event_id, 'law_event_category', array_map( 'sanitize_text_field', (array) wp_unslash( $_POST['law_event_category'] ?? array() ) ) );
+	// The sentinel says the control was on the form, so an absent input means
+	// "cleared" (an empty multi-select posts nothing).
+	if ( ! empty( $_POST['law_orgs_present'] ) ) {
+		$before_orgs = law_event_meta( $event_id, '_law_organisation_ids' );
 		law_event_update_meta( $event_id, '_law_organisation_ids', array_map( 'absint', (array) ( $_POST['law_organisation_ids'] ?? array() ) ) );
+		law_event_log_organisation_change( $event_id, (array) $before_orgs, $actor );
 	}
 
 	// A private note goes straight to the activity log (§3.6 manual notes).
@@ -192,18 +253,12 @@ function law_committee_action_handler() {
 	// email, so cancel/reject must come first.
 	if ( 'delete' === $action ) {
 		if ( ! in_array( $post->post_status, array( 'law-cancelled', 'law-rejected' ), true ) ) {
-			$message = 'Only a cancelled or rejected event can be deleted. Cancel or reject it first.';
-			if ( $is_ajax ) {
-				wp_send_json_error( array( 'message' => $message ), 403 );
-			}
-			set_transient( 'law_dashboard_error_' . $actor, $message, 60 );
-			wp_safe_redirect(
-				add_query_arg(
-					array( 'event' => $event_id, 'law_notice' => 'action-failed' ),
-					home_url( '/account/dashboard/' )
-				)
+			law_committee_refuse(
+				$event_id,
+				$is_ajax,
+				'Only a cancelled or rejected event can be deleted. Cancel or reject it first.',
+				403
 			);
-			exit;
 		}
 
 		// The log line first: it must exist before the post leaves the dashboard.
@@ -243,19 +298,7 @@ function law_committee_action_handler() {
 			array( 'action' => 'refused', 'attempted' => $action, 'source' => 'ui' ),
 			array( 'user_id' => $actor )
 		);
-		// On the AJAX path the message travels in the response; the transient
-		// would only be consumed by this same request's aftermath and lost.
-		if ( $is_ajax ) {
-			wp_send_json_error( array( 'message' => 'That action is not available from the dashboard.' ), 403 );
-		}
-		set_transient( 'law_dashboard_error_' . $actor, 'That action is not available from the dashboard.', 60 );
-		wp_safe_redirect(
-			add_query_arg(
-				array( 'event' => $event_id, 'law_notice' => 'action-failed' ),
-				home_url( '/account/dashboard/' )
-			)
-		);
-		exit;
+		law_committee_refuse( $event_id, $is_ajax, 'That action is not available from the dashboard.', 403 );
 	}
 	if ( '' !== $action ) {
 		$note   = trim( (string) wp_unslash( $_POST['law_note'] ?? '' ) );

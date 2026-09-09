@@ -414,8 +414,9 @@ developer):
 
 - `law_event_type`: from field 63 (Event type): Seminar / talk, Social event, Other
 - `law_sector`: from field 60 (Sector), 11 terms
-- `law_event_category`: from field 116 (Event category): LAW event, Hosted
-  event, Session-level agendas
+- ~~`law_event_category`: from field 116 (Event category): LAW event, Hosted
+  event, Session-level agendas~~ — built for parity, then removed on
+  9 September 2026 as unused (see EVENTS_FUNC.md, `post-types.php`)
 - `law_year`: programme year (e.g. `2026`). Every event, speaker link and (4.2)
   booking is year-tagged, which is what makes the 4.2 §3.8 archive requirement
   cheap later.
@@ -505,9 +506,10 @@ been all along.
   form 9 (Event > session) fields 4 (Session title) and 5 (Description).
 - Not publicly queryable on their own; rendered inside the event page as now.
 - This is the 4.2 §3.6 enhanced agenda structure. The "enhanced agenda is
-  opt-in per event" switch is simply whether sessions exist, plus the
-  `law_event_category` term Session-level agendas where LAW wants an explicit
-  flag.
+  opt-in per event" switch is simply whether sessions exist. (The
+  `law_event_category` term Session-level agendas was the original explicit
+  flag; the taxonomy was removed on 9 September 2026 as unused, so if LAW
+  wants an explicit switch it needs a new field in 4.2.)
 
 ### 3.4 Users, roles and co-owners
 

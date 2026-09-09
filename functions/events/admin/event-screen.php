@@ -71,12 +71,24 @@ function law_event_box_fee( $post ) {
 		$tiers[ $key ] = $tier['label'] . ' (£' . $tier['amount'] . ')';
 	}
 	law_field_select( 'law_fee_tier', 'Fee tier', (string) law_event_meta( $post->ID, '_law_fee_tier' ), $tiers, array( 'placeholder' => '(none)' ) );
-	law_field_checkbox( 'law_fee_override', 'Override fee', (bool) law_event_meta( $post->ID, '_law_fee_override' ) );
-	law_field_number( 'law_fee_override_amount', 'Override amount (£)', (string) law_event_meta( $post->ID, '_law_fee_override_amount' ), array( 'attrs' => 'step="0.01" min="0"' ) );
+	law_field_checkbox( 'law_fee_override', 'Override the host fee', (bool) law_event_meta( $post->ID, '_law_fee_override' ) );
+	law_field_number( 'law_fee_override_amount', 'New host fee (£)', (string) law_event_meta( $post->ID, '_law_fee_override_amount' ), array( 'attrs' => 'step="0.01" min="0"' ) );
+	echo '<p class="description">Enter the agreed fee in pounds, without the symbol. Type 0 to waive the fee entirely. A ticked box with an empty amount is refused rather than read as £0.00, so a blank can never waive a fee by accident.</p>';
 
 	$fee = (int) law_event_meta( $post->ID, '_law_fee_pence' );
 	echo '<p>Snapshot at approval: <strong>' . esc_html( law_events_format_pence( $fee ) ) . '</strong>'
 		. ( law_event_meta( $post->ID, '_law_vat' ) ? ' + VAT' : '' ) . '</p>';
+
+	// This screen is the only route left for a post-approval fee change: the
+	// committee dashboard's control goes read-only at approval, because nothing
+	// there re-freezes the snapshot. Saving a changed fee here does re-freeze it
+	// (law_event_resnapshot_fee()), but Stripe is never touched automatically,
+	// so say what the second half of the job is.
+	if ( law_event_fee_override_locked( $post->ID ) ) {
+		echo '<div class="notice notice-warning inline"><p>This event is approved, so its fee is already snapshotted and invoiced. '
+			. 'Changing the tier or the override here re-takes the snapshot and logs it, but the Stripe invoice is <strong>not</strong> reissued: '
+			. 'void the open invoice in Stripe, then raise a new one with the invoice button below (offered while the event is Approved and unpaid).</p></div>';
+	}
 
 	law_field_select(
 		'law_payment_status',
@@ -276,10 +288,11 @@ function law_event_admin_save( $post_id, $post ) {
 	$before_assignee = (int) law_event_meta( $post_id, '_law_assignee' );
 	$before_payment  = (string) law_event_meta( $post_id, '_law_payment_status' );
 	$before_tickets  = (int) law_event_meta( $post_id, '_law_tickets_available' );
+	$before_tier     = (string) law_event_meta( $post_id, '_law_fee_tier' );
+	$before_orgs     = (array) law_event_meta( $post_id, '_law_organisation_ids' );
 
 	$plain = array(
 		'law_fee_tier'            => '_law_fee_tier',
-		'law_fee_override_amount' => '_law_fee_override_amount',
 		'law_slot_label'          => '_law_slot_label',
 		'law_start'               => '_law_start',
 		'law_end'                 => '_law_end',
@@ -303,7 +316,23 @@ function law_event_admin_save( $post_id, $post ) {
 		law_event_update_meta( $post_id, '_law_assignee', law_events_sanitize_assignee( wp_unslash( $_POST['law_assignee'] ) ) );
 	}
 
-	law_event_update_meta( $post_id, '_law_fee_override', ! empty( $_POST['law_fee_override'] ) );
+	// The override flag and its amount are written as a pair, and only when the
+	// fee box was actually on the form: a ticked box with an empty amount would
+	// sanitise to £0.00 and waive the fee, so it is refused rather than obeyed
+	// (a deliberately typed 0 still waives it).
+	if ( isset( $_POST['law_fee_override_amount'] ) ) {
+		$override_on = ! empty( $_POST['law_fee_override'] );
+		$amount_raw  = trim( (string) wp_unslash( $_POST['law_fee_override_amount'] ) );
+		if ( $override_on && '' === $amount_raw ) {
+			law_event_admin_notice(
+				$actor,
+				'Host fee override NOT saved: enter the new fee in pounds, or type 0 to waive the fee entirely.'
+			);
+		} else {
+			law_event_update_meta( $post_id, '_law_fee_override_amount', $amount_raw );
+			law_event_update_meta( $post_id, '_law_fee_override', $override_on );
+		}
+	}
 
 	// A chosen slot fills the start/end datetimes; an emptied slot clears them
 	// (shared helper, so this matches the committee dashboard save path).
@@ -332,6 +361,7 @@ function law_event_admin_save( $post_id, $post ) {
 	law_event_update_meta( $post_id, '_law_contacts', law_events_rows_from_post( 'law_contacts' ) );
 	law_event_update_meta( $post_id, '_law_speakers', law_events_rows_from_post( 'law_speakers' ) );
 	law_event_update_meta( $post_id, '_law_organisation_ids', array_map( 'absint', (array) ( $_POST['law_organisation_ids'] ?? array() ) ) );
+	law_event_log_organisation_change( $post_id, $before_orgs, $actor );
 
 	// Payment status change is an explicit, logged act.
 	$new_payment = sanitize_key( $_POST['law_payment_status'] ?? '' );
@@ -340,6 +370,30 @@ function law_event_admin_save( $post_id, $post ) {
 	}
 
 	law_event_log_fee_change( $post_id, $before_override, $before_amount, $actor );
+
+	// An approved event's fee was frozen by law_event_snapshot_fee() and
+	// invoiced from that snapshot, and nothing else recalculates it: re-freeze
+	// it here so this screen stays a working route for a post-approval fee
+	// change (the dashboard control is read-only from approval onwards).
+	$fee_inputs_changed = $before_tier !== (string) law_event_meta( $post_id, '_law_fee_tier' )
+		|| $before_override !== (int) law_event_meta( $post_id, '_law_fee_override' )
+		|| abs( $before_amount - (float) law_event_meta( $post_id, '_law_fee_override_amount' ) ) >= 0.005;
+	if ( $fee_inputs_changed && law_event_fee_override_locked( $post_id ) ) {
+		$resnapshot = law_event_resnapshot_fee( $post_id, $actor );
+		if ( is_wp_error( $resnapshot ) ) {
+			law_event_admin_notice( $actor, $resnapshot->get_error_message() );
+		} elseif ( $resnapshot['fee_pence'] !== $resnapshot['was'] ) {
+			law_event_admin_notice(
+				$actor,
+				sprintf(
+					'Fee snapshot updated from %s to %s. The Stripe invoice is NOT reissued automatically: void the open invoice in Stripe, then raise a new one with the invoice button on this screen (offered while the event is Approved and unpaid).',
+					law_events_format_pence( $resnapshot['was'] ),
+					law_events_format_pence( $resnapshot['fee_pence'] )
+				)
+			);
+		}
+	}
+
 	law_event_maybe_notify_assignee( $post_id, $before_assignee, $actor );
 
 	// Raising the places is the one way capacity opens without a cancellation,
@@ -373,7 +427,7 @@ function law_event_admin_save( $post_id, $post ) {
 			array( 'action' => 'refused', 'attempted' => $action, 'source' => 'ui' ),
 			array( 'user_id' => $actor )
 		);
-		set_transient( 'law_event_notice_' . $actor, 'That action is not available from this screen.', 60 );
+		law_event_admin_notice( $actor, 'That action is not available from this screen.' );
 		$action = '';
 	}
 	if ( '' !== $action ) {
@@ -384,7 +438,7 @@ function law_event_admin_save( $post_id, $post ) {
 			array( 'comment' => $note, 'reason' => $note, 'actor_id' => $actor )
 		);
 		if ( is_wp_error( $result ) ) {
-			set_transient( 'law_event_notice_' . $actor, $result->get_error_message(), 60 );
+			law_event_admin_notice( $actor, $result->get_error_message() );
 		}
 	}
 
@@ -449,11 +503,31 @@ function law_events_rows_from_post( $field ) {
 	return $rows;
 }
 
-/** Surface refused workflow transitions as an admin notice. */
+/**
+ * Queue a one-shot notice for this editor. It appends rather than overwrites,
+ * because one Update can produce more than one thing worth saying (a refused
+ * host fee override and a re-taken fee snapshot in the same save, say).
+ *
+ * @param int    $actor   User ID the notice is for.
+ * @param string $message What to tell them.
+ */
+function law_event_admin_notice( $actor, $message ) {
+	$key      = 'law_event_notice_' . (int) $actor;
+	$existing = get_transient( $key );
+	$queued   = is_array( $existing ) ? $existing : ( $existing ? array( (string) $existing ) : array() );
+	$queued[] = (string) $message;
+	set_transient( $key, $queued, 60 );
+}
+
+/** Surface refused transitions and fee-save outcomes as admin notices. */
 add_action( 'admin_notices', function () {
-	$notice = get_transient( 'law_event_notice_' . get_current_user_id() );
-	if ( $notice ) {
-		delete_transient( 'law_event_notice_' . get_current_user_id() );
-		echo '<div class="notice notice-error"><p>' . esc_html( $notice ) . '</p></div>';
+	$key    = 'law_event_notice_' . get_current_user_id();
+	$notice = get_transient( $key );
+	if ( ! $notice ) {
+		return;
+	}
+	delete_transient( $key );
+	foreach ( (array) $notice as $message ) {
+		echo '<div class="notice notice-error"><p>' . esc_html( $message ) . '</p></div>';
 	}
 } );

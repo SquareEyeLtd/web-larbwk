@@ -108,7 +108,6 @@ $law_sections = array(
 					<input type="hidden" name="action" value="law_event_form">
 					<input type="hidden" name="law_event_id" value="<?php echo esc_attr( (string) $law_event_id ); ?>">
 					<?php wp_nonce_field( 'law_event_form' ); ?>
-					<input type="hidden" name="law_ec" value="<?php echo esc_attr( sanitize_text_field( (string) ( $law_state['input']['law_ec'] ?? wp_unslash( $_GET['ec'] ?? '' ) ) ) ); ?>">
 					<?php law_events_honeypot_field(); ?>
 
 					<?php

@@ -8,6 +8,57 @@
  * Approve / Send back / Reject actions. Restrict the page with Members.
  */
 
+// Every branch of this page is committee-only: the review list, the detail
+// view with its invoice figures and activity log, the edit form and the
+// preview of an unpublished event. Access rests on a runtime capability check,
+// so nothing in front of PHP may key a copy of the HTML on the URL alone.
+// The page's own AJAX partial does this already
+// (law_committee_maybe_render_partial(), functions/events/committee.php); the
+// full render was missing it. Called before any output, so the headers still
+// go out with the response.
+nocache_headers();
+
+// ?preview-event=<id> renders the attendee-facing single event view for the
+// committee, so an event can be checked before it is confirmed. It reuses
+// parts/calendar-body.php -- the same renderer the programme and the single
+// event permalink use -- and only two things differ: the event is resolved
+// here, because the partial's own resolver applies the public status filter
+// and an unconfirmed event would come back null, and the back link returns to
+// this dashboard's detail view rather than the programme. Rendered before
+// get_header() because calendar-body.php brings its own header and footer,
+// exactly as templates/calendar-committee.php does.
+//
+// A law-draft is deliberately NOT previewable: it is owner-only unsubmitted
+// host data, the same reasoning behind law_committee_events() refusing an
+// explicit law_status=law-draft (2026-09-07 finding). A draft id falls through
+// to the dashboard, and the detail view offers no Preview button on a draft --
+// exactly as it offers no Edit button.
+$law_preview_id = absint( wp_unslash( $_GET['preview-event'] ?? 0 ) );
+if ( $law_preview_id && law_user_is_committee() && 'cpt' === law_events_source() ) {
+	// The statuses this route renders, named explicitly: every registered
+	// law_event workflow status except law-draft. law_events_map_post()'s
+	// array() means "every status but law-draft", which is wider than the
+	// workflow -- it would also render a trashed or auto-draft event -- so the
+	// post's own status is checked against the vocabulary first. The post-type
+	// check inside law_events_map_post() still handles an id naming a page or
+	// a booking.
+	$law_preview_statuses = array_diff( array_keys( law_event_statuses() ), array( 'law-draft' ) );
+	$law_preview          = in_array( get_post_status( $law_preview_id ), $law_preview_statuses, true )
+		? law_events_map_post( $law_preview_id, array() )
+		: null;
+	if ( $law_preview ) {
+		$law_cal_event       = law_events_cpt_hydrate( $law_preview );
+		$law_cal_show_status = true;
+		$law_cal_preview     = true;
+		$law_cal_back        = array(
+			'url'   => add_query_arg( 'event', $law_preview_id, get_permalink() ),
+			'label' => __( 'Back to event', 'law' ),
+		);
+		require get_theme_file_path( 'parts/calendar-body.php' );
+		return;
+	}
+}
+
 get_header();
 
 $law_detail = function_exists( 'law_committee_requested_event' ) ? law_committee_requested_event() : null;
@@ -60,6 +111,15 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 				<h1 class="law-dashboard__title"><?php echo esc_html( $law_detail->post_title ); ?>
 					<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( law_calendar_status_slug( $law_status ) ); ?>"><?php echo esc_html( $law_status ); ?></span></h1>
 
+				<?php if ( 'law-draft' !== $law_detail->post_status ) : // A draft belongs to its host: neither edited nor previewed here. ?>
+					<p class="law-dashboard__event-actions">
+						<a class="button" href="<?php echo esc_url( add_query_arg( array( 'event' => $law_id, 'law_edit' => 1 ), get_permalink() ) ); ?>">Edit event details</a>
+						<?php if ( 'cpt' === law_events_source() ) : // The preview renders law_event posts, so there is nothing to offer pre-cutover. ?>
+							<a class="button second" href="<?php echo esc_url( add_query_arg( 'preview-event', $law_id, get_permalink() ) ); ?>">Preview event</a>
+						<?php endif; ?>
+					</p>
+				<?php endif; ?>
+
 				<dl class="law-dashboard__facts">
 					<dt>Reference</dt><dd><code><?php echo esc_html( (string) law_event_meta( $law_id, '_law_reference' ) ); ?></code></dd>
 					<dt>Host</dt><dd><?php
@@ -67,6 +127,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 						echo esc_html( $law_author ? $law_author->display_name . ' (' . $law_author->user_email . ')' : '—' );
 					?></dd>
 					<dt>Host organisation(s)</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_host_organisations' ) ?: '—' ); ?></dd>
+					<dt>Linked organisations</dt><dd><?php echo esc_html( implode( ', ', law_event_organisation_names( $law_id ) ) ?: '—' ); ?></dd>
 					<dt>Event type</dt><dd><?php echo esc_html( law_events_post_term_name( $law_id, 'law_event_type' ) ?: '—' ); ?></dd>
 					<dt>Sector</dt><dd><?php echo esc_html( law_event_sector_summary( $law_id ) ?: '—' ); ?></dd>
 					<dt>Slot</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_slot_label' ) ?: 'Not confirmed' ); ?></dd>
@@ -216,12 +277,6 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					</div>
 				<?php endif; ?>
 
-				<?php if ( 'law-draft' !== $law_detail->post_status ) : // Drafts are edited by their host. ?>
-					<p class="law-dashboard__edit">
-						<a class="button" href="<?php echo esc_url( add_query_arg( array( 'event' => $law_id, 'law_edit' => 1 ), get_permalink() ) ); ?>">Edit event details</a>
-					</p>
-				<?php endif; ?>
-
 				<?php get_template_part( 'parts/events/thread', null, array( 'event_id' => $law_id, 'context' => 'committee' ) ); ?>
 
 				<details class="law-dashboard__log">
@@ -261,21 +316,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 							<?php endforeach; ?>
 						</select></p>
 
-					<input type="hidden" name="law_terms_present" value="1">
-					<div class="law-form-field">
-						<span class="law-form-label">Event category</span>
-						<div class="law-choices">
-							<?php
-							$law_current_cats = law_events_post_term_names( $law_id, 'law_event_category' );
-							$law_cat_terms    = get_terms( array( 'taxonomy' => 'law_event_category', 'hide_empty' => false ) );
-							foreach ( is_wp_error( $law_cat_terms ) ? array() : $law_cat_terms as $law_term ) :
-								?>
-								<label><input type="checkbox" name="law_event_category[]" value="<?php echo esc_attr( $law_term->name ); ?>" <?php checked( in_array( $law_term->name, $law_current_cats, true ) ); ?>>
-									<?php echo esc_html( $law_term->name ); ?></label>
-							<?php endforeach; ?>
-						</div>
-					</div>
-
+					<input type="hidden" name="law_orgs_present" value="1">
 					<p class="law-form-field"><label for="law-dash-orgs">Linked organisations (sponsor highlighting)</label>
 						<select id="law-dash-orgs" name="law_organisation_ids[]" multiple size="5">
 							<?php
@@ -286,10 +327,38 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 							<?php endforeach; ?>
 						</select></p>
 
-					<?php $law_fee_override = (bool) law_event_meta( $law_id, '_law_fee_override' ); ?>
+					<?php
+					$law_fee_override = (bool) law_event_meta( $law_id, '_law_fee_override' );
+					$law_fee_locked   = law_event_fee_override_locked( $law_id );
+
+					// Read-only from approval onwards: law_event_snapshot_fee() froze the
+					// fee and the invoice was raised from that snapshot, and nothing
+					// recalculates it, so an editable control here would take a change,
+					// report success and leave the invoice untouched. A genuine
+					// post-approval fee change is a wp-admin job (the link below), where
+					// the snapshot is re-taken. The handler refuses the write too.
+					if ( $law_fee_locked ) :
+						?>
+					<div class="law-form-field">
+						<strong>Host fee override</strong><br>
+						<?php
+						if ( $law_fee_override ) {
+							echo esc_html( 'Applied: £' . number_format( (float) law_event_meta( $law_id, '_law_fee_override_amount' ), 2 ) );
+						} else {
+							echo esc_html(
+								sprintf(
+									'Not applied, so the %s tier price stands.',
+									law_event_tier_label( (string) law_event_meta( $law_id, '_law_fee_tier' ) )
+								)
+							);
+						}
+						?>
+						<br><small>The fee was snapshotted when this event was approved and the invoice raised from it, so it cannot be changed here any more. To change it, use "Full editing in wp-admin" below, then void the open invoice in Stripe and raise a new one.</small>
+					</div>
+					<?php else : ?>
 					<div class="law-form-field">
 						<div class="law-choices">
-							<label><input type="checkbox" id="law-dash-override" name="law_fee_override" value="1" <?php checked( $law_fee_override ); ?>> Override fee</label>
+							<label><input type="checkbox" id="law-dash-override" name="law_fee_override" value="1" <?php checked( $law_fee_override ); ?>> Override the host fee</label>
 						</div>
 					</div>
 
@@ -300,10 +369,13 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					// is no flash and no-JS committee members with the box already ticked
 					// still see the amount. The input is never disabled: the handler keys off
 					// isset( $_POST['law_fee_override_amount'] ) to decide whether to touch
-					// the override at all.
+					// the override at all. A ticked box with an empty amount is refused
+					// server-side rather than read as £0.00, so a blank can never waive a
+					// fee by accident.
 					?>
-					<p class="law-form-field" id="law-dash-amount-field" data-law-toggle-for="law-dash-override"<?php echo $law_fee_override ? '' : ' hidden'; ?>><label for="law-dash-amount">Override amount (£)<br><small>Enter new fee in pounds, without symbol. Leave blank for no change; enter 0 for a free event.</small></label>
+					<p class="law-form-field" id="law-dash-amount-field" data-law-toggle-for="law-dash-override"<?php echo $law_fee_override ? '' : ' hidden'; ?>><label for="law-dash-amount">New host fee (£)<br><small>Enter the agreed fee in pounds, without the symbol. Type 0 to waive the fee entirely.</small></label>
 						<input type="number" id="law-dash-amount" name="law_fee_override_amount" step="0.01" min="0" value="<?php echo esc_attr( (string) law_event_meta( $law_id, '_law_fee_override_amount' ) ); ?>"></p>
+					<?php endif; ?>
 
 					<?php
 					// Only the actions legal for the event's current status get buttons

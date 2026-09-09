@@ -63,7 +63,7 @@ back. `law_events_source()` is defined at the bottom of `_load.php`.
 Load order is set in `_load.php`: settings → post types → statuses → meta →
 countries → capabilities → fees → log → **request** → workflow → comments → unread →
 co-owners → **ics** → **bookings** →
-**test-mode** → notifications → speakers → source → submission-form → registration → committee
+**test-mode** → notifications → speakers → **speakers-dashboard** → source → submission-form → registration → committee
 → Stripe (client, service, webhook) → admin (fields, event/speaker/session
 screens, columns, emails) → migration (report, runner, page).
 
@@ -114,6 +114,18 @@ screens, columns, emails) → migration (report, runner, page).
   front-end archive of their own, `show_in_rest => false` (deliberate — nothing
   about a submitted event should reach the public REST API), and sessions
   hierarchical-by-`post_parent` under their event.
+- **Why sessions are posts and not a repeater meta field on the event.** A
+  session holds only a title, description, start and end time and its own
+  speaker rows, and it is never queried outside its parent event today, so a
+  repeater would cover current needs. The CPT is there for two reasons: the
+  4.2 calendar view (EVENTS_4.2_SPECS.md) is a day-and-time grid of
+  overlapping and parallel sessions **across** events, which is one WP_Query
+  over a CPT but a full scan of every event's serialised meta otherwise; and
+  `_law_speakers` is itself a repeater of rows, so a repeater field would mean
+  a repeater nested inside a serialised blob, which the speaker appearance
+  index in speakers.php would then have to walk. The CPT also gets the wp-admin
+  Sessions screen and list columns for free, and gives the migrator a
+  per-session `_law_gf_entry_id` to make step 4 re-runnable.
 - `law_booking` (bookings phase 1, now WAITLIST.md Part A): private, no rewrite,
   `supports => title` only, a submenu of Events like speakers/sessions, and
   `create_posts => do_not_allow` on top of the shared capability set — bookings
@@ -122,12 +134,32 @@ screens, columns, emails) → migration (report, runner, page).
   wp-admin. Event = `post_parent`, **the attendee** = `post_author` (one
   booking per attendee since 8 September 2026), status `publish` (active),
   `law-waitlisted` or `law-cancelled`.
-- `law_events_register_taxonomies()`: `law_event_type`, `law_sector` and
-  `law_event_category` on events, plus `law_year` on events and speakers (the
-  programme-year filter that keeps a 2026 event from re-filing into 2027).
+- `law_events_register_taxonomies()`: `law_event_type` and `law_sector` on
+  events, plus `law_year` on events and speakers (the programme-year filter
+  that keeps a 2026 event from re-filing into 2027).
 - `law_events_maybe_flush_rewrites()`, `law_events_seed_terms()`: one-time
-  rewrite flush and the default term seed (event types, sectors, categories,
-  the current year).
+  rewrite flush and the default term seed (event types, sectors, the current
+  year).
+- **Removed 9 September 2026: the `law_event_category` taxonomy.** It was a
+  parity rebuild of field 116 (Event category) on form 2 (Event > submit an
+  event), an administrative checkbox field with the choices LAW event, Hosted
+  event and Session-level agendas. Nothing ever read it: no template, query,
+  email or filter branched on the term, so the committee-dashboard checkboxes
+  were a control with no effect. It was equally dormant in the legacy site —
+  none of the 75 active entries of form 2 (Event > submit an event) carried a
+  value for field 116 (Event category), and field 113, the dynamic-population
+  field that the `?ec=` prepopulation mechanism targeted, no longer exists in
+  the form at all. Removed with it: the committee save in `committee.php`, the
+  sidebar checkboxes in `templates/account-dashboard.php`, the field 116
+  mapping in `migration/runner.php`, the `?ec=` first-save prepopulation in
+  `submission-form.php` and its hidden `law_ec` input in
+  `templates/account-event-form.php`, and the dead field 113 population
+  filters in `functions/gravity-forms.php`. The three terms were deleted from
+  the database (only a trashed test event was attached). If 4.2 needs a
+  programme category filter (4.2 §3.2), it should be modelled on the
+  registration states settled in 4.2 §2, not on this vocabulary. The 4.2 §3.6
+  enhanced-agenda opt-in is simply whether an event has `law_session`
+  children.
 
 ### `statuses.php`: the custom workflow statuses
 
@@ -255,14 +287,42 @@ screens, columns, emails) → migration (report, runner, page).
 - `law_event_snapshot_fee()`: freezes `_law_fee_pence` and `_law_vat` onto the
   event at approval (the number the invoice is raised for; never host-writable
   afterwards).
+- `law_event_fee_override_locked()` (9 September 2026): true once
+  `_law_approved_at` is set, i.e. once the fee has been snapshotted and the
+  invoice raised from that snapshot. Nothing recalculated the fee afterwards,
+  so the committee dashboard's override control used to accept a
+  post-approval change, report success and leave the snapshot, the invoice and
+  the `{fee}` emails on the old figure. The control now renders read-only from
+  approval onwards (with the current override stated) and
+  `law_committee_action_handler()` refuses and logs the write, so wp-admin is
+  the single post-approval fee route.
+- `law_event_resnapshot_fee()` (9 September 2026): re-freezes the snapshot
+  after a wp-admin fee edit on an approved event, logged as
+  `fee_resnapshot`, so that route actually works. It returns a `WP_Error`
+  (`law_fee_settled`) when the payment status is already `paid` or `refunded`:
+  a settled fee is a bookkeeping record, and rewriting the snapshot under it
+  would only make the webhook's `invoice.paid` reconciliation lie. Stripe is
+  never touched automatically; the screen tells the admin to void the open
+  invoice and raise a new one.
 - `law_events_format_pence()`: "£1,200.00" formatting.
+
+**The override is the HOST fee**, what a host firm pays LAW to hold an event,
+never an attendee price: attendee places are free and un-ticketed
+(EVENTS_BOOKINGS.md §1). The control is labelled "Override the host fee" and
+its amount "New host fee (£)" on both the dashboard and wp-admin. A ticked box
+with an **empty** amount used to sanitise to £0.00, which waives the fee, skips
+the invoice and auto-confirms the event; both save paths now refuse it (a
+deliberately typed 0 still waives the fee, and the help text says so).
 
 ### `log.php`: the WooCommerce-order-notes-style activity log
 
 - `law_event_log()`: appends one immutable log line to an event as a WordPress
   comment of type `law_event_log`, with a structured context array (action,
   source, actor, and per-event extras). Every status change, email sent (with
-  recipients), payment change, private note and co-owner action is logged.
+  recipients), payment change, slot change, assignee change, fee-override
+  change, linked-organisation change (`action => organisations`, with the old
+  and new ID arrays in the context and the names in the message), private note
+  and co-owner action is logged.
 - `law_event_log_entries()`, `law_event_log_context()`: read the log; the
   context is stored as comment meta.
 - Two filters exclude the `law_event_log` (and the `law_event_comment` thread
@@ -356,9 +416,13 @@ screens, columns, emails) → migration (report, runner, page).
   answers JSON on every path (event-form.js posts it); without, the classic
   redirect-with-notice flow (`event-withdrawn` / `withdraw-failed`).
 - `law_event_confirm_side_effects()`, `law_event_set_payment_status()`,
-  `law_event_log_fee_change()`, `law_event_maybe_notify_assignee()`: the
-  confirm/publish path, the logged payment-status setter, fee-override logging
-  and the assignee-change email.
+  `law_event_log_fee_change()`, `law_event_log_organisation_change()`,
+  `law_event_maybe_notify_assignee()`: the confirm/publish path, the logged
+  payment-status setter, fee-override and linked-organisation logging, and the
+  assignee-change email. Both loggers take the value read immediately **before**
+  the write and return early when nothing changed — the wp-admin screen writes
+  those metas on every save, so the before/after guard is the only thing
+  keeping the log free of no-op lines.
 
 ### `comments.php`: the host/committee thread
 
@@ -596,9 +660,9 @@ block the queue. Joining is refused while places are free.
   also called by migration step 10) copies the parent's `_members_access_role`
   rows onto the child when it has none, because a page the pages step creates
   carries no restriction and Members reads that as public. The template also
-  checks `law_user_is_committee()` in code. Linked as "Bookings dashboard" in
+  checks `law_user_is_committee()` in code. Linked as "Manage Bookings" in
   the header account dropdown for committee (`law_account_paths()` key
-  `bookings`), after "Events dashboard".
+  `bookings`), after "Manage Events".
 - **Filters** (`law_bookings_dashboard_filters()`, from `$_GET` or an explicit
   array): `law_kw` keyword over attendee name, email, organisation, job title,
   the booking number ("#12" or "12") and the event title; `law_event` (the
@@ -690,7 +754,7 @@ block the queue. Joining is refused while places are free.
 
 ### `notifications.php`: the email registry
 
-- `law_events_email_registry()`: all 49 module emails as definitions (slug →
+- `law_events_email_registry()`: all 50 module emails as definitions (slug →
   recipients, subject, body with `{placeholders}`, trigger, active flag).
   - **Host**: `user_submitted`, `user_sent_back`, `user_payment_due`,
     `user_confirmed_paid`, `user_confirmed_free`, `user_rejected`,
@@ -720,9 +784,12 @@ block the queue. Joining is refused while places are free.
     `user_booking_registered` / `_invited` (registered on their behalf); the
     per-context cancellation family `user_booking_rejected` /
     `user_booking_cancelled_by_booker` / `user_booking_cancelled_self` /
-    `user_booking_event_cancelled`; `user_welcome_registered` (registration;
-    event-less, so unlogged) and `host_capacity_warning` (to `host`, one-shot
-    latch).
+    `user_booking_event_cancelled`; the registration welcome pair
+    `user_welcome_registered` (attendee copy) / `user_welcome_registered_host`
+    (event host or sponsor: leads with `{submit_link}` and asks for dietary and
+    accessibility requirements only if they also book a place), chosen by
+    `law_registration_welcome_slug()` and both event-less, so unlogged; and
+    `host_capacity_warning` (to `host`, one-shot latch).
   - **Waitlist** (WAITLIST.md §B4): `user_waitlist_joined` (the joiner, with
     the party), `user_waitlist_attendee_invited` / `_added` (a colleague put on
     the queue; no .ics, since they hold no place yet),
@@ -737,7 +804,10 @@ block the queue. Joining is refused while places are free.
 - `law_events_email()`: the registry entry with any admin override merged in
   (overrides live in one option, editable on the Emails screen).
 - `law_events_email_placeholders()`: builds the merge values for an event
-  (title, reference, host, fee, dashboard/committee/invoice links, etc.).
+  (title, reference, host, fee, dashboard/committee/invoice links, etc.). The
+  account links `{bookings_link}`, `{profile_link}` and `{submit_link}` (via
+  `law_account_url( 'submit' )`) are set unconditionally, so the event-less
+  registration emails resolve them.
 - `law_events_email_recipients()`, `law_events_send()`: resolve recipients and
   send, logging the send (with recipients, and the test-mode address when one
   is in force) to the activity log. A £0 event splits to the "confirmed, free"
@@ -784,8 +854,22 @@ block the queue. Joining is refused while places are free.
   "other" and the legacy `'gf'` render branch in `functions/calendar.php` was
   left without it (it is deleted post-cutover); the role shows once the source
   is `cpt`, with the migration carrying the values entered on the live form.
-- `law_speakers_confirmed_maps()` (and its `law_speakers_confirmed_event_map()`
-  wrapper): the one pass over published events' rows, memoised — the archive
+- `law_speakers_event_maps( $statuses, $limit, $reset )` (9 September 2026):
+  the one pass over a set of events' speaker rows, memoised per status set —
+  'events' (speaker_id => event IDs) plus 'appearances' (speaker_id =>
+  event_id => row). `law_speakers_confirmed_maps()` is now a thin wrapper on it
+  for `publish` and the 500-event cap, unchanged in signature and shape for
+  every existing caller; `law_speakers_confirmed_event_map()` still wraps that.
+  The extraction exists because the Manage Speakers dashboard needs **every**
+  status (a speaker record exists from the first draft save), and a second
+  near-identical pass was the alternative. `$reset` clears the whole memo, not
+  just the key asked for — whatever invalidated one status set invalidated the
+  rest — and `law_speakers_flush_maps()` is the same flush by name, called by
+  the dashboard's save handler and by tests that create events mid-request.
+  `law_speaker_appearances()` and `law_speaker_first_appearance()` each take an
+  optional `$statuses`, defaulting to publish-only, which is what the archive
+  and the profile mean by an appearance.
+- The published-events pass is still the archive
   source (one profile per speaker referenced by a Confirmed event; visibility
   derived from events, not status) plus each speaker's appearance row per event.
 - `law_speaker_appearances()` (first-submitted event first, by creation date
@@ -830,6 +914,159 @@ block the queue. Joining is refused while places are free.
 - `law_event_session_ids()`, `law_event_session_rows()`: an event's sessions
   (child `law_session` posts) and their rows.
 
+### `speakers-dashboard.php`: the committee's Manage Speakers dashboard (9 September 2026)
+
+- **Why**: speaker details are stored per appearance (see `speakers.php`
+  above), which is right for the listings and was wrong for maintenance.
+  Correcting a name, a photo or a biography meant opening every event that
+  referenced the person, one at a time, in the host form or in wp-admin, and
+  nothing anywhere answered "where does this speaker appear, and is their data
+  right on each one?". Denis asked for the screen on 9 September 2026.
+- **Page**: `/account/dashboard/speakers/`, the second child of the events
+  dashboard, template `templates/account-speakers-dashboard.php` ("Speakers
+  dashboard (committee)"), in `law_migration_page_map()` and
+  `law_setup_account_pages()` (CPT mode). Its Members restriction is copied
+  from the parent by `law_setup_speakers_dashboard_access()`, a wrapper over the
+  **generalised** `law_setup_dashboard_child_access( $path )` — the bookings
+  helper hardcoded one path and there are now two children, so the body moved
+  and `law_setup_bookings_dashboard_access()` became the other wrapper.
+- **Deploying it needs no migration run.** `/wp-admin/?setup-account-pages`
+  now **creates** a page the module owns instead of only reporting it MISSING
+  (`law_setup_create_account_page()`, 9 September 2026), then assigns the
+  template and copies the restriction in the same pass — so a page added to the
+  module after cutover takes one URL visit. The allow-list is
+  `law_migration_page_map()`, which is also where the title comes from, so the
+  trigger and migration step 10 cannot disagree; a path that map does not name
+  (the Login page, say) is still only reported, because a page deliberately
+  absent from an environment must not be conjured up by a setup trigger, and a
+  path whose parent is missing refuses rather than orphaning a page. This
+  existed because step 10 was otherwise the only route, and a real step refuses
+  without a fresh snapshot AND a preflight that passed in the last 24 hours —
+  a heavy gate for creating one page, and the preflight reads legacy Gravity
+  Forms data that may be gone by then.
+  Committee only: the nav item, the template, the AJAX partial, the save
+  handler and the export each check `law_user_is_committee()`. Linked as
+  "Manage Speakers" in the header account dropdown after "Manage Bookings"
+  (`law_account_paths()` key `speakers`; HeaderNavTest pins the order).
+- **Two views on one page**, the module's established idiom: the list by
+  default, the editor at `?law_speaker=<id>`
+  (`law_speakers_dashboard_requested_speaker()` resolves it and refuses an ID
+  that is not a `law_speaker`). `law_speakers_dashboard_url( $speaker_id = 0 )`
+  builds both.
+- **Every status is an appearance here.** A `law_speaker` post exists from the
+  first *draft* save of an event — `law_speaker_upsert()` runs inside
+  `law_events_form_save_speakers()` on every save, not on approval — and an
+  appearance is most worth correcting before the event is confirmed. So the
+  dashboard reads `law_speakers_dashboard_statuses()`
+  (= `law_event_all_status_keys()`), where the public archive reads `publish`
+  only. That is what drove the `speakers.php` extraction described above
+  (`law_speakers_event_maps()`), rather than a second near-identical pass.
+- **Filters** (`law_speakers_dashboard_filters()`, from `$_GET` or an explicit
+  array): `law_kw` over the name, email, website and every appearance's
+  organisation, job title and event title; `law_event` (the picker lists only
+  events carrying a speaker row, `law_speakers_dashboard_events()`, ordered by
+  start, with the status appended for anything but a Confirmed event since
+  drafts show up here); `law_year` (rendered only when more than one term
+  exists, and matched against the **event's** term, not the speaker's). The bar
+  is the bookings dashboard's markup driven by calendar-filters.js over
+  `&law_partial=1` (`law_speakers_dashboard_maybe_render_partial()`, Members +
+  committee re-checked); no checkbox controls, because that script reads a
+  field's value regardless of its checked state.
+- **Rows** (`law_speakers_dashboard_rows()`): one row per `law_speaker` post —
+  photo, name, email, website, the headline organisation and job title from
+  `law_speaker_first_appearance()` (the archive card's own fall-through, so the
+  list reads like the thing it maintains), the appearance count and the
+  appearance list — plus a summary line ("N speakers, N event appearances").
+  Screen cap `LAW_SPEAKERS_DASHBOARD_SCREEN_CAP` (1,000; a notice says so when
+  hit) and the keyword applied in PHP over the fetched set, never as a LIKE over
+  serialised meta. `law_speakers_dashboard_appearances()` is the one decorated
+  appearance list the list, the editor and the export all read, so the three
+  cannot disagree about where a speaker appears.
+- **The editor** (`parts/events/speaker-manage.php`): the identity fields once
+  at the top (full name, email, website), then one fieldset per appearance with
+  the event's status badge, Preview and Edit event links, and Role,
+  Organisation, Job title, Photo and Biography — then **one** "Save changes"
+  button for the lot (Denis chose a single button over per-event ones). The
+  split is the point and the copy says so: identity is on the speaker post, so
+  it changes every event at once; everything under an event heading changes
+  that event only. A draft is offered no Preview or Edit link, because the
+  committee dashboard neither lists nor previews one; its details are still
+  editable here.
+- **The save handler** `law_speakers_dashboard_save_handler()` (on
+  `admin_post_law_speaker_manage`, `nopriv` → `law_events_nopriv_json`), on
+  `law_events_guard_post()` with its own `speaker_manage` rate surface (30 per
+  10 minutes), so a committee member tidying a speaker who appears a dozen
+  times does not spend the event-submission budget. In order: committee check,
+  resolve the speaker, validate (a name is required; an email must parse and
+  must not already belong to a **different** `law_speaker` —
+  `law_speaker_find_existing()` — because silently merging two records is not
+  something a save button should be able to do; photos through the shared
+  `law_events_validate_photos()`, whose error keys become
+  `speaker_photo_<event_id>`), then write. Identity is written **directly**
+  (`wp_update_post` + `law_event_update_meta`), deliberately not through
+  `law_speaker_upsert()`, which only fills gaps and so could never clear a wrong
+  website; `post_name` is left alone so an existing `/speakers/<slug>/` link
+  keeps resolving after a name correction. Each appearance block is written only
+  to an event the speaker genuinely appears at (anything else is dropped, so a
+  forged `event_id` writes nothing) via
+  `law_speakers_dashboard_write_row( $post_id, $speaker_id, $values )`, which
+  rewrites one row inside `_law_speakers` and leaves every other row and every
+  `sort` position alone, returning the fields that actually changed. The photo
+  rule matches the host form: a fresh upload wins, then the "Remove photo" tick,
+  then whatever the row holds — the posted `photo_id` is never trusted. Session
+  rows are **mirrored**, because `law_events_form_save_sessions()` stamps them
+  from the event row and writing only the event row would leave the session
+  panels stale; the known cost is that a per-session role override set in
+  wp-admin is overwritten, exactly as a host save already overwrites it. Every
+  event whose row changed gets a `speaker_appearance_updated` activity-log line
+  naming the fields. A refusal goes to the transient state
+  (`law_speakers_dashboard_state()`, read once and deleted) and back with
+  `law_speaker_error=1`; success redirects with `law_notice=speaker-saved`. Both
+  paths run through `law_events_respond()`, so a `law_ajax=1` JSON branch exists
+  on every path — but the primary flow is the plain POST-redirect-notice one the
+  two sibling edit forms use, because this is a multipart form save, not a
+  one-click action.
+- **Export**: `law_speakers_dashboard_export` (GET, `format=csv|xlsx|json`,
+  nonce of the same name, `law_user_is_committee()`, the committee-export
+  handler's shape), uncapped but rate limited on its own `speakers_export`
+  surface at 40 per 600s (the security review's note: the export is the one
+  place that asks for an unbounded pass over every speaker, so a stolen
+  committee session should not be able to loop it; the budget is deliberately
+  generous, since one visit legitimately spends three requests and the
+  committee re-exports as they narrow the filters). It is **one row per
+  appearance** — Speaker ID, Name,
+  Email, Website, Event, Event date, Reference, Event status, Role,
+  Organisation, Job title, Biography — because a row per speaker would have to
+  pick one event's answer for fields that are per event. A speaker with no
+  appearance yet still gets a row with the event columns blank. The title line
+  records the filters.
+- **Assets**: calendar.css + calendar-filters.js (enqueue.php) and
+  event-form.css/js (submission-form.php) gate on the template alongside the
+  bookings dashboard; the table and editor styles are a
+  `.law-speakers-table` / `.law-speaker-appearance` block at the foot of
+  `assets/css/event-form.css`. pdfmake loads footer-side for committee only.
+- **Out of scope, deliberately**: creating a speaker here, deleting one, and
+  merging duplicates. Merging needs its own rules for the appearance rows on
+  both sides, and duplicates are the predictable next request now that the
+  whole list is visible.
+- **Security review** (9 September 2026, security-specialist): no critical or
+  high findings in the new code. The two notes acted on are the export rate
+  limit above and an explicit `is_array()` check on the `_FILES` batch shape in
+  the save loop, matching the guard already in `law_events_validate_photos()`.
+  One reported "XLSX formula injection" finding was **rejected on inspection**:
+  `law_events_xlsx_sheet_xml()` writes every non-numeric cell as
+  `t="inlineStr"`, a typed string, and a formula in XLSX lives in a `<f>`
+  element the writer never emits — so an `=`-leading value renders as literal
+  text. That is why the CSV path needs `law_events_csv_guard()` (a CSV carries
+  no types, so the reader infers a formula) and the XLSX path does not; the
+  function's own comment says so. Prefixing XLSX cells with an apostrophe would
+  corrupt legitimate data rather than harden anything.
+- Tests: `tests/SpeakersDashboardTest.php` (11) — rows and the
+  first-appearance headline, the keyword / event / year filters, filter
+  normalisation, the one-row-per-appearance export and the no-appearance row,
+  the event picker, the single-row writer (order preserved, other rows
+  untouched, a forged event ID refused) and the `?law_speaker=` resolver.
+
 ### `source.php`: the CPT ↔ front-end bridge and legacy continuity
 
 - `law_events_cpt_mapped_events()`, `law_events_map_post()`: turn `law_event`
@@ -842,6 +1079,16 @@ block the queue. Joining is refused while places are free.
 - `law_event_sector_summary()`: the "Sector: note; Sector" one-liner (the
   "please specify" answers inline after their sector, mirroring the form's
   conditional fields). Used by the dashboard detail view and the exports.
+- `law_events_organisation_titles()`, `law_event_organisation_names()`: the
+  ID => title map of every `organisation` post (publish **and** private, matching
+  `law_calendar_sponsor_organisation_ids()`), and an event's linked
+  organisation names in the stored order. One query for the whole map rather
+  than a `get_post()` per ID, so the export stays free of N+1 lookups; an ID
+  with no matching post renders as `#<id>` so a stale link stays visible.
+  Both caches are keyed on `wp_cache_get_last_changed( 'posts' )` rather than a
+  plain static, so a request that creates or renames an organisation does not
+  read a stale map. Used by the dashboard detail view, the export and the
+  activity log.
 - `law_events_post_is_sponsored()`: the "Sponsored" flag (sponsor tier, a
   sponsor-category organisation, or a repeat approved/confirmed host this year)
   — parity with the legacy calendar logic.
@@ -858,9 +1105,17 @@ block the queue. Joining is refused while places are free.
   legacy URLs and Stripe webhooks keyed by entry ID keep resolving.
 - A `template_include` filter routes single `law_event` posts to
   `templates/event-single.php`; two `template_redirect` filters 301 legacy
-  `?event=<entry id>` and `/speakers/<entry id>/` URLs to the new permalinks
-  (public programme only, so committee/dashboard `?event=<post id>` links are
-  never hijacked).
+  `?event=<entry id>` and `/speakers/<entry id>/` URLs to the new permalinks.
+  **Both are scoped to the public page the legacy links pointed at** — the
+  programme (`templates/calendar.php`) and the Speakers page
+  (`templates/speakers.php`) — because entry IDs and post IDs overlap
+  numerically, so an unscoped redirect hijacks an internal link to a different
+  record. The `?event=` branch was scoped from the start; the speaker branch was
+  not, and `law_speaker` is a **registered public query var**, so it fired on
+  any page carrying it. Found 9 September 2026 when Manage Speakers began
+  addressing a speaker as `?law_speaker=<post ID>`: every Edit link 301'd to
+  some other speaker's public profile. Scoped the same way as the events
+  branch.
 - **The pre-launch Members gate** (a `template_redirect` action, priority 4):
   single event and speaker pages are only as public as the Programme page
   (page 622, Programme, Members-restricted to admin/editor/committee until
@@ -885,7 +1140,9 @@ block the queue. Joining is refused while places are free.
   allocations, contacts and co-owners stay editable. **Committee members
   bypass every post-approval lock except `fee_tier` and `invoice`** (Denis,
   7 September 2026): fee and invoice changes stay in the dashboard override
-  control and wp-admin. Pre-approval statuses are unlocked for everyone. The
+  control and wp-admin — and, from 9 September 2026, the dashboard control is
+  read-only once the event is approved (see `fees.php`), which leaves wp-admin
+  as the only post-approval fee route. Pre-approval statuses are unlocked for everyone. The
   user defaults to the current user, so the template render and the save-side
   enforcement always agree.
 - `law_events_form_save()`: validation + persistence, with the required set
@@ -896,9 +1153,7 @@ block the queue. Joining is refused while places are free.
   empty title as absent). Co-owner and contact rows go straight to the schema
   sanitiser. Two behaviours worth knowing: ticket allocations are validated
   against `law_events_venue_capacity_bands()` (on an approved event against the
-  *stored* band, since the locked select posts nothing), and a `?ec=` value
-  carried in a hidden field applies a matching `law_event_category` term **on
-  first save only** — the rebuild of the dead field 113/116 mechanism.
+  *stored* band, since the locked select posts nothing).
 - `law_events_set_terms_by_name()`: sets taxonomy terms by name and **creates
   none** — an unknown name is dropped, never invented.
 - `law_events_validate_photos()`, `law_events_sideload_upload()`: server-side
@@ -910,7 +1165,29 @@ block the queue. Joining is refused while places are free.
   photo already on the row for the same speaker (the posted `photo_id` is a
   display echo, never trusted). Session rows copy the matched event row's
   details, role included (the host form's session picker is a list of names,
-  so a per-session role is a wp-admin-only override). The Speakers fieldset
+  so a per-session role is a wp-admin-only override).
+  `law_events_form_save_sessions()` **upserts** its `law_session` children
+  rather than wiping and rebuilding them: the sessions repeater carries each
+  row's post ID in a hidden `sessions[i][id]`, an edited row is updated in
+  place and only rows the host actually removed are deleted. A posted ID is
+  honoured only when this event already owns it and no earlier row has claimed
+  it, so a forged ID cannot re-parent or hijack another event's session;
+  anything else inserts. A row that named an existing session is added to the
+  keep list **before** the write, not after it succeeds, so a failed
+  `wp_update_post()` costs the host their edit and never the session to the
+  reconcile sweep; the failure is written to the activity log
+  (`session_save_failed`) rather than swallowed. The saver also writes
+  `menu_order` from the host's row order, which `law_event_session_ids()` uses
+  as the tie-break after start time: post IDs used to carry that order for free
+  because every save re-created them, and cannot now that a session keeps its
+  ID. Sessions saved before this all hold `menu_order` 0 and fall through to
+  the ID order they had. Until 9 September 2026 the saver deleted every session
+  post and re-inserted the lot on each save, which churned session IDs and
+  destroyed `_law_gf_entry_id` on migrated sessions — after one host edit, a
+  re-run of migration step 4 (sessions) would have lost its "already migrated"
+  check and duplicated them. Both `id` and `photo_id` are excluded from the
+  repeater's "has this row been started?" test, or clearing a row's fields to
+  delete it would fail validation instead. The Speakers fieldset
   (`parts/events/event-form-fields.php`) has a Role select between Name and
   Email, the live form 8 layout; Speaker is preselected, the field is not
   required, and the neighbouring label is now "Job title" (it read "Job title
@@ -1004,9 +1281,27 @@ block the queue. Joining is refused while places are free.
   nonce + `law_user_is_committee()`, then the approve / send-back / reject /
   cancel / assign / set-slot / mark-paid actions, each routed through the
   workflow engine and logged, plus the fee override, event categories, linked
-  organisations and private notes. `law_event_apply_slot_label()` writes the
-  confirmed slot. A `law_terms_present` sentinel distinguishes "cleared" from
+  organisations and private notes. **The host fee override is validated before
+  any write** (9 September 2026): a ticked box with an empty amount is refused
+  rather than read as £0.00, and a change is refused outright once
+  `law_event_fee_override_locked()` is true (only reachable from a hand-made
+  request, since the control renders read-only then) and logged as a refusal.
+  Because the check runs first, a refusal leaves the event untouched and the
+  workflow action further down never runs.
+  `law_committee_refuse()` is the shared refusal tail all three of the
+  handler's dead ends use: JSON for the modal callers, transient +
+  `law_committee_take_error()` for a plain submit.
+  `law_event_apply_slot_label()` writes the confirmed slot. A `law_terms_present` sentinel distinguishes "cleared" from
   "not on the form" for the checkbox and multi-select controls.
+  **Linked organisations** (`_law_organisation_ids`, guarded by the
+  `law_orgs_present` sentinel) are logged via
+  `law_event_log_organisation_change()` from both this handler and the
+  wp-admin screen (9 September 2026): the field is quiet, but a
+  sponsor-category organisation is one of the three routes to the public
+  "Sponsored" badge, so a change to it has to leave a trail like slot,
+  assignee and fee changes already do. The detail view also renders them
+  read-only as a "Linked organisations" row under "Host organisation(s)",
+  because the only previous way to see them was to scroll the multi-select.
   **The action is whitelisted** against `law_event_ui_actions()` (`approve`,
   `send_back`, `reject`, `mark_paid`, `cancel`); anything else is logged as a
   refused action and bounced with a dashboard error. An empty action is the
@@ -1041,8 +1336,13 @@ block the queue. Joining is refused while places are free.
   page, added 7 September 2026): full front-end editing of an event's
   details, restoring the parity the legacy GravityView 419 (Events
   (committee - all)) edit form provided. The detail view's "Edit event
-  details" button (after the Invoice details block, before the thread; not
-  offered on drafts) swaps the detail panel for
+  details" button (directly under the event title since 9 September 2026,
+  paired with "Preview event" in a `.law-dashboard__event-actions` flex row;
+  it used to sit at the foot of the cell, after the Invoice details block and
+  above the thread, where it read as part of the thread and rendered full
+  width, because `.button` is `width: 100%` in `app.css` and `style.css` only
+  resets that inside a `<form>`; not offered on drafts, which their host
+  edits) swaps the detail panel for
   `parts/events/committee-event-form.php` — white background, a "< Back to
   the event" link, the shared fieldsets with committee locks (everything
   editable except fees/invoice, see `submission-form.php` above), a single
@@ -1051,6 +1351,74 @@ block the queue. Joining is refused while places are free.
   mechanism). It takes the post lock exactly like the host form; the
   read-only detail view never does. The sidebar's "Full editing in
   wp-admin" link stays — wp-admin remains the fee/invoice edit route.
+- **The committee preview** (`?preview-event=<id>` on the dashboard page,
+  added 9 September 2026): the detail view's "Preview event" button renders
+  the attendee-facing single event view for an event that is not published
+  yet, so the committee can see what it will look like before confirming it.
+  It reuses `parts/calendar-body.php` — the same renderer the programme and
+  the single event permalink use — and the branch sits **before**
+  `get_header()` in `templates/account-dashboard.php`, because that partial
+  brings its own header and footer (exactly as
+  `templates/calendar-committee.php` does). Two things differ from the public
+  render, and they are the two caller variables the partial gained for this:
+  the event is resolved here as `law_events_cpt_hydrate(
+  law_events_map_post( $id, array() ) )` and handed in as
+  `$law_cal_event`, because the partial's own resolver
+  (`law_calendar_event_by_id()`) applies `law_calendar_public_statuses()`
+  anywhere but the committee calendar template and an unconfirmed event would
+  come back `null`; and `$law_cal_back` points both ways back off the view at
+  `?event=<id>` labelled "Back to event", instead of the programme.
+  `$law_cal_show_status` is true, so the status pill stays on the preview and
+  a Proposed event cannot be mistaken for a live one. Gated on
+  `law_user_is_committee()` in code as well as by the page's Members
+  restriction, and on `'cpt' === law_events_source()`, since it renders
+  `law_event` posts; anything that fails falls through to the normal dashboard,
+  which already refuses non-committee users. `array()` is deliberately not
+  `array( '*' )`: it allows every status **except** `law-draft`, because a
+  draft is owner-only unsubmitted host data — the same reasoning behind
+  `law_committee_events()` refusing an explicit `law_status=law-draft` — so a
+  draft id falls through, and the detail view offers no Preview button on a
+  draft, exactly as it offers no Edit button. It needs no new assets:
+  `calendar.css`, `event-form.css` and `law_modal_enqueue()` (for the speaker
+  "Read full bio" dialogs) already gate on this template.
+  Note that `/calendar-committee/?event=<id>` has always rendered unpublished
+  events for the committee through the same partial; the dashboard route
+  exists for the back link that returns to the detail view.
+- **The preview's booking control is rendered inert, not omitted** (Denis,
+  9 September 2026). `law_booking_render_action()` returns early for any event
+  that is not `publish`, so the first cut of the preview showed no availability
+  row and no Register button at all — the facts box fell back to a "Places
+  remaining" grid cell and the footer row an attendee will see was simply
+  missing, which made the preview misrepresent the finished page's layout. The
+  control now takes a `$preview` flag (threaded
+  `templates/account-dashboard.php` → `$law_cal_preview` in
+  `parts/calendar-body.php` → the `preview` arg of
+  `parts/calendar-event-details.php`): it skips the `publish` gate, the
+  redirect notices and the viewer's own booking states (a preview answers
+  "what will an attendee see", not "what do I see"), and renders the same four
+  availability states with the same wording — "Bookings open soon", "Bookings
+  for this event have closed.", "This event is fully booked." and "N places
+  left". There is deliberately **one** state machine: the preview reuses those
+  branches rather than restating them. `law_booking_render_opener()`'s
+  `$preview` branch prints
+  `<button type="button" class="button orange" disabled aria-disabled="true">`
+  instead of the anchor: a disabled `<button>` is inert by pointer, keyboard,
+  assistive tech and form submission, where an `<a>` carrying only
+  `aria-disabled` would still follow its `href` on Enter. It carries no `href`
+  and no `data-law-modal-open`, and neither dialog is deferred to `wp_footer`,
+  so the preview also loads no `booking-form.js` — which is why
+  `law_booking_is_event_view()` returns false for it. `event-form.css`'s
+  `.law-cal .button[disabled]` rule gained `pointer-events: none` so the dead
+  orange button cannot repaint on hover whichever way the cascade race with
+  `calendar.css`'s `.law-cal .button[aria-disabled="true"]` falls (the two tie
+  on specificity and their load order is not fixed).
+- **`law_booking_is_event_view()` widened** (same round): it now also names
+  `templates/calendar-committee.php` with `?event=`. It used to name only the
+  `law_event` permalink and `templates/calendar.php`, so the committee
+  programme's single event view rendered the Register control with neither
+  `law-modal` nor `booking-form.js` behind it and without `event-form.css` for
+  the modal form. Its one caller is the enqueue closure in the same file, so
+  the change affects asset loading and nothing else.
 
 ### `export.php`: the dashboard exports (CSV / Excel / PDF)
 
@@ -1068,7 +1436,9 @@ event status by the rebuild) plus "Reference".
   the users cache once (`cache_users()`) for the host + assignee lookups.
   Columns: ID, Reference, Title, Name, Email, Committee assignee, Preferred
   date & time slots, Confirmed slot, Event status, Payment status, Submitted
-  (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Event fee,
+  (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Linked
+  organisations (`law_event_organisation_names()`, `; `-joined), Sponsored
+  (`law_events_post_is_sponsored()`, `Yes` or blank), Event fee,
   Discounted fee, Venue capacity, Tickets available, Venue. The fee column
   reads the `_law_fee_pence` approval snapshot but falls back to
   `law_event_calculate_fee_pence()` when it is not set yet, so pre-approval
@@ -1193,6 +1563,15 @@ event status by the rebuild) plus "Reference".
   activity log. `law_event_admin_save()` (on `save_post_law_event`, nonce +
   cap + reentrancy guard) writes the meta, applies the slot via the shared
   helper, and routes committee actions through the workflow engine.
+  The fee override flag and its amount are written **as a pair, and only when
+  the fee box was on the form** (9 September 2026): the blank-means-£0.00 trap
+  is refused with a notice, and a fee box hidden by Screen Options can no
+  longer clear the override flag by omission. When the fee inputs change on an
+  already-approved event the save calls `law_event_resnapshot_fee()` and
+  reports the new snapshot plus the void-and-reissue step, so this screen is a
+  working post-approval fee route rather than a form whose values nothing
+  reads. `law_event_admin_notice()` queues these one-shot notices instead of
+  overwriting, since one Update can have two things to say.
   `law_events_rows_from_post()` reads the repeater rows, sanitising per key
   rather than mapping one function over the row: a speaker's `bio` takes
   `sanitize_textarea_field()`, since `sanitize_text_field()` would collapse its
@@ -1343,9 +1722,12 @@ These predate the rebuild and now branch on `law_events_source()`.
   gated event in the query (see `source.php` above).
 - **Templates**: `register.php` (custom registration), `account-profile.php`
   (profile), `account-event-form.php` (submit/edit), `account-events.php`
-  (My events + thread), `account-dashboard.php` (committee review queue),
+  (My events + thread), `account-dashboard.php` (committee review queue, the detail view, the
+  `?event=<id>&law_edit=1` edit form and the `?preview-event=<id>` preview),
   `account-bookings-dashboard.php` (the committee's cross-event bookings
   table, see `bookings-dashboard.php` above),
+  `account-speakers-dashboard.php` (the committee's Manage Speakers list and
+  its `?law_speaker=<id>` editor, see `speakers-dashboard.php` above),
   `event-single.php` (single event), `calendar.php` / `calendar-committee.php`
   (programme), `speakers.php` (the speakers archive, page template "Speakers",
   page 658 Speakers) and `speaker.php` (a single profile — no "Template Name",
@@ -1369,7 +1751,14 @@ These predate the rebuild and now branch on `law_events_source()`.
   `'confirm' => false` renders an informational dialog with no submit button —
   what the dashboard's script-opened success dialog uses.
 - **Calendar parts** (`parts/`): `calendar-body.php` (the shared list/single
-  view), `calendar-events.php`, `calendar-filters.php` and
+  view; four optional caller variables set before the `require` —
+  `$law_cal_show_status` for committee mode, `$law_cal_hero_title` for the
+  list hero, and, added 9 September 2026 for the committee preview,
+  `$law_cal_event` for a pre-resolved, already-hydrated event that bypasses
+  the public-status resolver and `$law_cal_back` for a back destination,
+  applied to **both** ways back off the single event view — the chevron link
+  at the top and the button at the foot of the article — so the two cannot
+  drift), `calendar-events.php`, `calendar-filters.php` and
   `calendar-event-details.php` — the single event view's facts box, rendered
   inside the hero below the title via `hero-title.php`'s `after_title` arg. It
   holds its own hand-drawn line-icon set (the theme has no icon library) and
@@ -1587,6 +1976,26 @@ rollback must stay alive.
 
 ## Change history
 
+Updated 9 September 2026 for **Manage Speakers**
+(`/account/dashboard/speakers/`, `functions/events/speakers-dashboard.php`,
+`templates/account-speakers-dashboard.php`,
+`parts/events/speakers-dashboard-list.php`,
+`parts/events/speaker-manage.php`): the committee's third front-end dashboard —
+every speaker record in one filterable, exportable table, and per speaker an
+editor listing each event they appear at with that event's role, organisation,
+job title, photo and biography, saved by one "Save changes" button. Two shared
+mechanisms were generalised rather than copied: `law_speakers_event_maps()` came
+out of `law_speakers_confirmed_maps()` so the same pass can walk every event
+status (a `law_speaker` post exists from the first draft save, not from
+approval — the brief assumed otherwise), and
+`law_setup_bookings_dashboard_access()` became
+`law_setup_dashboard_child_access( $path )` with two named wrappers, now that
+the events dashboard has two Members-restricted children. The build also fixed
+a live bug it walked straight into: the legacy `/speakers/<entry ID>/` redirect
+in `source.php` was not scoped to the Speakers page, and `law_speaker` is a
+registered public query var, so it 301'd every `?law_speaker=<post ID>` link on
+any page to a different speaker's profile.
+
 Updated 8 September 2026, second round, for the **review gates** on the
 per-attendee rebuild: a security review (one medium, three low, all fixed), a
 Playwright pass, three cold conformance audits and three specialist reviews
@@ -1703,12 +2112,46 @@ line).
 Updated 8 September 2026 for the **committee bookings round** (EVENTS_BOOKINGS.md
 §7.6 and §2): the cross-event **Bookings dashboard** page
 (`/account/dashboard/bookings/`, `templates/account-bookings-dashboard.php`,
-`functions/events/bookings-dashboard.php`, "Bookings dashboard" in the header
+`functions/events/bookings-dashboard.php`, "Manage Bookings" in the header
 account dropdown for committee), **registering an attendee on their behalf**
 from the per-event bookings list (`law_booking_register_by_manager()`, handler
 `law_booking_register_attendee`, a committee-only **press pass** flag on the
 row, two new emails — 39 total), the **Country** column on the per-event list
 and export, and the booking control's button renamed **Register** (was "Book
 now", per 4.2 spec §3.4's vocabulary for free events).
+Updated 9 September 2026 for the **committee event preview**: a new
+`?preview-event=<id>` route on the dashboard page renders the attendee-facing
+single event view for an unpublished event, reusing `parts/calendar-body.php`
+via its two new caller variables `$law_cal_event` and `$law_cal_back` (the
+latter retargeting both ways back off that view, so "Back to programme" and
+"Back to events calendar" become "Back to event" together); the detail view's
+"Edit event details" button moved from the foot of the cell to directly under
+the event title, paired with the new "Preview event" button in a
+`.law-dashboard__event-actions` flex row that opts out of `app.css`'s
+full-width `.button`; a `$preview` mode on `law_booking_render_action()` /
+`law_booking_render_opener()` so the preview shows the availability row and a
+**disabled** Register button rather than omitting the control; `nocache_headers()`
+on the whole committee dashboard render; and `law_booking_is_event_view()`
+widened to cover the committee programme's single event view, which had been
+rendering the booking control without its modal assets.
+Updated 9 September 2026 for **test-database isolation**, after unit-test
+placeholders reached the live local site. `tests/class-law-test-case.php` used
+to write its Stripe fixture IDs into the real `law_events_settings` option and
+restore the previous value in `tearDown()`; an interrupted run skipped the
+restore, and because the next run then snapshotted the polluted value as the
+real one, `txr_test_unit` / `inrtem_test_unit` became permanent. That stayed
+invisible while `mu-plugins/block-outbound.php` blocked `api.stripe.com`
+outright, and surfaced the moment the block started allowing test-mode
+requests: every committee approval of a paid event failed at the Stripe API
+with "No such invoice rendering template: 'inrtem_test_unit'". The harness now
+has `isolate_option()`, which serves an option from memory through
+`pre_option_<name>` and cancels writes through `pre_update_option_<name>` (by
+returning the old value, so `update_option()` short-circuits), leaving reads
+and writes normal inside a test but incapable of reaching the database. It is
+applied to `law_events_settings` and to `law_stripe_processed_events`, the
+webhook's idempotency ledger, which the suite had filled with 499 synthetic
+`evt_` IDs against its 500-entry cap -- evicting every real Stripe event ID and
+leaving the duplicate-delivery guard dead locally.
+
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.

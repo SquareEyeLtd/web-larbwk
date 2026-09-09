@@ -10,7 +10,10 @@ abstract class LAW_Test_Case extends TestCase {
 
 	protected array $posts = array();
 	protected array $users = array();
-	protected $settings_before = null;
+	/** option name => in-memory value served to the code under test. */
+	protected array $option_overlay = array();
+	/** The filter callbacks installed by isolate_option(), for removal. */
+	protected array $option_filters = array();
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -18,22 +21,66 @@ abstract class LAW_Test_Case extends TestCase {
 		$GLOBALS['law_test_stripe_calls'] = array();
 		wp_set_current_user( 0 );
 		// The invoice flow refuses VAT-liable invoices without a tax rate ID,
-		// so tests run with explicit Stripe config (restored in tearDown).
-		$this->settings_before = get_option( LAW_EVENTS_SETTINGS_OPTION, null );
-		law_events_update_settings(
+		// so tests run with explicit Stripe config.
+		$this->isolate_option(
+			LAW_EVENTS_SETTINGS_OPTION,
 			array(
 				'tax_rate_id'           => 'txr_test_unit',
 				'rendering_template_id' => 'inrtem_test_unit',
 			)
 		);
+		// The webhook handler's idempotency ledger. Tests push ~5 synthetic
+		// event IDs each, and the option is capped at the last 500, so an
+		// unisolated suite evicts every REAL Stripe event ID from the local
+		// site's ledger and leaves the duplicate-delivery guard dead.
+		$this->isolate_option( 'law_stripe_processed_events' );
+	}
+
+	/**
+	 * Serve an option from memory for the duration of a test, so nothing the
+	 * code under test writes reaches the database.
+	 *
+	 * Tests used to write their fixtures into the real options with
+	 * law_events_update_settings() and restore the previous value in
+	 * tearDown, but any interrupted or fatally-erroring run skipped the
+	 * restore -- and because the next run then snapshotted the polluted value
+	 * as "the real one", the damage ratcheted. That is how 'txr_test_unit' /
+	 * 'inrtem_test_unit' ended up permanently in the local site's events
+	 * settings, making every real committee approval fail at the Stripe API
+	 * with "No such invoice rendering template". Filters cannot leak that way:
+	 * pre_option_* serves the overlay for reads, and pre_update_option_*
+	 * hands update_option() back the value it already has so it
+	 * short-circuits before writing.
+	 *
+	 * @param string $option    Option name.
+	 * @param array  $overrides Merged over the current value (arrays only).
+	 */
+	protected function isolate_option( $option, array $overrides = array() ) {
+		$this->option_overlay[ $option ] = array_merge( (array) get_option( $option, array() ), $overrides );
+
+		$read = function ( $pre ) use ( $option ) {
+			return array_key_exists( $option, $this->option_overlay ) ? $this->option_overlay[ $option ] : $pre;
+		};
+		$write = function ( $value, $old_value ) use ( $option ) {
+			if ( ! array_key_exists( $option, $this->option_overlay ) ) {
+				return $value;
+			}
+			$this->option_overlay[ $option ] = $value;
+			return $old_value;
+		};
+
+		add_filter( 'pre_option_' . $option, $read );
+		add_filter( 'pre_update_option_' . $option, $write, 10, 2 );
+		$this->option_filters[] = array( $option, $read, $write );
 	}
 
 	protected function tearDown(): void {
-		if ( null === $this->settings_before ) {
-			delete_option( LAW_EVENTS_SETTINGS_OPTION );
-		} else {
-			update_option( LAW_EVENTS_SETTINGS_OPTION, $this->settings_before, false );
+		foreach ( $this->option_filters as list( $option, $read, $write ) ) {
+			remove_filter( 'pre_option_' . $option, $read );
+			remove_filter( 'pre_update_option_' . $option, $write, 10 );
 		}
+		$this->option_filters = array();
+		$this->option_overlay = array();
 		foreach ( $this->posts as $post_id ) {
 			$comments = get_comments( array( 'post_id' => $post_id ) );
 			foreach ( $comments as $comment ) {

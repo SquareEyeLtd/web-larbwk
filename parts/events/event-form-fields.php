@@ -339,6 +339,13 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 			?>
 			<div class="law-row" <?php echo $law_is_template ? 'data-law-row-template hidden' : ''; ?>>
 				<button type="button" class="law-row-remove" aria-label="Remove session">×</button>
+				<?php
+				// The session's post ID, so a save updates the existing law_session
+				// in place. Blank on a new row, and the clone blanks it again on the
+				// template row; the saver only honours an ID this event already owns.
+				$law_session_id = (int) ( $law_row['id'] ?? 0 );
+				?>
+				<input type="hidden" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][id]" value="<?php echo esc_attr( $law_session_id ?: '' ); ?>">
 				<div class="law-row-grid">
 					<label class="law-row-wide">Session title *<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][title]" value="<?php echo esc_attr( (string) ( $law_row['title'] ?? '' ) ); ?>"></label>
 					<label>Start time *<input type="time" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][start]" value="<?php echo esc_attr( (string) ( $law_row['start'] ?? '' ) ); ?>"></label>

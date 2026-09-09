@@ -311,4 +311,15 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'Welcome to', $mail[0]['subject'] );
 		$this->assertStringContainsString( '/account/profile/', wp_strip_all_tags( $mail[0]['message'] ) );
 	}
+
+	public function test_host_welcome_email_leads_with_submitting_an_event(): void {
+		$email = $this->unique_email( 'welcomehost' );
+		law_events_send( 'user_welcome_registered_host', 0, array( 'to' => array( $email ), 'placeholders' => array( 'user_name' => 'New Host' ) ) );
+		$mail = $this->mail_to( $email );
+		$this->assertNotEmpty( $mail );
+		$this->assertStringContainsString( 'Welcome to', $mail[0]['subject'] );
+		$body = wp_strip_all_tags( $mail[0]['message'] );
+		$this->assertStringContainsString( '/account/events/submit/', $body, '{submit_link} resolves with no event.' );
+		$this->assertStringContainsString( 'submit an event for the programme', $body );
+	}
 }
