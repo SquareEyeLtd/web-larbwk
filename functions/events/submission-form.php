@@ -246,18 +246,23 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	}
 	if ( ! in_array( 'title', $locked, true ) && '' !== $title ) {
 		$postarr['post_title'] = $title;
-	} elseif ( $post ) {
-		// On update always carry the existing title forward. wp_insert_post()
-		// fills any OMITTED key from its defaults (post_title => ''), so leaving
-		// the key out when the title is locked silently wipes the title of an
-		// approved/confirmed event — and law_events_map_post() treats an empty
-		// title as "doesn't exist", making the event vanish from the host and
-		// committee dashboards, the programme and its single page at once.
-		$postarr['post_title'] = $post->post_title;
 	}
 	$postarr['post_content'] = $description;
 
-	$event_id = wp_insert_post( wp_slash( $postarr ), true );
+	// An update MUST go through wp_update_post(), which reads the existing row
+	// and merges these keys over it. wp_insert_post() fills every OMITTED key
+	// from its own defaults before it even works out that it is an update —
+	// post_author from get_current_user_id(), post_date from "now", post_title
+	// from '' — and never restores the stored values. Passing this partial
+	// array straight to wp_insert_post() therefore handed the event to whoever
+	// saved it (a committee member editing from the dashboard silently became
+	// the host, and law_user_can_manage_event() locked the real host out), reset
+	// the publish date, and blanked a locked title — which made the event vanish
+	// everywhere, since law_events_map_post() treats an empty title as absent.
+	// Do not "simplify" this back to a single wp_insert_post() call.
+	$event_id = $post
+		? wp_update_post( wp_slash( $postarr ), true )
+		: wp_insert_post( wp_slash( $postarr ), true );
 	if ( is_wp_error( $event_id ) ) {
 		return $event_id;
 	}
@@ -680,8 +685,7 @@ function law_events_form_handler() {
 		}
 		// Edit locking (replacing GravityView entry locking): refuse the save
 		// when someone else holds the lock, then take it.
-		require_once ABSPATH . 'wp-admin/includes/post.php';
-		$locked_by = wp_check_post_lock( $event_id );
+		$locked_by = law_event_lock_holder( $event_id );
 		if ( $locked_by ) {
 			$editor = get_user_by( 'id', (int) $locked_by );
 			set_transient(
@@ -694,7 +698,7 @@ function law_events_form_handler() {
 				: add_query_arg( array( 'law_event' => $event_id, 'law_form_error' => 1 ), law_account_events_submit_url() ) );
 			exit;
 		}
-		wp_set_post_lock( $event_id );
+		law_event_lock_take( $event_id );
 	}
 
 	$input  = wp_unslash( $_POST );
@@ -719,6 +723,14 @@ function law_events_form_handler() {
 
 	$saved_id = (int) $result;
 	$action   = sanitize_key( $input['law_form_action'] ?? 'submit' );
+
+	// The save is done and the saver is being redirected away, so drop the lock
+	// rather than making the next person wait out the window. A validation
+	// failure above deliberately does NOT release it: that path returns to the
+	// form, which re-renders and takes the lock again.
+	if ( $event_id ) {
+		law_event_lock_release( $event_id );
+	}
 
 	wp_safe_redirect( law_events_form_result_redirect( $saved_id, $action, $user_id, $is_committee_ctx ) );
 	exit;
@@ -874,6 +886,15 @@ add_action( 'wp_enqueue_scripts', function () {
 		$deps = array();
 		if ( is_page_template( 'templates/register.php' ) || is_page_template( 'templates/account-profile.php' ) ) {
 			$deps[] = 'password-strength-meter';
+		}
+		// The edit-lock refresh rides core's heartbeat (edit-lock.php). Only a
+		// page actually rendering an edit form needs it: the host form, and the
+		// committee dashboard's ?event=<id>&law_edit=1 view. Asking for it on
+		// the whole dashboard would set every committee member's browser
+		// polling admin-ajax for a lock that page never shows.
+		if ( is_page_template( 'templates/account-event-form.php' )
+			|| ( is_page_template( 'templates/account-dashboard.php' ) && ! empty( $_GET['law_edit'] ) ) ) {
+			$deps[] = 'heartbeat';
 		}
 		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, filemtime( get_theme_file_path( 'assets/js/event-form.js' ) ), true );
 	}

@@ -1,6 +1,7 @@
 /**
  * Front-end behaviours for the event form and dashboards: repeatable rows,
- * the sponsor/invoice toggle and smooth section navigation.
+ * the sponsor/invoice toggle, smooth section navigation and the edit-lock
+ * heartbeat/release (see functions/events/edit-lock.php).
  */
 (function () {
 	'use strict';
@@ -412,16 +413,95 @@
 						submitter.textContent = label;
 						busyState(modal, submitter, false);
 						window.lawModal.open('law-modal-withdraw-success');
-						/* replace, not assign: Back should not return to the stale
-						   pre-action page. */
+						/* lawModal.redirect, not location.replace: the handler often
+						   answers with the page we are already on, and a fragment-only
+						   navigation would not reload it. */
 						window.setTimeout(function () {
-							window.location.replace(payload.redirect || window.location.href);
+							window.lawModal.redirect(payload.redirect);
 						}, 3000);
 					})
 					.catch(function () {
 						fail('Sorry, that did not work. Please reload the page to check the event before trying again.');
 					});
 			});
+		});
+	})();
+
+	/* Edit lock: keep it alive while this form is open, release it on the way
+	   out, and clear the "someone else is editing" notice the moment the other
+	   lock expires.
+
+	   Server side is functions/events/edit-lock.php. This mirrors core's
+	   wp-admin/js/post.js: the lock lives for 150 seconds, the heartbeat
+	   refreshes it, and unloading back-dates it so the next person is not made
+	   to wait out a window nobody is using. Without the refresh a lock expired
+	   under someone who was still typing; without the release a phantom notice
+	   sat on the page for 150 seconds after a mere look. */
+	(function () {
+		var wrap = document.querySelector('[data-law-event-lock]');
+		if (!wrap) { return; }
+
+		var eventId = wrap.getAttribute('data-law-lock-event');
+		var endpoint = wrap.getAttribute('data-law-lock-endpoint');
+		var nonce = wrap.getAttribute('data-law-lock-nonce');
+		/* Empty when the page loaded with somebody else holding the lock. We
+		   still take part in the heartbeat, to notice when it frees up. */
+		var lock = wrap.getAttribute('data-law-lock-value') || '';
+		if (!eventId || !endpoint) { return; }
+
+		function showNotice(text) {
+			var notice = wrap.querySelector('.law-form-notice');
+			if (!notice) {
+				notice = document.createElement('div');
+				notice.className = 'law-form-notice is-error';
+				notice.setAttribute('role', 'alert');
+				wrap.appendChild(notice);
+			}
+			notice.textContent = text;
+		}
+
+		function clearNotice() {
+			var notice = wrap.querySelector('.law-form-notice');
+			if (notice) { notice.remove(); }
+		}
+
+		/* Heartbeat is a jQuery-event API, and its script is a dependency of
+		   this one on the templates that render the form, so jQuery is here. */
+		var $ = window.jQuery;
+		if ($) {
+			$(document).on('heartbeat-send.law-event-lock', function (e, data) {
+				data['law-refresh-event-lock'] = { event_id: eventId, lock: lock };
+			});
+			$(document).on('heartbeat-tick.law-event-lock', function (e, data) {
+				var received = data['law-refresh-event-lock'];
+				if (!received) { return; }
+				if (received.lock_error) {
+					/* Taken over. Drop our claim so the release on unload cannot
+					   clear the new holder's lock. The save is refused server-side
+					   and returns the typed values, so the buttons stay usable. */
+					lock = '';
+					showNotice(received.lock_error);
+				} else if (received.new_lock) {
+					lock = received.new_lock;
+					clearNotice();
+				}
+			});
+			/* 15 seconds, matching core's post editor, so a takeover shows up
+			   quickly and the refresh sits well inside the 150-second window. */
+			if (window.wp && window.wp.heartbeat) { window.wp.heartbeat.interval(15); }
+		}
+
+		/* pagehide, not beforeunload: it fires on mobile tab switches and on
+		   back/forward-cache navigations, where beforeunload does not. */
+		window.addEventListener('pagehide', function () {
+			if (!lock || !window.navigator.sendBeacon || !window.FormData) { return; }
+			var payload = new window.FormData();
+			payload.append('action', 'law_event_release_lock');
+			payload.append('event_id', eventId);
+			payload.append('lock', lock);
+			payload.append('nonce', nonce);
+			window.navigator.sendBeacon(endpoint, payload);
+			lock = '';
 		});
 	})();
 })();

@@ -182,7 +182,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 		// Existing account: the plain "registered" template, no password link.
 		$existing = $this->make_user( 'attendee' );
 		$email    = get_userdata( $existing )->user_email;
-		$booking  = law_booking_register_by_manager( $event, array( 'name' => 'Ex Isting', 'email' => $email ), $committee );
+		$booking  = law_booking_register_by_manager( $event, array( 'name' => 'Ex Isting', 'email' => $email, 'organisation' => 'Test Org', 'job_title' => 'Associate' ), $committee );
 		$this->assertIsInt( $booking );
 		$this->posts[] = $booking;
 		$sent = $this->mail_to( $email );
@@ -195,7 +195,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 		// New account: the "invited" variant with a set-password link, and
 		// still exactly one email (no separate invite + confirmation).
 		$new_email = $this->unique_email( 'new' );
-		$booking2  = law_booking_register_by_manager( $event, array( 'name' => 'New Person', 'email' => $new_email ), $committee );
+		$booking2  = law_booking_register_by_manager( $event, array( 'name' => 'New Person', 'email' => $new_email, 'organisation' => 'Test Org', 'job_title' => 'Associate' ), $committee );
 		$this->assertIsInt( $booking2 );
 		$this->posts[] = $booking2;
 		$this->users[] = (int) get_user_by( 'email', $new_email )->ID;

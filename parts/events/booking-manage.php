@@ -204,8 +204,8 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 						<div class="law-row-grid law-row-grid--attendee">
 							<label><?php esc_html_e( 'Full name *', 'law' ); ?><input type="text" autocomplete="off" aria-required="true" name="law_attendees[0][name]"></label>
 							<label><?php esc_html_e( 'Email *', 'law' ); ?><input type="email" autocomplete="off" aria-required="true" name="law_attendees[0][email]"></label>
-							<label><?php esc_html_e( 'Organisation', 'law' ); ?><input type="text" autocomplete="off" name="law_attendees[0][organisation]"></label>
-							<label><?php esc_html_e( 'Job title', 'law' ); ?><input type="text" autocomplete="off" name="law_attendees[0][job_title]"></label>
+							<label><?php esc_html_e( 'Organisation *', 'law' ); ?><input type="text" autocomplete="off" aria-required="true" name="law_attendees[0][organisation]"></label>
+							<label><?php esc_html_e( 'Job title *', 'law' ); ?><input type="text" autocomplete="off" aria-required="true" name="law_attendees[0][job_title]"></label>
 						</div>
 					</div>
 				</div>

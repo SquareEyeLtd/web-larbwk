@@ -315,6 +315,7 @@ class WaitlistTest extends LAW_Test_Case {
 
 		$result = law_waitlist_reorder( $c, 'top', $host, $this->position( $c ) );
 		$this->assertTrue( $result['moved'] );
+		$this->assertSame( array(), $result['promoted'], 'A move on a full event seats nobody.' );
 		$this->assertSame( array( $c, $a, $b ), array_map( fn( $p ) => (int) $p->ID, law_waitlist_for_event( $event ) ) );
 		$this->assertSame( array( 1, 2, 3 ), array( $this->position( $c ), $this->position( $a ), $this->position( $b ) ) );
 
@@ -350,6 +351,21 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertSame( 'law-waitlisted', get_post_status( $a ) );
 		$this->assertSame( 'law-waitlisted', get_post_status( $b ) );
 		$this->assertSame( array( 1, 2 ), array( $this->position( $a ), $this->position( $b ) ), 'The queue closes up behind them.' );
+
+		/* A place freed while the queue was suspended, so the move itself is
+		   what seats the new head. The reorder reports the promotion because
+		   booking-form.js reorders the host's table in place and has to fall
+		   back to a reload when an entry leaves the queue for the active one. */
+		$GLOBALS['law_waitlist_suspended'] = true;
+		law_booking_cancel( $booked[1]['booking'], $booked[1]['user'], 'self' );
+		unset( $GLOBALS['law_waitlist_suspended'] );
+		$this->assertSame( 'law-waitlisted', get_post_status( $b ), 'A suspended queue promotes nobody.' );
+
+		$result = law_waitlist_reorder( $b, 'top', $host, $this->position( $b ) );
+		$this->assertTrue( $result['moved'] );
+		$this->assertSame( array( $b ), $result['promoted'] );
+		$this->assertSame( 'publish', get_post_status( $b ) );
+		$this->assertSame( array( 1 ), array( $this->position( $a ) ), 'The queue closes up again.' );
 	}
 
 	public function test_manual_promote_overbooks_but_keeps_the_person_guards(): void {

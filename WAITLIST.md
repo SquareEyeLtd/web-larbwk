@@ -32,6 +32,25 @@
 > dialog), and a set of copy defects led by the booking confirmation talking
 > about colleagues to people who had booked alone.
 >
+> **Post-build round, 9 September 2026: the reorder arrows.** Moving an entry
+> answered successfully and then appeared to do nothing, the arrow left on
+> "Moving…" and the new order visible only after a manual reload. All three of
+> the `#law-waitlist` redirects (reorder, promote, reject a waitlisted entry)
+> send the actor back to the list the form was posted from, and
+> `location.replace()` on a URL that differs from the current one only by its
+> fragment is a same-document navigation: the browser scrolls to the anchor and
+> never reloads. The first move worked, because the landing URL had no
+> `law_notice` on it yet; every move after it was a silent no-op. Fixed with a
+> shared `window.lawModal.redirect()` that forces a reload when the target is
+> the page we are already on, now used by all four of the theme's fetch layers.
+> Denis also asked for the reorder to stop reloading altogether, so the handler
+> answers with the queue's new order (`order`, `promoted`, `moved`) and
+> `booking-form.js` reorders the table in place, reloading only when the payload
+> reports a promotion or no longer matches the rows on the page. The "Moving…"
+> label went with it: a single-glyph button in a table cell now shows its busy
+> state with `aria-busy` and dimming instead of stretching and shifting the row.
+> §B3 and §B5 below are updated to match.
+>
 > **Execution brief.** This document is self-contained: an agent starting cold should be
 > able to build everything below from it plus the code. It was produced on 8 September 2026
 > from Denis's decisions, two exploration passes over the working tree, three specialist
@@ -552,7 +571,7 @@ column). Events "Booked" column unchanged.
 |---|---|---|---|
 | `law_waitlist_join` | signed in; `event_id` posted | `booking` 10/600/100 (shared with create) | `waitlist-joined` → event permalink; honeypot payload `{title: "You're on the waitlist", message: "We'll email you if a place becomes available.", redirect: permalink}`; no-JS state via `law_booking_store_form_state()` |
 | `law_waitlist_leave` | booking waitlisted; author = me or booked_by = me; optional `all=1` | `booking_edit` 15/600/150 | `waitlist-left` → My bookings |
-| `law_waitlist_reorder` | `law_user_can_manage_event( post_parent )`; hidden `direction` ∈ top/up/down and `expected_position` | new `waitlist_manage` 60/600/300 | `waitlist-reordered` → `law_booking_list_url()#law-waitlist` |
+| `law_waitlist_reorder` | `law_user_can_manage_event( post_parent )`; hidden `direction` ∈ top/up/down and `expected_position` | new `waitlist_manage` 60/600/300 | `waitlist-reordered` → `law_booking_list_url()#law-waitlist` for the no-JS path; over AJAX it answers with `order` (`[{id, position}]`), `promoted` and `moved`, and the table is reordered in place (9 September 2026) |
 | `law_waitlist_promote` | same | `waitlist_manage` | `waitlist-promoted` (message adds "The event is now over-booked by N place(s)." when applicable) → list `#law-waitlist` |
 
 Reject of a waitlisted entry reuses `law_booking_reject_attendee` (`host_reject` on a
@@ -619,7 +638,9 @@ id`): `waitlist_joined`, `waitlist_skipped`, `waitlist_promoted`, `waitlist_over
   it now to register it regardless of places." + the same flat table with a leading Position
   column and, per row, Top / Up / Down (`button second`, `disabled` at the edges,
   `.screen-reader-text` "Move {name} up"; three tiny forms with hidden `direction` and
-  `expected_position`, busy "Moving…"), "Promote now" (`button orange`) behind a confirm
+  `expected_position`; busy state via `aria-busy` and dimming, keeping the glyph,
+  and the move reorders the table in place rather than reloading it — see the
+  9 September 2026 note at the top), "Promote now" (`button orange`) behind a confirm
   titled "Promote {name}" with copy "This registers {name} onto the event now, ahead of the
   waitlist order, and emails them their confirmation." plus, when the event is full, "This
   event is full. Promoting this entry registers one more place than the event has, so it

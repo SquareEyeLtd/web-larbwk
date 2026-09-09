@@ -26,8 +26,8 @@ $law_invalid = (array) ( $args['invalid'] ?? array() );
 $law_fields = array(
 	'name'         => array( __( 'Full name *', 'law' ), 'text' ),
 	'email'        => array( __( 'Email *', 'law' ), 'email' ),
-	'organisation' => array( __( 'Organisation', 'law' ), 'text' ),
-	'job_title'    => array( __( 'Job title', 'law' ), 'text' ),
+	'organisation' => array( __( 'Organisation *', 'law' ), 'text' ),
+	'job_title'    => array( __( 'Job title *', 'law' ), 'text' ),
 );
 
 $law_rows   = array_slice( $law_rows, 0, $law_max );
@@ -51,13 +51,15 @@ $law_rows[] = array(); // The hidden template row, always last.
 							&& $law_invalid['field'] === $law_key;
 						?>
 						<?php
-					// aria-required, never native required: a required control
-					// inside the hidden modal blocks the whole form in Chrome
-					// (the modal.php house rule). The server enforces it with
-					// row-keyed errors either way.
-					$law_required = in_array( $law_key, array( 'name', 'email' ), true ) ? ' aria-required="true"' : '';
+					// All four fields are required (Denis, 9 September 2026):
+					// an account is created from this row, so it asks for the
+					// same details registration does. aria-required, never
+					// native required: a required control inside the hidden
+					// modal blocks the whole form in Chrome (the modal.php
+					// house rule). The server enforces it with row-keyed
+					// errors either way.
 					?>
-					<label<?php echo $law_is_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_field[0] ); ?><input type="<?php echo esc_attr( $law_field[1] ); ?>" autocomplete="off"<?php echo $law_required; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- literal attribute. ?> <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][{$law_key}]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row[ $law_key ] ?? '' ) ); ?>"></label>
+					<label<?php echo $law_is_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_field[0] ); ?><input type="<?php echo esc_attr( $law_field[1] ); ?>" autocomplete="off" aria-required="true" <?php echo esc_attr( $law_attr ); ?>="<?php echo esc_attr( "{$law_group}[{$law_index}][{$law_key}]" ); ?>" value="<?php echo esc_attr( (string) ( $law_row[ $law_key ] ?? '' ) ); ?>"></label>
 					<?php endforeach; ?>
 				</div>
 			</div>

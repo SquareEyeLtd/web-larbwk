@@ -63,9 +63,9 @@ back. `law_events_source()` is defined at the bottom of `_load.php`.
 Load order is set in `_load.php`: settings → post types → statuses → meta →
 countries → capabilities → fees → log → **request** → workflow → comments → unread →
 co-owners → **ics** → **bookings** →
-**test-mode** → notifications → speakers → **speakers-dashboard** → source → submission-form → registration → committee
+**test-mode** → notifications → speakers → **speakers-dashboard** → source → edit-lock → submission-form → registration → committee
 → Stripe (client, service, webhook) → admin (fields, event/speaker/session
-screens, columns, emails) → migration (report, runner, page).
+screens, columns, emails) → migration (report, runner, page, repair-owners).
 
 ### `settings.php`: the settings store and the LAW submenu host
 
@@ -532,7 +532,19 @@ ONE booking carrying an attendee rows array; that model, its flat
   row per attendee — no grouping, just an "Invited by {name}" tag on a
   colleague's row (Denis, 8 September 2026) — with live country, dietary and
   accessibility from `law_profile_values()`, per-attendee Reject, the waitlist
-  section, and the CSV/Excel/PDF export trio).
+  section, and the CSV/Excel/PDF export trio). The waitlist section is the one
+  surface that does not reload after its action: the three move arrows post as
+  usual, and `booking-form.js` reorders the `<tr>` nodes from the answer's
+  `order`, rewriting each row's displayed position, its three
+  `expected_position` inputs and the disabled state of its edge arrows, then
+  writing the outcome to one shared `[data-law-waitlist-status]` line above the
+  table (refusals go there too — a notice inside one of those table-cell forms
+  would wreck the row). It falls back to the redirect whenever the payload
+  reports a promotion or no longer matches the rows on the page, because those
+  change the active and cancelled tables and the counts in their headings.
+  The arrows also carry `data-law-booking-busy-quiet`: a single-glyph button in
+  a table cell shows its busy state with `aria-busy` and dimming rather than
+  swapping in a word, which would stretch the button and shift the row.
 - **Places**: `_law_tickets_sold` is one `COUNT(*)` of the event's published
   bookings (`law_event_recount_attendees()`), run after every mutation;
   `law_event_tickets_remaining()` returns null for "not open" and clamps at 0,
@@ -552,6 +564,18 @@ ONE booking carrying an attendee rows array; that model, its flat
   posts created so far are hard-deleted and so are the accounts this request
   created, logged as `booking_create_rolled_back`. Nothing is emailed until the
   lock is released. `$args['status']` is how the waitlist reuses all of it.
+- **Attendee rows**: `law_booking_clean_additional_rows()` caps a submission at
+  three colleagues and requires **all four** fields on every row it keeps —
+  full name, a valid email, organisation and job title (Denis, 9 September
+  2026; before that the last two were optional). An account is created from
+  the row, so it asks for the same details the registration form does, and the
+  bookings list, exports and wp-admin booking screen all print the
+  organisation and job title. A completely empty repeater row is still skipped.
+  Refusals carry `['row' => index, 'field' => name]` so `booking-form.js` can
+  mark the control in place. Every surface that posts `law_attendees` goes
+  through it: the booking and waitlist modals, "Add a colleague" on the manage
+  view, and the host/committee "Register an attendee" form on the bookings
+  list, all of which mark the four labels with an asterisk and `aria-required`.
 - **Guards**: `law_booking_guard_open()` (Confirmed + CPT source + a ticket
   number + not started), `law_booking_guard_duplicates( $event_id, $people,
   $statuses )` (one place per person per event, matched by account AND by
@@ -629,7 +653,10 @@ block the queue. Joining is refused while places are free.
   `law_waitlist_reorder( $id, $direction, $actor, $expected_position )` moves an
   entry top/up/down; the client posts only a direction enum, positions are
   recomputed server-side, and a stale `expected_position` is a no-op rather
-  than a wrong move. `law_waitlist_renumber()` closes the gaps after any
+  than a wrong move. It returns `{ moved, promoted }` — the IDs its trailing
+  `law_waitlist_process()` seated, because a move can put a smaller wait at the
+  front of a queue whose places have since been freed, and the front end has to
+  reload rather than reorder in place when that happens. `law_waitlist_renumber()` closes the gaps after any
   promotion, cancellation or move, so the stored position always matches the
   one the host is looking at.
 - An entry restored from the trash goes to the BACK of the queue
@@ -645,7 +672,10 @@ block the queue. Joining is refused while places are free.
   surface), `law_waitlist_reorder` and `law_waitlist_promote` (both
   `law_user_can_manage_event()` on `post_parent`, on a new `waitlist_manage`
   surface at 60/600s per user and 300 per IP, because a host tidying a long
-  queue would trip the edit budget).
+  queue would trip the edit budget). The reorder answer carries the queue as it
+  now stands (`order` as `[{id, position}]`, plus `promoted` and `moved`) so the
+  arrows reorder the host's table in place; its `redirect` is still the no-JS
+  path and the client's fallback.
 
 ### `bookings-dashboard.php`: the committee's cross-event Bookings dashboard (8 September 2026)
 
@@ -1128,6 +1158,64 @@ block the queue. Joining is refused while places are free.
   was `index.php`, which looped the still-queried post and leaked the gated
   event's title and description to any logged-in attendee.
 
+### `edit-lock.php`: the front-end edit lock
+
+Core's post lock (`_edit_lock`, `"<unix time>:<user id>"`, live for 150
+seconds) applied to the front-end event form, replacing GravityView entry
+locking. **Added 9 September 2026 because the theme had only a third of the
+mechanism**: it took the lock on render and then neither refreshed nor released
+it, which made the lock simultaneously too sticky and too weak. Merely opening
+an edit view — a committee member glancing at an event — blocked everyone else
+for the full 150 seconds with "X is editing this event right now", while
+somebody genuinely typing lost their lock after 150 seconds and could then be
+saved over. Denis hit the sticky half in practice, seeing the notice name
+`admin` on an event no one was editing.
+
+- `law_event_lock_holder()`, `law_event_lock_take()`: thin wrappers over core's
+  `wp_check_post_lock()` / `wp_set_post_lock()` (which live in wp-admin, hence
+  the shared `law_event_lock_bootstrap()` require), so every lock read and
+  write in the module goes through one place.
+- `law_event_lock_release()`: back-dates the lock rather than deleting the meta,
+  exactly as core's `wp_ajax_wp_remove_post_lock()` does — the row stays as a
+  record of who was last in the event, and reads as expired. It uses
+  `update_post_meta()`'s `$prev_value` argument so a release arriving late (a
+  tab's unload beacon overtaken by the same user's next page load) can never
+  clear a newer lock, and it refuses to touch a lock belonging to anyone else.
+  Note core's arithmetic leaves a deliberate **5-second grace** rather than
+  dropping the lock on the instant; 5 seconds instead of 150 is the point.
+- `law_event_lock_window()`: the window, read through core's own
+  `wp_check_post_lock_window` filter so a site-wide change applies here too.
+- `law_event_lock_field( $post )`: the notice plus the state the browser needs,
+  shared by the host form (`templates/account-event-form.php`) and the
+  committee's edit view (`parts/events/committee-event-form.php`), which had
+  identical copies of this block. When the event is free it takes the lock and
+  publishes it in `data-law-lock-*` attributes; when somebody else holds it, it
+  takes **no** lock and publishes an empty value, so a bystander's page can
+  never release the holder's lock. `law_event_lock_message()` is the single
+  wording, so the notice the browser writes on a takeover reads identically to
+  the one PHP rendered on load.
+- The **heartbeat refresh** (`heartbeat_received`, key
+  `law-refresh-event-lock`) mirrors core's `wp_refresh_post_lock()` with the
+  module's permission check: core's handlers gate on `edit_post`, which every
+  host fails, since host-side roles hold no `law_event` capabilities at all
+  (`capabilities.php`) — so this gates on `law_user_can_manage_event()`.
+  Sending no lock is meaningful: a page showing the notice keeps asking, and
+  the moment the other lock expires this hands it over and the browser clears
+  the notice, instead of the notice sitting there until the reader thinks to
+  reload.
+- The **unload release** (`wp_ajax_law_event_release_lock`, nonce
+  `law_event_lock_<id>`) is sent as a `navigator.sendBeacon` on `pagehide`
+  (not `beforeunload`, which does not fire on mobile tab switches or
+  back/forward-cache navigations).
+- Client side is in `assets/js/event-form.js` — not a new file, since the form's
+  behaviours already live there. It binds core's jQuery `heartbeat-send` /
+  `heartbeat-tick` events and sets `wp.heartbeat.interval( 15 )`, matching
+  core's post editor, so a takeover surfaces quickly and each refresh sits well
+  inside the window. `heartbeat` is added as a script dependency only on a page
+  actually rendering an edit form (the host form template, and the dashboard
+  with `law_edit`), so the rest of the dashboard does not poll admin-ajax for a
+  lock it never shows.
+
 ### `submission-form.php`: the custom submission/edit form (replaces form 2)
 
 - `law_events_user_can_submit()`, `law_events_form_event_id()`,
@@ -1146,12 +1234,23 @@ block the queue. Joining is refused while places are free.
   user defaults to the current user, so the template render and the save-side
   enforcement always agree.
 - `law_events_form_save()`: validation + persistence, with the required set
-  mirroring form 2 (Event > submit an event) field for field. **On update it
-  always carries the existing title forward** — `wp_insert_post` fills any
-  omitted key from its defaults, so leaving the (locked) title out would blank
-  it and make the event vanish everywhere (`law_events_map_post()` treats an
-  empty title as absent). Co-owner and contact rows go straight to the schema
-  sanitiser. Two behaviours worth knowing: ticket allocations are validated
+  mirroring form 2 (Event > submit an event) field for field. **The update path
+  goes through `wp_update_post()`, never `wp_insert_post()`** — the latter fills
+  every OMITTED key from its own defaults *before* it works out that it is an
+  update, and never restores the stored row. Until 9 September 2026 the partial
+  array went straight to `wp_insert_post()`, so every save rewrote
+  `post_author` to whoever pressed save and reset `post_date` to that moment: a
+  committee member editing from the dashboard silently became the host, which
+  locked the real host out (`law_user_can_manage_event()` gives access to the
+  author, a co-owner or the committee, and nothing else) and sent the
+  host-facing notifications — new booking, capacity warning, the wp-admin Host
+  column, the CSV export — to the committee member instead. The same default
+  would blank a locked title, which `law_events_map_post()` reads as absent,
+  making the event vanish from every dashboard, the programme and its single
+  page; that one key had been hand-patched, the other two had not.
+  `wp_update_post()` merges the existing row first and closes all three at
+  once. `migration/repair-owners.php` repaired the events already damaged.
+  Co-owner and contact rows go straight to the schema sanitiser. Two behaviours worth knowing: ticket allocations are validated
   against `law_events_venue_capacity_bands()` (on an approved event against the
   *stored* band, since the locked select posts nothing).
 - `law_events_set_terms_by_name()`: sets taxonomy terms by name and **creates
@@ -1205,9 +1304,12 @@ block the queue. Joining is refused while places are free.
   instead of save buttons, and the handler refuses a hand-made or stale POST
   with the `event-not-editable` notice (the message thread stays open — only
   edits are refused). Edit locking replaces
-  GravityView entry locking: `wp_check_post_lock()` refuses the save with a
-  named-editor message when someone else holds the lock, then
-  `wp_set_post_lock()` takes it. A posted `law_form_context=committee` field
+  GravityView entry locking, and lives in `edit-lock.php` (below): the handler
+  refuses the save with a named-editor message when someone else holds the
+  lock, takes it otherwise, and **releases it after a successful save** — the
+  saver is being redirected away, so holding it would make the next person wait
+  out the window. A validation failure deliberately does not release it,
+  because that path returns to the form, which re-renders and takes it again. A posted `law_form_context=committee` field
   (honoured only for `law_user_is_committee()` users) marks a save from the
   committee edit view: its failure and success redirects go back to
   `/account/dashboard/?event=<id>&law_edit=1` / the dashboard detail view
@@ -1348,7 +1450,7 @@ block the queue. Joining is refused while places are free.
   editable except fees/invoice, see `submission-form.php` above), a single
   "Save changes" button posting the same `law_event_form` handler with
   `law_form_context=committee`, and no `law_ec` field (first-save-only
-  mechanism). It takes the post lock exactly like the host form; the
+  mechanism). It calls the same `law_event_lock_field()` as the host form; the
   read-only detail view never does. The sidebar's "Full editing in
   wp-admin" link stays — wp-admin remains the fee/invoice edit route.
 - **The committee preview** (`?preview-event=<id>` on the dashboard page,
@@ -1601,7 +1703,7 @@ event status by the rebuild) plus "Reference".
   `law_events_emails_handle_test_mode_post()`, see `test-mode.php`), including
   the live address check and the live-site confirmation tick.
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -1657,6 +1759,27 @@ event status by the rebuild) plus "Reference".
   the git deploy cannot carry the local re-templating to another environment,
   which left staging rendering the legacy GravityView dashboards after the
   source flip.
+- **`repair-owners.php`** — a one-off repair for the events whose
+  `post_author` and `post_date` were overwritten by the pre-9-September-2026
+  `wp_insert_post()` bug in `law_events_form_save()` (above), rendered as a
+  dry-run-first panel on the LAW > Migration screen via
+  `law_events_repair_owner_panel()`. `law_events_repair_owner_origin()` reads
+  the true owner and submission time out of the append-only activity log,
+  preferring the entry whose context `action` is `submit` (written by the
+  status engine with the acting user, and only a host can fire it) and falling
+  back to the earliest entry by a real user.
+  `law_events_repair_owner_form_save_by()` is the safety rail: an author is
+  only ever moved when the log ALSO shows the current owner saving that event
+  through the front-end form (`committee_edit` / `host_edit`), because a
+  deliberate reassignment through the wp-admin author dropdown leaves no such
+  line and must be left alone. Everything else lands in a "needs a human"
+  table. The scan queries every registered post status rather than `'any'`
+  (which drops both the trash and the module's custom statuses) and reads the
+  log with comment status `'any'` rather than reusing
+  `law_event_log_entries()`, because `wp_trash_post_comments()` rewrites a
+  trashed event's comments to `post-trashed` and `'all'` in
+  `WP_Comment_Query` still means approved-or-held. Every repair writes its own
+  activity-log line with the old and new values.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
@@ -1833,11 +1956,21 @@ These predate the rebuild and now branch on `law_events_source()`.
   event — though only the ones legal for the event's current status are
   rendered (`law_event_available_ui_actions()`, plus the Cancelled/Rejected
   guard for Delete); every button stays a plain `law_action`
-  submit without JavaScript. Two hooks exist for scripts: `window.lawModal`
-  (`open(id)` / `close()`, the programmatic surface) and the `law-modal--busy`
-  class, which marks a dialog mid-request so Escape and the close controls are
-  ignored until it is removed; `closeModal` also clears any `.law-modal__error`
-  a fetch layer injected.
+  submit without JavaScript. Three hooks exist for scripts: `window.lawModal`
+  (`open(id)` / `close()`, the programmatic surface), `window.lawModal.redirect(
+  url )`, and the `law-modal--busy` class, which marks a dialog mid-request so
+  Escape and the close controls are ignored until it is removed; `closeModal`
+  also clears any `.law-modal__error` a fetch layer injected. `redirect()` is
+  the one every fetch layer in the theme now goes through instead of
+  `location.replace()`: these handlers answer with the list the form was posted
+  from, and `location.replace()` on a URL that differs from the current one only
+  by its fragment is a same-document navigation — the browser scrolls to the
+  anchor and never reloads, so the second waitlist move, promotion or rejection
+  in a row answered successfully and then left the button stuck on its busy
+  label. It forces a reload when the target is the page we are already on
+  (keeping the anchor) and replaces otherwise. The API object is assigned before
+  the file's "no openers on this page" early return, because a page can carry a
+  fetch form with no dialog at all.
   `assets/js/committee-actions.js` is that fetch layer for the dashboard's
   workflow actions: it intercepts only submits whose submitter sits inside a
   `.law-modal` (so Save changes keeps the classic POST), appends the
@@ -1956,10 +2089,10 @@ Open findings from the forms/payments security review, none of them blocking:
 2. **Partial refunds mark an event fully refunded.** The `charge.refunded`
    branch of `stripe/webhook.php` ignores `amount_refunded` versus `amount`, so
    a goodwill part-refund flips a paid event to Refunded.
-3. **`invoice.paid` reconciles the amount but not the currency**, the front-end
-   edit lock is taken and never released (so a host's save blocks a wp-admin
-   edit for ~2 minutes), and host descriptions run through `the_content`, so
-   shortcodes in them execute on the single-event page.
+3. **`invoice.paid` reconciles the amount but not the currency**, and host
+   descriptions run through `the_content`, so shortcodes in them execute on the
+   single-event page. (The front-end edit lock being taken and never released
+   was the third item here; `edit-lock.php` fixed it on 9 September 2026.)
 
 **Reserved for 4.2 (present but intentionally unused):** the event meta key
 `_law_registration_state` and its sanitiser (event-registration vocabulary),
@@ -2152,6 +2285,19 @@ applied to `law_events_settings` and to `law_stripe_processed_events`, the
 webhook's idempotency ledger, which the suite had filled with 499 synthetic
 `evt_` IDs against its 500-entry cap -- evicting every real Stripe event ID and
 leaving the duplicate-delivery guard dead locally.
+
+Updated 9 September 2026 for the waitlist reorder round. The host's move
+arrows answered successfully and then did nothing: every one of these handlers
+redirects back to the list the form was posted from, ending in
+`#law-waitlist`, and `location.replace()` on a URL that differs from the
+current one only by its fragment is a same-document navigation, so the browser
+scrolled to the anchor and never reloaded. The first move worked (the landing
+URL had no `law_notice` yet, so the URL genuinely changed) and every move after
+it left the arrow stuck on "Moving…" -- the same trap under repeat Promote now
+and repeat Reject of a waitlisted entry, which sat on "Reloading the page…"
+forever. `window.lawModal.redirect()` now owns that decision for all four fetch
+layers, and the reorder no longer reloads at all: the handler answers with the
+queue's new order and `booking-form.js` applies it in place.
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.

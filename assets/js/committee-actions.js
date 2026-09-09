@@ -104,10 +104,11 @@
 				submitter.textContent = label;
 				busyState(modal, submitter, false);
 				window.lawModal.open('law-modal-success');
-				/* replace, not assign: Back should not return to the stale
-				   pre-action page. */
+				/* lawModal.redirect, not location.replace: the handler often
+				   answers with the page we are already on, and a fragment-only
+				   navigation would not reload it. */
 				window.setTimeout(function () {
-					window.location.replace(payload.redirect || window.location.href);
+					window.lawModal.redirect(payload.redirect);
 				}, 3000);
 			})
 			.catch(function () {

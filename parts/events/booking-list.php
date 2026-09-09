@@ -89,7 +89,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				<th><?php esc_html_e( 'Dietary', 'law' ); ?></th>
 				<?php if ( $law_bl_actionable ) : ?><th></th><?php endif; ?>
 			</tr></thead>
-			<tbody>
+			<tbody<?php echo $law_bl_waiting ? ' data-law-waitlist' : ''; ?>>
 			<?php foreach ( array_values( $law_bl_set ) as $law_bl_i => $law_bl_booking ) :
 				$law_bl_number     = (int) law_event_meta( $law_bl_booking->ID, '_law_booking_number' );
 				$law_bl_person     = law_booking_attendee( $law_bl_booking );
@@ -100,7 +100,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				$law_bl_modal      = 'law-modal-reject-' . $law_bl_booking->ID;
 				$law_bl_position   = (int) law_event_meta( $law_bl_booking->ID, '_law_waitlist_position' );
 				?>
-				<tr>
+				<tr<?php echo $law_bl_waiting ? ' data-law-waitlist-row="' . esc_attr( (string) $law_bl_booking->ID ) . '"' : ''; ?>>
 					<?php if ( $law_bl_waiting ) : ?>
 						<td class="law-booking-table__position">
 							<strong><?php echo esc_html( number_format_i18n( $law_bl_i + 1 ) ); ?></strong>
@@ -117,14 +117,14 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 								// new FormData(form), which omits the submitter,
 								// so the direction has to be a hidden input.
 								?>
-								<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+								<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-law-waitlist-move="<?php echo esc_attr( $law_bl_dir ); ?>">
 									<input type="hidden" name="action" value="law_waitlist_reorder">
 									<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
 									<input type="hidden" name="direction" value="<?php echo esc_attr( $law_bl_dir ); ?>">
 									<input type="hidden" name="expected_position" value="<?php echo esc_attr( (string) $law_bl_position ); ?>">
 									<?php wp_nonce_field( 'law_waitlist_reorder' ); ?>
 									<?php law_events_honeypot_field(); ?>
-									<button type="submit" class="button second law-booking-table__move" data-law-modal-busy="<?php esc_attr_e( 'Moving…', 'law' ); ?>"<?php echo $law_bl_move[2] ? ' disabled' : ''; ?> aria-label="<?php echo esc_attr( sprintf( $law_bl_move[1], $law_bl_person['name'] ) ); ?>">
+									<button type="submit" class="button second law-booking-table__move" data-law-booking-busy-quiet<?php echo $law_bl_move[2] ? ' disabled' : ''; ?> aria-label="<?php echo esc_attr( sprintf( $law_bl_move[1], $law_bl_person['name'] ) ); ?>">
 										<span aria-hidden="true"><?php echo esc_html( $law_bl_move[0] ); ?></span>
 									</button>
 								</form>
@@ -314,13 +314,13 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 							$law_bl_fields = array(
 								'name'         => array( __( 'Full name *', 'law' ), 'text' ),
 								'email'        => array( __( 'Email *', 'law' ), 'email' ),
-								'organisation' => array( __( 'Organisation', 'law' ), 'text' ),
-								'job_title'    => array( __( 'Job title', 'law' ), 'text' ),
+								'organisation' => array( __( 'Organisation *', 'law' ), 'text' ),
+								'job_title'    => array( __( 'Job title *', 'law' ), 'text' ),
 							);
 							foreach ( $law_bl_fields as $law_bl_key => $law_bl_field ) :
 								$law_bl_invalid = 0 === (int) $law_bl_form_state['row'] && $law_bl_form_state['field'] === $law_bl_key;
 								?>
-								<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off"<?php echo in_array( $law_bl_key, array( 'name', 'email' ), true ) ? ' aria-required="true"' : ''; ?> name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
+								<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off" aria-required="true" name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
 							<?php endforeach; ?>
 						</div>
 					</div>

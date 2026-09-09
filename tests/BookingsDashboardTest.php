@@ -70,7 +70,7 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		// A press pass registered by the committee.
 		$committee   = $this->make_committee_user();
 		$press_email = $this->unique_email( 'press' );
-		$booking_p   = law_booking_register_by_manager( $event_a, array( 'name' => 'Pat Press', 'email' => $press_email ), $committee, array( 'press' => true ) );
+		$booking_p   = law_booking_register_by_manager( $event_a, array( 'name' => 'Pat Press', 'email' => $press_email, 'organisation' => 'Press Co', 'job_title' => 'Reporter' ), $committee, array( 'press' => true ) );
 		$this->assertIsInt( $booking_p );
 		$this->posts[] = $booking_p;
 		$press_user    = get_user_by( 'email', $press_email );

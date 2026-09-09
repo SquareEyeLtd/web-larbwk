@@ -23,15 +23,56 @@
  * The modals render inside their caller's form, so everything else on that
  * form still posts with the action.
  *
- * Two hooks for scripts that submit a modal's action over fetch (see
- * assets/js/committee-actions.js): window.lawModal.open(id) / .close() open
- * and close a dialog programmatically (open switches dialogs, closing any
- * current one first), and a modal carrying the law-modal--busy class is
- * mid-request, so Escape and the close controls are ignored until the
- * caller removes it.
+ * Three hooks for scripts that submit a form over fetch (see
+ * assets/js/committee-actions.js and assets/js/booking-form.js):
+ * window.lawModal.open(id) / .close() open and close a dialog programmatically
+ * (open switches dialogs, closing any current one first);
+ * window.lawModal.redirect(url) follows the URL a handler answered with,
+ * forcing a reload when that URL is the page we are already on; and a modal
+ * carrying the law-modal--busy class is mid-request, so Escape and the close
+ * controls are ignored until the caller removes it.
  */
 (function () {
 	'use strict';
+
+	/* The programmatic surface, for scripts that answer a modal's action over
+	   fetch and then need to swap to a result dialog or leave the page. It is
+	   defined BEFORE the "no openers on this page" guard below, because a page
+	   can carry a fetch form with no dialog at all (the waitlist reorder
+	   arrows) and redirect() has to exist there too. openModal and closeModal
+	   are function declarations, so hoisting makes this safe. */
+	window.lawModal = {
+		open: function (id) {
+			var modal = document.getElementById(id);
+			if (modal) { openModal(modal, null); }
+		},
+		close: closeModal,
+		/* Go where the server sent us, even when that is the page we are
+		   already on. location.replace() to a URL that differs from the current
+		   one only by its fragment is a SAME-DOCUMENT navigation: the browser
+		   scrolls to the anchor and nothing reloads. Every one of these
+		   handlers redirects back to the list it was posted from, so the second
+		   waitlist move, promotion or rejection in a row used to answer
+		   successfully and then leave the button stuck on its busy label. */
+		redirect: function (url) {
+			var target;
+			try {
+				target = new URL(url || window.location.href, window.location.href);
+			} catch (e) {
+				window.location.reload();
+				return;
+			}
+			var bare = function (href) { return href.replace(/#.*$/, ''); };
+			if (bare(target.href) === bare(window.location.href)) {
+				// Keep the anchor so the reloaded page still lands on the section.
+				if (target.hash) { window.location.hash = target.hash; }
+				window.location.reload();
+				return;
+			}
+			/* replace, not assign: Back should not return to the stale form. */
+			window.location.replace(target.href);
+		}
+	};
 
 	var openers = document.querySelectorAll('[data-law-modal-open]');
 	if (!openers.length) { return; }
@@ -168,13 +209,4 @@
 		});
 	});
 
-	/* The programmatic surface, for scripts that answer a modal's action over
-	   fetch and then need to swap to a result dialog. */
-	window.lawModal = {
-		open: function (id) {
-			var modal = document.getElementById(id);
-			if (modal) { openModal(modal, null); }
-		},
-		close: closeModal
-	};
 })();

@@ -634,8 +634,11 @@ function law_booking_clash_end( $start, $end ) {
 }
 
 /**
- * Validate and normalise the submitted additional-attendee rows: cap 3, full
- * name and a valid email required, organisation and job title optional.
+ * Validate and normalise the submitted additional-attendee rows: cap 3, and
+ * all four fields required — full name, a valid email, organisation and job
+ * title (Denis, 9 September 2026: the same four the registration form asks a
+ * person for, since an account is created from this row and the bookings
+ * exports and admin screens all print the organisation and job title).
  * Errors carry data ['row' => index, 'field' => name] so the form can mark
  * the offending control.
  *
@@ -665,6 +668,12 @@ function law_booking_clean_additional_rows( array $rows ) {
 		}
 		if ( ! is_email( $email ) ) {
 			return new WP_Error( 'law_booking_invalid_row', sprintf( 'Please give a valid email address for %s.', $name ), array( 'row' => $i, 'field' => 'email' ) );
+		}
+		if ( '' === $organisation ) {
+			return new WP_Error( 'law_booking_invalid_row', sprintf( 'Please give an organisation for %s.', $name ), array( 'row' => $i, 'field' => 'organisation' ) );
+		}
+		if ( '' === $job_title ) {
+			return new WP_Error( 'law_booking_invalid_row', sprintf( 'Please give a job title for %s.', $name ), array( 'row' => $i, 'field' => 'job_title' ) );
 		}
 		$clean[] = array(
 			'user_id'      => 0,

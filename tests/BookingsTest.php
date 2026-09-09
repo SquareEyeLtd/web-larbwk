@@ -174,6 +174,27 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertIsArray( $this->make_booking( $event, $fresh ), 'A cancelled booking does not block a new one.' );
 	}
 
+	public function test_attendee_rows_require_organisation_and_job_title(): void {
+		$event  = $this->make_bookable_event();
+		$booker = $this->make_user( 'attendee' );
+		$guest  = $this->unique_email( 'guest' );
+
+		// All four fields are required on an additional-attendee row (Denis,
+		// 9 September 2026): an account is created from it, and the exports
+		// and admin screens print the organisation and job title.
+		$no_org = $this->make_booking( $event, $booker, array( array( 'name' => 'Jane Smith', 'email' => $guest, 'job_title' => 'Associate' ) ) );
+		$this->assertWPError( $no_org, 'law_booking_invalid_row' );
+		$this->assertSame( 'organisation', $no_org->get_error_data()['field'] ?? '' );
+
+		$no_job = $this->make_booking( $event, $booker, array( array( 'name' => 'Jane Smith', 'email' => $guest, 'organisation' => 'Test Org' ) ) );
+		$this->assertWPError( $no_job, 'law_booking_invalid_row' );
+		$this->assertSame( 'job_title', $no_job->get_error_data()['field'] ?? '' );
+
+		// Nothing was seated by either refusal, and the complete row is taken.
+		$this->assertSame( 0, law_event_attendee_total( $event ) );
+		$this->assertIsArray( $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $guest ) ) ) );
+	}
+
 	public function test_capacity_exact_fill_then_full(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 2 ) );
 		$booker = $this->make_user( 'attendee' );

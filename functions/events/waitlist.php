@@ -570,7 +570,11 @@ function law_waitlist_promote( $booking_id, $actor_id ) {
  * @param string $direction        top | up | down.
  * @param int    $expected_position The position the actor was looking at; a
  *                                  stale click is a no-op, not a wrong move.
- * @return array|WP_Error { moved: bool }
+ * @return array|WP_Error { moved: bool, promoted: int[] } — the promoted IDs
+ *                        because a move can seat somebody (raised places, a
+ *                        smaller party now at the front), and the front end
+ *                        has to reload rather than reorder in place when it
+ *                        does.
  */
 function law_waitlist_reorder( $booking_id, $direction, $actor_id, $expected_position = 0 ) {
 	$entry = get_post( $booking_id );
@@ -603,13 +607,13 @@ function law_waitlist_reorder( $booking_id, $direction, $actor_id, $expected_pos
 	// rather than move the wrong entry, and let the reload show the truth.
 	if ( $expected_position && (int) law_event_meta( $entry->ID, '_law_waitlist_position' ) !== (int) $expected_position ) {
 		law_booking_unlock( $event_id );
-		return array( 'moved' => false );
+		return array( 'moved' => false, 'promoted' => array() );
 	}
 
 	$target = 'top' === $direction ? 0 : ( 'up' === $direction ? $index - 1 : $index + 1 );
 	if ( $target < 0 || $target > count( $queue ) - 1 || $target === $index ) {
 		law_booking_unlock( $event_id );
-		return array( 'moved' => false );
+		return array( 'moved' => false, 'promoted' => array() );
 	}
 
 	$moved = array_splice( $queue, $index, 1 );
@@ -638,9 +642,9 @@ function law_waitlist_reorder( $booking_id, $direction, $actor_id, $expected_pos
 	);
 
 	// A smaller wait at the front may now be seatable.
-	law_waitlist_process( $event_id, 'reorder' );
+	$promoted = law_waitlist_process( $event_id, 'reorder' );
 
-	return array( 'moved' => true );
+	return array( 'moved' => true, 'promoted' => array_map( 'intval', $promoted ) );
 }
 
 /* Untrash ____________________________________________________________________ */
@@ -753,14 +757,31 @@ function law_waitlist_reorder_handler() {
 
 	$moved  = ! empty( $result['moved'] );
 	$notice = $moved ? 'waitlist-reordered' : 'waitlist-unchanged';
+	/* The queue as it now stands, so booking-form.js can reorder the table in
+	   place instead of reloading the whole list on every arrow click. Positions
+	   are always 1..n here: law_waitlist_process() ends with a renumber. The
+	   promoted IDs are the client's signal to reload instead — an entry that
+	   has left the queue for the active table changes both tables and the
+	   counts in their headings. */
+	$order = array();
+	foreach ( law_waitlist_for_event( (int) $booking->post_parent ) as $entry ) {
+		$order[] = array(
+			'id'       => (int) $entry->ID,
+			'position' => (int) law_event_meta( $entry->ID, '_law_waitlist_position' ),
+		);
+	}
 	law_events_respond(
 		$is_ajax,
 		true,
 		array(
 			'title'    => $moved ? 'Waitlist reordered' : 'Waitlist unchanged',
+			// No "Reloading the page…": whether it reloads is the client's call.
 			'message'  => $moved
-				? 'The new order is saved. Reloading the page…'
-				: 'The waitlist had already moved on, so nothing was changed. Reloading the page…',
+				? 'The waitlist order has been updated.'
+				: 'The waitlist had already moved on, so nothing was changed. This is the current order.',
+			'order'    => $order,
+			'promoted' => array_values( (array) ( $result['promoted'] ?? array() ) ),
+			'moved'    => $moved,
 			'redirect' => add_query_arg( 'law_notice', $notice, law_booking_list_url( (int) $booking->post_parent ) ) . '#law-waitlist',
 		),
 		$notice

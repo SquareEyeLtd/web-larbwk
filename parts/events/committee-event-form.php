@@ -60,20 +60,11 @@ $law_sections = array(
 	<div class="law-form-notice is-error" role="alert">Please fix the highlighted fields below.</div>
 <?php endif; ?>
 <?php
-// Edit locking: warn when someone else is in this event, and take the lock
-// while this form is open. The read-only detail view never takes the lock;
-// only this edit view does.
-require_once ABSPATH . 'wp-admin/includes/post.php';
-$law_locked_by = wp_check_post_lock( $law_post->ID );
-if ( $law_locked_by ) {
-	$law_lock_user = get_user_by( 'id', (int) $law_locked_by );
-	printf(
-		'<div class="law-form-notice is-error" role="alert">%s is editing this event right now. You can look, but saving will be refused until they finish.</div>',
-		esc_html( $law_lock_user ? $law_lock_user->display_name : 'Another user' )
-	);
-} else {
-	wp_set_post_lock( $law_post->ID );
-}
+// Edit locking (functions/events/edit-lock.php): warn when someone else is in
+// this event, otherwise take the lock and hand it to the browser, which
+// refreshes it on the heartbeat and releases it on unload. The read-only
+// detail view never calls this; only this edit view does.
+law_event_lock_field( $law_post );
 ?>
 
 <div class="grid-x grid-padding-x">

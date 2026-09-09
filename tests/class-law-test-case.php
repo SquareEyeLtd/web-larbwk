@@ -14,9 +14,27 @@ abstract class LAW_Test_Case extends TestCase {
 	protected array $option_overlay = array();
 	/** The filter callbacks installed by isolate_option(), for removal. */
 	protected array $option_filters = array();
+	/**
+	 * Undo the test by rolling its transaction back, rather than by deleting
+	 * what it created. See tests/bootstrap.php for why (the local database
+	 * fsyncs on every commit, and the deletes were most of the runtime).
+	 *
+	 * Set this false in a subclass that has to run DDL: CREATE, ALTER and
+	 * TRUNCATE implicitly commit in MariaDB, which would end the transaction
+	 * early and leave everything before it permanently in the database. Such a
+	 * class pays the old delete-based teardown instead. Nothing needs it
+	 * today: the only DDL in the theme is the migration log table in
+	 * functions/events/migration/report.php, and no test reaches it.
+	 */
+	protected bool $use_transaction = true;
 
 	protected function setUp(): void {
 		parent::setUp();
+		if ( $this->use_transaction ) {
+			// tearDown() has already rolled the previous test back, so there is
+			// never pending work here for START TRANSACTION to implicitly commit.
+			$GLOBALS['wpdb']->query( 'START TRANSACTION' );
+		}
 		$GLOBALS['law_test_stripe_queue'] = array();
 		$GLOBALS['law_test_stripe_calls'] = array();
 		wp_set_current_user( 0 );
@@ -81,17 +99,29 @@ abstract class LAW_Test_Case extends TestCase {
 		}
 		$this->option_filters = array();
 		$this->option_overlay = array();
-		foreach ( $this->posts as $post_id ) {
-			$comments = get_comments( array( 'post_id' => $post_id ) );
-			foreach ( $comments as $comment ) {
-				wp_delete_comment( $comment->comment_ID, true );
+
+		if ( $this->use_transaction ) {
+			$GLOBALS['wpdb']->query( 'ROLLBACK' );
+			// Every row the test wrote is gone from the database, but the
+			// in-memory object cache still holds it, so the next test would
+			// read ghosts: posts and users that get_post()/get_user_by()
+			// answer for and no query can find. Flushing is cheap, as there
+			// is no persistent object cache on this install.
+			wp_cache_flush();
+		} else {
+			foreach ( $this->posts as $post_id ) {
+				$comments = get_comments( array( 'post_id' => $post_id ) );
+				foreach ( $comments as $comment ) {
+					wp_delete_comment( $comment->comment_ID, true );
+				}
+				wp_delete_post( $post_id, true );
 			}
-			wp_delete_post( $post_id, true );
+			foreach ( $this->users as $user_id ) {
+				require_once ABSPATH . 'wp-admin/includes/user.php';
+				wp_delete_user( $user_id );
+			}
 		}
-		foreach ( $this->users as $user_id ) {
-			require_once ABSPATH . 'wp-admin/includes/user.php';
-			wp_delete_user( $user_id );
-		}
+
 		$this->posts = array();
 		$this->users = array();
 		wp_set_current_user( 0 );

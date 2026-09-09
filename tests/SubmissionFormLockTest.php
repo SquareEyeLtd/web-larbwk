@@ -160,4 +160,71 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 		// law_events_send() logs every send; no send means no email log line.
 		$this->assertStringNotContainsString( 'committee_event_updated', $log );
 	}
+
+	/**
+	 * Regression, 9 September 2026: the update path passed a partial array to
+	 * wp_insert_post(), which fills every omitted key from its own defaults
+	 * before it works out that it is an update. A committee member saving an
+	 * event from the dashboard therefore became its post_author, which locked
+	 * the real host out of their own event and redirected every host-facing
+	 * notification to the committee member; post_date was reset to the moment
+	 * of the save at the same time.
+	 */
+	public function test_committee_save_does_not_steal_ownership_or_reset_the_date(): void {
+		$host      = $this->make_user( 'event_host' );
+		$committee = $this->make_committee_user();
+		wp_set_current_user( $committee );
+
+		$event_id = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-approved', $host );
+		wp_update_post(
+			array(
+				'ID'            => $event_id,
+				'post_date'     => '2026-09-01 09:00:00',
+				'post_date_gmt' => get_gmt_from_date( '2026-09-01 09:00:00' ),
+				'edit_date'     => true,
+			)
+		);
+		clean_post_cache( $event_id );
+		$before = get_post( $event_id );
+
+		$result = law_events_form_save( $this->valid_input(), array(), $before, $committee );
+		$this->assertIsInt( $result );
+		clean_post_cache( $event_id );
+		$after = get_post( $event_id );
+
+		$this->assertSame( $host, (int) $after->post_author, 'The committee save must not take ownership.' );
+		$this->assertSame( '2026-09-01 09:00:00', $after->post_date, 'The committee save must not reset post_date.' );
+		$this->assertSame( $before->post_name, $after->post_name );
+
+		// The consequences the host would actually notice.
+		$this->assertTrue( law_user_can_manage_event( $host, $event_id ) );
+		$this->assertContains( $event_id, law_events_owned_event_ids( $host ) );
+		$this->assertFalse( law_user_can_manage_event( $this->make_user( 'event_host' ), $event_id ) );
+	}
+
+	/**
+	 * The same defaults would blank a title the host cannot post because it is
+	 * locked, and law_events_map_post() reads an empty title as "no event".
+	 */
+	public function test_host_save_of_an_approved_event_keeps_the_locked_title(): void {
+		$host = $this->make_user( 'event_host' );
+		wp_set_current_user( $host );
+
+		$event_id = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-approved', $host );
+		$before   = get_post( $event_id );
+		$this->assertContains( 'title', law_events_locked_fields( $before, $host ) );
+
+		// A disabled input posts nothing at all.
+		$input = $this->valid_input();
+		unset( $input['event_title'] );
+
+		$result = law_events_form_save( $input, array(), $before, $host );
+		$this->assertIsInt( $result );
+		clean_post_cache( $event_id );
+		$after = get_post( $event_id );
+
+		$this->assertSame( $before->post_title, $after->post_title );
+		$this->assertSame( $host, (int) $after->post_author );
+		$this->assertSame( $before->post_date, $after->post_date );
+	}
 }
