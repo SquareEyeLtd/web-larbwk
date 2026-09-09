@@ -103,6 +103,15 @@
 .law-rich-text.is-invalid .mce-tinymce,
 .law-row.is-invalid .law-rich-text .mce-tinymce {
 	border: 2px solid var(--law-form-error-accent, #ff5c4d);
+	/* !important on the width alone, because TinyMCE's control repaint writes
+	   `border-width: 1px` into the container's inline style attribute at init
+	   (`style="visibility: hidden; border-width: 1px; width: 100%;"`). An
+	   inline style outranks an external sheet per LONGHAND, so it took the
+	   width out of the shorthand above and left the colour alone: the invalid
+	   editor drew a 1px red border where every other control draws 2px.
+	   The resting rule's 1px is unaffected — it happens to agree with the
+	   inline value, which is why this only ever showed in the error state. */
+	border-width: 2px !important;
 }
 
 /* The message law-rich-text.js prints when a required description is empty
