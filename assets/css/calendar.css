@@ -909,6 +909,22 @@
   text-transform: uppercase;
   padding: 3px 8px;
   border-radius: 10px;
+  /* A default background, so a badge whose status has no modifier of its own
+     is still legible instead of navy-on-white with no pill at all. Every
+     modifier below overrides both properties; this is the floor. */
+  background: #f4f2fa;
+  color: #292459;
+}
+
+/* Inside a table the badge is content in a cell, not a corner flag on a card,
+   so it takes its place in the flow. Without this it absolutely positions
+   itself out of the cell and lands wherever the nearest positioned ancestor
+   happens to be. */
+.law-dashboard__table .law-cal-card__badge,
+.law-booking-table .law-cal-card__badge {
+  position: static;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .law-cal-card__badge--confirmed {
@@ -959,6 +975,25 @@
 .law-cal-card__badge--waitlisted {
   background: #fdeee0;
   color: #a35300;
+}
+
+/* The flagship's application states (FLAGSHIP_PAYMENTS.md §6).
+
+   --applied borrows the waitlist's amber, because it means the same thing to
+   the reader: waiting on someone else, nothing to do. --payment-failed is the
+   one attendee-facing badge that is genuinely an alarm — the place is at risk
+   and only the delegate can fix it — so it takes the cancelled red rather
+   than inventing a third warning colour. Contrast on the card's #ececf1 tint:
+   #a35300 on #fdeee0 is about 4.9:1, #a12622 on #fdeaea about 6.4:1, both AA
+   at this size and weight. */
+.law-cal-card__badge--applied {
+  background: #fdeee0;
+  color: #a35300;
+}
+
+.law-cal-card__badge--payment-failed {
+  background: #fdeaea;
+  color: #a12622;
 }
 
 /* "Invited by X" on a colleague's row, and the press pass: quiet tags that
@@ -1672,4 +1707,245 @@
   .law-event-details .law-event-details__footer .button {
     width: 100%;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   The flagship's applications and payments (FLAGSHIP_PAYMENTS.md §4.4, §5)
+   --------------------------------------------------------------------------- */
+
+/* The exception panel on a delegate's own application. It is the only thing
+   on the page that matters when it is there, so it gets room to breathe
+   rather than the one-line treatment the other notices use. */
+.law-flagship-exception p {
+  margin: 0 0 0.6rem;
+}
+
+.law-flagship-exception p:last-child {
+  margin-bottom: 0;
+}
+
+.law-flagship-exception .law-form-buttons {
+  margin-top: 1rem;
+}
+
+/* A payment accepted but not settled: informational, not an error. Same
+   shape as the exception panel so the page stays consistent, but it keeps
+   the neutral notice colours rather than the red ones, because nothing has
+   gone wrong and nothing is being asked of the delegate. */
+.law-flagship-processing p {
+  margin: 0 0 0.6rem;
+}
+
+.law-flagship-processing p:last-child {
+  margin-bottom: 0;
+}
+
+/* The payment-method button sits inside a table cell beside the method it
+   changes, so it must not take a line of its own. */
+.law-flagship-card-form {
+  display: inline-block;
+  margin: 0;
+}
+
+/* The committee's applications table. The tick column is a control, not
+   content: it stays as narrow as the box it holds. */
+/* Shrink-wrap the tick column.
+   .law-dashboard__table td:first-child (event-form.css) sets min-width: 220px,
+   because in every other dashboard table the first cell holds a title that
+   needs room. Here it holds a checkbox, so that minimum WAS the whole of the
+   problem — and the selector has to out-specify it, which a lone class
+   cannot. Same override the waitlist's position cell already needed.
+   width: 1% then asks the auto layout for the column's minimum rather than a
+   share of the leftover space. */
+.law-dashboard__table th.law-flagship-bookings__tick,
+.law-dashboard__table td.law-flagship-bookings__tick {
+  width: 1%;
+  min-width: 0;
+  white-space: nowrap;
+  text-align: center;
+  padding-right: 0;
+}
+
+.law-flagship-bookings__tick label {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+}
+
+.law-flagship-bookings__tick input[type="checkbox"] {
+  margin: 0;
+}
+
+/* Each row can carry Approve and Decline and, when a payment failed, Retry
+   charge and Resend request. Each is its own form, and a form is a block, so
+   without this they stack. They must stay side by side: reading Approve
+   above Decline invites clicking the wrong one on a table of hundreds.
+
+   Three things are deliberately NOT done here, each having been tried:
+
+   - no `display: flex` on the cell. A flex td stops being a table cell (the
+     browser wraps it in an anonymous one), so the table's column widths stop
+     applying to it; with a width as well, the cell collapsed and the buttons
+     painted over the Payment and Status columns.
+   - no width. `white-space: nowrap` is inherited from .law-dashboard__table
+     td, so the pair physically cannot break and the column simply asks for
+     the room it needs. If that overflows, .law-dashboard__table-wrap scrolls.
+   - no `text-align`. Each row's confirm dialog is rendered INSIDE the form in
+     this cell, and alignment inherits regardless of position:fixed, so
+     `text-align: right` here right-aligned every word of the dialog.
+     law-modal.css resets it at the dialog now, but there is still no reason
+     to set one. */
+.law-flagship-bookings__inline {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0;
+}
+
+/* Text links need more air between them than buttons do: with 0.35rem the
+   two words read as one phrase, and "Approve Decline" is not a thing anyone
+   should have to parse before clicking. */
+.law-flagship-bookings__table td.law-dashboard__row-actions .law-flagship-bookings__inline + .law-flagship-bookings__inline {
+  margin-left: 0.9rem;
+}
+
+/* The decline reason and the bulk buttons, below the table. */
+/* The bulk buttons act on the rows directly above them, so they sit close to
+   the table rather than floating in their own section. Three margins were
+   stacking here: the form's, the paragraph's and the browser's default on a
+   <p>. */
+/* The bulk form itself carries nothing visible: its buttons render above the
+   table and join it with the HTML `form` attribute. */
+.law-flagship-bookings__bulk {
+  margin: 0;
+}
+
+/* One inline row of text links above the table: the two decide actions and
+   the add-attendee opener. They wrap rather than overflowing, and the gap
+   keeps a mis-tap on a phone from declining a batch meant to be approved. */
+.law-flagship-bookings__bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem 1rem;
+  align-items: baseline;
+  margin: 0 0 .5rem;
+}
+
+/* Disabled until something is ticked. Greyed and not underlined, so it does
+   not read as a link that simply refuses to work. */
+.law-flagship-bookings__bulk-actions .law-linkish[disabled] {
+  color: #6d6d80;
+  text-decoration: none;
+  cursor: default;
+}
+
+/* No column wider than 12rem (Denis, 10 September 2026).
+
+   Every cell in .law-dashboard__table is `white-space: nowrap`, so the
+   longest single value — "Payment method saved, awaiting review", a firm
+   name, an email — decided how wide the whole table was. Capping the width
+   only works if the text is also allowed to wrap, so both go together here,
+   with overflow-wrap for the one thing that has no spaces in it: an email
+   address.
+
+   A caveat worth knowing: this table is auto-layout, so max-width caps how
+   wide a column ASKS to be, not an absolute ceiling. If the table has spare
+   room the browser may still hand a column more. It is the wrapping that
+   does the real work. */
+.law-flagship-bookings__table th,
+.law-flagship-bookings__table td {
+  max-width: 12rem;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+/* Two exceptions, both deliberate. The tick is a single checkbox and should
+   take a checkbox's worth of room, and the actions must stay on one line
+   whatever else wraps — which is the whole point of that column. */
+.law-flagship-bookings__table th.law-flagship-bookings__tick,
+.law-flagship-bookings__table td.law-flagship-bookings__tick,
+.law-flagship-bookings__table th.law-dashboard__row-actions,
+.law-flagship-bookings__table td.law-dashboard__row-actions {
+  max-width: none;
+  white-space: nowrap;
+}
+
+/* The applicant column carries the most: a name and three details under it.
+   Give it a floor so it does not get squeezed to one word per line. */
+.law-flagship-bookings__table th.law-flagship-bookings__applicant,
+.law-flagship-bookings__table td.law-flagship-bookings__applicant,
+.law-flagship-bookings__table th.law-flagship-bookings__payment,
+.law-flagship-bookings__table td.law-flagship-bookings__payment {
+  min-width: 9rem;
+}
+
+.law-flagship-bookings__error {
+  color: #a12622;
+}
+
+.law-flagship-bookings__over {
+  color: #a12622;
+}
+
+/* This section is now only the dialog and the no-JS fallback: its opener
+   sits in the actions row above the table. So it takes no space of its own. */
+.law-flagship-bookings__add {
+  margin: 0;
+}
+
+/* Openers ship with `hidden` and law-modal.js clears it. Removing the
+   attribute hands the button back to whatever display the cascade last said,
+   which on this page was a full-width block. State it, rather than relying on
+   what the button would have inherited had it never been hidden. */
+.law-flagship-bookings__add-opener {
+  display: inline-block;
+  width: auto;
+}
+
+.law-flagship-bookings__add-fallback summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+/* The delegate's own application, laid out as facts rather than as a list:
+   the label column is fixed so the values line up down the page. */
+.law-flagship-application th {
+  width: 12rem;
+  white-space: nowrap;
+  text-align: left;
+  vertical-align: top;
+}
+
+@media (max-width: 47.9375em) {
+  .law-flagship-application th {
+    width: auto;
+    white-space: normal;
+  }
+}
+
+/* The discount-code catalogue (functions/events/discounts.php). */
+/* A row of dashboard actions. The base .button is width:100% (app.css), so
+   any button not explicitly sized stretches the full width of the page —
+   which made "Add a code" an orange band across the screen. Size them to
+   their own labels and lay them out in a line. */
+.law-dashboard__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0 0 1rem;
+}
+
+.law-dashboard__actions .button {
+  width: auto;
+  margin: 0;
+}
+
+.law-discounts__table code {
+  font-size: 0.95em;
+}
+
+.law-discounts__toggle {
+  display: inline-block;
+  margin: 0;
 }

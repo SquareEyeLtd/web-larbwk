@@ -1,6 +1,7 @@
 <?php
 /**
- * CPTs (law_event, law_speaker, law_session) and taxonomies.
+ * CPTs (law_event, law_speaker, law_session, law_booking, law_discount) and
+ * taxonomies.
  *
  * law_event uses its own capability set (law_event / law_events) so the
  * events_committee role can be granted admin access without touching posts
@@ -15,6 +16,7 @@ const LAW_EVENT_CPT   = 'law_event';
 const LAW_SPEAKER_CPT = 'law_speaker';
 const LAW_SESSION_CPT = 'law_session';
 const LAW_BOOKING_CPT = 'law_booking';
+const LAW_DISCOUNT_CPT = 'law_discount';
 
 function law_events_capability_args() {
 	return array(
@@ -124,6 +126,42 @@ function law_events_register_post_types() {
 				// (law_booking_create()), so the capacity, duplicate and clash
 				// guards and the seat recount can never be bypassed from
 				// wp-admin. The admin screen is read-only inspection.
+				'capabilities'       => array( 'create_posts' => 'do_not_allow' ),
+			)
+		)
+	);
+
+	// Discount codes (functions/events/discounts.php).
+	//
+	// Built and kept, but deliberately NOT wired to anything yet: Denis
+	// confirmed on 10 September 2026 that codes are wanted in future and are
+	// not wanted on the flagship, so the catalogue exists and the committee
+	// can fill it, and the first priced booking flow that should honour a
+	// code opts in by calling law_discount_validate(). Nothing charges a
+	// discounted amount today.
+	//
+	// A first-class post type rather than rows in an option: a code needs its
+	// own usage counter incremented atomically, its own activity trail and a
+	// queryable slug, none of which is comfortable inside a serialised
+	// option. Engine-write-only like bookings, so a code can never be
+	// conjured in wp-admin without the normalisation the lookup depends on.
+	register_post_type(
+		LAW_DISCOUNT_CPT,
+		array_merge(
+			law_events_capability_args(),
+			array(
+				'labels'             => array(
+					'name'          => 'Discount codes',
+					'singular_name' => 'Discount code',
+					'edit_item'     => 'Discount code',
+				),
+				'public'             => false,
+				'publicly_queryable' => false,
+				'show_ui'            => true,
+				'show_in_menu'       => 'edit.php?post_type=' . LAW_EVENT_CPT,
+				'show_in_rest'       => false,
+				'rewrite'            => false,
+				'supports'           => array( 'title' ),
 				'capabilities'       => array( 'create_posts' => 'do_not_allow' ),
 			)
 		)

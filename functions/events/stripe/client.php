@@ -32,8 +32,11 @@ function law_stripe_webhook_secret() {
  * @return array|WP_Error Decoded response body.
  */
 function law_stripe_request( $method, $path, array $body = array(), $idempotency_key = '' ) {
-	// Test seam: unit tests short-circuit the network with this filter.
-	$mocked = apply_filters( 'law_stripe_request_mock', null, $method, $path, $body );
+	// Test seam: unit tests short-circuit the network with this filter. The
+	// idempotency key is passed too, because getting it wrong is a real bug
+	// class here (Stripe refuses a key reused with different parameters) and
+	// a test cannot assert on what it cannot see.
+	$mocked = apply_filters( 'law_stripe_request_mock', null, $method, $path, $body, $idempotency_key );
 	if ( null !== $mocked ) {
 		return $mocked;
 	}

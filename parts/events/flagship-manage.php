@@ -189,6 +189,53 @@ get_template_part(
 			</fieldset>
 
 			<fieldset>
+				<legend><?php esc_html_e( 'Bookings and pricing', 'law' ); ?></legend>
+
+				<p class="law-form-field">
+					<label for="law-fm-places"><?php esc_html_e( 'Places available', 'law' ); ?></label>
+					<input type="number" id="law-fm-places" name="law_flagship[places]" min="0" step="1"
+						value="<?php echo esc_attr( (string) (int) $law_fm_values['places'] ); ?>">
+					<span class="law-form-hint"><?php esc_html_e( 'Applications are never refused when this runs out: the page tells the delegate the conference is full and that they will be queued, and you can still approve them. Zero means no number has been set yet.', 'law' ); ?></span>
+				</p>
+
+				<div class="law-row-grid">
+					<p class="law-form-field">
+						<label for="law-fm-price"><?php esc_html_e( 'Price before the switch (£, excluding VAT)', 'law' ); ?></label>
+						<input type="text" inputmode="decimal" id="law-fm-price" name="law_flagship[price]"
+							value="<?php echo esc_attr( (string) $law_fm_values['price'] ); ?>">
+					</p>
+
+					<p class="law-form-field">
+						<label for="law-fm-price-late"><?php esc_html_e( 'Price after the switch (£, excluding VAT)', 'law' ); ?></label>
+						<input type="text" inputmode="decimal" id="law-fm-price-late" name="law_flagship[price_late]"
+							value="<?php echo esc_attr( (string) $law_fm_values['price_late'] ); ?>">
+					</p>
+				</div>
+
+				<p class="law-form-field">
+					<label for="law-fm-price-switch"><?php esc_html_e( 'Price switches at', 'law' ); ?></label>
+					<input type="text" id="law-fm-price-switch" name="law_flagship[price_switch]"
+						placeholder="2026-10-17 00:00"
+						value="<?php echo esc_attr( (string) $law_fm_values['price_switch'] ); ?>">
+					<span class="law-form-hint"><?php esc_html_e( 'Date and time as YYYY-MM-DD HH:MM, in UK time. VAT is added on top of both prices at the standard rate. A delegate is charged the price that applied when they saved their payment details, even if they are approved after the switch.', 'law' ); ?></span>
+				</p>
+
+				<?php
+				// One sentence, built by the shared helper so this screen and the
+				// wp-admin one can never explain the pricing differently.
+				$law_fm_preview = law_flagship_price_preview_line(
+					(string) $law_fm_values['price'],
+					(string) $law_fm_values['price_late'],
+					(string) $law_fm_values['price_switch']
+				);
+				?>
+				<?php if ( '' !== $law_fm_preview ) : ?>
+					<p class="law-form-field"><strong><?php echo esc_html( $law_fm_preview ); ?></strong></p>
+				<?php endif; ?>
+
+			</fieldset>
+
+			<fieldset>
 				<legend><?php esc_html_e( 'Sessions', 'law' ); ?></legend>
 				<?php
 				// The shared agenda fields, identical to the wp-admin screen's

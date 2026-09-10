@@ -22,9 +22,10 @@ add_action( 'add_meta_boxes_' . LAW_BOOKING_CPT, function () {
 } );
 
 /**
- * Number, status, dates, the attendee, who invited them, and the parent event
- * (edit screen + front-end list). One booking is one attendee, so there is no
- * separate attendee box.
+ * Number, status, dates, the attendee, who invited them, the parent event
+ * (edit screen + front-end list), and — for a booking that was paid for — the
+ * money: amount, payment state, card, VAT receipt, consent and who decided.
+ * One booking is one attendee, so there is no separate attendee box.
  */
 function law_booking_box_facts( $post ) {
 	$event    = get_post( (int) $post->post_parent );
@@ -61,6 +62,59 @@ function law_booking_box_facts( $post ) {
 	$promoted = (string) law_event_meta( $post->ID, '_law_waitlist_promoted' );
 	if ( '' !== $promoted ) {
 		$rows['Promoted from the waitlist'] = $promoted;
+	}
+
+	// The money, for a booking that has any (the flagship's applications
+	// today; any priced booking tomorrow). Without this an administrator
+	// opening a paid place in wp-admin could see no price, no payment state
+	// and no invoice — the one screen where the whole record is supposed to
+	// be inspectable showed everything except what was charged.
+	$payment = (string) law_event_meta( $post->ID, '_law_payment_status' );
+	if ( '' !== $payment ) {
+		$price   = law_booking_price( $post->ID );
+		$states  = function_exists( 'law_flagship_payment_states' ) ? law_flagship_payment_states() : array();
+		$invoice = (string) law_event_meta( $post->ID, '_law_stripe_invoice_url' );
+		$pdf     = (string) law_event_meta( $post->ID, '_law_stripe_invoice_pdf' );
+		$method  = function_exists( 'law_booking_payment_method_label' ) ? law_booking_payment_method_label( $post->ID ) : '';
+		$error   = (string) law_event_meta( $post->ID, '_law_payment_error' );
+		$consent = (string) law_event_meta( $post->ID, '_law_payment_consent_at' );
+		$by      = (int) law_event_meta( $post->ID, '_law_reviewed_by' );
+		$reviewer = $by ? get_user_by( 'id', $by ) : null;
+
+		$rows['Payment'] = esc_html( $states[ $payment ] ?? ucfirst( str_replace( '_', ' ', $payment ) ) )
+			. ( '' !== $error ? '<br><span class="description">' . esc_html( $error ) . '</span>' : '' );
+
+		$rows['Amount'] = law_event_meta( $post->ID, '_law_is_complimentary' )
+			? 'No charge (complimentary)'
+			: esc_html( law_events_format_pence( $price['gross'] ) )
+				. ( $price['vatable']
+					? ' <span class="description">(' . esc_html( law_events_format_pence( $price['net'] ) ) . ' plus '
+						. esc_html( law_events_format_pence( $price['vat'] ) ) . ' VAT)</span>'
+					: '' );
+
+		if ( '' !== $method ) {
+			$rows['Payment method on file'] = esc_html( $method );
+		}
+		if ( '' !== $invoice || '' !== $pdf ) {
+			$links = array();
+			if ( '' !== $invoice ) {
+				$links[] = '<a href="' . esc_url( $invoice ) . '" target="_blank" rel="noopener">Stripe invoice</a>';
+			}
+			if ( '' !== $pdf ) {
+				$links[] = '<a href="' . esc_url( $pdf ) . '" target="_blank" rel="noopener">PDF</a>';
+			}
+			$rows['VAT receipt'] = implode( ' · ', $links );
+		}
+		if ( '' !== $consent ) {
+			$rows['Consent to charge'] = esc_html( $consent ) . ' <span class="description">(UTC)</span>';
+		}
+		if ( $reviewer ) {
+			$rows['Decided by'] = '<a href="' . esc_url( get_edit_user_link( $reviewer->ID ) ) . '">' . esc_html( $reviewer->display_name ) . '</a>'
+				. ( law_event_meta( $post->ID, '_law_reviewed_at' ) ? ' <span class="description">' . esc_html( (string) law_event_meta( $post->ID, '_law_reviewed_at' ) ) . '</span>' : '' );
+		}
+		if ( '' !== (string) law_event_meta( $post->ID, '_law_decline_reason' ) ) {
+			$rows['Reason given'] = esc_html( (string) law_event_meta( $post->ID, '_law_decline_reason' ) );
+		}
 	}
 	foreach ( $rows as $label => $value ) {
 		printf( '<tr><th style="width:12em">%s</th><td>%s</td></tr>', esc_html( $label ), wp_kses_post( $value ) );

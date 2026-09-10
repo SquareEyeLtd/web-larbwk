@@ -62,6 +62,12 @@ get_header();
 						if ( function_exists( 'law_booking_notice_render' ) ) {
 							law_booking_notice_render();
 						}
+						// The flagship's own outcomes (applied, card saved,
+						// withdrawn) have their own map, because none of them
+						// happens to a hosted booking.
+						if ( function_exists( 'law_flagship_notice_render' ) ) {
+							law_flagship_notice_render();
+						}
 
 						$law_bookings = $law_is_cpt && function_exists( 'law_account_bookings' ) ? law_account_bookings() : array();
 						?>
@@ -92,9 +98,7 @@ get_header();
 										'event'      => $law_bk_item['event'],
 										'url'        => $law_bk_item['event']['url'],
 										'show_date'  => true,
-										'badge'      => $law_bk_item['waitlisted']
-											? array( 'label' => __( 'Waitlisted', 'law' ), 'slug' => 'waitlisted' )
-											: array(),
+										'badge'      => law_booking_card_badge( $law_bk_item['status'] ),
 										'meta_lines' => array_filter( array(
 											// One booking per attendee: their own place, and
 											// separately the colleagues they brought here.

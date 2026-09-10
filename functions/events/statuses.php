@@ -27,18 +27,59 @@ function law_event_statuses() {
 }
 
 /**
- * Booking statuses. `publish` is an active booking, `law-cancelled` is shared
- * with events (a post status is global, so it is registered once, above), and
- * `law-waitlisted` is registered here because it belongs to bookings alone.
+ * Booking statuses. `publish` is a confirmed booking, `law-cancelled` is
+ * shared with events (a post status is global, so it is registered once,
+ * above), and the rest belong to bookings alone.
+ *
+ * The last three are the flagship conference's approval-gated application
+ * flow (FLAGSHIP_PAYMENTS.md §2.1). They are deliberately NOT the waitlist:
+ * `law-waitlisted` carries automatic first-in-first-out promotion the moment
+ * a place frees, which is exactly what an approval gate cannot do, so an
+ * application waits in `law-applied` until a human decides.
+ *
+ * Order matters: it drives the committee's status filters.
  *
  * @return array<string,string> status => label.
  */
 function law_booking_statuses() {
 	return array(
-		'publish'        => 'Confirmed',
-		'law-waitlisted' => 'Waitlisted',
-		'law-cancelled'  => 'Cancelled',
+		'publish'            => 'Confirmed',
+		'law-applied'        => 'Awaiting review',
+		'law-waitlisted'     => 'Waitlisted',
+		'law-payment-failed' => 'Payment failed',
+		'law-declined'       => 'Declined',
+		'law-cancelled'      => 'Cancelled',
 	);
+}
+
+/**
+ * The subset a flagship application can hold. Hosted-event surfaces keep the
+ * smaller Confirmed / Waitlisted / Cancelled vocabulary, so only the flagship
+ * views ever show "Awaiting review", "Payment failed" or "Declined".
+ *
+ * @return array<string,string> status => label.
+ */
+function law_flagship_application_statuses() {
+	$all = law_booking_statuses();
+	return array(
+		'law-applied'        => $all['law-applied'],
+		'publish'            => $all['publish'],
+		'law-payment-failed' => $all['law-payment-failed'],
+		'law-declined'       => $all['law-declined'],
+		'law-cancelled'      => $all['law-cancelled'],
+	);
+}
+
+/**
+ * Booking statuses that are registered by this module rather than by core.
+ * One list, so registration and the untrash whitelist cannot drift.
+ *
+ * @return array<string,string> status => label.
+ */
+function law_booking_custom_statuses() {
+	$statuses = law_booking_statuses();
+	unset( $statuses['publish'], $statuses['law-cancelled'] );
+	return $statuses;
 }
 
 /**
@@ -56,11 +97,15 @@ function law_booking_status_label( $status ) {
 }
 
 function law_events_register_statuses() {
-	// law-waitlisted must be a REGISTERED status before anything queries it:
-	// WP_Query silently drops an unknown post_status, leaving no status clause
-	// at all, which would return every booking of every status.
+	// The booking-only statuses must be REGISTERED before anything queries
+	// them: WP_Query silently drops an unknown post_status, leaving no status
+	// clause at all, which would return every booking of every status.
 	$statuses = law_event_statuses();
-	$statuses['law-waitlisted'] = array( 'label' => 'Waitlisted', 'public' => false );
+	foreach ( law_booking_custom_statuses() as $status => $label ) {
+		if ( ! isset( $statuses[ $status ] ) ) {
+			$statuses[ $status ] = array( 'label' => $label, 'public' => false );
+		}
+	}
 
 	foreach ( $statuses as $status => $config ) {
 		if ( 'publish' === $status ) {

@@ -66,8 +66,12 @@ function law_bookings_dashboard_events() {
 			'order'          => 'ASC',
 		)
 	);
-	$out = array();
+	$excluded = law_bookings_dashboard_excluded_events();
+	$out      = array();
 	foreach ( $events as $event ) {
+		if ( in_array( (int) $event->ID, $excluded, true ) ) {
+			continue;
+		}
 		$out[ (int) $event->ID ] = array(
 			'title' => $event->post_title,
 			'start' => (string) law_event_meta( $event->ID, '_law_start' ),
@@ -75,6 +79,19 @@ function law_bookings_dashboard_events() {
 	}
 	uasort( $out, fn( $a, $b ) => strcmp( $a['start'] . $a['title'], $b['start'] . $b['title'] ) );
 	return array_map( fn( $e ) => $e['title'], $out );
+}
+
+/**
+ * Events this dashboard deliberately does not show.
+ *
+ * A filter rather than a hard-coded check, so each "this event books
+ * differently" rule lives with the feature that makes it different rather
+ * than accumulating here.
+ *
+ * @return int[]
+ */
+function law_bookings_dashboard_excluded_events() {
+	return array_values( array_unique( array_filter( array_map( 'intval', (array) apply_filters( 'law_bookings_dashboard_exclude_events', array() ) ) ) ) );
 }
 
 /**
@@ -131,6 +148,14 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 	);
 	if ( null !== $parent_in ) {
 		$query['post_parent__in'] = $parent_in;
+	}
+	// Events with a booking flow of their own are not "bookings" in this
+	// view's sense. The flagship is the first: an application there is a
+	// priced request the committee reviews, with its own page, its own
+	// columns and its own actions (functions/events/flagship-bookings-dashboard.php).
+	$excluded = law_bookings_dashboard_excluded_events();
+	if ( $excluded ) {
+		$query['post_parent__not_in'] = $excluded;
 	}
 	$bookings  = get_posts( $query );
 	$truncated = $limit > 0 && count( $bookings ) >= $limit;

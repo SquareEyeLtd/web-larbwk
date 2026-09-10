@@ -7,8 +7,11 @@
  * - attachments: the booking confirmation reaches wp_mail() with an .ics file;
  * - the removal-family templates resolve per context (reject / owner removal /
  *   self-removal / owner cancel), each to the removed person;
- * - the capacity warning mails the host once;
- * - committee_booking_received goes to the event's assignee when one is set;
+ * - the two capacity stages: nearly full at the 10%/5 threshold, then fully
+ *   booked, each once, and only the sold-out one when a party jumps the line;
+ * - the per-booking host and committee emails are off by default, and still
+ *   behave when the Emails screen turns one back on (one per submission, the
+ *   committee copy to the event's assignee);
  * - the registration welcome email resolves with no event.
  *
  * Mail is captured on the 'wp_mail' filter (which runs before the
@@ -31,6 +34,9 @@ class BookingEmailsTest extends LAW_Test_Case {
 		// The .ics assertions depend on the site clock being Europe/London.
 		$this->tz_before = get_option( 'timezone_string', '' );
 		update_option( 'timezone_string', 'Europe/London' );
+		// Some of these tests tick a retired email back on. Isolated in memory,
+		// so a suite run never rewrites the real site's Emails-screen overrides.
+		$this->isolate_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION );
 
 		$this->mail        = array();
 		$this->mail_filter = function ( $atts ) {
@@ -72,6 +78,26 @@ class BookingEmailsTest extends LAW_Test_Case {
 
 	private function unique_email( string $prefix ): string {
 		return $prefix . '-' . wp_generate_password( 8, false ) . '@example.test';
+	}
+
+	/**
+	 * What the Emails screen's "Send this notification" box writes. The
+	 * per-booking host and committee emails were retired on 10 September 2026
+	 * and ship inactive, but the site can bring either back, so the rules that
+	 * govern them (one email per submission, the committee copy to the event's
+	 * assignee) still have to hold.
+	 */
+	private function activate_email( string $slug ): void {
+		$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+		$overrides = is_array( $overrides ) ? $overrides : array();
+		$stored    = isset( $overrides[ $slug ] ) && is_array( $overrides[ $slug ] ) ? $overrides[ $slug ] : array();
+		$overrides[ $slug ] = array_merge( $stored, array( 'active' => true ) );
+		update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+	}
+
+	/** Captured sends to $email whose subject contains $needle. */
+	private function subjects_to( string $email, string $needle ): array {
+		return array_values( array_filter( $this->mail_to( $email ), fn( $m ) => false !== stripos( $m['subject'], $needle ) ) );
 	}
 
 	/** Captured sends whose recipient list contains $email. */
@@ -175,7 +201,21 @@ class BookingEmailsTest extends LAW_Test_Case {
 	}
 
 	public function test_registered_on_behalf_emails_name_the_registrar_and_link_new_accounts(): void {
-		$event     = $this->make_bookable_event();
+		// A real author, so the host assertions at the end of this test actually
+		// run: make_bookable_event() leaves post_author 0, and get_userdata( 0 )
+		// is false, which used to skip them silently.
+		$this->activate_email( 'host_booking_received' );
+		$host      = $this->make_user( 'event_host' );
+		$event     = $this->make_event(
+			array(
+				'_law_tickets_available' => 10,
+				'_law_start'             => '2026-12-01 10:00',
+				'_law_end'               => '2026-12-01 12:00',
+				'_law_venue'             => 'Test Hall, London',
+			),
+			'publish',
+			$host
+		);
 		$committee = $this->make_committee_user();
 		wp_update_user( array( 'ID' => $committee, 'display_name' => 'Casey Committee' ) );
 
@@ -205,19 +245,12 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'Set your password', $sent[0]['message'] );
 		$this->assertMatchesRegularExpression( '/key=[A-Za-z0-9]+/', $sent[0]['message'], 'A minted set-password link.' );
 
-		// The host and committee hear ONCE about the whole submission, not once
-		// per person: three bookings must not mean three of each.
-		$host = get_userdata( (int) get_post_field( 'post_author', $event ) );
-		if ( $host ) {
-			$host_mail = array_filter( $this->mail_to( $host->user_email ), fn( $m ) => false !== stripos( $m['subject'], 'New booking' ) );
-			$this->assertCount( 1, $host_mail, 'One host email for a party of three.' );
-		}
-
-		// The host and committee copies go out as for any booking.
-		$host = get_userdata( (int) get_post_field( 'post_author', $event ) );
-		if ( $host ) {
-			$this->assertNotEmpty( $this->mail_to( $host->user_email ) );
-		}
+		// The host hears ONCE per submission, not once per person. Both people
+		// above were registered separately, so two submissions means two emails
+		// and no more.
+		$host_email = get_userdata( $host )->user_email;
+		$host_mail  = array_filter( $this->mail_to( $host_email ), fn( $m ) => false !== stripos( $m['subject'], 'New booking' ) );
+		$this->assertCount( 2, $host_mail, 'One host email per submission.' );
 	}
 
 	public function test_cancel_templates_per_context(): void {
@@ -290,7 +323,144 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertCount( 1, $warnings );
 	}
 
+	/**
+	 * The threshold itself, as a pure function: fewer than 10% of the places
+	 * left, floored at 5. The floor means the percentage only bites from 61
+	 * places upwards, which is deliberate (Denis, 10 September 2026).
+	 */
+	public function test_capacity_warning_threshold_is_ten_percent_with_a_floor_of_five(): void {
+		$this->assertSame( 0, law_event_capacity_warning_at( 0 ), 'No capacity set: nothing to warn about.' );
+		$this->assertSame( 5, law_event_capacity_warning_at( 10 ), 'The floor holds on small events.' );
+		$this->assertSame( 5, law_event_capacity_warning_at( 40 ) );
+		$this->assertSame( 5, law_event_capacity_warning_at( 60 ), '10% of 60 is 6, so the last event the floor covers.' );
+		$this->assertSame( 6, law_event_capacity_warning_at( 61 ), 'From here the percentage takes over.' );
+		$this->assertSame( 8, law_event_capacity_warning_at( 90 ), 'Exactly 10% does NOT warn: 9 left of 90 is not fewer than 10%.' );
+		$this->assertSame( 9, law_event_capacity_warning_at( 91 ) );
+		$this->assertSame( 9, law_event_capacity_warning_at( 100 ) );
+		$this->assertSame( 19, law_event_capacity_warning_at( 200 ) );
+	}
+
+	/**
+	 * The same boundary through the email itself. The seat count is set
+	 * directly rather than booked: 90 places would take 23 submissions through
+	 * the engine (a booker may bring at most 3 colleagues) and prove nothing
+	 * extra.
+	 */
+	public function test_capacity_warning_fires_at_ten_percent_on_a_large_event(): void {
+		$host  = $this->make_user( 'event_host' );
+		$event = $this->make_event(
+			array(
+				'_law_tickets_available' => 100,
+				'_law_start'             => '2026-12-01 10:00',
+				'_law_end'               => '2026-12-01 12:00',
+			),
+			'publish',
+			$host
+		);
+		$host_email = get_userdata( $host )->user_email;
+
+		law_event_update_meta( $event, '_law_tickets_sold', 90 ); // 10 left: 10%, not fewer.
+		law_booking_maybe_capacity_warning( $event );
+		$this->assertEmpty( $this->subjects_to( $host_email, 'nearly full' ), 'Exactly 10% left does not warn.' );
+
+		law_event_update_meta( $event, '_law_tickets_sold', 91 ); // 9 left.
+		law_booking_maybe_capacity_warning( $event );
+		$warned = $this->subjects_to( $host_email, 'nearly full' );
+		$this->assertCount( 1, $warned, 'Under 10% warns.' );
+		$this->assertStringContainsString( '9 of 100 places remain', $warned[0]['message'] );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_warned' ) );
+	}
+
+	/** Both stages in order, through the engine, on a two-place event. */
+	public function test_full_event_emails_the_host_and_the_assignee_once(): void {
+		law_events_update_settings( array( 'committee_emails' => array( 'committee-list@example.test' ) ) );
+		$host     = $this->make_user( 'event_host' );
+		$assignee = $this->make_committee_user();
+		$event    = $this->make_event(
+			array(
+				'_law_tickets_available' => 2,
+				'_law_assignee'          => $assignee,
+				'_law_start'             => '2026-12-01 10:00',
+				'_law_end'               => '2026-12-01 12:00',
+			),
+			'publish',
+			$host
+		);
+		$host_email = get_userdata( $host )->user_email;
+
+		$this->make_booking( $event, $this->make_user( 'attendee' ), array() ); // 1 left.
+		$this->assertCount( 1, $this->subjects_to( $host_email, 'nearly full' ) );
+		$this->assertEmpty( $this->subjects_to( $host_email, 'fully booked' ), 'Not full yet.' );
+
+		$this->make_booking( $event, $this->make_user( 'attendee' ), array() ); // 0 left.
+		$this->assertCount( 1, $this->subjects_to( $host_email, 'fully booked' ), 'The host hears the last place has gone.' );
+		$this->assertCount( 1, $this->subjects_to( $host_email, 'nearly full' ), 'And not a second nearly-full copy.' );
+
+		// The committee copy follows the assignee rule the other committee
+		// booking emails use.
+		$committee = $this->subjects_to( get_userdata( $assignee )->user_email, 'Fully booked' );
+		$this->assertCount( 1, $committee );
+		$this->assertStringContainsString( 'all 2 places have gone', $committee[0]['message'] );
+		$this->assertEmpty( $this->subjects_to( 'committee-list@example.test', 'Fully booked' ), 'The list is not copied when an assignee is set.' );
+
+		// Latched: a second pass over an already-full event sends nothing.
+		law_booking_maybe_capacity_warning( $event );
+		$this->assertCount( 1, $this->subjects_to( $host_email, 'fully booked' ) );
+	}
+
+	/**
+	 * A pass that takes an event from above the nearly-full line straight to
+	 * zero sends the sold-out email ALONE (Denis: one clear message, not two in
+	 * the same second). Called directly because no single submission can jump
+	 * that far, but a multi-promotion waitlist pass can.
+	 */
+	public function test_jump_to_zero_sends_only_the_sold_out_email(): void {
+		$host  = $this->make_user( 'event_host' );
+		$event = $this->make_event(
+			array(
+				'_law_tickets_available' => 100,
+				'_law_start'             => '2026-12-01 10:00',
+				'_law_end'               => '2026-12-01 12:00',
+			),
+			'publish',
+			$host
+		);
+		$host_email = get_userdata( $host )->user_email;
+
+		law_event_update_meta( $event, '_law_tickets_sold', 100 );
+		law_booking_maybe_capacity_warning( $event );
+
+		$this->assertCount( 1, $this->subjects_to( $host_email, 'fully booked' ) );
+		$this->assertEmpty( $this->subjects_to( $host_email, 'nearly full' ), 'The skipped stage sends nothing.' );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_full_warned' ) );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_warned' ), 'The skipped stage is latched too.' );
+	}
+
+	/**
+	 * The per-booking host and committee emails were retired on 10 September
+	 * 2026 and ship inactive, so a booking on a default install mails neither.
+	 */
+	public function test_booking_received_emails_are_off_by_default(): void {
+		law_events_update_settings( array( 'committee_emails' => array( 'committee-list@example.test' ) ) );
+		$host  = $this->make_user( 'event_host' );
+		$event = $this->make_event(
+			array(
+				'_law_tickets_available' => 10,
+				'_law_start'             => '2026-12-01 10:00',
+				'_law_end'               => '2026-12-01 12:00',
+			),
+			'publish',
+			$host
+		);
+
+		$this->make_booking( $event, $this->make_user( 'attendee' ), array() );
+
+		$this->assertEmpty( $this->subjects_to( get_userdata( $host )->user_email, 'New booking' ) );
+		$this->assertEmpty( $this->mail_to( 'committee-list@example.test' ) );
+	}
+
 	public function test_committee_booking_email_prefers_assignee(): void {
+		$this->activate_email( 'committee_booking_received' );
 		law_events_update_settings( array( 'committee_emails' => array( 'committee-list@example.test' ) ) );
 		$assignee = $this->make_committee_user();
 		$event    = $this->make_bookable_event( array( '_law_assignee' => $assignee ) );

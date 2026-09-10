@@ -96,7 +96,8 @@ function law_booking_form_state() {
  * a card, because they can still manage those bookings.
  *
  * @return array[] { event: array, own: WP_Post|null, colleagues: WP_Post[],
- *                   invited_by: string, waitlisted: bool, manage_id: int }
+ *                   invited_by: string, waitlisted: bool, status: string,
+ *                   flagship: bool, manage_id: int }
  */
 function law_account_bookings() {
 	if ( 'cpt' !== law_events_source() || ! is_user_logged_in() ) {
@@ -155,6 +156,11 @@ function law_account_bookings() {
 			'colleagues' => $group['colleagues'],
 			'invited_by' => $group['own'] ? law_booking_invited_by_label( $group['own'] ) : '',
 			'waitlisted' => 'law-waitlisted' === $primary->post_status,
+			// The status itself, so a surface can badge a flagship
+			// application ("Awaiting review", "Payment failed") without every
+			// caller learning a new boolean per state.
+			'status'     => (string) $primary->post_status,
+			'flagship'   => function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ),
 			'manage_id'  => (int) $primary->ID,
 		);
 	}
@@ -189,6 +195,51 @@ function law_booking_notice_text( $key ) {
 		'waitlist-failed'    => array( 'error', __( 'Sorry, that waitlist change could not be made.', 'law' ) ),
 	);
 	return $map[ $key ] ?? null;
+}
+
+/**
+ * The badge for a My bookings card, from the booking's status.
+ *
+ * A confirmed booking carries none: it is the ordinary case, and badging it
+ * would make the exceptions harder to spot rather than easier.
+ *
+ * @return array{label:string,slug:string} Empty when no badge applies.
+ */
+function law_booking_card_badge( $status ) {
+	$badges = array(
+		'law-waitlisted'     => array( 'label' => __( 'Waitlisted', 'law' ), 'slug' => 'waitlisted' ),
+		'law-applied'        => array( 'label' => __( 'Awaiting review', 'law' ), 'slug' => 'applied' ),
+		'law-payment-failed' => array( 'label' => __( 'Payment needed', 'law' ), 'slug' => 'payment-failed' ),
+	);
+
+	return $badges[ (string) $status ] ?? array();
+}
+
+/**
+ * The badge MODIFIER class for a booking status, wherever one is rendered
+ * inline (a table cell, a facts row) rather than as a card's corner flag.
+ *
+ * One mapping, because there were three: each surface picked its own
+ * modifier, and a status none of them had thought of fell through to a bare
+ * `.law-cal-card__badge` — which, before the base rule gained a default
+ * background, rendered as invisible text. The base now has a floor colour, so
+ * the worst case is a neutral pill rather than nothing; this makes the common
+ * cases deliberate.
+ *
+ * @return string A class name, or '' for the ordinary confirmed case, which
+ *                carries no colour of its own.
+ */
+function law_booking_status_badge_class( $status ) {
+	$map = array(
+		'law-applied'        => 'law-cal-card__badge--applied',
+		'law-waitlisted'     => 'law-cal-card__badge--waitlisted',
+		'law-payment-failed' => 'law-cal-card__badge--payment-failed',
+		'law-declined'       => 'law-cal-card__badge--cancelled',
+		'law-cancelled'      => 'law-cal-card__badge--cancelled',
+		'publish'            => 'law-cal-card__badge--confirmed',
+	);
+
+	return $map[ (string) $status ] ?? '';
 }
 
 /** Print the notice for ?law_notice=, if there is one. */
@@ -251,6 +302,14 @@ function law_booking_render_action( $event, $preview = false ) {
 	$event_id = (int) $event['id'];
 	$post     = get_post( $event_id );
 	if ( ! $post ) {
+		return;
+	}
+	// The flagship is applied for, not booked: it has its own states, its own
+	// copy and its own form (functions/account-flagship.php). Routed here
+	// rather than in the template so the details box keeps ONE call site and
+	// the decision lives in one place.
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		law_flagship_render_action( $event, $preview );
 		return;
 	}
 	// $preview is the committee preview (?preview-event= on the events

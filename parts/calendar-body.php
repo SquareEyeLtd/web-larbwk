@@ -27,11 +27,13 @@
  *                                 button inert, so the preview shows the row
  *                                 an attendee will see instead of omitting it.
  *   $law_cal_details_rows (array) Allow-list of details-box row keys, from
- *                                 'date', 'time', 'venue', 'host', 'type' and
- *                                 'sector'; unset means every row. The
- *                                 flagship page (templates/flagship-event.php)
- *                                 passes date/time/venue: it has no host
- *                                 organisation, type or sector to state.
+ *                                 'date', 'time', 'venue', 'host', 'type',
+ *                                 'sector', 'price' and 'places'; unset means
+ *                                 every row. The flagship page
+ *                                 (templates/flagship-event.php) passes
+ *                                 date/time/venue/price/places: it has no host
+ *                                 organisation, type or sector to state, and
+ *                                 it is the one event that charges.
  *   $law_cal_no_booking  (bool)   Render no booking control and no places
  *                                 fallback. The flagship is approval-gated
  *                                 through its own application flow
@@ -117,6 +119,20 @@ if ( $event ) {
 		array( 'key' => 'host', 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
 		array( 'key' => 'type', 'label' => 'Type', 'value' => $event['type'] ),
 		array( 'key' => 'sector', 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
+		// Only the flagship charges for a place today, and both helpers
+		// return '' for anything else, so these two rows drop out of every
+		// other event's box on their own (an empty value is skipped) rather
+		// than needing a caller to know about them.
+		array(
+			'key'   => 'price',
+			'label' => 'Price',
+			'value' => function_exists( 'law_flagship_details_price' ) ? law_flagship_details_price( $event ) : '',
+		),
+		array(
+			'key'   => 'places',
+			'label' => 'Places',
+			'value' => function_exists( 'law_flagship_details_places' ) ? law_flagship_details_places( $event ) : '',
+		),
 	);
 	if ( null !== $law_cal_details_rows ) {
 		$law_cal_rows = array_values(

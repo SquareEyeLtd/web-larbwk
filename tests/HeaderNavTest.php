@@ -34,7 +34,11 @@ class HeaderNavTest extends LAW_Test_Case {
 	 * dashboard IN ADDITION TO the personal links, never instead of them.
 	 *
 	 * 'flagship' joined the committee-only group on 9 September 2026 with the
-	 * Manage flagship dashboard (functions/events/flagship-dashboard.php).
+	 * Manage flagship dashboard (functions/events/flagship-dashboard.php), and
+	 * 'flagship_bookings' and 'discounts' on 10 September 2026, with the
+	 * flagship's own applications and payments page and the discount-code
+	 * catalogue (functions/events/flagship-bookings-dashboard.php,
+	 * functions/events/discounts-dashboard.php).
 	 *
 	 * 'my_bookings' joined every role on 10 September 2026, when the personal
 	 * bookings list moved off My events onto /account/bookings/. Note the two
@@ -47,11 +51,11 @@ class HeaderNavTest extends LAW_Test_Case {
 	 */
 	public static function role_expectations(): array {
 		return array(
-			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
-			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
-			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
-			'event_host'       => array( 'event_host', array( 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
-			'sponsor'          => array( 'sponsor', array( 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
+			'administrator'    => array( 'administrator', array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
+			'editor'           => array( 'editor', array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
+			'events_committee' => array( 'events_committee', array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
+			'event_host'       => array( 'event_host', array( 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
+			'sponsor'          => array( 'sponsor', array( 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
 			'attendee'         => array( 'attendee', array( 'my_bookings', 'profile', 'signout' ) ),
 		);
 	}
@@ -98,7 +102,15 @@ class HeaderNavTest extends LAW_Test_Case {
 		$this->assertSame( 'Grace', $nav['account']['short_name'] );
 	}
 
-	/** The committee's three management links, in the order the dropdown offers them. */
+	/**
+	 * The committee's management links, labelled and in order.
+	 *
+	 * The two bookings views are named for WHAT they hold, not for what you
+	 * do to them, and they sit next to each other (Denis, 10 September 2026).
+	 * "Manage bookings" said nothing about which bookings it meant and sat
+	 * three items away from the other kind, which is how you end up looking
+	 * for a flagship applicant in the hosted list.
+	 */
 	public function test_committee_management_links_are_labelled_and_ordered(): void {
 		wp_set_current_user( $this->make_committee_user() );
 
@@ -106,12 +118,15 @@ class HeaderNavTest extends LAW_Test_Case {
 		$items = wp_list_pluck( $nav['account']['items'], 'label', 'key' );
 
 		$this->assertSame( 'Manage events', $items['dashboard'] );
-		$this->assertSame( 'Manage bookings', $items['bookings'] );
 		$this->assertSame( 'Manage speakers', $items['speakers'] );
+		$this->assertSame( 'Manage flagship', $items['flagship'] );
+		$this->assertSame( 'Hosted bookings', $items['bookings'] );
+		$this->assertSame( 'Flagship bookings', $items['flagship_bookings'] );
+
 		$this->assertSame(
-			array( 'dashboard', 'bookings', 'speakers' ),
-			array_slice( array_keys( $items ), 0, 3 ),
-			'The management links lead the dropdown, before the personal ones.'
+			array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' ),
+			array_slice( array_keys( $items ), 0, 6 ),
+			'The management links lead the dropdown, with the two bookings views adjacent.'
 		);
 	}
 

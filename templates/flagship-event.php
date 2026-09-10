@@ -7,9 +7,12 @@
  * It renders the same body as every other single event
  * (parts/calendar-body.php), with two differences the caller variables below
  * carry: the details box shows only the date, time and location, because the
- * flagship has no host organisation, event type or sector to state; and no
- * booking control renders, because the flagship is approval-gated through its
- * own application flow (EVENTS_4.2_SPECS.md §5), which is not built yet.
+ * flagship has no host organisation, event type or sector to state; and the
+ * control in that box is the APPLICATION control, not the booking one, since
+ * a place here is applied for, reviewed and charged
+ * (functions/account-flagship.php, FLAGSHIP_PAYMENTS.md §4). The swap happens
+ * inside law_booking_render_action(), so this template asks for nothing
+ * special.
  *
  * The back links are deliberately left to the body's own defaults:
  * law_calendar_url() already sends a single law_event back to the programme,
@@ -52,9 +55,9 @@ if ( function_exists( 'law_events_map_post' ) ) {
 
 $law_cal_show_status  = false;
 $law_cal_hero_title   = 'Calendar of Events';
-$law_cal_details_rows = array( 'date', 'time', 'venue' );
-$law_cal_no_booking   = true;
+$law_cal_details_rows = array( 'date', 'time', 'venue', 'price', 'places' );
 // A day-long agenda, not two or three optional sessions: every session renders
 // open, on a timeline, because the running order is what the reader came for.
 $law_cal_sessions_style = 'timeline';
+
 require get_theme_file_path( 'parts/calendar-body.php' );

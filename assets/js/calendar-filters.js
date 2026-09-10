@@ -124,6 +124,17 @@
 				results.classList.remove('is-loading');
 				results.innerHTML = html;
 				updateDayNav();
+				/* Anything that enhanced the OLD markup has to know it has
+				   gone. Scripts on these pages are delegated, so behaviour
+				   survives on its own, but state that was computed from the
+				   DOM (which bulk buttons should be live, which ARIA an
+				   opener carries) has to be recomputed against the new rows.
+				   One event, so a page can add a listener rather than this
+				   file learning about every feature that uses it. */
+				document.dispatchEvent(
+					new CustomEvent( 'law:partial-rendered', { detail: { container: results } } )
+				);
+				if ( window.lawModal && window.lawModal.initAll ) { window.lawModal.initAll( results ); }
 			})
 			.catch(function (error) {
 				if (error.name === 'AbortError') {

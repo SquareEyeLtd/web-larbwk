@@ -384,10 +384,29 @@ class FlagshipRenderTest extends LAW_Test_Case {
 		// The template's contract, asserted without rendering the whole page
 		// (parts/calendar-body.php calls get_header()).
 		$template = file_get_contents( get_theme_file_path( 'templates/flagship-event.php' ) );
-		$this->assertStringContainsString( "\$law_cal_details_rows = array( 'date', 'time', 'venue' );", $template );
-		$this->assertStringContainsString( '$law_cal_no_booking   = true;', $template );
+		// Price and Places joined the box on 10 September 2026 (Denis): the
+		// price belongs with the facts, not in a paragraph under them.
+		$this->assertStringContainsString( "\$law_cal_details_rows = array( 'date', 'time', 'venue', 'price', 'places' );", $template );
+		// The control is no longer suppressed: since FLAGSHIP_PAYMENTS.md the
+		// details box carries the APPLICATION control, swapped in by
+		// law_booking_render_action() rather than by anything in the template,
+		// so $law_cal_no_booking must be gone. Leaving it would silently hide
+		// the only way to apply.
+		$this->assertStringNotContainsString( '$law_cal_no_booking', $template );
 		// No page-template header, so it is routed in by template_include and can
 		// never be picked in the editor for some other page.
 		$this->assertDoesNotMatchRegularExpression( '/^\s*\*\s*Template Name:/m', $template );
+	}
+
+	/**
+	 * The details box's one call site still calls law_booking_render_action(),
+	 * which hands a flagship to the application control. Pinned because the
+	 * alternative (branching in the template) was rejected: two call sites is
+	 * how one of them ends up rendering the wrong control.
+	 */
+	public function test_the_booking_control_routes_the_flagship_to_the_application_control(): void {
+		$source = file_get_contents( get_theme_file_path( 'functions/account-bookings.php' ) );
+		$this->assertStringContainsString( 'law_flagship_render_action( $event, $preview );', $source );
+		$this->assertTrue( function_exists( 'law_flagship_render_action' ) );
 	}
 }

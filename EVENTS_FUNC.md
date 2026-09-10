@@ -11,13 +11,16 @@
 
 Working reference for the custom, CPT-backed events module that replaces the
 Gravity Forms / Gravity Flow / GravityView / Make stack: the 4.1 host side
-(submission, moderation, invoicing) and the 4.2 attendee side (bookings and
-the waitlist). What the code does is described in the sections below; when
-each part arrived is in **Change history** at the end.
+(submission, moderation, invoicing) and the 4.2 attendee side (bookings, the
+waitlist, and the flagship conference's application and payment). What the
+code does is described in the sections below; when each part arrived is in
+**Change history** at the end.
 
 The design contracts are EVENTS_4.1_REBUILD.md (the rebuild), EVENTS_BOOKINGS.md
-(the attendee bookings slice) and WAITLIST.md (one booking per attendee, and the
-waitlist); this document maps them onto the code as built.
+(the attendee bookings slice), WAITLIST.md (one booking per attendee, and the
+waitlist), FLAGSHIP_UI.md (the flagship event itself) and
+FLAGSHIP_PAYMENTS.md (its approval-gated application and payment); this
+document maps them onto the code as built.
 
 Note the near-identical name: `EVENTS_4.1_FUNC.md` is a different, gitignored
 document describing the **legacy** Gravity Forms stack. Unlike that one, this
@@ -63,12 +66,15 @@ back. `law_events_source()` is defined at the bottom of `_load.php`.
 
 Load order is set in `_load.php`: settings → post types → statuses → meta →
 countries → capabilities → fees → log → **request** → workflow → comments → unread →
-co-owners → **ics** → **bookings** →
+co-owners → **ics** → **discounts** → **bookings** → **waitlist** →
+**bookings-dashboard** → **discounts-dashboard** →
 **test-mode** → notifications → speakers → **speakers-dashboard** →
-**flagship** (+ **flagship-form**, **flagship-dashboard**) → source → edit-lock → submission-form → registration → committee
-→ export → Stripe (client, service, webhook) → admin (fields,
-event/booking/speaker/session/**flagship** screens, columns, emails) →
-migration (report, runner, page, repair-owners, backfill-session-agenda).
+**flagship** (+ **flagship-form**, **flagship-dashboard**, **flagship-bookings**,
+**flagship-bookings-dashboard**) → source → edit-lock → submission-form →
+registration → committee → export → Stripe (client, service, **attendees**,
+webhook) → admin (fields, event/booking/speaker/session/**flagship** screens,
+columns, emails) → migration (report, runner, page, repair-owners,
+backfill-session-agenda).
 
 ### `settings.php`: the settings store and the LAW submenu host
 
@@ -276,6 +282,23 @@ migration (report, runner, page, repair-owners, backfill-session-agenda).
   migrator.
 - A `display_post_states` filter labels the statuses in the admin list.
 
+**Booking statuses grew on 10 September 2026** (FLAGSHIP_PAYMENTS.md §2.1).
+`law_booking_statuses()` is now `publish` (Confirmed), `law-applied`
+(Awaiting review), `law-waitlisted`, `law-payment-failed`, `law-declined` and
+`law-cancelled`. The last three belong to the flagship's application flow and
+are kept out of the hosted-event vocabulary by
+`law_flagship_application_statuses()`, so a host's bookings list never offers
+a state it cannot reach. `law_booking_custom_statuses()` is the single list
+`law_events_register_statuses()` registers from and the untrash whitelist
+reads, so the two cannot drift — and registration is not optional, because
+WP_Query silently drops an unknown `post_status` and then returns every
+booking of every status.
+
+**A confirmed flagship place is plain `publish`.** There is deliberately no
+"paid" status: `publish` already means Confirmed on a booking, and a second
+word for the same state would have to be kept in step everywhere the first one
+is read.
+
 ### `meta.php`: the meta schema and the single read/write path
 
 - `law_event_meta_schema()`, `law_speaker_meta_schema()`,
@@ -285,8 +308,8 @@ migration (report, runner, page, repair-owners, backfill-session-agenda).
   is registered via `register_post_meta` in `law_events_register_meta()` (on
   `init` priority 7) with a per-type sanitiser and an auth callback. Bookings
   phase 1 added `_law_tickets_sold` (the recalculated seat counter) and
-  `_law_capacity_warned` (the one-shot host warning latch) to the event
-  schema. Bookings carry `_law_booking_number`, `_law_booked_by`, the four
+  `_law_capacity_warned` (the nearly-full latch) to the event schema, joined on
+  10 September 2026 by `_law_capacity_full_warned` (the sold-out latch). Bookings carry `_law_booking_number`, `_law_booked_by`, the four
   `_law_attendee_*` snapshot keys, `_law_is_press` and the four
   `_law_waitlist_*` keys (WAITLIST.md §A7, §B1). The old `_law_attendee_rows`
   array, its `attendee_rows` sanitiser and the flat `_law_booking_attendee`
@@ -977,7 +1000,11 @@ block the queue. Joining is refused while places are free.
   - **Bookings** (all `dynamic` unless noted): `user_booking_confirmed`
     (.ics attached; lists the whole party with each person's own number),
     `host_booking_received` (to `host`) and `committee_booking_received` (to
-    `committee`, assignee-first via the send call), both once per submission;
+    `committee`, assignee-first via the send call), both once per submission but
+    **inactive by default** since 10 September 2026 (Denis: a busy event mailed
+    both audiences on every submission, and Manage bookings lists the same
+    thing). Their entries and send calls are still in place, so ticking "Send
+    this notification" on the Emails screen brings either back;
     `user_attendee_invited` / `user_attendee_added` (.ics attached; each names
     who booked the place and carries that person's own number);
     `user_booking_registered` / `_invited` (registered on their behalf); the
@@ -988,7 +1015,11 @@ block the queue. Joining is refused while places are free.
     (event host or sponsor: leads with `{submit_link}` and asks for dietary and
     accessibility requirements only if they also book a place), chosen by
     `law_registration_welcome_slug()` and both event-less, so unlogged; and
-    `host_capacity_warning` (to `host`, one-shot latch).
+    the two capacity stages, each with its own one-shot latch:
+    `host_capacity_warning` (to `host`, at `law_event_capacity_warning_at()` —
+    fewer than 10% of the places left, floored at 5) and, when the last place
+    goes, `host_event_full` (to `host`) plus `committee_event_full` (to
+    `committee`, assignee-first via the send call).
   - **Waitlist** (WAITLIST.md §B4): `user_waitlist_joined` (the joiner, with
     the party), `user_waitlist_attendee_invited` / `_added` (a colleague put on
     the queue; no .ics, since they hold no place yet),
@@ -1505,6 +1536,145 @@ What makes them one feature is that neither screen owns any of the substance:
   on its own: the header link (`header-nav.php`), the template, and the save
   handler. `parts/events/flagship-manage.php` re-checks for itself too rather
   than trusting its caller, as `parts/events/thread.php` does.
+
+### `discounts.php` and `discounts-dashboard.php`: the discount catalogue (10 September 2026)
+
+**Built, and deliberately not used by anything.** Denis settled two things on
+10 September 2026: discount codes are wanted in future, and they are not
+wanted on the flagship. So the catalogue exists and the committee can fill it,
+and no price on the site is reduced by any of it.
+
+- A fifth CPT, `law_discount`, engine-write-only like bookings. The post title
+  is the code as the committee typed it (hyphens and all); the slug is
+  `law_discount_match_key()`, letters and digits only, which is what every
+  lookup compares. That asymmetry is deliberate: a code printed
+  "LAW-WEEK-25" gets typed "law week 25", and treating those as different
+  codes would lose people their discount. The consequence, two codes
+  differing only by punctuation colliding, is right — a human could not tell
+  them apart either — and the duplicate check refuses the second.
+- `law_discount_validate()` answers "usable, here, now, by this person, at
+  this price" and changes nothing; `law_discount_apply()` does the
+  arithmetic, clamped so a fixed code larger than the price makes a booking
+  free rather than a credit. "No such code" and "that code is disabled" give
+  the SAME message, so the field cannot be used to enumerate the catalogue.
+- `law_discount_claim()` / `_release()` move the usage counter with a
+  conditional `UPDATE`, not a read-then-write. A code can be shared across
+  events, so two callers holding two different event locks could otherwise
+  both read "9 of 10 used" and both take the tenth. The release is floored at
+  zero in SQL, or a double release would wrap the UNSIGNED cast into an
+  effectively unlimited code.
+- The catalogue is at `/account/dashboard/discounts/`, committee-only, gated
+  in three independent places, with the CSV/Excel/PDF trio. The screen says in
+  as many words that nothing accepts a code yet, rather than implying the
+  codes are live.
+- **How a future flow opts in**: call `law_discount_validate()`, then
+  `law_discount_apply()` and `law_discount_claim()` under its own lock,
+  releasing on any refusal or cancellation, and add its event to the
+  `law_discount_scope_events` filter. `discounts.php` knows nothing about the
+  flagship or receptions, so it needs no changes.
+- Tests: `tests/DiscountsTest.php` (18), including one that fails if anybody
+  wires a code into the flagship engine without asking.
+
+### `flagship-bookings.php`: the flagship's application flow (10 September 2026)
+
+The approval-gated flow from EVENTS_4.2_SPECS.md §5, as settled in
+FLAGSHIP_PAYMENTS.md. A delegate applies and saves a payment method; the
+committee approves or declines; approval charges it off-session and confirms
+the place.
+
+**Not necessarily a card** (Denis, 10 September 2026, and spec §7.1).
+`payment_method_types` is left unset on the Checkout session, so Stripe offers
+whatever the LAW account has enabled that can be saved and re-charged
+off-session — card, Link and Revolut Pay on staging; production is LAW's to
+configure. Nothing downstream assumes a card:
+`law_stripe_method_label()` describes whatever Stripe returned and falls back
+to a humanised type name for a method nobody has seen yet, and
+`law_booking_payment_method_label()` is what every surface reads
+(`law_booking_card_label()` remains as an alias). The corollary is that a
+charge may not settle inside the approval request, which §4.3 of
+FLAGSHIP_PAYMENTS.md handles as a distinct `processing` state rather than as a
+failure.
+
+**Why it is not the bookings engine with an extra status.** Nothing here is
+automatic, which is the whole point of an approval gate. `waitlist.php`
+promotes and charges the moment a place frees — exactly the behaviour that
+must not happen — so `law_waitlist_process()` refuses the flagship outright,
+and `law_booking_guard_open()` keeps its flagship refusal so the hosted
+booking form, "add a colleague", register-on-behalf and the waitlist can never
+reach it. What IS shared is reused: the booking post type and its numbering,
+the duplicate guard, the event lock, the places recount, the account
+resolve-or-create, the log, the email registry and the `.ics` generator.
+
+- `law_flagship_apply( $user_id, $input )` → `{booking, redirect}`. Guards,
+  then **snapshots the price** onto the booking and returns the Stripe
+  Checkout URL. The snapshot is the point: the delegate consented to a figure,
+  so that figure is charged even if the list price has risen by the time the
+  committee gets to them (`law_event_snapshot_fee()` sets the precedent).
+  **No clash guard** — the flagship runs all day and every other event that
+  day would collide — and **no capacity guard**, because a full conference
+  still takes applications and queues them (Denis).
+- `law_flagship_approve()` charges and confirms. Over-booking is allowed but
+  never accidental: past `_law_tickets_available` it returns
+  `law_flagship_full` until the caller passes `confirm_overbook`, then logs
+  `flagship_overbooked` loudly with the counts and the actor.
+- `law_flagship_mark_paid()` is the **single** path to a confirmed place, is
+  idempotent, and is called by both the synchronous charge and the
+  `invoice.paid` webhook, in whichever order they arrive.
+- `law_flagship_decline()` and `law_flagship_withdraw()` both **detach the
+  saved payment method**: consent was to hold it while the application was
+  live, so the consent ending has to actually remove it, not merely stop
+  using it. Neither works on a paid place — that is a refund, and a refund is
+  a conversation — and `law_flagship_withdraw()` also refuses while a charge
+  is still settling (`law_flagship_payment_in_flight`), since voiding an
+  invoice under a live payment would leave money moving with nothing to book
+  it against.
+- `law_flagship_add_complimentary()` is the committee's "add without payment"
+  for speakers, press, sponsors and VIPs: straight to `publish`, no payment
+  method, no invoice, marked `_law_is_complimentary` so counts and exports can
+  tell them apart.
+- `law_flagship_mark_payment_processing()` is the third outcome of a charge,
+  beside paid and failed: Stripe accepted the payment but it has not settled.
+  The application stays where it is holding its place, nothing is emailed, and
+  `invoice.paid` confirms it when the money lands. Only reachable for methods
+  that do not settle instantly, which is why it exists at all.
+- `law_flagship_mark_payment_failed()` records a decline or an SCA request,
+  and emails once per failure rather than once per webhook, because Stripe can
+  report the same decline through more than one event type.
+- **Bulk review is time-boxed and cron-resumable** (`law_flagship_review_bulk()`,
+  `law_flagship_resume_review`): approving forty applications means forty
+  round trips to Stripe, which would time out half-done and leave delegates
+  charged but unconfirmed.
+- A daily cron (`law_flagship_daily`) closes applications whose card never
+  arrived after 48 hours, and alerts the committee about a payment still
+  unpaid past its window. Neither auto-declines anybody: the module's standing
+  posture is that a human decides.
+- Handlers, all on `law_events_guard_post()`: `law_flagship_apply`,
+  `law_flagship_update_card`, `law_flagship_withdraw` (the delegate's own),
+  and `law_flagship_review`, `law_flagship_retry_charge`,
+  `law_flagship_resend_payment`, `law_flagship_add_attendee` (committee only,
+  on their own `flagship_review` rate surface). The return from Stripe is a
+  `template_redirect`, not an admin-post: Stripe composes that GET itself and
+  carries no nonce of ours, which is safe because the session is looked up in
+  Stripe and refused unless its metadata names that booking.
+
+### `flagship-bookings-dashboard.php`: the committee's Flagship bookings page (10 September 2026)
+
+`/account/dashboard/flagship-bookings/`, committee-only, gated in three
+places. **A separate page from Manage bookings on purpose** (Denis, 10
+September 2026): a hosted booking is free, instant and reversible, a flagship
+application is a priced request that is reviewed, charged, declined by a bank
+and chased. One table for both would be a dozen columns blank on most rows
+and two sets of actions that do not apply to each other.
+
+- Manage bookings therefore EXCLUDES the flagship, through the
+  `law_bookings_dashboard_exclude_events` filter, so that file stays about
+  hosted events and this one owns every "the flagship is different" rule.
+- A flat table with the payment facts a refund has to be traced by, including
+  the Stripe invoice link (spec §7.5). Filters: keyword, status, payment
+  state, country. Per-row Approve and Decline, the two failed-payment actions,
+  select-all bulk decisions, and the "add without payment" form below.
+- Exports CSV / Excel / PDF through `functions/events/export.php`.
+- Tests: `tests/FlagshipBookingsDashboardTest.php` (8).
 
 ### `source.php`: the CPT ↔ front-end bridge and legacy continuity
 
@@ -2073,7 +2243,7 @@ event status by the rebuild) plus "Reference".
   changes without a reload. The PDF button renders `hidden` and is only
   unhidden by JS when `fetch` and `pdfMake` exist.
 
-### Stripe (`stripe/client.php`, `stripe/service.php`, `stripe/webhook.php`)
+### Stripe (`stripe/client.php`, `stripe/service.php`, `stripe/attendees.php`, `stripe/webhook.php`)
 
 - **`client.php`** — `law_stripe_request()`: a thin `wp_remote_request` client
   (form-encoded, idempotency-key header on POSTs). `law_stripe_verify_signature()`:
@@ -2118,6 +2288,41 @@ event status by the rebuild) plus "Reference".
   `admin_stripe_error` with a "void it manually" message, and the
   cancellation completes regardless. The invoice ID/URL meta is kept for the
   audit trail.
+- **`attendees.php`** (10 September 2026) — attendee payments, as opposed to
+  the host fees the two files above bill. Three things are shaped differently
+  here: the customer belongs to a **user** rather than to an event, the card
+  is saved before anyone decides whether to charge it, and the charge then
+  runs off-session with nobody at the keyboard.
+  - `law_stripe_user_customer_id()` is deliberately NOT
+    `law_stripe_upsert_customer()`, which will adopt an unclaimed customer
+    that merely shares an email address. That is right for a host, whose
+    invoice email may legitimately predate us in Stripe from the legacy
+    system; it is wrong for an attendee, whose WordPress email is verified and
+    who has no such history, because adopting would attach a delegate's card
+    to somebody else's record. This searches only customers we ourselves bound
+    to a user.
+  - `law_stripe_create_setup_session()` opens Stripe **Checkout in `setup`
+    mode**: the hosted page saves a card without charging it, with 3DS handled
+    there and PCI scope never reaching LAW. One function serves all three
+    reasons a card is saved (`apply`, `replace`, `retry`), so those journeys
+    cannot drift; a fresh attempt number per session stops Stripe replaying
+    the first, already-used session.
+  - `law_stripe_attach_setup_result()` **refuses a session whose metadata
+    names a different booking**, so pasting somebody else's session id onto a
+    return URL adopts nothing. `law_stripe_store_payment_method()` is
+    idempotent, because the delegate's return and two webhook types all reach
+    it in any order.
+  - `law_stripe_charge_booking()` raises and pays an **invoice**, not a bare
+    PaymentIntent (Denis, 10 September 2026): it carries the VAT line and
+    LAW's VAT number and leaves the delegate a hosted invoice and a PDF, which
+    a card receipt does not, and it reuses the tax rate object and the webhook
+    branches 4.1 already had. It copies `law_stripe_invoice_steps()`'s resume
+    discipline step for step — persist the invoice ID before the line item,
+    reuse a finalised invoice, delete a leftover draft, key every write — so a
+    retry after a timeout can never bill anybody twice.
+  - `law_stripe_detach_payment_method()` is **never fatal**: a card Stripe
+    will not detach is logged and the local reference cleared anyway, because
+    refusing to decline somebody over it would be worse.
 - **`webhook.php`** — a REST route (`rest_api_init`) whose permission callback
   is `__return_true` (auth is the signature, verified on the raw body before
   decode). `law_stripe_webhook_handler()`: signature check → idempotency
@@ -2132,6 +2337,20 @@ event status by the rebuild) plus "Reference".
   alerted (never auto-unpublished — a human decision).
   `law_stripe_resolve_event_id()` resolves the event via metadata, with the
   `_law_gf_entry_id` meta fallback.
+  **Since 10 September 2026 one endpoint serves two subjects**: a host fee
+  raised against an event, and an attendee place raised against a booking.
+  They are told apart by the metadata Stripe hands back
+  (`law_stripe_resolve_booking_id()`), never by the event type, so nothing had
+  to fork. `checkout.session.completed` (setup mode), `setup_intent.succeeded`
+  and `setup_intent.setup_failed` handle the card being saved (or not — without
+  the last one an application sits in `pending_setup`, invisible, until the
+  48-hour sweep); `invoice.payment_action_required` is handled as a distinct
+  state from a decline, because the card is fine and the bank simply wants the
+  delegate present, so offering a new card there would be the wrong advice.
+  **A partial refund no longer marks anything fully refunded**: the
+  `charge.refunded` branch now compares `amount_refunded` against `amount`, and
+  a goodwill part-refund is logged and alerted without moving the payment
+  status (this was an open finding in §6).
 
 ### Admin UI (`admin/`)
 
@@ -2884,20 +3103,43 @@ can produce an empty page body again. `tests/AccountAudienceTest.php` pins the
 audience membership per role and asserts the page carries no bare `event_host`
 block.
 
-**Flagship conference, open items (9 September 2026).** The approval-gated
-application flow (EVENTS_4.2_SPECS.md §5) is not built: the flagship page
-renders no booking control and `law_booking_guard_open()` refuses it outright,
-so nothing can be booked onto it yet. Two consequences worth knowing while it
-stays that way: the flagship has no `_law_approved_at` and no payment meta, so
-anything that prints those for a published event shows blanks for it; and a
+**Flagship conference (updated 10 September 2026).** The approval-gated
+application flow is now built (`flagship-bookings.php`, `stripe/attendees.php`,
+FLAGSHIP_PAYMENTS.md). `law_booking_guard_open()` still refuses the flagship,
+and that refusal is now load-bearing rather than a placeholder: it is what
+keeps the hosted booking form, "add a colleague", register-on-behalf and the
+whole waitlist off an event where a place is a committee decision and a
+charge. Still true: the flagship has no `_law_approved_at` and no HOST payment
+meta, so anything printing those for a published event shows blanks for it
+(its attendee payment meta lives on the bookings, not the event); and a
 published flagship with no sessions has no start time, which is why its
 programme block says "Programme to be announced" and its Time fact reads
 "Times to be announced" rather than the event disappearing.
 
-**Reserved for 4.2 (present but intentionally unused):** the event meta key
+**Open, and deliberately so:**
+
+1. **£550 / £600 is not in any LAW-signed document.** `EVENTS_4.2_SPECS.md` §2
+   says £500 + VAT flat with no early-bird tier. The figures came from Denis on
+   10 September 2026 and are worth confirming with Emily before go-live; they
+   are settings, so changing them is a form, not a deploy.
+2. **Reception pricing** (spec §2, §6.1) is still blocked on LAW: the Wednesday
+   reception checkbox on flagship approval, the £25 flagship-only Monday price
+   and the priority sales window are not built. The price snapshot and the
+   discount catalogue are both generic so receptions reuse them.
+3. **Salutation** is a new profile field the application form writes; the
+   choice list has not been confirmed with LAW, so it is free text.
+4. **No refund flow** (spec §2, by design). The Stripe invoice link on every
+   paid booking is the deliverable, and a full refund arriving by webhook
+   marks the booking refunded without cancelling the place, because whether
+   the person still attends is a human decision.
+
+**Reserved (present but intentionally unused):** the event meta key
 `_law_registration_state` and its sanitiser (event-registration vocabulary),
 the speaker `_law_organisation_ids`, and the `host_edit_review` setting (its UI
-control is disabled). Leave until 4.2; do not cut.
+control is disabled). Do not cut. The **discount catalogue**
+(`discounts.php`) joined this list on 10 September 2026: it is fully built and
+nothing calls it, by Denis's decision, and `tests/DiscountsTest.php` fails if
+anybody wires it into the flagship.
 
 **Post-cutover cleanup ticket:** once the source flip is permanent, the `'gf'`
 branches in `calendar.php`, `speakers.php` and `account-events.php`, the
@@ -2908,6 +3150,111 @@ rollback must stay alive.
 ---
 
 ## Change history
+
+Updated 10 September 2026 for the **booking notification changes** (Denis):
+the per-booking host and committee emails retired, and the capacity warning
+split into two stages. `functions/events/notifications.php`,
+`functions/events/bookings.php`, `functions/events/meta.php`,
+`functions/setup-account-pages.php`,
+`functions/events/migration/runner.php`; six new tests, suite green.
+
+**`host_booking_received` and `committee_booking_received` now ship
+`'active' => false`.** A busy event mailed the host and the committee (or the
+assignee) on every submission, and Manage bookings already lists every booking.
+Both registry entries and all four `law_events_send()` calls stay exactly where
+they were, so the Emails screen's "Send this notification" box brings either
+back with the site's own subject and body;
+`law_events_send()` returns before recipient resolution while an email is
+inactive, which is also why an inactive email leaves **no** line in the event's
+activity log.
+
+Turning them off in the registry is not enough on its own, and this is the trap
+to remember for any future retirement: `law_events_email()` merges the
+`law_events_email_overrides` option over the registry, `active` included, so on
+an environment where anyone has pressed Save on either email the stored `true`
+would beat the new default and the emails would keep sending after a deploy.
+`law_setup_retire_booking_received_emails()` drops the stored `active` key for
+the two slugs (leaving subject and body edits alone) and runs from **both**
+`?setup-account-pages` and migration step 10, so a git push alone is enough.
+
+**The capacity warning became two stages, each with its own one-shot latch.**
+The old rule was a flat "5 or fewer places remaining", which warns far too late
+on a 200-place event. The rule now lives in one place,
+`law_event_capacity_warning_at( $available )`: fewer than 10% of the approved
+places left, floored at 5. Integer arithmetic only
+(`max( 5, ceil( $available / 10 ) - 1 )`), so 90 places warns at 8 left and 91
+at 9, with nothing to round at the boundary. **The floor means the percentage
+only bites from 61 places upwards** — a 40-place event still warns at 5 left,
+exactly as before, which is the trade Denis chose when asked.
+
+When the last place goes, `host_event_full` and `committee_event_full` (the
+latter assignee-first) go out instead. `law_booking_maybe_capacity_warning()`
+checks the full stage first and **consumes the nearly-full latch as well**, so a
+pass that jumps from above the line straight to zero sends the sold-out email
+alone rather than two in the same second. `law_event_recount_attendees()` clears
+both latches together, at the nearly-full threshold rather than at the first
+freed place, so cancelling one place on a full event and selling it again does
+not send a second sold-out email. The one bare `5` that used to live at both the
+fire site and the re-arm site, free to drift, is gone.
+
+Two things left deliberately alone: `law_event_tickets_changed()` still does not
+call the warning, so a committee member who *lowers* capacity below the
+threshold triggers no email (unchanged behaviour); and the manual-promote guard
+in `waitlist.php` still skips an over-booked event entirely, so neither stage
+fires there. `tests/BookingEmailsTest.php` pins the threshold as a pure
+function, both stages through the engine, the jump-to-zero case and the retired
+emails being silent by default; `tests/BookingsTest.php` pins the two latches
+re-arming together. The two tests that cover the retired emails tick them back
+on first (isolated in memory), which also proves the Emails-screen toggle works
+— and one of them had a host assertion that never ran, because the fixture left
+`post_author` at 0 and `get_userdata( 0 )` is false.
+
+Updated 10 September 2026 for the **flagship conference's application and
+payment flow** (FLAGSHIP_PAYMENTS.md): `functions/events/flagship-bookings.php`,
+`functions/events/flagship-bookings-dashboard.php`,
+`functions/events/stripe/attendees.php`, `functions/account-flagship.php`,
+`functions/events/discounts.php`, `functions/events/discounts-dashboard.php`,
+`templates/account-dashboard-flagship-bookings.php`,
+`templates/account-dashboard-discounts.php`, five new parts
+(`flagship-apply-modal`, `flagship-success-modal`,
+`flagship-manage-application`, `flagship-card-form`, `flagship-add-attendee`,
+plus `flagship-bookings-list`, `discounts-list`, `discounts-manage`) and three
+test suites (`FlagshipPaymentsTest`, `FlagshipBookingsDashboardTest`,
+`DiscountsTest`); 352 tests green, up from 303.
+
+A delegate applies from `/events/flagship/`, gives their card on Stripe's
+hosted page without being charged, and waits; the committee approves or
+declines on `/account/dashboard/flagship-bookings/`; approval raises a VAT
+invoice and pays it off-session, and confirms the place. Three booking
+statuses were added (`law-applied`, `law-declined`, `law-payment-failed`),
+the flagship gained a places count and two prices with a cutover datetime
+edited on both flagship screens, and the Stripe webhook learned to route by
+`law_booking_id` so one endpoint serves host fees and attendee places alike.
+It also fixed an open finding: a partial refund no longer marks a payment
+fully refunded.
+
+**Three review gates ran on the same day** (three conformance passes, then
+design and security) and their fixes are part of the same work. Four of the
+findings were money defects worth knowing about, because the shapes recur:
+the committee's Decline button posted `approve`, because the table depended on
+JavaScript hooks nobody had written; a declined applicant could still pay from
+the hosted invoice link already in their inbox and be confirmed by the
+webhook; a transient Stripe error on the resume step deleted the invoice
+reference and raised a second invoice; and two simultaneous approvals both
+passed the capacity check because neither the status read nor the count was
+under the lock. All four are fixed and each is pinned by a named regression
+test. `assets/js/booking-form.js` gained two general fixes in the process: it
+now appends the submitter's name and value to its fetch body (a native submit
+sends them; `FormData(form)` does not), and its submit handler is delegated at
+the document, so a table swapped in by an AJAX filter keeps its behaviour
+instead of silently falling back to a plain POST.
+
+Two decisions from that round are worth remembering because the code looks odd
+without them. **`law_booking_guard_open()` still refuses the flagship**, which
+is not an oversight but the control keeping the hosted machinery away from a
+priced, reviewed event. And the **discount catalogue is built and wired to
+nothing**: Denis wanted codes kept for future use and explicitly not used on
+the flagship.
 
 Updated 9 September 2026 for the **flagship conference**
 (`functions/events/flagship.php`, `functions/events/admin/flagship-screen.php`,
@@ -3041,7 +3388,8 @@ emails (25 total). Updated again 7 September 2026 for **bookings phase 1**
 `law_booking`, the bookings engine (`bookings.php`), the shared request
 plumbing (`request.php`, where `law_events_redirect_back()` and
 `law_events_rate_limit_ok()` moved from comments.php), the booking meta
-schema plus the `_law_tickets_sold` / `_law_capacity_warned` event keys, the
+schema plus the `_law_tickets_sold` / `_law_capacity_warned` event keys (a
+`_law_capacity_full_warned` latch joined them on 10 September 2026), the
 status guard and untrash filter extended to bookings, and the parameterised
 `law_events_create_host_user()` + extracted
 `law_events_password_setup_link()` in co-owners.php. Bookings phase 2 landed
@@ -3249,8 +3597,11 @@ the same round, because its "you can raise the number of places from your
 events dashboard" advice is only true for a host who has their own venue. It now
 adds "If LAW arranged your venue, the places are set by the committee, so please
 reply to this email and we will raise them for you." A site with a stored
-override for that slug keeps its own text, so check the `law_events_emails`
-option before assuming the registry default is what sends.
+override for that slug keeps its own text, so check the
+**`law_events_email_overrides`** option (`LAW_EVENTS_EMAIL_OVERRIDES_OPTION`,
+notifications.php) before assuming the registry default is what sends. Its
+threshold changed the next day: see the change history entry for the two-stage
+capacity warning.
 
 Updated the same day with **Venue capacity and Places available as committee
 controls on the dashboard panel** (Denis, asked for after the rule above made

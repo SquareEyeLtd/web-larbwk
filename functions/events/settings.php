@@ -34,6 +34,11 @@ function law_events_settings_defaults() {
 		// Host terms page. Empty = resolve the page by its path (see
 		// law_events_terms_url()); set to a page ID or an absolute URL to override.
 		'terms_page'            => '',
+		// ATTENDEE registration terms, a different document from the host
+		// ones above: someone applying for a place at the conference is not
+		// agreeing to arrange a venue or pay a host fee. Empty = fall back to
+		// the Policies index, deliberately NEVER to the host terms.
+		'attendee_terms_page'   => '',
 	);
 }
 
@@ -273,6 +278,41 @@ function law_event_apply_slot_label( $event_id, $slot_label ) {
 }
 
 /** Committee recipient emails, filtered to valid addresses. */
+/**
+ * The ATTENDEE registration terms, for anyone booking or applying for a place.
+ *
+ * Deliberately a separate helper from law_events_terms_url(), and deliberately
+ * without its fallback to /policies/event-host-terms-conditions/. That
+ * document is about arranging a venue and paying a host fee of £1,200; an
+ * attendee ticking "I accept the registration terms" against it would be
+ * agreeing to something that does not apply to them, which is worse than
+ * linking to the policies index and letting them read what is actually there.
+ *
+ * @return string
+ */
+function law_events_attendee_terms_url() {
+	$setting = law_events_setting( 'attendee_terms_page', '' );
+	if ( is_numeric( $setting ) && get_post_status( (int) $setting ) ) {
+		return (string) get_permalink( (int) $setting );
+	}
+	if ( is_string( $setting ) && 0 === strpos( $setting, 'http' ) ) {
+		return $setting;
+	}
+	$page = get_page_by_path( 'policies' );
+
+	return $page && 'publish' === $page->post_status ? (string) get_permalink( $page ) : home_url( '/policies/' );
+}
+
+/** Has LAW actually supplied attendee terms, or is this the fallback? */
+function law_events_attendee_terms_configured() {
+	$setting = law_events_setting( 'attendee_terms_page', '' );
+	if ( is_numeric( $setting ) && get_post_status( (int) $setting ) ) {
+		return true;
+	}
+
+	return is_string( $setting ) && 0 === strpos( $setting, 'http' );
+}
+
 function law_events_committee_emails() {
 	$emails = law_events_setting( 'committee_emails', array() );
 	return array_values( array_filter( array_map( 'sanitize_email', (array) $emails ), 'is_email' ) );
@@ -378,6 +418,12 @@ function law_events_settings_page() {
 					<td><input name="tax_rate_id" id="law-taxrate" type="text" class="regular-text code" value="<?php echo esc_attr( $s['tax_rate_id'] ); ?>" placeholder="txr_…"></td></tr>
 				<tr><th scope="row"><label for="law-template">Stripe invoice rendering template ID</label></th>
 					<td><input name="rendering_template_id" id="law-template" type="text" class="regular-text code" value="<?php echo esc_attr( $s['rendering_template_id'] ); ?>" placeholder="inrtem_…"></td></tr>
+				<tr><th scope="row"><label for="law-attendee-terms">Attendee registration terms</label></th>
+					<td><input name="attendee_terms_page" id="law-attendee-terms" type="text" class="regular-text" value="<?php echo esc_attr( $s['attendee_terms_page'] ); ?>" placeholder="Page ID, or https://…">
+					<p class="description">The terms someone accepts when they apply for or book a place. A page ID or an absolute URL.
+					<?php if ( ! law_events_attendee_terms_configured() ) : ?>
+						<strong>Not set: the flagship application currently links to the Policies index.</strong> It deliberately does NOT fall back to the host terms, which are about arranging a venue and paying a host fee and do not apply to an attendee.
+					<?php endif; ?></p></td></tr>
 				<tr><th scope="row">Host edits to published events</th>
 					<td><label><input type="radio" name="host_edit_review" value="immediate" <?php checked( $s['host_edit_review'], 'immediate' ); ?>> Publish immediately</label><br>
 					<label><input type="radio" name="host_edit_review" value="review" disabled> Route to LAW for review <em>(arrives with phase 4.2; 4.1 publishes immediately and emails the committee)</em></label></td></tr>
@@ -395,6 +441,7 @@ function law_events_settings_save() {
 		'week_end'              => sanitize_text_field( wp_unslash( $_POST['week_end'] ?? '' ) ),
 		'tax_rate_id'           => sanitize_text_field( wp_unslash( $_POST['tax_rate_id'] ?? '' ) ),
 		'rendering_template_id' => sanitize_text_field( wp_unslash( $_POST['rendering_template_id'] ?? '' ) ),
+		'attendee_terms_page'   => sanitize_text_field( wp_unslash( $_POST['attendee_terms_page'] ?? '' ) ),
 		'host_edit_review'      => ( 'review' === ( $_POST['host_edit_review'] ?? '' ) ) ? 'review' : 'immediate',
 	);
 

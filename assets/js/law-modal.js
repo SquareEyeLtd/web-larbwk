@@ -137,9 +137,14 @@
 		}
 	}
 
-	openers.forEach(function (button) {
+	/* Prepare one opener: neutralise its no-JS submit behaviour and describe
+	   the dialog it controls. Idempotent, so re-running over swapped-in
+	   markup is free. */
+	function initOpener(button) {
+		if (button.hasAttribute('data-law-modal-ready')) { return; }
 		var modal = document.getElementById(button.getAttribute('data-law-modal-open'));
 		if (!modal) { return; }
+		button.setAttribute('data-law-modal-ready', '1');
 		/* The button submitted the form on the no-JS path; from here it only
 		   opens the modal, and the modal's own submit button carries the
 		   action value. */
@@ -151,8 +156,37 @@
 		button.setAttribute('aria-expanded', 'false');
 		/* JS-only openers ship hidden; now that the modal is confirmed, show it. */
 		if (button.hasAttribute('data-law-modal-enhanced')) { button.hidden = false; }
-		button.addEventListener('click', function () { openModal(modal, button); });
+	}
+
+	function initOpeners(root) {
+		(root || document).querySelectorAll('[data-law-modal-open]').forEach(initOpener);
+	}
+
+	initOpeners();
+
+	/* Opening is DELEGATED, not bound per button. The committee's tables are
+	   swapped in over &law_partial=1 whenever a filter changes, and handlers
+	   bound at load died with the old markup — leaving buttons that submitted
+	   straight through with no confirmation at all. On a page where a click
+	   charges somebody's card, a confirm dialog that silently stops appearing
+	   is the worst possible failure. */
+	document.addEventListener('click', function (event) {
+		var button = event.target.closest ? event.target.closest('[data-law-modal-open]') : null;
+		if (!button) { return; }
+		var modal = document.getElementById(button.getAttribute('data-law-modal-open'));
+		if (!modal) { return; }
+		/* Swapped-in markup has not been through initOpener() yet, so it is
+		   still a submit; prepare it and stop the submission this click would
+		   otherwise cause. */
+		initOpener(button);
+		event.preventDefault();
+		openModal(modal, button);
 	});
+
+	/* Re-callable, for anything that injects markup: window.lawModal.initAll().
+	   Delegation covers opening; this restores the ARIA and the no-JS
+	   neutralisation on nodes that arrived after load. */
+	if (window.lawModal) { window.lawModal.initAll = initOpeners; }
 
 	document.addEventListener('click', function (event) {
 		var target = event.target;
@@ -191,8 +225,9 @@
 	   in the modal rather than a browser bubble, which is why the field carries
 	   aria-required instead of a native required attribute. A field without
 	   aria-required is optional, and a modal without a field skips this. */
-	document.querySelectorAll('.law-modal [type="submit"]').forEach(function (button) {
-		button.addEventListener('click', function (event) {
+	document.addEventListener('click', function (event) {
+		var button = event.target.closest ? event.target.closest('.law-modal [type="submit"]') : null;
+		if (button) {
 			var modal = button.closest('.law-modal');
 			var input = modal ? fields(modal)[0] : null;
 			if (!input || input.getAttribute('aria-required') !== 'true' || input.value.trim()) { return; }
@@ -206,7 +241,7 @@
 				field.appendChild(error);
 			}
 			input.focus();
-		});
+		}
 	});
 
 })();

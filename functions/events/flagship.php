@@ -109,6 +109,187 @@ function law_flagship_date( $event_id = 0 ) {
 	return law_flagship_default_date();
 }
 
+/* -------------------------------------------------------------------------
+ * Pricing (FLAGSHIP_PAYMENTS.md §2.3)
+ *
+ * The flagship costs one price up to a cutover datetime and a higher one
+ * afterwards, both stored NET of VAT in pence. This is the theme's first
+ * date-based price switch, so there is no pattern to copy and the timezone
+ * handling is deliberate: the comparison is built through wp_timezone(), never
+ * strtotime() on a bare string, because London is on BST until late October
+ * and an hour's drift would sell the cheaper place into the 17th.
+ * ---------------------------------------------------------------------- */
+
+/** Default prices in pence, net of VAT (Denis, 10 September 2026). */
+const LAW_FLAGSHIP_PRICE_DEFAULT      = 55000;
+const LAW_FLAGSHIP_PRICE_LATE_DEFAULT = 60000;
+
+/** 17 October of the programme year, 00:00 site time: the default cutover. */
+function law_flagship_default_price_switch() {
+	$year = (int) law_events_setting( 'year', 2026 );
+	if ( $year < 2000 ) {
+		$year = (int) gmdate( 'Y' );
+	}
+	return sprintf( '%04d-10-17 00:00', $year );
+}
+
+/**
+ * The cutover as a site-local timestamp, 0 when unset or unparseable.
+ *
+ * Stored values are naive 'Y-m-d H:i' in site time, as everywhere else in the
+ * module, so they are read back with the site's own timezone attached rather
+ * than the server's.
+ *
+ * @param int $event_id Defaults to the flagship.
+ */
+function law_flagship_price_switch_ts( $event_id = 0 ) {
+	$event_id = (int) $event_id ? (int) $event_id : law_flagship_event_id();
+	$stored   = $event_id ? (string) law_event_meta( $event_id, '_law_flagship_price_switch' ) : '';
+	if ( '' === $stored ) {
+		$stored = law_flagship_default_price_switch();
+	}
+	try {
+		$when = new DateTimeImmutable( $stored, wp_timezone() );
+	} catch ( Exception $e ) {
+		return 0;
+	}
+	return $when->getTimestamp();
+}
+
+/**
+ * Has the price switched yet?
+ *
+ * @param int $at       Unix timestamp; defaults to now.
+ * @param int $event_id Defaults to the flagship.
+ */
+function law_flagship_price_is_late( $at = 0, $event_id = 0 ) {
+	$at     = (int) $at ? (int) $at : (int) current_time( 'timestamp', true );
+	$switch = law_flagship_price_switch_ts( $event_id );
+	return $switch > 0 && $at >= $switch;
+}
+
+/**
+ * The list price in pence, net of VAT, at a moment in time.
+ *
+ * Two distinct zeroes, which is why this is not a one-liner:
+ *
+ * - the key has NEVER been written (the flagship post predates this feature,
+ *   or a fresh environment just provisioned it) — fall back to the agreed
+ *   default, so a git push alone puts the right price on the page;
+ * - the committee has deliberately typed 0 — the event is not on sale, and
+ *   the application control renders its not-open state rather than handing
+ *   out free places.
+ *
+ * The late price falls back to its OWN default, never to the early one: an
+ * unconfigured late price must not quietly keep charging £550 after the
+ * cutover.
+ *
+ * @param int $at       Unix timestamp; defaults to now.
+ * @param int $event_id Defaults to the flagship.
+ */
+function law_flagship_price_pence( $at = 0, $event_id = 0 ) {
+	$event_id = (int) $event_id ? (int) $event_id : law_flagship_event_id();
+	if ( ! $event_id ) {
+		return 0;
+	}
+	if ( law_flagship_price_is_late( $at, $event_id ) ) {
+		$key     = '_law_flagship_price_late_pence';
+		$default = LAW_FLAGSHIP_PRICE_LATE_DEFAULT;
+	} else {
+		$key     = '_law_flagship_price_pence';
+		$default = LAW_FLAGSHIP_PRICE_DEFAULT;
+	}
+	$stored = get_post_meta( $event_id, $key, true );
+	if ( '' === $stored || null === $stored ) {
+		return $default;
+	}
+	return max( 0, (int) $stored );
+}
+
+/**
+ * A stored price as the pounds string the form field shows: '' when the key
+ * has never been written, so the field renders the default rather than a
+ * misleading 0.00.
+ */
+function law_flagship_price_pounds_field( $event_id, $key ) {
+	$event_id = (int) $event_id;
+	if ( ! $event_id ) {
+		$default = '_law_flagship_price_late_pence' === $key
+			? LAW_FLAGSHIP_PRICE_LATE_DEFAULT
+			: LAW_FLAGSHIP_PRICE_DEFAULT;
+		return number_format( $default / 100, 2, '.', '' );
+	}
+	$stored = get_post_meta( $event_id, $key, true );
+	if ( '' === $stored || null === $stored ) {
+		$default = '_law_flagship_price_late_pence' === $key
+			? LAW_FLAGSHIP_PRICE_LATE_DEFAULT
+			: LAW_FLAGSHIP_PRICE_DEFAULT;
+		return number_format( $default / 100, 2, '.', '' );
+	}
+	return number_format( max( 0, (int) $stored ) / 100, 2, '.', '' );
+}
+
+/**
+ * A typed cutover as the normalised site-local 'Y-m-d H:i' the schema stores,
+ * or null when it cannot be read as a date at all.
+ *
+ * Null rather than '' so a caller can tell "the committee typed nonsense",
+ * which is refused, from "the field was left blank", which means leave the
+ * stored value alone.
+ */
+function law_flagship_parse_price_switch( $typed ) {
+	$typed = trim( (string) $typed );
+	if ( '' === $typed ) {
+		return null;
+	}
+	try {
+		$when = new DateTimeImmutable( $typed, wp_timezone() );
+	} catch ( Exception $e ) {
+		return null;
+	}
+	return $when->format( 'Y-m-d H:i' );
+}
+
+/**
+ * "Delegates pay £660.00 including VAT until 16 October, then £720.00." One
+ * sentence, built once, printed by both flagship screens so the wp-admin and
+ * committee forms can never explain the pricing differently.
+ *
+ * @param string $early_typed  Pounds as typed in the early-price field.
+ * @param string $late_typed   Pounds as typed in the late-price field.
+ * @param string $switch_local Site-local 'Y-m-d H:i' cutover.
+ */
+function law_flagship_price_preview_line( $early_typed, $late_typed, $switch_local ) {
+	$early = law_events_pounds_to_pence( $early_typed );
+	$late  = law_events_pounds_to_pence( $late_typed );
+	if ( null === $early || null === $late ) {
+		return '';
+	}
+	if ( $early < 1 && $late < 1 ) {
+		return 'Both prices are zero, so the flagship is not on sale and the page shows no Apply button.';
+	}
+
+	// The day BEFORE the cutover is what a delegate reads as the deadline: a
+	// switch at midnight on the 17th means "until the 16th", and printing the
+	// 17th here would contradict the button copy.
+	$last_day = '';
+	try {
+		$when = new DateTimeImmutable( (string) $switch_local, wp_timezone() );
+		$last_day = $when->modify( '-1 day' )->format( 'j F' );
+	} catch ( Exception $e ) {
+		$last_day = '';
+	}
+
+	return sprintf(
+		'Delegates pay %1$s including VAT (%2$s + VAT)%3$s, then %4$s including VAT (%5$s + VAT).',
+		law_events_format_pence( law_events_gross_pence( $early ) ),
+		law_events_format_pence( $early ),
+		'' !== $last_day ? ' until the end of ' . $last_day : '',
+		law_events_format_pence( law_events_gross_pence( $late ) ),
+		law_events_format_pence( $late )
+	);
+}
+
 /** The Flagship screen. */
 function law_flagship_admin_url() {
 	return admin_url( 'edit.php?post_type=' . LAW_EVENT_CPT . '&page=law-flagship' );
@@ -408,6 +589,17 @@ function law_flagship_form_values( $event_id ) {
 		'venue'            => $event_id ? (string) law_event_meta( $event_id, '_law_venue' ) : '',
 		'hero_image_id'    => $event_id ? absint( law_event_meta( $event_id, '_law_hero_image_id' ) ) : 0,
 		'show'             => $post && 'publish' === $post->post_status,
+		// Bookings and pricing (FLAGSHIP_PAYMENTS.md §2.2). Prices are edited
+		// in pounds and stored in pence, so the form shows the pounds figure
+		// and the reader multiplies. law_flagship_price_pence() supplies the
+		// agreed default when a key has never been written, which is what lets
+		// a git push alone put the right price on the page.
+		'places'           => $event_id ? absint( law_event_meta( $event_id, '_law_tickets_available' ) ) : 0,
+		'price'            => law_flagship_price_pounds_field( $event_id, '_law_flagship_price_pence' ),
+		'price_late'       => law_flagship_price_pounds_field( $event_id, '_law_flagship_price_late_pence' ),
+		'price_switch'     => $event_id && '' !== (string) law_event_meta( $event_id, '_law_flagship_price_switch' )
+			? (string) law_event_meta( $event_id, '_law_flagship_price_switch' )
+			: law_flagship_default_price_switch(),
 		'sessions_present' => true,
 		'sessions'         => array(),
 	);
@@ -470,6 +662,16 @@ function law_flagship_input_from_post() {
 		'venue'            => sanitize_text_field( (string) ( $raw['venue'] ?? '' ) ),
 		'hero_image_id'    => absint( $raw['hero_image_id'] ?? 0 ),
 		'show'             => ! empty( $raw['show'] ),
+		'places'           => absint( $raw['places'] ?? 0 ),
+		// Typed in pounds, kept as the typed string here so validation can
+		// tell "0" (deliberately not on sale) from "" (leave it alone) and
+		// from "abc" (a typo worth refusing rather than silently zeroing).
+		'price'            => trim( (string) ( $raw['price'] ?? '' ) ),
+		'price_late'       => trim( (string) ( $raw['price_late'] ?? '' ) ),
+		// Raw, like the prices: sanitising here would turn a typo into '' and
+		// validation could no longer tell it from a field left blank, so the
+		// mistake would be swallowed instead of reported.
+		'price_switch'     => trim( (string) ( $raw['price_switch'] ?? '' ) ),
 		// The sentinel: "the repeater was on the form". Without it a POST that
 		// PHP truncated at max_input_vars would read as "the committee deleted
 		// every session" and wipe the agenda.
@@ -554,6 +756,48 @@ function law_flagship_validate( array $input ) {
 	}
 	if ( '' === (string) $input['date'] ) {
 		$errors->add( 'date', 'Enter the date as YYYY-MM-DD.' );
+	}
+
+	// Bookings and pricing (FLAGSHIP_PAYMENTS.md §2.2).
+	//
+	// Every field here is judged only when it was actually submitted. A key
+	// missing from $input means the caller is not editing pricing at all
+	// (the migration, a test, or a POST that max_input_vars truncated), and a
+	// present-but-empty field means "leave the stored value alone". Only a
+	// present, non-empty, unreadable value is an error, because silently
+	// reading a typo as 0 would put the conference on sale for nothing.
+	foreach ( array( 'price' => 'Price before the switch', 'price_late' => 'Price after the switch' ) as $key => $label ) {
+		if ( ! array_key_exists( $key, $input ) ) {
+			continue;
+		}
+		$typed = trim( (string) $input[ $key ] );
+		if ( '' !== $typed && null === law_events_pounds_to_pence( $typed ) ) {
+			$errors->add( $key, sprintf( '%s must be an amount in pounds, for example 550.00.', $label ) );
+		}
+	}
+	if ( array_key_exists( 'price_switch', $input ) ) {
+		$typed = trim( (string) $input['price_switch'] );
+		if ( '' !== $typed && null === law_flagship_parse_price_switch( $typed ) ) {
+			$errors->add( 'price_switch', 'Enter the date and time the price switches as YYYY-MM-DD HH:MM, for example 2026-10-17 00:00.' );
+		}
+	}
+	// Places may be lowered, but not below the people already holding a
+	// confirmed place: the count would read as a lie and the over-booking
+	// warning would fire on every subsequent approval.
+	$flagship_id = law_flagship_event_id();
+	if ( $flagship_id && array_key_exists( 'places', $input ) ) {
+		$places    = (int) $input['places'];
+		$confirmed = law_event_attendee_total( $flagship_id );
+		if ( $places > 0 && $places < $confirmed ) {
+			$errors->add(
+				'places',
+				sprintf(
+					'There are already %d confirmed places, so the number available cannot be set to %d.',
+					$confirmed,
+					$places
+				)
+			);
+		}
 	}
 
 	foreach ( $input['sessions'] as $i => $session ) {
@@ -652,9 +896,36 @@ function law_flagship_save( array $input, $actor ) {
 	}
 
 	law_event_update_meta( $event_id, '_law_is_flagship', 1 );
+	// The reserved 4.2 vocabulary finally has a consumer: the flagship is the
+	// one approval-gated event, and anything asking an event how it is booked
+	// should get an answer rather than an empty string.
+	law_event_update_meta( $event_id, '_law_registration_state', 'apply' );
 	law_event_update_meta( $event_id, '_law_flagship_date', $input['date'] );
 	law_event_update_meta( $event_id, '_law_venue', $input['venue'] );
 	law_event_update_meta( $event_id, '_law_hero_image_id', $input['hero_image_id'] );
+
+	// Bookings and pricing. Mirrors the validation above: a key the caller did
+	// not send, or sent empty, leaves the stored value alone, so clearing a box
+	// is never mistaken for "make it free" and a truncated POST cannot wipe the
+	// price the way it could once have wiped the agenda.
+	if ( array_key_exists( 'places', $input ) ) {
+		law_event_update_meta( $event_id, '_law_tickets_available', (int) $input['places'] );
+	}
+	foreach ( array( 'price' => '_law_flagship_price_pence', 'price_late' => '_law_flagship_price_late_pence' ) as $field => $meta_key ) {
+		if ( ! array_key_exists( $field, $input ) ) {
+			continue;
+		}
+		$pence = law_events_pounds_to_pence( $input[ $field ] );
+		if ( null !== $pence ) {
+			law_event_update_meta( $event_id, $meta_key, $pence );
+		}
+	}
+	if ( array_key_exists( 'price_switch', $input ) ) {
+		$switch = law_flagship_parse_price_switch( $input['price_switch'] );
+		if ( null !== $switch ) {
+			law_event_update_meta( $event_id, '_law_flagship_price_switch', $switch );
+		}
+	}
 
 	if ( $input['sessions_present'] ) {
 		law_flagship_save_sessions( $event_id, $input['sessions'], $actor );
@@ -818,13 +1089,17 @@ function law_flagship_snapshot( $event_id ) {
 	}
 
 	return array(
-		'title'    => $post ? $post->post_title : '',
-		'status'   => $post ? $post->post_status : '',
-		'date'     => (string) law_event_meta( $event_id, '_law_flagship_date' ),
-		'venue'    => (string) law_event_meta( $event_id, '_law_venue' ),
-		'hero'     => absint( law_event_meta( $event_id, '_law_hero_image_id' ) ),
-		'sessions' => $sessions,
-		'speakers' => $speakers,
+		'title'        => $post ? $post->post_title : '',
+		'status'       => $post ? $post->post_status : '',
+		'date'         => (string) law_event_meta( $event_id, '_law_flagship_date' ),
+		'venue'        => (string) law_event_meta( $event_id, '_law_venue' ),
+		'hero'         => absint( law_event_meta( $event_id, '_law_hero_image_id' ) ),
+		'places'       => absint( law_event_meta( $event_id, '_law_tickets_available' ) ),
+		'price'        => (int) get_post_meta( $event_id, '_law_flagship_price_pence', true ),
+		'price_late'   => (int) get_post_meta( $event_id, '_law_flagship_price_late_pence', true ),
+		'price_switch' => (string) law_event_meta( $event_id, '_law_flagship_price_switch' ),
+		'sessions'     => $sessions,
+		'speakers'     => $speakers,
 	);
 }
 
@@ -851,6 +1126,32 @@ function law_flagship_log_save( $event_id, array $before, array $after, $actor )
 	}
 	if ( $before['hero'] !== $after['hero'] ) {
 		$changes[] = $after['hero'] ? 'banner image set' : 'banner image removed';
+	}
+	// Money changes are logged in full, per the module's standing rule that
+	// every payment-machinery change reads back like a WooCommerce order note.
+	if ( $before['places'] !== $after['places'] ) {
+		$changes[] = sprintf( 'places available %d → %d', $before['places'], $after['places'] );
+	}
+	if ( $before['price'] !== $after['price'] ) {
+		$changes[] = sprintf(
+			'price before the switch %s → %s (excluding VAT)',
+			law_events_format_pence( $before['price'] ),
+			law_events_format_pence( $after['price'] )
+		);
+	}
+	if ( $before['price_late'] !== $after['price_late'] ) {
+		$changes[] = sprintf(
+			'price after the switch %s → %s (excluding VAT)',
+			law_events_format_pence( $before['price_late'] ),
+			law_events_format_pence( $after['price_late'] )
+		);
+	}
+	if ( $before['price_switch'] !== $after['price_switch'] ) {
+		$changes[] = sprintf(
+			'price switches at %s → %s',
+			$before['price_switch'] ?: 'not set',
+			$after['price_switch'] ?: 'not set'
+		);
 	}
 
 	$added   = array_diff_key( $after['sessions'], $before['sessions'] );
