@@ -6,5 +6,5 @@
  */
 
 $law_cal_show_status = false;
-$law_cal_hero_title  = 'Calendar of Events';
+$law_cal_hero_title  = 'Programme';
 require get_theme_file_path( 'parts/calendar-body.php' );
