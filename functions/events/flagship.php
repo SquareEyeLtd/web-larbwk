@@ -600,6 +600,12 @@ function law_flagship_form_values( $event_id ) {
 		'price_switch'     => $event_id && '' !== (string) law_event_meta( $event_id, '_law_flagship_price_switch' )
 			? (string) law_event_meta( $event_id, '_law_flagship_price_switch' )
 			: law_flagship_default_price_switch(),
+		// The registration terms a delegate ticks when they apply. Not event
+		// meta: it is the site-wide `attendee_terms_page` setting, the same
+		// one on LAW → Events settings, edited here because the committee
+		// lives on this screen and wp-admin is where it went unnoticed. One
+		// value, two doors, so the two cannot disagree.
+		'attendee_terms'   => (string) law_events_setting( 'attendee_terms_page', '' ),
 		'sessions_present' => true,
 		'sessions'         => array(),
 	);
@@ -655,7 +661,7 @@ function law_flagship_form_values( $event_id ) {
 function law_flagship_input_from_post() {
 	$raw = isset( $_POST['law_flagship'] ) ? wp_unslash( (array) $_POST['law_flagship'] ) : array();
 
-	return array(
+	$input = array(
 		'title'            => sanitize_text_field( (string) ( $raw['title'] ?? '' ) ),
 		'description'      => law_rich_text_sanitize( $raw['description'] ?? '' ),
 		'date'             => law_events_sanitize_value( $raw['date'] ?? '', 'date' ),
@@ -678,6 +684,18 @@ function law_flagship_input_from_post() {
 		'sessions_present' => ! empty( $raw['sessions_present'] ),
 		'sessions'         => law_flagship_sessions_from_post( (array) ( $raw['sessions'] ?? array() ) ),
 	);
+
+	// Only when the form actually carried it. Every other field above is
+	// always present and "empty means leave it alone"; the terms link is the
+	// one where empty is a real choice (fall back to the Policies index), so
+	// it cannot use that convention. The wp-admin Flagship screen posts
+	// through this same function and does NOT render the field, so setting
+	// it unconditionally would clear the link every time anyone saved there.
+	if ( array_key_exists( 'attendee_terms', $raw ) ) {
+		$input['attendee_terms'] = trim( (string) $raw['attendee_terms'] );
+	}
+
+	return $input;
 }
 
 function law_flagship_sessions_from_post( array $raw ) {
@@ -775,6 +793,27 @@ function law_flagship_validate( array $input ) {
 			$errors->add( $key, sprintf( '%s must be an amount in pounds, for example 550.00.', $label ) );
 		}
 	}
+	// A terms link that points nowhere is worse than none: the delegate ticks
+	// a box agreeing to something they cannot read. Refuse a page ID that is
+	// not a real page, and an address that is not an address.
+	if ( array_key_exists( 'attendee_terms', $input ) ) {
+		$typed = trim( (string) $input['attendee_terms'] );
+		if ( '' !== $typed ) {
+			if ( is_numeric( $typed ) ) {
+				if ( ! get_post_status( (int) $typed ) ) {
+					$errors->add( 'attendee_terms', 'That registration terms page ID does not exist. Give the ID of a real page, or a full web address.' );
+				}
+				// filter_var, NOT wp_http_validate_url(): that function is an
+				// SSRF guard for outbound requests and refuses any host it
+				// cannot resolve or that sits in a private range. This link
+				// is only ever printed in an href, never fetched, so the
+				// question is "is this a web address", not "may we call it".
+			} elseif ( ! filter_var( $typed, FILTER_VALIDATE_URL ) || ! in_array( wp_parse_url( $typed, PHP_URL_SCHEME ), array( 'http', 'https' ), true ) ) {
+				$errors->add( 'attendee_terms', 'Enter the registration terms as a page ID, or a full web address beginning http:// or https://.' );
+			}
+		}
+	}
+
 	if ( array_key_exists( 'price_switch', $input ) ) {
 		$typed = trim( (string) $input['price_switch'] );
 		if ( '' !== $typed && null === law_flagship_parse_price_switch( $typed ) ) {
@@ -924,6 +963,17 @@ function law_flagship_save( array $input, $actor ) {
 		$switch = law_flagship_parse_price_switch( $input['price_switch'] );
 		if ( null !== $switch ) {
 			law_event_update_meta( $event_id, '_law_flagship_price_switch', $switch );
+		}
+	}
+	// A site-wide option rather than event meta, so it is written straight
+	// to the settings rather than through law_event_update_meta(). Emptying
+	// the box DOES clear it here, unlike the prices: a blank means "fall back
+	// to the Policies index", which is a real choice, not a mistake.
+	if ( array_key_exists( 'attendee_terms', $input ) ) {
+		$law_fs_settings = (array) get_option( LAW_EVENTS_SETTINGS_OPTION, array() );
+		if ( ( $law_fs_settings['attendee_terms_page'] ?? '' ) !== $input['attendee_terms'] ) {
+			$law_fs_settings['attendee_terms_page'] = $input['attendee_terms'];
+			update_option( LAW_EVENTS_SETTINGS_OPTION, $law_fs_settings );
 		}
 	}
 
@@ -1098,6 +1148,7 @@ function law_flagship_snapshot( $event_id ) {
 		'price'        => (int) get_post_meta( $event_id, '_law_flagship_price_pence', true ),
 		'price_late'   => (int) get_post_meta( $event_id, '_law_flagship_price_late_pence', true ),
 		'price_switch' => (string) law_event_meta( $event_id, '_law_flagship_price_switch' ),
+		'terms'        => (string) law_events_setting( 'attendee_terms_page', '' ),
 		'sessions'     => $sessions,
 		'speakers'     => $speakers,
 	);
@@ -1144,6 +1195,13 @@ function law_flagship_log_save( $event_id, array $before, array $after, $actor )
 			'price after the switch %s → %s (excluding VAT)',
 			law_events_format_pence( $before['price_late'] ),
 			law_events_format_pence( $after['price_late'] )
+		);
+	}
+	if ( ( $before['terms'] ?? '' ) !== ( $after['terms'] ?? '' ) ) {
+		$changes[] = sprintf(
+			'registration terms link %s → %s',
+			( $before['terms'] ?? '' ) ?: 'not set',
+			( $after['terms'] ?? '' ) ?: 'not set'
 		);
 	}
 	if ( $before['price_switch'] !== $after['price_switch'] ) {

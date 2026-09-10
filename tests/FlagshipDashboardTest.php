@@ -203,4 +203,83 @@ class FlagshipDashboardTest extends LAW_Test_Case {
 	private function sessions_tracked( int $event_id ): void {
 		$this->posts = array_merge( $this->posts, array_diff( law_event_session_ids( $event_id ), $this->posts ) );
 	}
+
+	/* Registration terms link _________________________________________________ */
+
+	/**
+	 * The committee can set the attendee terms link from Manage flagship,
+	 * and it is the SAME value as the one on LAW → Events settings.
+	 */
+	public function test_the_terms_link_is_editable_from_the_flagship_form(): void {
+		$event_id = law_flagship_ensure_post()['id'];
+		$page_id  = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Registration terms' ) );
+
+		$input = law_flagship_form_values( $event_id );
+		$input['sessions_present'] = false;
+		// 0 = "no number set". The suite shares a database with the site, so
+		// the real flagship's places count can be below its real confirmed
+		// count and would fail an unrelated rule.
+		$input['places']           = 0;
+		$input['attendee_terms']   = (string) $page_id;
+		$saved = law_flagship_save( $input, 0 );
+		$this->assertFalse(
+			is_wp_error( $saved ),
+			'The save must succeed: ' . ( is_wp_error( $saved ) ? implode( '; ', $saved->get_error_messages() ) : '' )
+		);
+
+		$this->assertSame( (string) $page_id, (string) law_events_setting( 'attendee_terms_page', '' ) );
+		$this->assertTrue( law_events_attendee_terms_configured() );
+		$this->assertSame( get_permalink( $page_id ), law_events_attendee_terms_url() );
+	}
+
+	/**
+	 * Saving the wp-admin Flagship screen must not wipe it.
+	 *
+	 * Both screens share law_flagship_input_from_post() and
+	 * law_flagship_save(), but only the front-end one renders this field.
+	 * Every other field follows "absent or empty means leave it alone"; this
+	 * one cannot, because empty is a real choice (fall back to the Policies
+	 * index). So it is read only when the POST actually carried the key — and
+	 * a save from a form without the field must leave it exactly as it was.
+	 */
+	public function test_a_save_from_a_form_without_the_field_leaves_the_terms_alone(): void {
+		$settings = (array) get_option( 'law_events_settings', array() );
+		$settings['attendee_terms_page'] = 'https://example.test/registration-terms/';
+		update_option( 'law_events_settings', $settings );
+
+		$_POST = array( 'law_flagship' => array( 'title' => 'Flagship conference' ) );
+		$input = law_flagship_input_from_post();
+		$_POST = array();
+
+		$this->assertArrayNotHasKey( 'attendee_terms', $input, 'A form without the field must not speak for it.' );
+
+		law_flagship_save( $input, 0 );
+
+		$this->assertSame(
+			'https://example.test/registration-terms/',
+			(string) law_events_setting( 'attendee_terms_page', '' ),
+			'The wp-admin screen must not clear a link it never showed.'
+		);
+	}
+
+	/** A terms link pointing nowhere is refused, not saved. */
+	public function test_a_terms_link_that_goes_nowhere_is_refused(): void {
+		// A whole valid input, so only the field under test can fail.
+		$base = law_flagship_form_values( law_flagship_ensure_post()['id'] );
+		$base['sessions_present'] = false;
+		$base['sessions']         = array();
+		$base['places']           = 0;
+
+		foreach ( array( '999999999', 'not a url', 'policies' ) as $bad ) {
+			$errors = law_flagship_validate( array_merge( $base, array( 'attendee_terms' => $bad ) ) );
+			$this->assertNotEmpty( (string) $errors->get_error_message( 'attendee_terms' ), '"' . $bad . '" must be refused.' );
+		}
+
+		$page_id = wp_insert_post( array( 'post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Terms' ) );
+		foreach ( array( (string) $page_id, 'https://example.test/terms/', '' ) as $good ) {
+			$errors = law_flagship_validate( array_merge( $base, array( 'attendee_terms' => $good ) ) );
+			$this->assertSame( '', (string) $errors->get_error_message( 'attendee_terms' ), '"' . $good . '" must be accepted.' );
+		}
+	}
+
 }
