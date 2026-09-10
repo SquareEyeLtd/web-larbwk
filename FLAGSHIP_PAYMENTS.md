@@ -1026,8 +1026,27 @@ The design pass found two real defects, both fixed:
    buying a place. There is now a separate `law_events_attendee_terms_url()`
    and an `attendee_terms_page` setting, and it deliberately falls back to the
    Policies index rather than to the host terms. **LAW still has to write the
-   attendee registration terms**; until they do, the Events settings screen
-   says so in as many words.
+   attendee registration terms**; until they do, both screens that expose the
+   setting say so in as many words.
+
+   Since 10 September 2026 it is editable from **Manage flagship** as well as
+   LAW → Events settings (Denis: the committee lives on that screen and the
+   wp-admin field went unnoticed). One option, two doors, so the two cannot
+   disagree, and the field shows where the link currently resolves to.
+   Two things about it are deliberate and easy to get wrong:
+
+   - Empty means "fall back to the Policies index", which is a real choice,
+     so unlike the price fields an empty box DOES clear it. That makes the
+     usual "absent or empty means leave it alone" convention unusable, so
+     `law_flagship_input_from_post()` includes the key **only when the POST
+     actually carried it**. The wp-admin Flagship screen posts through the
+     same function and does not render the field; without that check, every
+     save there would have silently wiped the link.
+   - Validation uses `filter_var()` plus a scheme check, **not**
+     `wp_http_validate_url()`. That function is an SSRF guard for outbound
+     requests and refuses any host it cannot resolve or that sits in a
+     private range; this link is only ever printed in an `href`, so the
+     question is "is this a web address", not "may we call it".
 2. A duplicated "Back to my bookings" link, stacked on itself, because both
    the account template and this part rendered one.
 

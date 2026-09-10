@@ -233,6 +233,32 @@ get_template_part(
 					<p class="law-form-field"><strong><?php echo esc_html( $law_fm_preview ); ?></strong></p>
 				<?php endif; ?>
 
+				<p class="law-form-field">
+					<label for="law-fm-terms"><?php esc_html_e( 'Registration terms', 'law' ); ?></label>
+					<input type="text" id="law-fm-terms" name="law_flagship[attendee_terms]"
+						placeholder="<?php esc_attr_e( 'Page ID, or https://…', 'law' ); ?>"
+						value="<?php echo esc_attr( (string) $law_fm_values['attendee_terms'] ); ?>">
+					<span class="law-form-hint">
+						<?php esc_html_e( 'The terms a delegate agrees to when they apply. A page ID or a full address. These are the ATTENDEE terms, not the terms a host signs: those mention the £1,200 host fee and must never be shown here. Leave it empty and the link falls back to the Policies index.', 'law' ); ?>
+					</span>
+					<?php
+					// Say where it currently points, because "a page ID or a
+					// URL" is not something anyone can check by eye.
+					$law_fm_terms_url = law_events_attendee_terms_url();
+					?>
+					<span class="law-form-hint">
+						<?php if ( law_events_attendee_terms_configured() ) : ?>
+							<?php esc_html_e( 'Currently links to:', 'law' ); ?>
+							<a href="<?php echo esc_url( $law_fm_terms_url ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $law_fm_terms_url ); ?></a>
+						<?php else : ?>
+							<strong class="law-flagship-bookings__over">
+								<?php esc_html_e( 'Not set.', 'law' ); ?>
+							</strong>
+							<?php esc_html_e( 'Delegates are being sent to the Policies index, which may not say anything about registering. Set this before applications open.', 'law' ); ?>
+						<?php endif; ?>
+					</span>
+				</p>
+
 			</fieldset>
 
 			<fieldset>
