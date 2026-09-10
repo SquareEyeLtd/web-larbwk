@@ -698,7 +698,7 @@ add_action( 'admin_post_nopriv_law_waitlist_promote', 'law_events_nopriv_json' )
 /** Join the waitlist for a full event (the sold-out control's form). */
 function law_waitlist_join_handler() {
 	$event_id = absint( $_POST['event_id'] ?? 0 );
-	$link     = $event_id ? get_permalink( $event_id ) : home_url( '/account/events/' );
+	$link     = $event_id ? get_permalink( $event_id ) : law_account_url( 'my_bookings' );
 	$is_ajax  = law_events_guard_post(
 		'law_waitlist_join',
 		array(

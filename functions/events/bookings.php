@@ -1763,7 +1763,7 @@ function law_booking_email_placeholders( $booking_id, array $party_ids = array()
 		'invited_by'        => law_booking_invited_by_label( $booking_id ),
 		'tickets_available' => $available > 0 ? (string) $available : '',
 		'tickets_remaining' => null === $remaining ? '' : (string) $remaining,
-		'bookings_link'     => home_url( '/account/events/' ),
+		'bookings_link'     => law_account_url( 'my_bookings' ),
 		'profile_link'      => home_url( '/account/profile/' ),
 	);
 }
@@ -1830,7 +1830,7 @@ add_action( 'admin_post_nopriv_law_booking_register_attendee', 'law_events_nopri
  */
 function law_booking_create_handler() {
 	$event_id = absint( $_POST['event_id'] ?? 0 );
-	$link     = $event_id ? get_permalink( $event_id ) : home_url( '/account/events/' );
+	$link     = $event_id ? get_permalink( $event_id ) : law_account_url( 'my_bookings' );
 	$is_ajax  = law_events_guard_post(
 		'law_booking_create',
 		array(
@@ -1874,7 +1874,7 @@ function law_booking_add_attendee_handler() {
 		'law_booking_add_attendee',
 		array(
 			'rate'            => array( 'booking_edit', 15, 600, 150 ),
-			'honeypot_json'   => array( 'title' => 'Colleague booked', 'message' => 'Done.', 'redirect' => home_url( '/account/events/' ) ),
+			'honeypot_json'   => array( 'title' => 'Colleague booked', 'message' => 'Done.', 'redirect' => law_account_url( 'my_bookings' ) ),
 			'honeypot_notice' => 'attendee-added',
 		)
 	);
@@ -1916,7 +1916,7 @@ function law_booking_cancel_handler() {
 		'law_booking_cancel',
 		array(
 			'rate'            => array( 'booking_edit', 15, 600, 150 ),
-			'honeypot_json'   => array( 'title' => 'Booking cancelled', 'message' => 'Done.', 'redirect' => home_url( '/account/events/' ) ),
+			'honeypot_json'   => array( 'title' => 'Booking cancelled', 'message' => 'Done.', 'redirect' => law_account_url( 'my_bookings' ) ),
 			'honeypot_notice' => 'booking-cancelled',
 		)
 	);
@@ -1954,7 +1954,7 @@ function law_booking_cancel_handler() {
 				: ( $is_self ? 'Your place has been freed. Reloading the page…' : 'They have been emailed to let them know. Reloading the page…' ),
 			'redirect' => $party
 				? add_query_arg( 'law_notice', $notice, law_booking_manage_url( $party[0]->ID ) )
-				: add_query_arg( 'law_notice', $notice, home_url( '/account/events/' ) ),
+				: add_query_arg( 'law_notice', $notice, law_account_url( 'my_bookings' ) ),
 		),
 		$notice
 	);
@@ -1966,7 +1966,7 @@ function law_booking_cancel_party_handler() {
 		'law_booking_cancel_party',
 		array(
 			'rate'            => array( 'booking_edit', 15, 600, 150 ),
-			'honeypot_json'   => array( 'title' => 'Bookings cancelled', 'message' => 'Done.', 'redirect' => home_url( '/account/events/' ) ),
+			'honeypot_json'   => array( 'title' => 'Bookings cancelled', 'message' => 'Done.', 'redirect' => law_account_url( 'my_bookings' ) ),
 			'honeypot_notice' => 'party-cancelled',
 		)
 	);
@@ -1986,7 +1986,7 @@ function law_booking_cancel_party_handler() {
 		array(
 			'title'    => 'Bookings cancelled',
 			'message'  => 'Your place and everyone you booked have been cancelled, and everyone has been emailed. Reloading the page…',
-			'redirect' => add_query_arg( 'law_notice', 'party-cancelled', home_url( '/account/events/' ) ),
+			'redirect' => add_query_arg( 'law_notice', 'party-cancelled', law_account_url( 'my_bookings' ) ),
 		),
 		'party-cancelled'
 	);
@@ -2122,9 +2122,9 @@ function law_booking_register_attendee_handler() {
 	);
 }
 
-/** The manage-booking URL (?law_booking= on My events). */
+/** The manage-booking URL (?law_booking= on My bookings). */
 function law_booking_manage_url( $booking_id ) {
-	return add_query_arg( 'law_booking', (int) $booking_id, home_url( '/account/events/' ) );
+	return add_query_arg( 'law_booking', (int) $booking_id, law_account_url( 'my_bookings' ) );
 }
 
 /** The per-event bookings list URL (?law_event_bookings= on My events). */

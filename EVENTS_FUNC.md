@@ -685,12 +685,18 @@ ONE booking carrying an attendee rows array; that model, its flat
 - **Front-end surfaces**: `functions/account-bookings.php` (the six-state
   control, `law_account_bookings()` grouped per event, the shared notice map
   `law_booking_notice_text()` / `law_booking_notice_render()`, the counts label,
-  the form-state transients, the enqueues), `parts/events/booking-modal.php` /
+  the form-state transients, the enqueues). Since 10 September 2026 the two
+  account sub-views sit on **different pages**: the attendee's `?law_booking=`
+  manage view on `/account/bookings/`, the host's `?law_event_bookings=` list on
+  `/account/events/`, and the enqueue closure branches on the template
+  accordingly so pdfmake (~3MB) is still only ever served with the host list.
+  `parts/events/booking-modal.php` /
   `attendee-repeater.php` (a `mode` arg switches the same form between booking
-  and joining the waitlist) / `booking-manage.php` (`?law_booking=`; the
-  addressed booking resolves the event, and the view then shows the viewer's
-  whole party there, with per-row cancel, add-a-colleague and cancel-all behind
-  confirm modals) / `booking-list.php` (`?law_event_bookings=`,
+  and joining the waitlist) / `booking-manage.php` (`?law_booking=` on
+  **My bookings**; the addressed booking resolves the event, and the view then
+  shows the viewer's whole party there, with per-row cancel, add-a-colleague and
+  cancel-all behind confirm modals) / `booking-list.php` (`?law_event_bookings=`
+  on **My events**,
   `law_user_can_manage_event()`; a FLAT table, one row per booking, which is one
   row per attendee — no grouping, just an "Invited by {name}" tag on a
   colleague's row (Denis, 8 September 2026) — with live country, dietary and
@@ -1185,9 +1191,12 @@ block the queue. Joining is refused while places are free.
   dashboard (committee)"), in `law_migration_page_map()` and
   `law_setup_account_pages()` (CPT mode). Its Members restriction is copied
   from the parent by `law_setup_speakers_dashboard_access()`, a wrapper over the
-  **generalised** `law_setup_dashboard_child_access( $path )` — the bookings
-  helper hardcoded one path and there are now two children, so the body moved
-  and `law_setup_bookings_dashboard_access()` became the other wrapper.
+  **generalised** `law_setup_child_page_access( $path, $parent_path )` — the
+  bookings helper hardcoded one path and there are now four children, so the
+  body moved and `law_setup_bookings_dashboard_access()` became the other
+  wrapper. (It was `law_setup_dashboard_child_access( $path )` until
+  10 September 2026, when My bookings — a child of `/account/`, not of the
+  events dashboard — made the parent a parameter.)
 - **Deploying it needs no migration run.** `/wp-admin/?setup-account-pages`
   now **creates** a page the module owns instead of only reporting it MISSING
   (`law_setup_create_account_page()`, 9 September 2026), then assigns the
@@ -2410,11 +2419,28 @@ These predate the rebuild and now branch on `law_events_source()`.
 - **`speakers.php`** (~532 lines): the speakers archive/profile routing and SEO.
   In `'cpt'` mode it reads the `law_speaker` posts via `source.php`; the
   `/speakers/<id>/` rewrite and single-profile rendering are shared.
-- **`account-events.php`** (~300 lines): the host "My events" listing. In
+- **`account-events.php`** (~370 lines): the host "My events" listing. In
   `'cpt'` mode it lists the user's owned/co-owned `law_event` posts, hosts the
-  comment thread (`?law_thread=`), links to the custom edit form, shows a
+  comment thread (`?law_thread=`) and the per-event attendee list
+  (`?law_event_bookings=`), links to the custom edit form, shows a
   "Review queue" link to committee members and renders the save-confirmation
-  notice. `law_account_event_actions()` also appends a **Withdraw** action on
+  notice. Since **10 September 2026 it is the HOST side only** — a person's own
+  bookings live on `/account/bookings/` — and the file carries the two
+  `template_redirect` hooks that make the split survive contact with links
+  already sent. One forwards `?law_booking=` (with any `law_notice`) to the same
+  argument on the bookings page, because every confirmation email and every
+  "Manage booking" button in someone's history points here, and the no-JS
+  booking handlers redirect to the *referer* rather than to a URL the module
+  controls. The other sends a signed-in visitor with nothing to manage on to
+  their bookings. That second one tests
+  `! law_account_user_is_host_like() && ! law_account_events()`, and the events
+  half is load-bearing: the role helper is role-only, but a co-owner reaches
+  their event through the `_law_co_owner` meta row whatever their role, and only
+  an account the module *creates* is given `event_host` (`co-owners.php`), so an
+  existing attendee linked as a co-owner keeps the role they had. Redirecting on
+  the role alone would take their own event away from them. Both hooks no-op
+  unless `law_account_page_id( 'my_bookings' )` resolves, so an unprovisioned
+  environment cannot send everyone to a 404. `law_account_event_actions()` also appends a **Withdraw** action on
   Draft/Proposed/Sent back events (CPT mode only): a *form-shaped* action
   (`parts/loop/event.php` renders it as a nonce'd POST to
   `law_event_handle_withdraw` with a honeypot, behind a
@@ -2446,6 +2472,30 @@ These predate the rebuild and now branch on `law_events_source()`.
   and Manage speakers. The per-role table in `tests/HeaderNavTest.php` pins the
   exact item list for every role, so adding an item means updating that
   fixture: it is what proves a host or attendee never sees a committee link.
+  On 10 September 2026 it gained a `my_bookings` key (`account/bookings`) and
+  `law_header_nav()` stopped renaming one item for two audiences: a host-like
+  user now gets **My events** *and* **My bookings**, everyone else gets My
+  bookings alone. **Mind the two keys** — `bookings` is the committee's
+  cross-event dashboard, `my_bookings` is the personal page. They are one word
+  apart and point at different pages, which `HeaderNavTest` now asserts
+  outright. The `my_bookings` item is CPT-gated, because
+  `law_account_bookings()` returns nothing on the legacy source; pre-cutover a
+  non-host still gets the old page under the old "My bookings" label.
+- **`shortcodes.php`**: `[action-message]` and `[user-content]`, the role-gated
+  content wrapper the account pages' editor copy is built from. Since
+  10 September 2026 `law_user_content_audiences()` adds two capability-backed
+  audiences beside the role names, `host` (`law_account_user_is_host_like()`)
+  and `committee` (`law_user_is_committee()`), and page copy should use those.
+  A block that names a role drifts the moment a role is added, and that is not
+  hypothetical: `/account/` shipped with `[user-content role="attendee"]` and
+  `[user-content role="event_host"]`, so a user who registered as "LAW sponsor"
+  and nothing else matched neither block and was served a heading with an empty
+  body. Sponsors hold the same front-end access as hosts everywhere else
+  (`law_events_user_can_submit()`, `law_account_user_is_host_like()`,
+  `law_registration_welcome_slug()` all name both roles), which is what made
+  the gap easy to miss. Both helpers are called through `function_exists()`,
+  because this file loads before the events module.
+
 - **`modal.php`**: the reusable confirmation modal's asset registrar.
   `law_modal_register_assets()` registers the `law-modal` style and script
   handles on `wp_enqueue_scripts`; `law_modal_enqueue()` enqueues them and is
@@ -2462,7 +2512,12 @@ These predate the rebuild and now branch on `law_events_source()`.
   gated event in the query (see `source.php` above).
 - **Templates**: `register.php` (custom registration), `account-profile.php`
   (profile), `account-event-form.php` (submit/edit), `account-events.php`
-  (My events + thread), `account-dashboard.php` (committee review queue, the detail view, the
+  (My events + thread + the per-event attendee list), `account-bookings.php`
+  ("My bookings", page path `account/bookings`: a person's own bookings and the
+  `?law_booking=` manage view, split off My events on 10 September 2026 — it
+  calls `nocache_headers()` and keeps the `.law-cal .law-account-events`
+  wrapper, because the event-card CSS is scoped under `.law-cal`),
+  `account-dashboard.php` (committee review queue, the detail view, the
   `?event=<id>&law_edit=1` edit form and the `?preview-event=<id>` preview),
   `account-bookings-dashboard.php` (the committee's cross-event bookings
   table, see `bookings-dashboard.php` above),
@@ -2787,6 +2842,48 @@ Open findings from the forms/payments security review, none of them blocking:
    single-event page. (The front-end edit lock being taken and never released
    was the third item here; `edit-lock.php` fixed it on 9 September 2026.)
 
+**Sponsor access parity (10 September 2026).** A full sweep of every role name
+and role-gated surface confirmed that the `sponsor` role has the same
+front-end access as `event_host` in all of the theme's own code:
+`law_events_user_can_submit()` (submission-form.php),
+`law_account_user_is_host_like()` (account-bookings.php),
+`law_registration_welcome_slug()` and the HubSpot tags (registration.php), and
+`law_self_service_roles()` (users.php) all name both. Neither role gets any
+wp-admin capability (`capabilities.php` grants the `law_event` set to
+administrator, editor and `events_committee` only) or the admin bar
+(`law_user_may_use_wp_admin()`), so parity holds on the excluded side too. The
+Members role rows on the pages that matter carry sponsor as well:
+page 290 (Account), page 292 (My events) and page 294 (Submit an event). Two
+divergences remain, both database state on the legacy stack rather than module
+code:
+
+1. **Page 279 (Inbox)**, the Gravity Flow inbox for form 2 (Event > submit an
+   event), is restricted to administrator, editor, `event_host` and
+   `events_committee` — no sponsor, so a sponsor on the legacy flow could not
+   open their own inbox. Nothing in the new header bar links to it and it goes
+   at cutover, so it is recorded rather than fixed.
+2. **The "Top menu" (menu 19) If Menu rules** still name `event_host` without
+   sponsor: item 407 (→ page 290, Account) shows for administrator, editor,
+   `events_committee`, `event_host` and `attendee`, and items 408
+   (→ page 292, My events) and 409 (→ page 294, Submit an event) for
+   `event_host` alone. This is the exact drift `header-nav.php` was written to
+   end. It is dead code: the theme registers only `main-menu` and
+   `footer-menu`, and `parts/layout/top-nav.php` renders the bar now, so no
+   `wp_nav_menu()` call reaches menu 19.
+
+**The blank /account/ page (10 September 2026, fixed).** The page's editor copy
+gated its two blocks on role names, so a sponsor-only user matched neither and
+got a heading with no body. Three changes: `[user-content]` gained the
+capability-backed `host` and `committee` audiences (see §3, `shortcodes.php`);
+`law_setup_account_page_audience()` rewrites the page's `role="event_host"`
+block to `role="host"`, called from both the `?setup-account-pages` trigger and
+migration step 10, so a deploy alone fixes an environment; and
+`templates/account.php` now buffers `the_content()` and renders a generic
+signed-in fallback when nothing visible came out, so no future gating mistake
+can produce an empty page body again. `tests/AccountAudienceTest.php` pins the
+audience membership per role and asserts the page carries no bare `event_host`
+block.
+
 **Flagship conference, open items (9 September 2026).** The approval-gated
 application flow (EVENTS_4.2_SPECS.md §5) is not built: the flagship page
 renders no booking control and `law_booking_guard_open()` refuses it outright,
@@ -2879,7 +2976,8 @@ status (a `law_speaker` post exists from the first draft save, not from
 approval — the brief assumed otherwise), and
 `law_setup_bookings_dashboard_access()` became
 `law_setup_dashboard_child_access( $path )` with two named wrappers, now that
-the events dashboard has two Members-restricted children. The build also fixed
+the events dashboard has two Members-restricted children (renamed again to
+`law_setup_child_page_access( $path, $parent_path )` on 10 September 2026). The build also fixed
 a live bug it walked straight into: the legacy `/speakers/<entry ID>/` redirect
 in `source.php` was not scoped to the Speakers page, and `law_speaker` is a
 registered public query var, so it 301'd every `?law_speaker=<post ID>` link on
@@ -3203,6 +3301,46 @@ host toggling No -> Yes -> No must not lose the venue they typed, and the save
 guard above already makes the posted value moot. `tests/VenueDetailsTest.php`
 covers the predicate, both save paths, the band ceiling and the crafted-post
 case.
+
+Updated 10 September 2026 for the **My bookings / My events split**. The one
+`/account/events/` page served two audiences: the host's own events, and, since
+bookings phases 4-6, a "My bookings" section stacked above them, with the header
+renaming the single link for whoever was looking. They are two pages now.
+`templates/account-bookings.php` ("My bookings", `/account/bookings/`, a child
+of `/account/`) carries the listing and the `?law_booking=` manage view;
+`templates/account-events.php` keeps the host listing, the `?law_thread=` thread
+and the `?law_event_bookings=` attendee list, which stays because it is about a
+host's own event rather than the viewer's bookings.
+
+The audience rule is that the new page is for **every signed-in role**, not
+attendees only: hosts, sponsors and committee members book places at other
+firms' events like anyone else (Denis, 10 September 2026, reversing his own
+first answer once reminded of that). So `law_setup_my_bookings_access()` copies
+the role rows from page 290 (Account) rather than the committee rows the
+dashboard children take, and the header offers a host-like user **both** items.
+
+Three things carry the weight, and are the parts to preserve:
+
+- **`/account/events/` keeps its attendee Members row** and redirects instead of
+  refusing. Every confirmation email already sent links there, and a redirect
+  can only run for a visitor the Members plugin lets through the door.
+- **`?law_booking=` is forwarded**, not dropped, for the same reason, and
+  because the no-JS booking handlers return to the *referer* via
+  `law_events_redirect_back()` rather than to any URL the module controls.
+- **The audience redirect tests events as well as role.** See
+  `account-events.php` in §3: an existing attendee account linked as a co-owner
+  keeps its role, so a role-only test would take that person's own event away.
+
+`{bookings_link}` (eleven attendee emails) now resolves to the new page and
+`{dashboard_link}` stays on My events; they resolved to the same URL until now,
+so nothing would have caught a swap, and `tests/MyBookingsPageTest.php` pins
+both. Only `user_welcome_registered_host` needed its body edited, because it
+used `{bookings_link}` to mean "your events" — and an environment whose Emails
+screen already overrides that template keeps the old wording, so check it by
+hand after deploying. `law_setup_dashboard_child_access( $path )` became
+`law_setup_child_page_access( $path, $parent_path )` to serve a child of
+`/account/`; both provisioning routes (`?setup-account-pages` and migration step
+10) create the page, and both were run from scratch to prove it.
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.

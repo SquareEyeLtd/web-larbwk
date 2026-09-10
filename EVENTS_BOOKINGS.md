@@ -508,6 +508,14 @@ or `law_migration_page_map()` churn. `?law_booking={id}` is the manage view;
 `?law_event_bookings={event_id}` is the per-event bookings list (deliberately not
 `law_bookings`, one letter from its sibling).
 
+> **Superseded (10 September 2026): the two sub-views are on two pages now.**
+> `?law_booking=` moved to the new My bookings page (`/account/bookings/`,
+> `templates/account-bookings.php`), which does have its own Members restriction
+> and its own `law_migration_page_map()` / `law_setup_account_pages()` entries.
+> `?law_event_bookings=` stayed on page 292 (My events), because it is about a
+> host's own event. `account-events.php` forwards the old `?law_booking=` URLs,
+> which are baked into every confirmation email already sent. See EVENTS_FUNC.md.
+
 **Access fix, scripted:** the page's Members restriction (`_members_access_role` on page
 292, My events) currently lacks `attendee`, which would block the whole section for pure
 attendees. The attendee role is added to that page's restriction via migration step 10 /

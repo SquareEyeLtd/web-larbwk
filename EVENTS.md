@@ -613,7 +613,8 @@ Members plugin (`_members_access_role` post meta), not in code.
 | `/register/` | 286 | `templates/register.php` + form 1 block | everyone |
 | `/account/` | 290 | `templates/account.php` landing | all logged-in |
 | `/account/profile/` | 439 | `templates/account.php` + form 3 block | all logged-in |
-| `/account/events/` | 292 | `templates/account-events.php` (GravityView 386 for editing only) | hosts and above |
+| `/account/events/` | 292 | `templates/account-events.php` (GravityView 386 for editing only) | hosts and above (attendees too, and redirected on to `/account/bookings/`) |
+| `/account/bookings/` | new, created by the setup trigger / migration step 10 | `templates/account-bookings.php` (CPT module only) | all logged-in |
 | `/account/events/submit/` | 294 | `templates/account.php` + form 2 block | hosts and above |
 | `/account/events/submit/done/` | 372 | `templates/account.php` confirmation | hosts and above |
 | `/account/dashboard/` | 414 | GravityView 419 "Events (committee - all)" | committee, editor, admin |
@@ -622,6 +623,13 @@ Members plugin (`_members_access_role` post meta), not in code.
 | `/committee/programme/` | 624 | `templates/calendar-committee.php` | committee, editor, admin |
 | `/speakers/` | 658 (local) | `templates/speakers.php` | **committee, editor, admin only** (pre-launch) |
 | `/speakers/<entry ID>/` | rewrite onto 658 | `templates/speaker.php` | **committee, editor, admin only** (pre-launch) |
+
+"My bookings" (`/account/bookings/`) was split off page 292 (My events) on
+10 September 2026: page 292 is the host side (their events, the committee
+thread, the per-event attendee list), the new page is anyone's own bookings.
+Page 292 keeps its `attendee` role row so links in already-sent emails still
+resolve, and `functions/account-events.php` redirects a visitor with no events
+of their own on to the new page. See EVENTS_FUNC.md for the module-era detail.
 
 ### Account pages (login, forgot/reset password, register)
 

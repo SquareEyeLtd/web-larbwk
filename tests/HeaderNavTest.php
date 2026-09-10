@@ -35,15 +35,24 @@ class HeaderNavTest extends LAW_Test_Case {
 	 *
 	 * 'flagship' joined the committee-only group on 9 September 2026 with the
 	 * Manage flagship dashboard (functions/events/flagship-dashboard.php).
+	 *
+	 * 'my_bookings' joined every role on 10 September 2026, when the personal
+	 * bookings list moved off My events onto /account/bookings/. Note the two
+	 * similar keys: 'bookings' is the COMMITTEE's cross-event dashboard,
+	 * 'my_bookings' is the page anyone signed in gets. Only 'my_bookings' is
+	 * universal, and a host holds BOTH it and 'events' -- hosts, sponsors and
+	 * committee members book places at other firms' events like anyone else.
+	 * An attendee has no 'events' key at all now; they are redirected off that
+	 * page by functions/account-events.php.
 	 */
 	public static function role_expectations(): array {
 		return array(
-			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'submit', 'profile', 'signout' ) ),
-			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'submit', 'profile', 'signout' ) ),
-			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'submit', 'profile', 'signout' ) ),
-			'event_host'       => array( 'event_host', array( 'events', 'submit', 'profile', 'signout' ) ),
-			'sponsor'          => array( 'sponsor', array( 'events', 'submit', 'profile', 'signout' ) ),
-			'attendee'         => array( 'attendee', array( 'events', 'profile', 'signout' ) ),
+			'administrator'    => array( 'administrator', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
+			'editor'           => array( 'editor', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
+			'events_committee' => array( 'events_committee', array( 'dashboard', 'bookings', 'speakers', 'flagship', 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
+			'event_host'       => array( 'event_host', array( 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
+			'sponsor'          => array( 'sponsor', array( 'events', 'my_bookings', 'submit', 'profile', 'signout' ) ),
+			'attendee'         => array( 'attendee', array( 'my_bookings', 'profile', 'signout' ) ),
 		);
 	}
 
@@ -106,24 +115,44 @@ class HeaderNavTest extends LAW_Test_Case {
 		);
 	}
 
-	/** An attendee's route to their bookings, and the label that describes it. */
-	public function test_attendee_reaches_bookings_under_a_bookings_label(): void {
+	/**
+	 * An attendee's route to their bookings: the personal bookings page, and
+	 * NOT My events, which has nothing for them since the 10 September 2026
+	 * split and redirects them away anyway.
+	 */
+	public function test_attendee_reaches_bookings_and_not_my_events(): void {
 		wp_set_current_user( $this->make_user( 'attendee' ) );
 
 		$nav   = law_header_nav();
 		$items = wp_list_pluck( $nav['account']['items'], 'label', 'key' );
 
-		$this->assertArrayHasKey( 'events', $items );
-		$this->assertSame( 'My bookings', $items['events'] );
+		$this->assertArrayHasKey( 'my_bookings', $items );
+		$this->assertSame( 'My bookings', $items['my_bookings'] );
+		$this->assertArrayNotHasKey( 'events', $items );
 	}
 
-	/** A host sees the same page described as their events. */
-	public function test_host_like_user_sees_the_events_label(): void {
+	/**
+	 * A host gets both, because a host runs events AND books places at other
+	 * people's. The two used to be one item under two names.
+	 */
+	public function test_host_like_user_sees_both_events_and_bookings(): void {
 		wp_set_current_user( $this->make_user( 'event_host' ) );
 
 		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
 
 		$this->assertSame( 'My events', $items['events'] );
+		$this->assertSame( 'My bookings', $items['my_bookings'] );
+	}
+
+	/**
+	 * The two bookings keys point at two different pages. They are one letter
+	 * apart in intent and easy to transpose, so pin them.
+	 */
+	public function test_the_two_bookings_keys_are_different_pages(): void {
+		$paths = law_account_paths();
+
+		$this->assertSame( 'account/dashboard/bookings', $paths['bookings'], 'The committee cross-event dashboard.' );
+		$this->assertSame( 'account/bookings', $paths['my_bookings'], "The signed-in user's own bookings." );
 	}
 
 	/**

@@ -416,7 +416,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
-			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nYour events and bookings live here: {bookings_link}",
+			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nThe events you book live here, under My bookings: {bookings_link}",
 		),
 		'user_welcome_registered_host' => array(
 			'name'    => 'Email to host or sponsor > welcome after registration',
@@ -424,7 +424,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
-			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can submit an event for the programme, then follow it through review, payment and publication: {submit_link}\n\nYour events live here, along with the bookings people make for them: {bookings_link}\n\nYou can also book places at other events in the programme. If you do, please add any dietary or accessibility requirements to your profile so the organisers can look after you: {profile_link}",
+			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can submit an event for the programme, then follow it through review, payment and publication: {submit_link}\n\nYour events live here, along with the bookings people make for them: {dashboard_link}\n\nYou can also book places at other events in the programme. Those appear under My bookings: {bookings_link}. If you do book, please add any dietary or accessibility requirements to your profile so the organisers can look after you: {profile_link}",
 		),
 		'host_capacity_warning' => array(
 			'name'    => 'Email to host > event nearly full',
@@ -533,7 +533,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{promoted_list}'     => '',
 		'{blocked_reason}'    => '',
 		'{waitlist_count}'    => '',
-		'{bookings_link}'     => home_url( '/account/events/' ),
+		'{bookings_link}'     => law_account_url( 'my_bookings' ),
 		'{profile_link}'      => home_url( '/account/profile/' ),
 		// law_account_url() resolves the real permalink and falls back to the
 		// literal path, so a renamed page gives an honest 404 rather than a

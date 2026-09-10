@@ -48,15 +48,23 @@ add_shortcode( 'action-message', 'sqe_action_message_shortcode' );
 /* Role-gated content ________________________________________________________ */
 
 /**
- * Show enclosed content only when the current user has one of the given roles.
+ * Show enclosed content only when the current user is in one of the given
+ * audiences.
  *
- * Roles are matched with OR. A user who is both attendee and sponsor still
+ * Audiences are matched with OR. A user who is both attendee and sponsor still
  * sees attendee copy. Hyphens are treated as underscores (event-host = event_host).
  *
- * Special values: logged-in (any signed-in user), guest (logged out).
+ * Prefer the capability-backed audiences to a role name (see
+ * law_user_content_audiences()): editor content that lists role names drifts
+ * the moment a role is added, which is exactly how a sponsor-only user ended
+ * up with a blank /account/ page. Role names still work, for copy that really
+ * is aimed at one role.
+ *
+ * Special values: host (anyone who can run events), committee, logged-in
+ * (any signed-in user), guest (logged out).
  *
  * [user-content role="attendee"]Attendee copy.[/user-content]
- * [user-content role="event_host,sponsor"]Host or sponsor copy.[/user-content]
+ * [user-content role="host"]Copy for hosts, sponsors and the committee.[/user-content]
  */
 function law_user_content_shortcode( $atts, $content = null ): string {
     $atts = shortcode_atts(
@@ -98,9 +106,28 @@ function law_user_content_parse_roles( string $raw ): array {
     return array_values( array_unique( $roles ) );
 }
 
+/**
+ * Audience name => the capability helper that answers it.
+ *
+ * The same helpers the header bar asks (functions/header-nav.php), for the
+ * same reason: a page that names roles cannot keep up with the roles that
+ * exist. 'host' is every audience that can submit and manage events, which is
+ * event hosts, sponsors, and the committee, editors and administrators who run
+ * events of their own; 'committee' is the events committee and above.
+ *
+ * @return array<string,string> audience => callable name.
+ */
+function law_user_content_audiences(): array {
+    return [
+        'host'      => 'law_account_user_is_host_like',
+        'committee' => 'law_user_is_committee',
+    ];
+}
+
 function law_user_content_matches( array $roles ): bool {
     $logged_in  = is_user_logged_in();
     $user_roles = $logged_in ? (array) wp_get_current_user()->roles : [];
+    $audiences  = law_user_content_audiences();
 
     foreach ( $roles as $role ) {
         if ( in_array( $role, [ 'guest', 'logged_out' ], true ) ) {
@@ -111,6 +138,15 @@ function law_user_content_matches( array $roles ): bool {
         }
 
         if ( ! $logged_in ) {
+            continue;
+        }
+
+        // function_exists() because this file loads before the events module,
+        // and a helper that is not there must hide the block rather than fatal.
+        if ( isset( $audiences[ $role ] ) ) {
+            if ( function_exists( $audiences[ $role ] ) && call_user_func( $audiences[ $role ] ) ) {
+                return true;
+            }
             continue;
         }
 

@@ -468,17 +468,22 @@ add_action( 'wp_enqueue_scripts', function () {
 		return;
 	}
 
-	// My events sub-views (event-form.css/js already load on this template via
-	// submission-form.php's closure): the manage view and the bookings list
-	// need the modal + fetch layer; the list adds the export trio, gated the
-	// way export.php gates the dashboard's (pdfmake is ~3MB, footer-loaded,
-	// and never served to someone the list itself would refuse).
+	// The two account sub-views (event-form.css/js already load on both
+	// templates via submission-form.php's closure). They are on different
+	// pages since the My bookings split: the manage view is the attendee's,
+	// the per-event list is the host's.
+	if ( is_page_template( 'templates/account-bookings.php' ) ) {
+		if ( ! empty( $_GET['law_booking'] ) ) {
+			$booking_script();
+		}
+		return;
+	}
 	if ( ! is_page_template( 'templates/account-events.php' ) ) {
 		return;
 	}
-	if ( ! empty( $_GET['law_booking'] ) ) {
-		$booking_script();
-	}
+	// The bookings list adds the export trio, gated the way export.php gates
+	// the dashboard's (pdfmake is ~3MB, footer-loaded, and never served to
+	// someone the list itself would refuse).
 	$list_event = absint( $_GET['law_event_bookings'] ?? 0 );
 	if ( $list_event && law_user_can_manage_event( get_current_user_id(), $list_event ) ) {
 		$booking_script();

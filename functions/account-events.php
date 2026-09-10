@@ -19,6 +19,75 @@ function law_account_events_is_template() {
 }
 
 /**
+ * The two redirects off My events, since a person's own bookings moved to
+ * /account/bookings/ (10 September 2026).
+ *
+ * On template_redirect rather than in the template, which loads once the
+ * response is on its way out; unread.php sets the precedent for a hook gated
+ * on this template.
+ *
+ * 1. ?law_booking= is forwarded to the same argument on the bookings page.
+ *    Every confirmation email already sent carries a /account/events/ link, and
+ *    so does every "Manage booking" button in someone's history, so the old
+ *    address has to keep working. It also catches the no-JS booking handlers,
+ *    which redirect to the REFERER (law_events_redirect_back()) rather than to
+ *    any URL this code controls.
+ *
+ * 2. Someone with no events of their own has nothing to do here, so they go to
+ *    their bookings. The events check is not belt and braces:
+ *    law_account_user_is_host_like() is role-only, but a co-owner reaches their
+ *    event through the _law_co_owner meta row whatever their role, and only an
+ *    account the module CREATES is given event_host -- an existing attendee
+ *    linked as a co-owner keeps the role they had. Redirecting on the role
+ *    alone would take their own event away from them.
+ */
+add_action( 'template_redirect', function () {
+	if ( ! law_account_events_is_template() || 'cpt' !== law_events_source() ) {
+		return;
+	}
+
+	// An unprovisioned environment would send everyone to a 404: law_account_url()
+	// falls back to the literal path whether or not the page is there.
+	if ( ! function_exists( 'law_account_page_id' ) || ! law_account_page_id( 'my_bookings' ) ) {
+		return;
+	}
+	$bookings_url = law_account_url( 'my_bookings' );
+
+	$booking_id = absint( $_GET['law_booking'] ?? 0 );
+	if ( $booking_id ) {
+		$args = array( 'law_booking' => $booking_id );
+		$notice = sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) );
+		if ( '' !== $notice ) {
+			$args['law_notice'] = $notice;
+		}
+		wp_safe_redirect( add_query_arg( $args, $bookings_url ), 302 );
+		exit;
+	}
+
+	if ( ! is_user_logged_in() ) {
+		return;
+	}
+	// Any sub-view is a page of its own; only the bare listing redirects.
+	if ( ! empty( $_GET['law_thread'] ) || ! empty( $_GET['law_event_bookings'] )
+		|| law_account_events_in_entry_context() ) {
+		return;
+	}
+	$host_like = function_exists( 'law_account_user_is_host_like' ) && law_account_user_is_host_like();
+	if ( $host_like || law_account_events() ) {
+		return;
+	}
+	// A notice travels with them rather than being swallowed: the booking half
+	// of the notice map renders on the bookings page, and the event half cannot
+	// reach someone who has no events.
+	$notice = sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) );
+	if ( '' !== $notice ) {
+		$bookings_url = add_query_arg( 'law_notice', $notice, $bookings_url );
+	}
+	wp_safe_redirect( $bookings_url, 302 );
+	exit;
+} );
+
+/**
  * True when GravityView's entry endpoint is in the URL (single entry view or
  * the edit form). The template then renders the GV shortcode from the page
  * content instead of the dashboard.

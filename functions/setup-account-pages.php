@@ -53,6 +53,10 @@ function law_setup_account_pages() {
 		// The committee's Manage Speakers view (functions/events/speakers-dashboard.php).
 		$setup['account/dashboard/speakers'] = 'templates/account-speakers-dashboard.php';
 		$setup['account/dashboard/flagship'] = 'templates/account-dashboard-flagship.php';
+		// The personal bookings page, split off My events (September 2026).
+		// CPT-only: law_account_bookings() returns nothing on the legacy
+		// source, so on a 'gf' environment this page would never have content.
+		$setup['account/bookings']      = 'templates/account-bookings.php';
 		// Phase D: the custom profile form replaces the form 3 embed.
 		$setup['account/profile']       = 'templates/account-profile.php';
 	}
@@ -114,7 +118,9 @@ function law_setup_account_pages() {
 	// renders the sign-in / forgot / reset forms itself; the shortcode would
 	// only render an empty string there, but removing it keeps the editor
 	// content honest.
+	$report[] = 'CONTENT  /account/ audience blocks: ' . law_setup_account_page_audience();
 	$report[] = 'ACCESS   /account/events/ attendee role: ' . law_setup_account_events_attendee_access();
+	$report[] = 'ACCESS   /account/bookings/ role rows: ' . law_setup_my_bookings_access();
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/flagship/ committee restriction: ' . law_setup_flagship_dashboard_access();
@@ -154,12 +160,14 @@ function law_setup_account_pages() {
 }
 
 /**
- * The bookings build (EVENTS_BOOKINGS.md): /account/events/ hosts the
+ * The bookings build (EVENTS_BOOKINGS.md): /account/events/ used to host the
  * "Your bookings" section, and its Members restriction predates the attendee
- * audience — without this, pure attendees are blocked from their own
- * bookings. The restriction is database state, so both this setup helper and
- * migration step 10 apply it on every environment; nothing is scripted only
- * as a local click.
+ * audience. The bookings moved to /account/bookings/ on 10 September 2026, but
+ * the attendee row stays: every confirmation email already sent links to
+ * /account/events/, and account-events.php can only redirect a visitor the
+ * Members plugin lets through the door. The restriction is database state, so
+ * both this setup helper and migration step 10 apply it on every environment;
+ * nothing is scripted only as a local click.
  *
  * @return string ok | updated | unrestricted | missing.
  */
@@ -176,6 +184,46 @@ function law_setup_account_events_attendee_access() {
 		return 'ok';
 	}
 	add_post_meta( $page->ID, '_members_access_role', 'attendee' );
+	return 'updated';
+}
+
+/**
+ * The /account/ page's role-gated copy: swap the hardcoded role name for the
+ * capability-backed audience.
+ *
+ * The page body is editor content, so it is database state a git deploy cannot
+ * carry, and it shipped with two blocks: [user-content role="attendee"] and
+ * [user-content role="event_host"]. A user who registered as "LAW sponsor" and
+ * nothing else matched neither, and law_user_content_shortcode() renders
+ * nothing when no audience matches, so they got a page with a heading and no
+ * body at all. Rewriting the block to role="host" hands it to every audience
+ * that can run events (law_account_user_is_host_like(): hosts, sponsors, and
+ * the committee, editors and administrators who submit events of their own),
+ * and means the next role added to the module does not reopen the same hole.
+ *
+ * Idempotent, and deliberately narrow: only role="event_host" on its own is
+ * rewritten. A block someone has already broadened by hand (role="event_host,
+ * sponsor", say) is left exactly as it is.
+ *
+ * @return string ok | updated | missing.
+ */
+function law_setup_account_page_audience() {
+	$page = get_page_by_path( 'account' );
+	if ( ! $page instanceof WP_Post ) {
+		return 'missing';
+	}
+
+	$content = preg_replace(
+		'/(\[user-content\b[^\]]*\brole=)([\'"])event_host\2/',
+		'$1$2host$2',
+		$page->post_content
+	);
+
+	if ( null === $content || $content === $page->post_content ) {
+		return 'ok';
+	}
+
+	wp_update_post( array( 'ID' => $page->ID, 'post_content' => $content ) );
 	return 'updated';
 }
 
@@ -239,23 +287,24 @@ function law_setup_create_account_page( $path, $template ) {
 }
 
 /**
- * A child page of the events dashboard must carry the same Members restriction
- * as its parent (committee, editor, administrator). A page created by the
- * migration's pages step has no restriction at all, which the Members plugin
- * reads as public — so this copies the parent's role rows onto the child
- * whenever the child has none. Idempotent; shared by the setup trigger and
- * migration step 10.
+ * A child page must carry the same Members restriction as its parent. A page
+ * created by the migration's pages step has no restriction at all, which the
+ * Members plugin reads as public — so this copies the parent's role rows onto
+ * the child whenever the child has none. Idempotent; shared by the setup
+ * trigger and migration step 10.
  *
- * One helper, two children: the Bookings dashboard (EVENTS_BOOKINGS.md §7.6)
- * and Manage Speakers. The named wrappers below are what the setup report and
- * the migration step call, so neither has to know the path.
+ * One helper, four children. The three committee dashboards take their
+ * committee-only rows from /account/dashboard/; My bookings takes the
+ * every-signed-in-role set from /account/. The named wrappers below are what
+ * the setup report and the migration step call, so neither has to know a path.
  *
- * @param string $path Child page path under account/dashboard.
+ * @param string $path        Child page path.
+ * @param string $parent_path Parent page path to copy the rows from.
  * @return string ok | updated | unrestricted | missing.
  */
-function law_setup_dashboard_child_access( $path ) {
+function law_setup_child_page_access( $path, $parent_path = 'account/dashboard' ) {
 	$page   = get_page_by_path( $path );
-	$parent = get_page_by_path( 'account/dashboard' );
+	$parent = get_page_by_path( $parent_path );
 	if ( ! $page instanceof WP_Post || ! $parent instanceof WP_Post ) {
 		return 'missing';
 	}
@@ -272,19 +321,30 @@ function law_setup_dashboard_child_access( $path ) {
 	return 'updated';
 }
 
+/**
+ * The personal My bookings page's Members restriction, copied from /account/.
+ *
+ * Not the committee rows: this page is for EVERY signed-in role, because hosts,
+ * sponsors and committee members book places at other firms' events like anyone
+ * else (Denis, 10 September 2026). /account/ already carries exactly that set.
+ */
+function law_setup_my_bookings_access() {
+	return law_setup_child_page_access( 'account/bookings', 'account' );
+}
+
 /** The Bookings dashboard's Members restriction. */
 function law_setup_bookings_dashboard_access() {
-	return law_setup_dashboard_child_access( 'account/dashboard/bookings' );
+	return law_setup_child_page_access( 'account/dashboard/bookings' );
 }
 
 /** The Manage Speakers dashboard's Members restriction. */
 function law_setup_speakers_dashboard_access() {
-	return law_setup_dashboard_child_access( 'account/dashboard/speakers' );
+	return law_setup_child_page_access( 'account/dashboard/speakers' );
 }
 
 /** The Manage flagship dashboard's Members restriction. */
 function law_setup_flagship_dashboard_access() {
-	return law_setup_dashboard_child_access( 'account/dashboard/flagship' );
+	return law_setup_child_page_access( 'account/dashboard/flagship' );
 }
 
 /**

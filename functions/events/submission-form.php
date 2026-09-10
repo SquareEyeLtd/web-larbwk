@@ -1165,6 +1165,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-speakers-dashboard.php' )
 		|| is_page_template( 'templates/account-dashboard-flagship.php' )
 		|| is_page_template( 'templates/account-events.php' )
+		|| is_page_template( 'templates/account-bookings.php' )
 		|| is_page_template( 'templates/account-profile.php' )
 		|| is_page_template( 'templates/register.php' ) ) {
 		// filemtime, not a hand-bumped string: the version was going stale on

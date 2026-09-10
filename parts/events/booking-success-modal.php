@@ -46,7 +46,7 @@ $law_bks_title  = (string) ( $law_bks_event['title'] ?? '' );
 		<?php endif; ?>
 		<p class="law-modal__actions">
 			<a class="button second" href="<?php echo esc_url( get_permalink( $law_bks_id ) ); ?>"><?php esc_html_e( 'Close', 'law' ); ?></a>
-			<a class="button orange" href="<?php echo esc_url( home_url( '/account/events/' ) ); ?>"><?php esc_html_e( 'View my bookings', 'law' ); ?></a>
+			<a class="button orange" href="<?php echo esc_url( law_account_url( 'my_bookings' ) ); ?>"><?php esc_html_e( 'View my bookings', 'law' ); ?></a>
 		</p>
 	</div>
 </div>

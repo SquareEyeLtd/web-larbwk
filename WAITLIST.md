@@ -356,8 +356,10 @@ $party_ids = array() )`: per-booking `booking_number`, `attendee_name` (snapshot
   with numbers}). Each person is emailed."). Colleague view: heading "Booking #N", one row,
   line "Invited by {name}", "Cancel my booking" only. A cancelled addressed booking shows
   a badged row above the active party so the `booking-cancelled` redirect lands sensibly.
-- **My bookings cards** (`law_account_bookings()` in account-bookings.php:71-99;
-  templates/account-events.php:155-184): one item per event `{ event, own, colleagues,
+- **My bookings cards** (`law_account_bookings()` in account-bookings.php;
+  templates/account-bookings.php since the 10 September 2026 split -- these
+  cards were on templates/account-events.php when this was written): one item
+  per event `{ event, own, colleagues,
   invited_by, manage_id }` from active author bookings ∪ active bookings made (booked_by =
   me, author ≠ me), grouped by `post_parent`. Meta lines: own → "Booking #N"; own invited →
   "Invited by {name}"; colleagues → "+ N colleagues invited by you". Actions "View event"

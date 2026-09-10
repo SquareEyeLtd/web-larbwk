@@ -1735,6 +1735,7 @@ function law_migration_page_map() {
 	return array(
 		'account'                    => array( 'title' => 'Account', 'template' => 'templates/account.php' ),
 		'register'                   => array( 'title' => 'Register for an Account', 'template' => 'templates/register.php' ),
+		'account/bookings'           => array( 'title' => 'My bookings', 'template' => 'templates/account-bookings.php' ),
 		'account/dashboard'          => array( 'title' => 'Events dashboard', 'template' => 'templates/account-dashboard.php' ),
 		'account/dashboard/bookings' => array( 'title' => 'Bookings dashboard', 'template' => 'templates/account-bookings-dashboard.php' ),
 		'account/dashboard/speakers' => array( 'title' => 'Speakers dashboard', 'template' => 'templates/account-speakers-dashboard.php' ),
@@ -1814,11 +1815,24 @@ function law_migration_run_pages( $dry ) {
 		law_migration_log( 'pages', 'created', $ref, sprintf( 'Created page %d "%s" with template %s.', $page_id, $config['title'], $config['template'] ) );
 	}
 
-	// The bookings build: attendees must be able to open /account/events/
-	// (the "Your bookings" section lives there). Shared helper with the
+	// The /account/ page's audience blocks: its host block named the
+	// event_host role outright, so a sponsor-only user matched nothing and got
+	// an empty page body. Shared helper with the setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_account_page_audience' ) ) {
+		law_migration_log( 'pages', 'created', '/account/', 'Audience blocks: ' . law_setup_account_page_audience() . '.' );
+	}
+	// The bookings build: attendees keep access to /account/events/ so the
+	// links in already-sent emails still resolve, and account-events.php
+	// redirects them on to /account/bookings/. Shared helper with the
 	// setup-account-pages trigger, so the two cannot drift.
 	if ( ! $dry && function_exists( 'law_setup_account_events_attendee_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/events/', 'Attendee role access: ' . law_setup_account_events_attendee_access() . '.' );
+	}
+	// The personal My bookings page is a child of /account/, not of the events
+	// dashboard, and takes its parent's role rows. A page this step creates
+	// carries no Members restriction at all, which the plugin reads as public.
+	if ( ! $dry && function_exists( 'law_setup_my_bookings_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/bookings/', 'Members restriction: ' . law_setup_my_bookings_access() . '.' );
 	}
 	// The Bookings dashboard is a child of the events dashboard and inherits
 	// its committee-only Members restriction (a freshly created page has none).

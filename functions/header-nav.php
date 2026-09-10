@@ -44,15 +44,19 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function law_account_paths() {
 	return array(
-		'account'   => 'account',
-		'dashboard' => 'account/dashboard',
-		'bookings'  => 'account/dashboard/bookings',
-		'speakers'  => 'account/dashboard/speakers',
-		'flagship'  => 'account/dashboard/flagship',
-		'events'    => 'account/events',
-		'submit'    => 'account/events/submit',
-		'profile'   => 'account/profile',
-		'register'  => 'register',
+		'account'     => 'account',
+		'dashboard'   => 'account/dashboard',
+		// 'bookings' is the COMMITTEE's cross-event view under the events
+		// dashboard; 'my_bookings' is the personal page every signed-in user
+		// gets. Two pages, two audiences -- do not collapse the keys.
+		'bookings'    => 'account/dashboard/bookings',
+		'speakers'    => 'account/dashboard/speakers',
+		'flagship'    => 'account/dashboard/flagship',
+		'events'      => 'account/events',
+		'my_bookings' => 'account/bookings',
+		'submit'      => 'account/events/submit',
+		'profile'     => 'account/profile',
+		'register'    => 'register',
 	);
 }
 
@@ -285,14 +289,33 @@ function law_header_nav() {
 		);
 	}
 
-	// /account/events/ carries both "My events" (hosts) and "My bookings"
-	// (everyone) and gates the host half on this same helper, so the label
-	// describes what the user will actually find there.
+	// Two pages since 10 September 2026, not one page with two names.
+	// /account/events/ is the host's own events; /account/bookings/ is the
+	// places anyone has booked. A host holds both, so both are offered: hosts,
+	// sponsors and committee members book at other firms' events like everyone
+	// else. Someone who runs nothing gets the bookings item alone, and
+	// account-events.php redirects them if they reach My events anyway.
 	$host_like = function_exists( 'law_account_user_is_host_like' ) && law_account_user_is_host_like();
-	$items[]   = array(
-		'key'   => 'events',
-		'label' => $host_like ? __( 'My events', 'law' ) : __( 'My bookings', 'law' ),
-	);
+	if ( $host_like ) {
+		$items[] = array(
+			'key'   => 'events',
+			'label' => __( 'My events', 'law' ),
+		);
+	}
+	// CPT-only: law_account_bookings() returns nothing on the legacy Gravity
+	// Forms source, so on a 'gf' environment the page would never have content.
+	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
+		$items[] = array(
+			'key'   => 'my_bookings',
+			'label' => __( 'My bookings', 'law' ),
+		);
+	} elseif ( ! $host_like ) {
+		// Pre-cutover, the old page is still where a booking would be found.
+		$items[] = array(
+			'key'   => 'events',
+			'label' => __( 'My bookings', 'law' ),
+		);
+	}
 
 	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit() ) {
 		$items[] = array(
