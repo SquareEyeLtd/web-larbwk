@@ -31,6 +31,15 @@ if ( ! $law_bm_booking || LAW_BOOKING_CPT !== $law_bm_booking->post_type || ( ! 
 	return;
 }
 
+// A flagship place is applied for, reviewed and charged, so it has its own
+// view: a card on file, a payment that can fail, a withdrawal rather than a
+// cancellation, and no colleagues at all. Handed off here rather than
+// branched through the whole partial below, which is written around a party.
+if ( function_exists( 'law_flagship_booking_is' ) && law_flagship_booking_is( $law_bm_booking ) ) {
+	get_template_part( 'parts/events/flagship-manage-application', null, array( 'booking_id' => $law_bm_id ) );
+	return;
+}
+
 $law_bm_event_id  = (int) $law_bm_booking->post_parent;
 $law_bm_event     = get_post( $law_bm_event_id );
 $law_bm_cancelled = 'law-cancelled' === $law_bm_booking->post_status;

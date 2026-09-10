@@ -79,13 +79,103 @@ function law_stripe_webhook_handler( WP_REST_Request $request ) {
 function law_stripe_webhook_dispatch( array $event ) {
 	$object = (array) ( $event['data']['object'] ?? array() );
 
+	// Every invoice-shaped event now has two possible subjects: a HOST fee
+	// raised against an event (4.1) and an ATTENDEE place raised against a
+	// booking (FLAGSHIP_PAYMENTS.md §4.4). They are told apart by the
+	// metadata Stripe hands back, never by the event type, so one endpoint
+	// keeps serving both.
+	$booking_id = law_stripe_resolve_booking_id( $object );
+
 	switch ( (string) $event['type'] ) {
+		case 'checkout.session.completed':
+			// Setup mode only: this is a card being saved, not a payment.
+			if ( 'setup' !== (string) ( $object['mode'] ?? '' ) || ! $booking_id ) {
+				return false;
+			}
+			$attached = law_stripe_attach_setup_result( $booking_id, (string) ( $object['id'] ?? '' ) );
+			if ( ! is_wp_error( $attached ) ) {
+				law_flagship_on_card_saved( $booking_id );
+			}
+			return true;
+
+		case 'setup_intent.succeeded':
+			// The belt to checkout.session.completed's braces: either may
+			// arrive first, and law_stripe_store_payment_method() is
+			// idempotent, so whichever loses the race changes nothing.
+			if ( ! $booking_id ) {
+				return false;
+			}
+			$stored = law_stripe_store_payment_method(
+				$booking_id,
+				(string) ( $object['payment_method'] ?? '' ),
+				(string) ( $object['id'] ?? '' )
+			);
+			if ( ! is_wp_error( $stored ) ) {
+				law_flagship_on_card_saved( $booking_id );
+			}
+			return true;
+
+		case 'setup_intent.setup_failed':
+			// Without this the application sits in pending_setup, invisible to
+			// the committee, until the 48-hour sweep closes it.
+			if ( ! $booking_id ) {
+				return false;
+			}
+			law_flagship_on_card_setup_failed(
+				$booking_id,
+				(string) ( $object['last_setup_error']['message'] ?? 'The card could not be saved.' )
+			);
+			return true;
+
 		case 'invoice.paid':
+			if ( $booking_id ) {
+				return law_flagship_mark_paid( $booking_id, $object, (string) $event['id'] );
+			}
 			return law_stripe_handle_invoice_paid( $object, (string) $event['id'] );
+
+		case 'invoice.payment_action_required':
+			// The card is fine; the bank wants the delegate present. A
+			// different state from a decline, and a different message.
+			if ( ! $booking_id ) {
+				return false;
+			}
+			law_flagship_mark_payment_failed(
+				$booking_id,
+				'Your bank needs you to confirm this payment.',
+				'action_required',
+				(string) ( $object['hosted_invoice_url'] ?? '' )
+			);
+			return true;
+
+		case 'payment_intent.payment_failed':
+			if ( ! $booking_id ) {
+				return false;
+			}
+			law_flagship_mark_payment_failed(
+				$booking_id,
+				(string) ( $object['last_payment_error']['message'] ?? 'The payment was declined.' )
+			);
+			return true;
 
 		case 'invoice.payment_failed':
 		case 'invoice.voided':
 		case 'invoice.marked_uncollectible':
+			if ( $booking_id ) {
+				if ( 'invoice.payment_failed' === (string) $event['type'] ) {
+					law_flagship_mark_payment_failed(
+						$booking_id,
+						(string) ( $object['last_finalization_error']['message'] ?? 'The card was declined.' )
+					);
+					return true;
+				}
+				law_event_log(
+					(int) get_post_field( 'post_parent', $booking_id ),
+					sprintf( 'Stripe: %s for invoice %s on booking #%d.', $event['type'], $object['id'] ?? '?', law_event_meta( $booking_id, '_law_booking_number' ) ),
+					array( 'action' => 'stripe_event', 'type' => $event['type'], 'stripe_event' => $event['id'], 'booking' => $booking_id, 'source' => 'stripe_webhook' ),
+					array( 'user_id' => 0 )
+				);
+				return true;
+			}
 			$event_id = law_stripe_resolve_event_id( $object );
 			if ( $event_id ) {
 				law_event_log(
@@ -101,14 +191,41 @@ function law_stripe_webhook_dispatch( array $event ) {
 			// A Charge created by an invoice payment carries NO invoice
 			// metadata, so refunds resolve by the charge ID captured at
 			// invoice.paid, with metadata as a best-effort fallback.
+			$refunded = (int) ( $object['amount_refunded'] ?? 0 );
+			$charged  = (int) ( $object['amount'] ?? 0 );
+			$partial  = $charged > 0 && $refunded > 0 && $refunded < $charged;
+
+			$booking_id = law_stripe_booking_by_charge_id( (string) ( $object['id'] ?? '' ) ) ?: $booking_id;
+			if ( $booking_id ) {
+				law_flagship_mark_refunded( $booking_id, $refunded, $charged, $partial );
+				return true;
+			}
+
 			$event_id = law_stripe_event_by_charge_id( (string) ( $object['id'] ?? '' ) );
 			if ( ! $event_id ) {
 				$event_id = law_stripe_resolve_event_id( $object );
 			}
 			if ( $event_id ) {
-				// Recorded and alerted; the event is NOT auto-unpublished
-				// (a human decision, EVENTS_4.1_REBUILD.md §3.7).
-				law_event_set_payment_status( $event_id, 'refunded', 'stripe_webhook', 0 );
+				// A PART refund is not a refund: flipping the event to
+				// Refunded on a goodwill £50 back would say the fee was never
+				// paid. Logged and alerted either way; the status only moves
+				// when the whole amount has gone back.
+				if ( $partial ) {
+					law_event_log(
+						$event_id,
+						sprintf(
+							'PARTIAL REFUND: %s of %s refunded. The payment status is unchanged; review in Stripe.',
+							law_events_format_pence( $refunded ),
+							law_events_format_pence( $charged )
+						),
+						array( 'action' => 'partial_refund', 'refunded' => $refunded, 'amount' => $charged, 'source' => 'stripe_webhook' ),
+						array( 'user_id' => 0 )
+					);
+				} else {
+					// Recorded and alerted; the event is NOT auto-unpublished
+					// (a human decision, EVENTS_4.1_REBUILD.md §3.7).
+					law_event_set_payment_status( $event_id, 'refunded', 'stripe_webhook', 0 );
+				}
 				law_events_send( 'committee_refund', $event_id );
 			}
 			return true;
@@ -193,6 +310,46 @@ function law_stripe_handle_invoice_paid( array $invoice, $stripe_event_id ) {
 	}
 
 	return true;
+}
+
+/**
+ * Which booking, if any, a Stripe object belongs to.
+ *
+ * The sibling of law_stripe_resolve_event_id(): attendee objects carry
+ * law_booking_id, host-fee objects do not, which is how one webhook endpoint
+ * serves both without branching on the event type.
+ *
+ * @return int 0 when this is not an attendee object.
+ */
+function law_stripe_resolve_booking_id( array $object ) {
+	$booking_id = (int) ( $object['metadata']['law_booking_id'] ?? 0 );
+	if ( ! $booking_id ) {
+		return 0;
+	}
+	$post = get_post( $booking_id );
+
+	return ( $post && LAW_BOOKING_CPT === $post->post_type ) ? (int) $post->ID : 0;
+}
+
+/** A booking by the charge captured when its invoice was paid. */
+function law_stripe_booking_by_charge_id( $charge_id ) {
+	$charge_id = trim( (string) $charge_id );
+	if ( '' === $charge_id ) {
+		return 0;
+	}
+	$found = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_status'    => array_keys( law_booking_statuses() ),
+			'meta_key'       => '_law_stripe_charge_id',
+			'meta_value'     => $charge_id,
+			'fields'         => 'ids',
+			'posts_per_page' => 1,
+			'no_found_rows'  => true,
+		)
+	);
+
+	return $found ? (int) $found[0] : 0;
 }
 
 /**

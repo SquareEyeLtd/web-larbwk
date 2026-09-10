@@ -25,6 +25,7 @@ require_once(get_theme_file_path('/functions/auth.php'));
 require_once(get_theme_file_path('/functions/calendar.php'));
 require_once(get_theme_file_path('/functions/account-events.php'));
 require_once(get_theme_file_path('/functions/account-bookings.php'));
+require_once(get_theme_file_path('/functions/account-flagship.php'));
 require_once(get_theme_file_path('/functions/speakers.php'));
 require_once(get_theme_file_path('/functions/header-nav.php'));
 require_once(get_theme_file_path('/functions/migrate-speakers.php'));

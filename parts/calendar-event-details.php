@@ -19,6 +19,8 @@
  *
  * Args:
  *   rows    (array) Each array( 'key' => 'date', 'label' => 'Date', 'value' => '…' ).
+ *                   Keys with an icon: date, time, venue, host, type, sector,
+ *                   price, places.
  *                   Empty values are skipped, so an event with no venue drops the
  *                   item rather than rendering a blank one.
  *   places  (array) array( 'label' => …, 'value' => … ). Appended as a final
@@ -65,6 +67,7 @@ $law_ed_icons = array(
 	'type'   => '<path d="M3 3h8l10 10-8 8L3 11V3Z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
 	'sector' => '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/>',
 	'places' => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 16 11"/>',
+	'price'  => '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
 );
 
 /**

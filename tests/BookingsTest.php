@@ -483,6 +483,32 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertSame( '', law_event_meta( $event, '_law_capacity_warned' ), 'Freeing places re-arms the warning.' );
 	}
 
+	/**
+	 * The nearly-full and sold-out latches re-arm together, at the nearly-full
+	 * threshold rather than at the first freed place: cancelling one place on a
+	 * full event and selling it again must not send a second sold-out email.
+	 */
+	public function test_capacity_latches_rearm_together_above_the_threshold(): void {
+		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 2 ) );
+		$booker = $this->make_user( 'attendee' );
+		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
+		$this->assertSame( 0, law_event_tickets_remaining( $event ) );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_full_warned' ), 'Full: the sold-out latch is set.' );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_warned' ), 'And the skipped nearly-full stage with it.' );
+
+		// One place back on a 2-place event leaves 1 remaining, still at or
+		// below the threshold of 5, so neither latch re-arms.
+		law_booking_cancel( (int) $ids[1], $booker, 'booker' );
+		$this->assertSame( 1, law_event_tickets_remaining( $event ) );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_full_warned' ), 'One freed place does not re-arm the sold-out email.' );
+
+		// Raising the places well clear of the threshold re-arms both.
+		law_event_update_meta( $event, '_law_tickets_available', 20 );
+		law_event_recount_attendees( $event );
+		$this->assertSame( '', law_event_meta( $event, '_law_capacity_warned' ) );
+		$this->assertSame( '', law_event_meta( $event, '_law_capacity_full_warned' ) );
+	}
+
 	public function test_event_trash_sweeps_active_bookings(): void {
 		$event  = $this->make_bookable_event();
 		$booker = $this->make_user( 'attendee' );

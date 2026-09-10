@@ -230,6 +230,14 @@ function law_waitlist_send_join_emails( array $ids, array $people, $booker, $eve
  * @return int[] The bookings promoted.
  */
 function law_waitlist_process( $event_id, $source = 'bookings' ) {
+	// Never the flagship: its places are given out by the committee, one
+	// approval at a time, so an automatic first-in-first-out promotion would
+	// hand out a place (and charge a card) that nobody decided on. No
+	// waitlisted booking can exist there today, because law_booking_guard_open()
+	// refuses the flagship, but this is the guard that must not depend on that.
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return array();
+	}
 	static $processing = array();
 
 	$event_id = (int) $event_id;

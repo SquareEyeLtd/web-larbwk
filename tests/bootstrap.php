@@ -60,20 +60,29 @@ add_filter(
 // the test case; an unmocked call fails loudly.
 add_filter(
 	'law_stripe_request_mock',
-	function ( $mocked, $method, $path ) {
+	function ( $mocked, $method, $path, $body = array(), $idempotency_key = '' ) {
 		if ( null !== $mocked ) {
 			return $mocked;
 		}
 		$queue = $GLOBALS['law_test_stripe_queue'] ?? array();
 		if ( $queue ) {
 			$next = array_shift( $GLOBALS['law_test_stripe_queue'] );
+			// Kept to method+path: several suites assert on this array
+			// wholesale. The idempotency key and body go in their own log
+			// so a test can check them without every other test caring.
 			$GLOBALS['law_test_stripe_calls'][] = array( 'method' => $method, 'path' => $path );
+			$GLOBALS['law_test_stripe_idem'][]  = array(
+				'method' => $method,
+				'path'   => $path,
+				'body'   => $body,
+				'idem'   => (string) $idempotency_key,
+			);
 			return $next;
 		}
 		return new WP_Error( 'law_test_unmocked', "Unmocked Stripe call in tests: {$method} {$path}" );
 	},
 	10,
-	3
+	5
 );
 
 require_once __DIR__ . '/class-law-test-case.php';

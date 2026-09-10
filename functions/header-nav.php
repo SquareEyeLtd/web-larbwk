@@ -52,6 +52,8 @@ function law_account_paths() {
 		'bookings'    => 'account/dashboard/bookings',
 		'speakers'    => 'account/dashboard/speakers',
 		'flagship'    => 'account/dashboard/flagship',
+		'flagship_bookings' => 'account/dashboard/flagship-bookings',
+		'discounts'   => 'account/dashboard/discounts',
 		'events'      => 'account/events',
 		'my_bookings' => 'account/bookings',
 		'submit'      => 'account/events/submit',
@@ -268,12 +270,6 @@ function law_header_nav() {
 			'key'   => 'dashboard',
 			'label' => __( 'Manage events', 'law' ),
 		);
-		// The cross-event bookings view (EVENTS_BOOKINGS.md §7.6), a child
-		// page of the events dashboard with the same Members restriction.
-		$items[] = array(
-			'key'   => 'bookings',
-			'label' => __( 'Manage bookings', 'law' ),
-		);
 		// The speaker records behind the programme, and the per-event details
 		// each appearance carries (functions/events/speakers-dashboard.php).
 		$items[] = array(
@@ -286,6 +282,33 @@ function law_header_nav() {
 		$items[] = array(
 			'key'   => 'flagship',
 			'label' => __( 'Manage flagship', 'law' ),
+		);
+		// The two bookings views sit together, and are named for what they
+		// hold rather than for what you do to them (Denis, 10 September
+		// 2026). "Manage bookings" said nothing about which bookings, and sat
+		// three items away from the other kind.
+		//
+		// The cross-event view of bookings at HOSTED events (free, instant,
+		// no review), EVENTS_BOOKINGS.md §7.6: a child page of the events
+		// dashboard with the same Members restriction.
+		$items[] = array(
+			'key'   => 'bookings',
+			'label' => __( 'Hosted bookings', 'law' ),
+		);
+		// The flagship's applications and payments, deliberately a separate
+		// page: a hosted booking is free and instant, a flagship application
+		// is a priced request the committee reviews
+		// (functions/events/flagship-bookings-dashboard.php).
+		$items[] = array(
+			'key'   => 'flagship_bookings',
+			'label' => __( 'Flagship bookings', 'law' ),
+		);
+		// The discount-code catalogue (functions/events/discounts.php).
+		// Nothing accepts a code yet; the screen says so. It is here so the
+		// committee can prepare codes for whatever starts charging first.
+		$items[] = array(
+			'key'   => 'discounts',
+			'label' => __( 'Discount codes', 'law' ),
 		);
 	}
 
@@ -302,6 +325,17 @@ function law_header_nav() {
 			'label' => __( 'My events', 'law' ),
 		);
 	}
+
+	// Straight after My events, not after My bookings (Denis, 10 September
+	// 2026): submitting an event is what a host does FROM their events, so
+	// the two belong together, and My bookings is a different errand.
+	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit() ) {
+		$items[] = array(
+			'key'   => 'submit',
+			'label' => __( 'Submit an event', 'law' ),
+		);
+	}
+
 	// CPT-only: law_account_bookings() returns nothing on the legacy Gravity
 	// Forms source, so on a 'gf' environment the page would never have content.
 	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
@@ -314,13 +348,6 @@ function law_header_nav() {
 		$items[] = array(
 			'key'   => 'events',
 			'label' => __( 'My bookings', 'law' ),
-		);
-	}
-
-	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit() ) {
-		$items[] = array(
-			'key'   => 'submit',
-			'label' => __( 'Submit an event', 'law' ),
 		);
 	}
 

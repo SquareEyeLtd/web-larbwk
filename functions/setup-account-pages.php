@@ -53,6 +53,13 @@ function law_setup_account_pages() {
 		// The committee's Manage Speakers view (functions/events/speakers-dashboard.php).
 		$setup['account/dashboard/speakers'] = 'templates/account-speakers-dashboard.php';
 		$setup['account/dashboard/flagship'] = 'templates/account-dashboard-flagship.php';
+		// The flagship's applications and payments, its own page rather than
+		// a section of Manage bookings
+		// (functions/events/flagship-bookings-dashboard.php).
+		$setup['account/dashboard/flagship-bookings'] = 'templates/account-dashboard-flagship-bookings.php';
+		// The committee's discount-code catalogue
+		// (functions/events/discounts-dashboard.php).
+		$setup['account/dashboard/discounts'] = 'templates/account-dashboard-discounts.php';
 		// The personal bookings page, split off My events (September 2026).
 		// CPT-only: law_account_bookings() returns nothing on the legacy
 		// source, so on a 'gf' environment this page would never have content.
@@ -124,6 +131,8 @@ function law_setup_account_pages() {
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/flagship/ committee restriction: ' . law_setup_flagship_dashboard_access();
+	$report[] = 'ACCESS   /account/dashboard/flagship-bookings/ committee restriction: ' . law_setup_flagship_bookings_access();
+	$report[] = 'ACCESS   /account/dashboard/discounts/ committee restriction: ' . law_setup_discounts_dashboard_access();
 
 	// The flagship conference. A law_event post rather than a page, so a git
 	// deploy carries the code but not the record; this and the migration's step
@@ -133,6 +142,14 @@ function law_setup_account_pages() {
 	if ( function_exists( 'law_flagship_ensure_post' ) ) {
 		$flagship = law_flagship_ensure_post();
 		$report[] = ( $flagship['created'] ? 'CREATED  ' : 'OK       ' ) . '/events/flagship/ ' . $flagship['message'];
+	}
+
+	// The per-booking host and committee emails, retired 10 September 2026. The
+	// registry default is now inactive, but a stored override from the Emails
+	// screen would beat it, so the stored 'active' key has to go too.
+	if ( function_exists( 'law_setup_retire_booking_received_emails' ) ) {
+		$report[] = str_pad( strtoupper( law_setup_retire_booking_received_emails() ), 9 )
+			. 'Emails: per-booking host/committee notifications inactive';
 	}
 
 	$login_page = get_page_by_path( 'login' );
@@ -346,6 +363,61 @@ function law_setup_speakers_dashboard_access() {
 function law_setup_flagship_dashboard_access() {
 	return law_setup_child_page_access( 'account/dashboard/flagship' );
 }
+
+/** The discount-code catalogue's Members restriction. */
+function law_setup_discounts_dashboard_access() {
+	return law_setup_child_page_access( 'account/dashboard/discounts' );
+}
+
+/**
+ * Retire the per-booking host and committee emails (Denis, 10 September 2026:
+ * a busy event mailed both audiences on every submission, and Manage bookings
+ * already lists every booking).
+ *
+ * Turning them off in law_events_email_registry() is not enough on its own.
+ * law_events_email() merges the law_events_email_overrides option over the
+ * registry, 'active' included, so on any environment where someone has pressed
+ * Save on either email from the Emails screen the stored true would beat the
+ * new default and the emails would keep sending after a deploy. This drops the
+ * stored 'active' key only, leaving any subject or body edits in place, so
+ * ticking the box again brings the site's own wording back.
+ *
+ * Database state, so it runs from BOTH the ?setup-account-pages trigger and
+ * migration step 10: a git push alone has to be enough.
+ *
+ * @return string ok | updated.
+ */
+function law_setup_retire_booking_received_emails() {
+	if ( ! defined( 'LAW_EVENTS_EMAIL_OVERRIDES_OPTION' ) ) {
+		return 'ok'; // The events module is not loaded on this environment.
+	}
+	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+	if ( ! is_array( $overrides ) ) {
+		return 'ok';
+	}
+	$changed = false;
+	foreach ( array( 'host_booking_received', 'committee_booking_received' ) as $slug ) {
+		if ( isset( $overrides[ $slug ] ) && is_array( $overrides[ $slug ] ) && array_key_exists( 'active', $overrides[ $slug ] ) ) {
+			unset( $overrides[ $slug ]['active'] );
+			// An override with nothing left in it is just noise on the screen.
+			if ( ! $overrides[ $slug ] ) {
+				unset( $overrides[ $slug ] );
+			}
+			$changed = true;
+		}
+	}
+	if ( ! $changed ) {
+		return 'ok';
+	}
+	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+	return 'updated';
+}
+
+/** The Flagship bookings dashboard's Members restriction. */
+function law_setup_flagship_bookings_access() {
+	return law_setup_child_page_access( 'account/dashboard/flagship-bookings' );
+}
+
 
 /**
  * URL trigger: /wp-admin/?setup-account-pages (administrators only).

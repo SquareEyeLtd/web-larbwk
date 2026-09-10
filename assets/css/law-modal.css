@@ -12,12 +12,21 @@
 /* The scrim is its own element so a click anywhere off the dialog closes the
    modal, and the dialog's own clicks never reach it. */
 .law-modal__overlay { position: absolute; inset: 0; background: rgba(26, 26, 61, .6); }
-/* white-space is inherited, and a confirm dialog is rendered INSIDE the form it
-   confirms — which on the dashboards is inside a table cell carrying
-   `white-space: nowrap`. The dialog is position:fixed, but inheritance does not
-   care: without this reset its copy runs off the right edge instead of
-   wrapping, and the sentence is simply cut off. */
-.law-modal__dialog, .law-modal__dialog * { white-space: normal; }
+/* A confirm dialog is rendered INSIDE the form it confirms, which on the
+   dashboards means inside a table cell. The dialog is position:fixed, but
+   inherited properties do not care where it is painted — they come from where
+   it SITS in the document — so whatever the cell sets lands on the dialog.
+
+   Two have bitten so far, both from the same cell:
+   - `white-space: nowrap` on .law-dashboard__table td, which ran the copy off
+     the right edge instead of wrapping and cut the sentence off;
+   - `text-align: right` on a row-actions cell, which right-aligned the whole
+     dialog: title, copy, label and help text.
+
+   So reset the inherited text properties at the dialog rather than chasing
+   each container that happens to set one. Anything a dialog genuinely wants
+   centred or right-aligned states it on its own element. */
+.law-modal__dialog, .law-modal__dialog * { white-space: normal; text-align: left; }
 
 .law-modal__dialog {
 	position: relative; width: 100%; max-width: 32rem; background: #fff; color: #1a1a3d;

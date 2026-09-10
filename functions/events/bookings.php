@@ -55,6 +55,33 @@ function law_event_tickets_remaining( $event_id ) {
 	return max( 0, $available - $sold );
 }
 
+/**
+ * Places remaining at or below which the host is warned the event is nearly
+ * full: fewer than 10% of the approved places left, with a floor of 5 so a
+ * small event still gets a warning before its last place goes (Denis,
+ * 10 September 2026, replacing a flat 5 that warned far too late on a
+ * 200-place event).
+ *
+ * Integer arithmetic only, so there is nothing to round at the boundary:
+ * ceil( available / 10 ) - 1 is the largest whole number strictly below 10%
+ * (100 → 9, 90 → 8, 61 → 6). The floor means the percentage only bites from
+ * 61 places upwards.
+ *
+ * ONE definition on purpose: law_booking_maybe_capacity_warning() fires on it
+ * and law_event_recount_attendees() re-arms on it, and until this round both
+ * carried their own bare 5, which could drift apart.
+ *
+ * @param int $available _law_tickets_available.
+ * @return int Highest remaining count that still warns; 0 with no capacity set.
+ */
+function law_event_capacity_warning_at( $available ) {
+	$available = (int) $available;
+	if ( $available < 1 ) {
+		return 0;
+	}
+	return max( 5, (int) ceil( $available / 10 ) - 1 );
+}
+
 /** Total attendees across an event's active bookings (the stored recount). */
 function law_event_attendee_total( $event_id ) {
 	return (int) law_event_meta( $event_id, '_law_tickets_sold' );
@@ -97,9 +124,17 @@ function law_event_recount_attendees( $event_id, $log_source = '' ) {
 		law_event_update_meta( $event_id, '_law_tickets_sold', $sold );
 	}
 
+	// Both warning stages re-arm together, at the nearly-full threshold rather
+	// than at the first freed place, so cancelling one place on a full event and
+	// selling it again does not send a second "fully booked" email.
 	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
-	if ( $available > 0 && ( $available - $sold ) > 5 && law_event_meta( $event_id, '_law_capacity_warned' ) ) {
-		delete_post_meta( $event_id, '_law_capacity_warned' );
+	if ( $available > 0 && ( $available - $sold ) > law_event_capacity_warning_at( $available ) ) {
+		if ( law_event_meta( $event_id, '_law_capacity_warned' ) ) {
+			delete_post_meta( $event_id, '_law_capacity_warned' );
+		}
+		if ( law_event_meta( $event_id, '_law_capacity_full_warned' ) ) {
+			delete_post_meta( $event_id, '_law_capacity_full_warned' );
+		}
 	}
 
 	if ( '' !== $log_source && $old !== $sold ) {
@@ -381,9 +416,11 @@ function law_booking_guard_open( $event_id ) {
 		return new WP_Error( 'law_booking_not_bookable', 'This event is not open for booking.' );
 	}
 	// The flagship conference is approval-gated and has its own application
-	// flow (EVENTS_4.2_SPECS.md §5), which is not built yet. Its page renders
-	// no booking control, but this is the guard that matters: hiding a button
-	// is not a control, and every booking and waitlist path comes through here.
+	// flow (functions/events/flagship-bookings.php, FLAGSHIP_PAYMENTS.md §5).
+	// This refusal STAYS now that the flow exists: it is what keeps the
+	// hosted-event booking form, "add a colleague", register-on-behalf and
+	// the whole waitlist off an event where a place is a committee decision
+	// and a charge. Hiding a button is not a control; this is.
 	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
 		return new WP_Error( 'law_booking_flagship', 'The flagship conference is not booked through this form.' );
 	}
@@ -545,14 +582,46 @@ function law_booking_guard_capacity( $event_id, $seats ) {
 }
 
 /**
+ * What a booking costs, from the figures frozen onto it at application.
+ *
+ * Read from the SNAPSHOT, never recalculated: the delegate consented to a
+ * specific price when they saved their card, so that is the price charged even
+ * if the list price has risen since (FLAGSHIP_PAYMENTS.md §0.2). Generic to
+ * any priced booking, so a reception reuses it.
+ *
+ * A net of 0 means there is nothing to charge, which is how a committee-added
+ * complimentary place reaches Stripe: it does not.
+ *
+ * @return array{net:int,vat:int,gross:int,free:bool,vatable:bool}
+ */
+function law_booking_price( $booking_id ) {
+	$booking_id = (int) $booking_id;
+	$net        = max( 0, (int) law_event_meta( $booking_id, '_law_price_pence' ) );
+	$vatable    = (bool) law_event_meta( $booking_id, '_law_vat' );
+
+	return array(
+		'net'     => $net,
+		'vat'     => $vatable ? law_events_vat_pence( $net ) : 0,
+		'gross'   => $vatable ? law_events_gross_pence( $net ) : $net,
+		'free'    => $net < 1,
+		'vatable' => $vatable,
+	);
+}
+
+/**
  * The booking statuses that count as "this person already has a place here"
  * for the one-booking-per-person rule. A waitlist entry counts: you are either
- * booked or waiting, never both.
+ * booked or waiting, never both. So does a live flagship application, whether
+ * it is awaiting review or waiting on a card that failed
+ * (FLAGSHIP_PAYMENTS.md §2.1) — otherwise a delegate could apply twice and the
+ * committee would review the same person under two booking numbers. Declined
+ * and cancelled deliberately do not count, so a rejected applicant is free to
+ * apply again.
  *
  * @return string[]
  */
 function law_booking_holding_statuses() {
-	return array( 'publish', 'law-waitlisted' );
+	return array( 'publish', 'law-waitlisted', 'law-applied', 'law-payment-failed' );
 }
 
 /**
@@ -1769,28 +1838,79 @@ function law_booking_email_placeholders( $booking_id, array $party_ids = array()
 }
 
 /**
- * Warn the host once when the event comes within 5 places of capacity. The
- * latch (_law_capacity_warned) is re-armed by the recount when removals lift
- * remaining back above 5.
+ * Warn about capacity, in two one-shot stages (Denis, 10 September 2026):
+ * nearly full at law_event_capacity_warning_at(), then fully booked when the
+ * last place goes. Each has its own latch (_law_capacity_warned,
+ * _law_capacity_full_warned) and the recount re-arms both together.
+ *
+ * A booking that takes the event from above the nearly-full line straight to
+ * zero sends the sold-out email ONLY: the full branch consumes the nearly-full
+ * latch as well, so the host never gets two emails in the same second.
  */
 function law_booking_maybe_capacity_warning( $event_id ) {
 	$remaining = law_event_tickets_remaining( $event_id );
-	if ( null === $remaining || $remaining > 5 ) {
+	if ( null === $remaining ) {
+		return;
+	}
+	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
+
+	if ( 0 === $remaining ) {
+		if ( law_event_meta( $event_id, '_law_capacity_full_warned' ) ) {
+			return;
+		}
+		law_event_update_meta( $event_id, '_law_capacity_full_warned', 1 );
+		// Skipping the nearly-full stage counts as having done it, so a jump
+		// from above the line to zero sends this email and not both.
+		law_event_update_meta( $event_id, '_law_capacity_warned', 1 );
+		law_booking_send_capacity_email( 'host_event_full', $event_id, $available, 0 );
+		// The committee copy goes to the event's assignee when one is set, the
+		// same rule the other committee booking emails follow.
+		law_booking_send_capacity_email( 'committee_event_full', $event_id, $available, 0, true );
+		law_event_log(
+			$event_id,
+			sprintf( 'Event fully booked: all %d places taken. Host and committee notified.', $available ),
+			array( 'action' => 'booking_capacity_full', 'available' => $available, 'source' => 'bookings' )
+		);
+		return;
+	}
+
+	if ( $remaining > law_event_capacity_warning_at( $available ) ) {
 		return;
 	}
 	if ( law_event_meta( $event_id, '_law_capacity_warned' ) ) {
 		return;
 	}
 	law_event_update_meta( $event_id, '_law_capacity_warned', 1 );
-	law_events_send( 'host_capacity_warning', $event_id, array( 'placeholders' => array(
-		'tickets_available' => (string) (int) law_event_meta( $event_id, '_law_tickets_available' ),
-		'tickets_remaining' => (string) $remaining,
-	) ) );
+	law_booking_send_capacity_email( 'host_capacity_warning', $event_id, $available, $remaining );
 	law_event_log(
 		$event_id,
 		sprintf( 'Capacity warning sent to the host: %d place%s remaining.', $remaining, 1 === $remaining ? '' : 's' ),
 		array( 'action' => 'booking_capacity_warning', 'remaining' => $remaining, 'source' => 'bookings' )
 	);
+}
+
+/**
+ * One capacity email, with the place counts and the waitlist size the three
+ * bodies share.
+ *
+ * @param bool $assignee_first Committee copies go to the event's assignee when
+ *                             one is set, as committee_booking_received does.
+ */
+function law_booking_send_capacity_email( $slug, $event_id, $available, $remaining, $assignee_first = false ) {
+	$extra = array(
+		'placeholders' => array(
+			'tickets_available' => (string) (int) $available,
+			'tickets_remaining' => (string) (int) $remaining,
+			'waitlist_count'    => function_exists( 'law_waitlist_count' ) ? (string) law_waitlist_count( $event_id ) : '0',
+		),
+	);
+	if ( $assignee_first ) {
+		$assignee = get_user_by( 'id', (int) law_event_meta( $event_id, '_law_assignee' ) );
+		if ( $assignee && is_email( $assignee->user_email ) ) {
+			$extra['to'] = array( $assignee->user_email );
+		}
+	}
+	law_events_send( $slug, $event_id, $extra );
 }
 
 /**

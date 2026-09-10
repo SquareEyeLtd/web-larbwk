@@ -30,10 +30,10 @@
 
 	/* 1. The modal opener is an anchor so the no-JS path navigates to the
 	   inline form; with JS, law-modal.js opens the dialog and the navigation
-	   must not happen. Scoped to this feature's own two openers (Register and
-	   Join waitlist) so a future anchor opener elsewhere is not silently
-	   deadened. */
-	document.querySelectorAll('a[data-law-modal-open="law-booking-modal"], a[data-law-modal-open="law-waitlist-modal"]').forEach(function (link) {
+	   must not happen. Scoped to this feature's own openers (Register, Join
+	   waitlist and the flagship's Apply) so a future anchor opener elsewhere
+	   is not silently deadened. */
+	document.querySelectorAll('a[data-law-modal-open="law-booking-modal"], a[data-law-modal-open="law-waitlist-modal"], a[data-law-modal-open="law-flagship-modal"]').forEach(function (link) {
 		link.addEventListener('click', function (event) {
 			event.preventDefault();
 		});
@@ -251,17 +251,82 @@
 		return true;
 	}
 
+	/* Select-all in a table header: tick or clear every enabled box bound to
+	   the same form. Delegated, because the committee's tables are swapped in
+	   over &law_partial=1 and a handler bound at load would be lost with the
+	   old markup. */
+	document.addEventListener('change', function (event) {
+		var master = event.target.closest ? event.target.closest('[data-law-check-all]') : null;
+		if (!master) { return; }
+		var table = master.closest('table');
+		if (!table) { return; }
+		var form = null;
+		table.querySelectorAll('tbody input[type="checkbox"]').forEach(function (box) {
+			if (box.disabled) { return; }
+			box.checked = master.checked;
+			form = box.form || form;
+		});
+		syncBulkButtons(form);
+	});
+
+	/* Bulk decide buttons are dead until something is ticked. Delegated and
+	   re-evaluated on every change, so a table swapped in by a filter starts
+	   in the right state. Deliberately driven from the DOM rather than from a
+	   counter: select-all, an individual tick and a swapped-in table all end
+	   up asking the same question. */
+	function syncBulkButtons(form) {
+		if (!form) { return; }
+		var ticked = false;
+		document.querySelectorAll('input[name="booking_id[]"][type="checkbox"]').forEach(function (box) {
+			if (box.form === form && box.checked) { ticked = true; }
+		});
+		/* document, not form.querySelectorAll: the flagship list renders its
+		   decide buttons ABOVE the table and joins them to the form with the
+		   HTML `form` attribute, so they are not descendants of it. */
+		document.querySelectorAll('[data-law-bulk-decide]').forEach(function (button) {
+			if (button.form !== form) { return; }
+			button.disabled = !ticked;
+			button.setAttribute('aria-disabled', ticked ? 'false' : 'true');
+		});
+	}
+
+	function syncAllBulkButtons() {
+		document.querySelectorAll('[data-law-bulk-decide]').forEach(function (button) {
+			if (button.form) { syncBulkButtons(button.form); }
+		});
+	}
+
+	document.addEventListener('change', function (event) {
+		var box = event.target;
+		if (box && box.type === 'checkbox' && box.form) { syncBulkButtons(box.form); }
+	});
+	syncAllBulkButtons();
+	/* The committee's tables arrive over &law_partial=1; re-evaluate when one
+	   lands, since the new boxes are all unticked. */
+	document.addEventListener('law:partial-rendered', syncAllBulkButtons);
+
 	/* event.submitter's fallback for older Safari: click fires before submit,
 	   and law-modal.js can preventDefault an invalid click before any submit
 	   event, so a stale record can never fire one. Mirrors committee-actions.js. */
 	var lastClicked = null;
 	document.addEventListener('click', function (event) {
 		var button = event.target.closest ? event.target.closest('[type="submit"]') : null;
-		lastClicked = button && button.closest('form.law-booking-form') ? button : null;
+		/* button.form, not closest('form'): a submit may sit outside its form
+		   and be joined to it by the HTML `form` attribute. */
+		var owner = button ? button.form : null;
+		lastClicked = owner && owner.classList.contains('law-booking-form') ? button : null;
 	}, true);
 
-	document.querySelectorAll('form.law-booking-form').forEach(function (form) {
-		form.addEventListener('submit', function (event) {
+	/* Delegated at the document, NOT bound per form at load. The committee's
+	   tables are swapped in over &law_partial=1 when a filter changes, and a
+	   handler bound to the old markup dies with it — leaving every action on
+	   the new table falling back to a plain POST. That is not a graceful
+	   degradation here: a form whose meaning depends on which button was
+	   pressed would post the hidden default instead. */
+	document.addEventListener('submit', function (event) {
+		var form = event.target;
+		if (!form || !form.classList || !form.classList.contains('law-booking-form')) { return; }
+		( function () {
 			if (!window.fetch) { return; }
 			event.preventDefault();
 			/* Not "the form's first submit": that is the opener sitting behind
@@ -272,6 +337,13 @@
 			var scope = scopeFor(form, button);
 
 			var data = new FormData(form);
+			/* A native submit sends the SUBMITTER's own name and value;
+			   FormData(form) does not. Without this, a form whose meaning
+			   depends on which button was pressed (approve vs decline, say)
+			   posts one thing with JS and another without it — and the
+			   no-JS reading is the one a hidden default field supplies, so
+			   the two silently disagree. Append it, as the browser would. */
+			if (button && button.name) { data.append(button.name, button.value); }
 			data.append('law_ajax', '1');
 			clearErrors(form, scope);
 			busyState(form, button, true, button ? button.getAttribute('data-law-modal-busy') : '');
@@ -346,6 +418,6 @@
 					}
 					showError(form, scope, message);
 				});
-		});
+		}() );
 	});
 })();

@@ -25,7 +25,8 @@ function law_event_meta_schema() {
 		'_law_venue_capacity'       => 'text',
 		'_law_tickets_available'    => 'int',
 		'_law_tickets_sold'         => 'int',  // Recalculated by law_event_recount_attendees().
-		'_law_capacity_warned'      => 'flag', // One-shot host capacity-warning latch.
+		'_law_capacity_warned'      => 'flag', // One-shot nearly-full warning latch.
+		'_law_capacity_full_warned' => 'flag', // One-shot sold-out warning latch.
 		'_law_host_organisations'   => 'text',
 		'_law_organisation_ids'     => 'int_array',
 		'_law_fee_tier'             => 'fee_tier',
@@ -70,6 +71,16 @@ function law_event_meta_schema() {
 		'_law_is_flagship'          => 'flag',
 		'_law_flagship_date'        => 'date',
 		'_law_hero_image_id'        => 'int',
+		// Flagship pricing (FLAGSHIP_PAYMENTS.md §2.2). Both prices are NET of
+		// VAT, in pence, and the switch is a site-local 'Y-m-d H:i' compared
+		// through wp_timezone() — never strtotime() on a bare string, or the
+		// BST/GMT boundary moves the cutover by an hour. They live on the event
+		// rather than in law_events_settings because the committee edits them
+		// on the Manage flagship form, and a future reception will want its own
+		// pair rather than a site-wide one.
+		'_law_flagship_price_pence'      => 'int',
+		'_law_flagship_price_late_pence' => 'int',
+		'_law_flagship_price_switch'     => 'datetime',
 		'_law_gf_entry_id'          => 'int',
 		'_law_rejection_reason'     => 'multiline',
 		'_law_cancellation_reason'  => 'multiline',
@@ -138,6 +149,67 @@ function law_booking_meta_schema() {
 		'_law_waitlist_joined'        => 'datetime',
 		'_law_waitlist_promoted'      => 'datetime',
 		'_law_waitlist_blocked'       => 'text',
+		// The flagship conference's approval-gated application and payment
+		// (FLAGSHIP_PAYMENTS.md §2.4). None of these is ever written on a
+		// hosted-event booking.
+		'_law_application_at'         => 'datetime',
+		'_law_application_answers'    => 'answer_map',
+		// The price is snapshotted when the delegate saves their card, not read
+		// again at approval: they consented to a figure, so that is the figure
+		// charged, exactly as law_event_snapshot_fee() freezes a host fee.
+		'_law_price_pence'            => 'int',
+		'_law_vat'                    => 'flag',
+		'_law_payment_consent_at'     => 'datetime',
+		'_law_stripe_customer_id'     => 'text',
+		'_law_stripe_setup_intent_id' => 'text',
+		'_law_stripe_payment_method_id' => 'text',
+		// Checkout in setup mode offers whatever the Stripe account has
+		// enabled that can be saved and re-charged off-session, which on this
+		// account is card, Link and Revolut Pay. So the type and a rendered
+		// label are stored alongside the card fields, and the card fields are
+		// filled in only when the delegate actually saved a card.
+		'_law_stripe_method_type'     => 'text',
+		'_law_stripe_method_label'    => 'text',
+		'_law_stripe_card_brand'      => 'text',
+		'_law_stripe_card_last4'      => 'text',
+		'_law_stripe_card_exp'        => 'text',
+		'_law_stripe_invoice_id'      => 'text',
+		'_law_stripe_invoice_url'     => 'url',
+		'_law_stripe_invoice_pdf'     => 'url',
+		'_law_stripe_charge_id'       => 'text',
+		'_law_payment_status'         => 'booking_payment_status',
+		'_law_payment_error'          => 'text',
+		'_law_payment_failed_at'      => 'datetime',
+		// When a charge Stripe accepted but has not settled began, so the
+		// daily sweep can alert on one that never resolves.
+		'_law_payment_processing_at'  => 'datetime',
+		'_law_reviewed_at'            => 'datetime',
+		'_law_reviewed_by'            => 'int',
+		'_law_decline_reason'         => 'multiline',
+		'_law_is_complimentary'       => 'flag',
+	);
+}
+
+/**
+ * law_discount meta schema (functions/events/discounts.php).
+ *
+ * Written against "a priced booking", never against one event: an empty
+ * `_law_discount_events` means the code works anywhere a price is charged, so
+ * whatever starts charging first reuses this unchanged.
+ */
+function law_discount_meta_schema() {
+	return array(
+		'_law_discount_type'      => 'discount_type',
+		// Percent (1-100) or pence, depending on the type above.
+		'_law_discount_value'     => 'int',
+		'_law_discount_starts'    => 'datetime',
+		'_law_discount_expires'   => 'datetime',
+		// 0 means unlimited, which is why the int sanitiser storing 0 rather
+		// than deleting is the behaviour wanted here.
+		'_law_discount_max_uses'  => 'int',
+		'_law_discount_used'      => 'int',
+		'_law_discount_events'    => 'int_array',
+		'_law_discount_note'      => 'text',
 	);
 }
 
@@ -147,6 +219,7 @@ function law_events_register_meta() {
 		LAW_SPEAKER_CPT => law_speaker_meta_schema(),
 		LAW_SESSION_CPT => law_session_meta_schema(),
 		LAW_BOOKING_CPT => law_booking_meta_schema(),
+		LAW_DISCOUNT_CPT => law_discount_meta_schema(),
 	);
 	foreach ( $types as $post_type => $schema ) {
 		foreach ( $schema as $key => $type ) {
@@ -224,11 +297,44 @@ function law_events_sanitize_value( $value, $type ) {
 			return in_array( $value, $tiers, true ) ? $value : '';
 		case 'payment_status':
 			return in_array( $value, array( 'unpaid', 'paid', 'refunded', 'free' ), true ) ? $value : 'unpaid';
+		case 'discount_type':
+			return in_array( $value, array( 'percent', 'fixed' ), true ) ? $value : 'percent';
+		case 'booking_payment_status':
+			// A separate vocabulary from the event one above: an application
+			// passes through states an invoice never has (a payment method
+			// saved but nothing charged yet, a charge the bank wants
+			// authenticating, a charge still settling because the delegate
+			// did not pay by card). Unknown values fall back to
+			// pending_setup, the state that grants nothing.
+			return in_array(
+				$value,
+				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary' ),
+				true
+			) ? $value : 'pending_setup';
 		case 'registration_state':
 			$states = array( '', 'open', 'apply', 'free', 'external', 'invitation', 'closed' );
 			return in_array( $value, $states, true ) ? $value : '';
 		case 'text_array':
 			return array_values( array_filter( array_map( 'sanitize_text_field', (array) $value ), 'strlen' ) );
+		case 'answer_map':
+			// A question => answer map, for the flagship application's own
+			// fields plus whatever the organisers add later. Deliberately not
+			// text_array, which array_values() the keys away; the key IS the
+			// question here. Values may be multi-line (access requirements),
+			// so sanitize_textarea_field, and nesting is refused rather than
+			// flattened.
+			$answers = array();
+			foreach ( (array) $value as $question => $answer ) {
+				$question = sanitize_key( (string) $question );
+				if ( '' === $question || ! is_scalar( $answer ) ) {
+					continue;
+				}
+				$answer = sanitize_textarea_field( (string) $answer );
+				if ( '' !== $answer ) {
+					$answers[ $question ] = $answer;
+				}
+			}
+			return $answers;
 		case 'int_array':
 			return array_values( array_filter( array_map( 'absint', (array) $value ) ) );
 		case 'address':
@@ -344,7 +450,13 @@ function law_events_address_parts() {
 function law_events_all_meta_schemas() {
 	static $schemas = null;
 	if ( null === $schemas ) {
-		$schemas = array_merge( law_event_meta_schema(), law_speaker_meta_schema(), law_session_meta_schema(), law_booking_meta_schema() );
+		$schemas = array_merge(
+			law_event_meta_schema(),
+			law_speaker_meta_schema(),
+			law_session_meta_schema(),
+			law_booking_meta_schema(),
+			law_discount_meta_schema()
+		);
 	}
 	return $schemas;
 }
@@ -371,7 +483,7 @@ function law_event_meta( $post_id, $key ) {
 	$value   = get_post_meta( $post_id, $key, true );
 	$schemas = law_events_all_meta_schemas();
 	$type    = $schemas[ $key ] ?? 'text';
-	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows' ), true ) ) {
+	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows', 'answer_map' ), true ) ) {
 		return is_array( $value ) ? $value : array();
 	}
 	if ( in_array( $type, array( 'address', 'consent' ), true ) ) {

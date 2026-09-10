@@ -1740,6 +1740,8 @@ function law_migration_page_map() {
 		'account/dashboard/bookings' => array( 'title' => 'Bookings dashboard', 'template' => 'templates/account-bookings-dashboard.php' ),
 		'account/dashboard/speakers' => array( 'title' => 'Speakers dashboard', 'template' => 'templates/account-speakers-dashboard.php' ),
 		'account/dashboard/flagship' => array( 'title' => 'Flagship dashboard', 'template' => 'templates/account-dashboard-flagship.php' ),
+		'account/dashboard/flagship-bookings' => array( 'title' => 'Flagship bookings', 'template' => 'templates/account-dashboard-flagship-bookings.php' ),
+		'account/dashboard/discounts' => array( 'title' => 'Discount codes', 'template' => 'templates/account-dashboard-discounts.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
 		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
 		'account/events/submit'      => array( 'title' => 'Submit an event', 'template' => 'templates/account-event-form.php' ),
@@ -1846,6 +1848,21 @@ function law_migration_run_pages( $dry ) {
 	// And Manage flagship, the fourth committee dashboard.
 	if ( ! $dry && function_exists( 'law_setup_flagship_dashboard_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/dashboard/flagship/', 'Committee restriction: ' . law_setup_flagship_dashboard_access() . '.' );
+	}
+	// The per-booking host and committee emails were retired on 10 September
+	// 2026. The registry default is inactive, but a stored override from the
+	// Emails screen would beat it, so drop the stored 'active' key. Shared
+	// helper with the setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_retire_booking_received_emails' ) ) {
+		law_migration_log( 'notifications', 'created', 'host_booking_received / committee_booking_received', 'Retired: stored active override cleared (' . law_setup_retire_booking_received_emails() . ').' );
+	}
+	// The flagship's own bookings page.
+	if ( ! $dry && function_exists( 'law_setup_flagship_bookings_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/flagship-bookings/', 'Committee restriction: ' . law_setup_flagship_bookings_access() . '.' );
+	}
+	// And the discount-code catalogue.
+	if ( ! $dry && function_exists( 'law_setup_discounts_dashboard_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/discounts/', 'Committee restriction: ' . law_setup_discounts_dashboard_access() . '.' );
 	}
 
 	// The flagship conference. Not a page: it is a law_event post whose slug

@@ -37,6 +37,7 @@ abstract class LAW_Test_Case extends TestCase {
 		}
 		$GLOBALS['law_test_stripe_queue'] = array();
 		$GLOBALS['law_test_stripe_calls'] = array();
+		$GLOBALS['law_test_stripe_idem']  = array();
 		wp_set_current_user( 0 );
 		// The invoice flow refuses VAT-liable invoices without a tax rate ID,
 		// so tests run with explicit Stripe config.

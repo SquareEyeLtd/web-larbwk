@@ -13,7 +13,7 @@ You are a Stripe specialist for the London Arbitration Week WordPress theme (`la
 
 ## The Integration
 
-- Server-side `stripe-php` (Composer), wrapped by the theme's own thin client — no middleware. The two Make scenarios ("event approved > Stripe invoice", "invoice paid > update entry") retire at cutover; nothing new is ever wired through Make.
+- Server-side: a thin `wp_remote_request` wrapper in `functions/events/stripe/client.php`. There is NO Stripe PHP SDK and no Composer dependency; every call is hand-built form-encoded, with an Idempotency-Key header on POSTs, wrapped by the theme's own thin client — no middleware. The two Make scenarios ("event approved > Stripe invoice", "invoice paid > update entry") retire at cutover; nothing new is ever wired through Make.
 - **Keys** are wp-config constants, never settings, theme code, or the database: `LAW_STRIPE_PUBLISHABLE_KEY`, `LAW_STRIPE_SECRET_KEY`, `LAW_STRIPE_WEBHOOK_SECRET`. Test-mode keys are set locally. At cutover Denis sets a **live-mode restricted key** (customers, invoices, webhook endpoints only) in production wp-config himself, and creates the live webhook endpoint + signing secret with it. The settings screen shows which mode is active, read-only.
 - **Fixed tax rate, not Stripe Tax**: one UK VAT (20%, GB) tax rate applied to the line item when `_law_vat` is 1. The tax rate and branded invoice rendering template IDs live in the Events settings screen, per environment:
   - **Test mode (verified via API)**: tax rate `txr_1Tex2CPhJqxRqE2K2Bn3XBqH`, rendering template `inrtem_1TewtwPhJqxRqE2KQg885Tkf` ("LAW: event hosts")

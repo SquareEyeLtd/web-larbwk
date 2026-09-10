@@ -148,6 +148,69 @@ function law_event_resnapshot_fee( $event_id, $actor = 0 ) {
 }
 
 /** "£1,200.00" for a pence amount. */
+/**
+ * Net pence plus VAT at the configured rate, rounded to the penny.
+ *
+ * Generic, not flagship-specific: any priced booking charges VAT the same way
+ * (EVENTS_4.2_SPECS.md §7.2, standard rate on every ticket regardless of buyer
+ * location), so the receptions and any future paid event use these two rather
+ * than growing their own arithmetic.
+ */
+function law_events_gross_pence( $net_pence ) {
+	$net = (int) $net_pence;
+	if ( $net < 1 ) {
+		return 0;
+	}
+	return (int) round( $net * ( 1 + law_events_vat_rate() ) );
+}
+
+/** The VAT itself, in pence: gross minus net, so the two can never disagree. */
+function law_events_vat_pence( $net_pence ) {
+	return law_events_gross_pence( $net_pence ) - (int) $net_pence;
+}
+
+/**
+ * "£660.00 including VAT (£550.00 + VAT)": one wording for a price, so the
+ * booking control, the application form and the emails cannot describe the
+ * same figure three different ways.
+ */
+function law_events_price_label( $net_pence ) {
+	$net = (int) $net_pence;
+	if ( $net < 1 ) {
+		return '';
+	}
+	return sprintf(
+		/* translators: 1: gross price, 2: net price */
+		'%1$s including VAT (%2$s + VAT)',
+		law_events_format_pence( law_events_gross_pence( $net ) ),
+		law_events_format_pence( $net )
+	);
+}
+
+/**
+ * A typed pounds amount as pence, or null when it is not a number at all.
+ *
+ * The inverse of law_events_format_pence(), and it lives beside it so every
+ * screen that takes money from a human reads it the same way. The flagship's
+ * two price fields are its callers today.
+ *
+ * Null rather than 0 on purpose. Zero is a real, meaningful answer here ("not
+ * on sale"), so a typo has to be distinguishable from it and refused, rather
+ * than silently turned into a free conference.
+ *
+ * @param string $typed What was typed: "550", "£550.00", "1,200.50".
+ * @return int|null Pence, or null when unparseable or negative.
+ */
+function law_events_pounds_to_pence( $typed ) {
+	$typed = trim( (string) $typed );
+	$typed = str_replace( array( '£', ',', ' ' ), '', $typed );
+	if ( '' === $typed || ! is_numeric( $typed ) ) {
+		return null;
+	}
+	$pence = (int) round( ( (float) $typed ) * 100 );
+	return $pence < 0 ? null : $pence;
+}
+
 function law_events_format_pence( $pence ) {
 	return '£' . number_format( ( (int) $pence ) / 100, 2 );
 }

@@ -199,6 +199,22 @@ function law_flagship_render_form( array $values, $event_id ) {
 	echo '</div>';
 	echo '<p class="description">Used for the block on the programme and the banner on the flagship page. Leave it empty to use the site\'s default banner photograph.</p>';
 
+	// Bookings and pricing (FLAGSHIP_PAYMENTS.md §2.2). Above the agenda,
+	// because the committee sets these once and edits the agenda repeatedly.
+	echo '<h2>Bookings and pricing</h2>';
+	law_field_number( 'law_flagship[places]', 'Places available', $values['places'], array( 'min' => 0 ) );
+	echo '<p class="description">Applications are never refused when this runs out: the page tells the delegate the conference is full and that they will be queued, and you can still approve them. Zero means no number has been set yet.</p>';
+
+	law_field_text( 'law_flagship[price]', 'Price before the switch (£, excluding VAT)', $values['price'], array( 'class' => 'small-text' ) );
+	law_field_text( 'law_flagship[price_late]', 'Price after the switch (£, excluding VAT)', $values['price_late'], array( 'class' => 'small-text' ) );
+	law_field_text( 'law_flagship[price_switch]', 'Price switches at', $values['price_switch'], array( 'class' => 'regular-text' ) );
+	echo '<p class="description">Date and time as <code>YYYY-MM-DD HH:MM</code>, in UK time. VAT is added on top of both prices at the standard rate. A delegate is charged the price that applied when they saved their card, even if they are approved after the switch.</p>';
+
+	$preview = law_flagship_price_preview_line( $values['price'], $values['price_late'], $values['price_switch'] );
+	if ( '' !== $preview ) {
+		printf( '<p class="description"><strong>%s</strong></p>', esc_html( $preview ) );
+	}
+
 	law_flagship_render_sessions( $values['sessions'] );
 
 	submit_button( 'Save flagship event' );
