@@ -505,9 +505,17 @@ accepted.
   and meta through functions that do not check caps.
 - `law_user_can_manage_event()`: the per-event gate — the author, any co-owner
   (`_law_co_owner_ids`), or a committee user. Used by every host-facing handler
-  and the edit form.
+  and the edit form. It is a flat OR, so a caller cannot tell host from
+  committee; where that distinction matters the handler checks a second,
+  narrower predicate on top (see `law_booking_user_can_reject()` below and the
+  workflow's `who` key).
 - `law_user_is_committee()`: wraps the `edit_others_law_events` check; the
   canonical "who is committee" test.
+- `law_booking_user_can_reject()` (`bookings.php`): the one booking capability
+  the committee has and a host does not — cancelling somebody else's booking,
+  which includes removing a waitlist entry. It is
+  `law_user_is_committee() && law_user_can_manage_event()`, so the per-event
+  gate still applies; a committee user is not special-cased past it.
 - `law_events_sanitize_assignee()`: only a genuinely committee-capable user ID
   may be stored as an assignee (a bad ID would otherwise receive committee
   emails).
@@ -806,8 +814,47 @@ ONE booking carrying an attendee rows array; that model, its flat
   `law_user_can_manage_event()`; a FLAT table, one row per booking, which is one
   row per attendee — no grouping, just an "Invited by {name}" tag on a
   colleague's row (Denis, 8 September 2026) — with live country, dietary and
-  accessibility from `law_profile_values()`, per-attendee Reject, the waitlist
-  section, and the CSV/Excel/PDF export trio). The waitlist section is the one
+  accessibility from `law_profile_values()`, the committee-only per-attendee
+  Cancel control, the waitlist
+  section, and the CSV/Excel/PDF export trio). **"Register an attendee" is a
+  button above the table opening a dialog** (Denis, 11 September 2026), not a
+  form sitting open at the foot of the page, the way "Add an attendee without
+  payment" works on the flagship bookings dashboard; one partial serves both
+  audiences, so a host and the committee get the same dialog. The opener ships
+  `hidden` with `data-law-modal-enhanced` and law-modal.js reveals it, so a
+  browser without JavaScript is never shown a button that opens nothing: it
+  gets a `<noscript>` disclosure holding exactly the same form, opened already
+  when the last submission was refused. The per-attendee cancel button in the
+  table reads just **Cancel** (the dialog it opens says "Cancel booking"). The
+  dialog collects **almost what the registration form collects** (Denis,
+  11 September 2026): the four attendee fields plus country, accessibility and
+  dietary, from the shared `parts/events/attendee-profile-fields.php`, because
+  the list's own Country / Accessibility / Dietary columns and the exports read
+  those live from the attendee's profile and somebody booked in by phone has
+  nobody else to fill them in. Country is required here, like the other four.
+  The answers are cleaned by `law_registration_clean_attendee_profile()`,
+  checked by `law_registration_validate_attendee_profile()` (the registration
+  form's rules, with "Other" demanding its free text) and written by
+  `law_registration_apply_attendee_profile()` via
+  `law_booking_apply_attendee_profile()`, which also logs what it wrote. **A
+  new account takes everything given; an account that already existed only has
+  its blanks filled**, so a host repeating what they remember of a phone call
+  can never overwrite what the person stated themselves. An account that
+  already existed and holds anything beyond the three self-service roles (an
+  administrator, a committee member) is **not written to at all** (security
+  review, 11 September 2026): the account is found by the email address
+  whoever fills the form typed, so without that guard a host could put
+  health-adjacent details onto a committee member's account just by knowing
+  their address. **Cancelling an attendee's
+  booking is committee only since 11 September 2026** (`law_booking_user_can_reject()`;
+  Denis, closing the divergence from spec §4.3 that WAITLIST.md recorded as
+  settled). A host keeps the waitlist arrows, Promote now, Register an attendee
+  and the exports, and simply does not see the Cancel / Remove control:
+  it is hidden with nothing in its place, so a host's active table loses its
+  actions column altogether and the waitlist table keeps one holding Promote
+  now. The consequence is deliberate — a host can seat a waitlisted person, and
+  even over-book, but only the committee (or the attendee themselves, from My
+  bookings) can take a place back. The waitlist section is the one
   surface that does not reload after its action: the three move arrows post as
   usual, and `booking-form.js` reorders the `<tr>` nodes from the answer's
   `order`, rewriting each row's displayed position, its three
@@ -924,7 +971,7 @@ ONE booking carrying an attendee rows array; that model, its flat
   Refusals carry `['row' => index, 'field' => name]` so `booking-form.js` can
   mark the control in place. Every surface that posts `law_attendees` goes
   through it: the booking and waitlist modals, "Add a colleague" on the manage
-  view, and the host/committee "Register an attendee" form on the bookings
+  view, and the host/committee "Register an attendee" dialog on the bookings
   list, all of which mark the four labels with an asterisk and `aria-required`.
 - **Guards**: `law_booking_guard_open()` (Confirmed + CPT source + a ticket
   number + not started), `law_booking_guard_duplicates( $event_id, $people,
@@ -938,7 +985,10 @@ ONE booking carrying an attendee rows array; that model, its flat
 - **Cancel** `law_booking_cancel( $booking_id, $actor, $context, $args )`
   replaces the old remove-attendee: one person's booking, idempotent, with the
   context (`self` / `booker` / `host_reject` / `event_cancelled`) choosing the
-  email they get and, for a waitlisted booking, the waitlist wording. It
+  email they get and, for a waitlisted booking, the waitlist wording. The
+  `host_reject` token is now a misnomer kept on purpose: it is the identifier
+  the email map, the activity-log filters and the tests all key on, so only its
+  human wording moved to "cancelled by the committee". It
   releases any queue position, recounts, and offers the freed place to the
   waitlist unless the event itself is going away.
   `law_bookings_cancel_party()` is the booker's "cancel everything I booked".
@@ -959,14 +1009,17 @@ ONE booking carrying an attendee rows array; that model, its flat
   `law_booking_add_attendee` (posts the EVENT; the engine re-checks the actor
   has a party there), `law_booking_cancel` (the attendee or the person who
   booked them), `law_booking_cancel_party`, `law_booking_reject_attendee`
-  (`law_user_can_manage_event()` on `post_parent`) and
-  `law_booking_register_attendee`. `law_booking_error_payload()` is the shared
+  (`law_user_can_manage_event()` on `post_parent`, then
+  `law_booking_user_can_reject()` — a host gets a 403 saying only the LAW
+  committee can cancel a booking) and
+  `law_booking_register_attendee` (`law_user_can_manage_event()`; hosts keep
+  this one). `law_booking_error_payload()` is the shared
   row/field refusal shape booking-form.js marks in place.
 - **The event-cancel sweep** `law_bookings_cancel_all_for_event()` cancels the
   waitlist FIRST and suspends promotion for its duration, because it also runs
   from `wp_trash_post` while the event is still published; otherwise a freed
   place could promote somebody onto an event being deleted seconds later.
-- Tests: `tests/BookingsTest.php` (26), `tests/BookingEmailsTest.php` (10),
+- Tests: `tests/BookingsTest.php` (35), `tests/BookingEmailsTest.php` (16),
   `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (18).
 
 ### `waitlist.php`: the waitlist (WAITLIST.md Part B)
@@ -1850,7 +1903,9 @@ resolve-or-create, the log, the email registry and the `.ics` generator.
 - `law_flagship_add_complimentary()` is the committee's "add without payment"
   for speakers, press, sponsors and VIPs: straight to `publish`, no payment
   method, no invoice, marked `_law_is_complimentary` so counts and exports can
-  tell them apart.
+  tell them apart. Its dialog collects country, accessibility and dietary as
+  well (Denis, 11 September 2026), through the shared
+  `parts/events/attendee-profile-fields.php`.
 - `law_flagship_mark_payment_processing()` is the third outcome of a charge,
   beside paid and failed: Stripe accepted the payment but it has not settled.
   The application stays where it is holding its place, nothing is emailed, and
@@ -1891,7 +1946,8 @@ and two sets of actions that do not apply to each other.
 - A flat table with the payment facts a refund has to be traced by, including
   the Stripe invoice link (spec §7.5). Filters: keyword, status, payment
   state, country. Per-row Approve and Decline, the two failed-payment actions,
-  select-all bulk decisions, and the "add without payment" form below.
+  select-all bulk decisions, and the "add without payment" dialog, opened from
+  the actions row above the table.
 - Exports CSV / Excel / PDF through `functions/events/export.php`.
 - Tests: `tests/FlagshipBookingsDashboardTest.php` (8).
 
@@ -2216,6 +2272,17 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   by both the validation-fail and update-fail branches.
 - `law_registration_state()`, `law_profile_state()`, `law_profile_values()`:
   transient-backed form state and the stored profile values.
+- `law_registration_clean_attendee_profile()`,
+  `law_registration_validate_attendee_profile()`,
+  `law_registration_apply_attendee_profile()`: the country / accessibility /
+  dietary set collected when somebody is registered **on their behalf** (the
+  bookings list's "Register an attendee" and the flagship's "Add an attendee
+  without payment"), using the same POST names, choice lists and rules as the
+  registration form so `$_POST` goes straight in. The apply step fills a brand
+  new account completely but only fills the BLANKS of an account that already
+  existed: what a person stated in their own profile always wins over what a
+  host remembers of a phone call. `law_booking_apply_attendee_profile()`
+  (bookings.php) is the shared caller and writes the activity-log line.
 
 ### `committee.php`: the committee dashboard back end
 
@@ -2615,7 +2682,13 @@ event status by the rebuild) plus "Reference".
   saved is still the appearance at THIS event or session. The values are
   assigned as element properties after the row markup is built, never
   interpolated into the HTML string, since the biography is rich text and an
-  organisation may contain a quote or an ampersand.
+  organisation may contain a quote or an ampersand. Each **search suggestion**
+  shows the speaker's name with their job title and organisation under it in
+  small type (`.law-rel-result-name` / `.law-rel-result-meta`, styled in
+  `law-admin.css` and `flagship-dashboard.css`). It used to read
+  `Name (#15188)`; the post ID told a committee member nothing about which of
+  two similar names they were picking (Denis, 11 September 2026). The meta line
+  is omitted for a speaker with no appearance on record.
 - **`event-screen.php`** — the custom event edit screen: meta boxes for
   workflow actions, fee (with override), programme facts, invoice contact,
   people (co-owners/contacts), speakers, sessions, the comment thread and the
@@ -3229,9 +3302,10 @@ These predate the rebuild and now branch on `law_events_source()`.
   text becomes translucent white, and every hover and focus state that resolved
   to navy on the white page resolves to white here.
 - **Parts** (`parts/events/`): `speaker-card.php` (one speaker card on the
-  single event view — photo or initials, the name with the role at this event
-  in brackets after it (`.law-cal-speakers__tag`, outside the profile link so
-  the link text stays the name), "job title, organisation", a
+  single event view — photo or initials, the role at this event as a small
+  uppercase label on its own line above the name (`.law-cal-speakers__tag`,
+  first in the source and outside the profile link so the link text stays the
+  name alone), then the name, then "job title, organisation", a
   14-word biography excerpt (about two lines) and the "Read full bio" pair: the
   `[data-law-modal-enhanced]` button and the `[data-law-modal-fallback]`
   `<details>` holding the full text for the no-JS path, which also keeps it
@@ -3809,7 +3883,8 @@ day): the account area (the "Your bookings" section and audience split on
 My events, the `?law_booking=` manage view, the page 292 (My events)
 attendee-access fix scripted in `law_setup_account_events_attendee_access()`
 + migration step 10), the host/committee `?law_event_bookings=` list with
-per-attendee Reject and the CSV/Excel/PDF export trio
+per-attendee Reject (committee only since 11 September 2026) and the
+CSV/Excel/PDF export trio
 (`law_booking_export`, reusing export.php with a new optional title line),
 the read-only wp-admin booking screen (`admin/booking-screen.php`) and the
 events list's Booked column, and the event-cancel sweep

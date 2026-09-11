@@ -738,17 +738,37 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    is absolutely positioned by default. */
 .law-booking-table .law-cal-card__badge { position: static; display: inline-block; vertical-align: middle; margin-left: .35rem; }
 .law-booking-table__press { background: #1a1a3d; color: #fff; }
-/* "Register an attendee" on the per-event list. */
-.law-booking-register { max-width: 60rem; margin-top: 2rem; }
-.law-booking-register .law-booking-manage__subtitle, .law-booking-register .law-booking-note { color: #1a1a3d; }
-.law-booking-register .law-booking-note { max-width: 46rem; }
+/* "Register an attendee" on the per-event list: an opener above the table, with
+   the form itself in a dialog (parts/events/booking-list.php). */
+.law-booking-register__actions { margin: 0 0 1rem; }
+/* The opener ships with `hidden` and law-modal.js clears it. Removing the
+   attribute hands the button back to whatever display the cascade last said,
+   which on this page is a full-width block. State it, rather than relying on
+   what the button would have inherited had it never been hidden. */
+.law-booking-register__opener { display: inline-block; width: auto; margin: 0; }
+/* Country + requirements, shared by the two register-an-attendee dialogs
+   (parts/events/attendee-profile-fields.php). Inside a dialog the form's
+   1.4rem uppercase legend shouts over the 1.5rem title, so it reads as a
+   section label instead, and the fieldset gives back the 2.5rem it normally
+   puts under itself. */
+.law-modal .law-attendee-profile { margin-bottom: 1rem; }
+.law-modal .law-attendee-profile legend { font-size: 1rem; text-transform: none; margin-bottom: .5rem; }
+.law-attendee-profile .law-form-hint { margin-bottom: .75rem; }
+/* The two requirement lists sit side by side, each with its own "Other" box
+   under it, so the dialog does not run to two screens. .law-row-grid collapses
+   to one column at the shared mobile breakpoint. */
+.law-attendee-profile__group .law-form-field:last-child { margin-bottom: 0; }
+
+/* The no-JS disclosure holding the same form. */
+.law-booking-register__fallback { max-width: 60rem; margin: 0 0 1.5rem; }
+.law-booking-register__fallback > summary { cursor: pointer; font-weight: 600; color: #1a1a3d; margin-bottom: 1rem; }
+.law-booking-register__fallback .law-booking-note { color: #1a1a3d; max-width: 46rem; }
 /* The cross-event Bookings dashboard (/account/dashboard/bookings/). */
 .law-bookings-dashboard__summary { color: #1a1a3d; margin: 0 0 1rem; }
 .law-bookings-dashboard__truncated { color: #8a4b00; margin: 0 0 1rem; }
 .law-booking-table__event small, .law-booking-table__booked small { color: #5a5a7a; }
 .law-booking-table td.law-booking-table__event { white-space: normal; min-width: 14rem; }
 .law-booking-table td.law-booking-table__booking { white-space: nowrap; min-width: 0; }
-.law-cal-filter-form__field--event select { min-width: 16rem; }
 
 /* Manage Speakers (/account/dashboard/speakers/) __________________________ */
 

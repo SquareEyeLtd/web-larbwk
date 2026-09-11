@@ -342,6 +342,38 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'A free place must make no Stripe calls.' );
 	}
 
+	/** A comp place collects the same profile facts registration would. */
+	public function test_a_complimentary_place_records_the_profile_given_for_them(): void {
+		$event_id = $this->make_flagship();
+		$actor    = $this->make_committee_user();
+		$email    = 'comp-profile-' . wp_generate_password( 6, false ) . '@example.test';
+
+		$booking_id = law_flagship_add_complimentary(
+			array(
+				'name'    => 'Guest Speaker',
+				'email'   => $email,
+				'profile' => law_registration_clean_attendee_profile(
+					array(
+						'country' => 'Montenegro',
+						'dietary' => array( 'Vegan' ),
+					)
+				),
+			),
+			$actor
+		);
+
+		$this->assertIsInt( $booking_id );
+		$this->posts[] = $booking_id;
+		$user_id       = (int) get_post_field( 'post_author', $booking_id );
+		$this->users[] = $user_id;
+
+		$values = law_profile_values( $user_id );
+		$this->assertSame( 'Montenegro', $values['country'], 'The delegate list reads country from the profile.' );
+		if ( function_exists( 'get_field' ) ) {
+			$this->assertSame( array( 'Vegan' ), array_values( (array) $values['dietary'] ) );
+		}
+	}
+
 	/* When the money does not arrive ________________________________________ */
 
 	/** A declined card must never leave somebody looking confirmed. */

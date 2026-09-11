@@ -14,6 +14,29 @@
  * its own section with the reorder and promote controls; cancelled bookings
  * sit collapsed at the bottom, read-only, with the cancelled badge.
  *
+ * Cancelling somebody else's booking (and removing a waitlist entry, which is
+ * the same act on a waitlisted booking) is COMMITTEE ONLY since 11 September
+ * 2026, law_booking_user_can_reject(). A host manages the queue order, promotes
+ * and registers; taking a place away from an attendee is LAW's call. The
+ * controls are simply absent for a host, with no note in their place, so the
+ * active table loses its actions column altogether and the waitlist table keeps
+ * one holding Promote now.
+ *
+ * "Register an attendee" (a host, co-owner or committee member booking someone
+ * on their behalf) is a BUTTON ABOVE THE TABLE opening a dialog, not a form
+ * sitting open at the foot of the page (Denis, 11 September 2026), the way
+ * "Add an attendee without payment" works on the flagship bookings dashboard
+ * (parts/events/flagship-add-attendee.php). One partial serves both audiences,
+ * so the host and the committee get the same dialog. Without JavaScript the
+ * opener stays hidden and a <noscript> disclosure carries exactly the same
+ * form, so the feature never depends on the script.
+ *
+ * That dialog asks for almost what the registration form asks for: the four
+ * attendee fields plus country, accessibility and dietary
+ * (parts/events/attendee-profile-fields.php), because the table's own last
+ * three columns read those live from each attendee's profile and somebody
+ * booked in by phone has nobody else to fill them in.
+ *
  * Args: event_id.
  */
 
@@ -61,6 +84,70 @@ $law_bl_can_register = true === law_booking_guard_open( $law_bl_event_id ) && 0 
 $law_bl_is_committee = law_user_is_committee();
 $law_bl_form_state   = law_booking_form_state();
 $law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );
+$law_bl_register_modal = 'law-booking-register';
+
+/**
+ * The four attendee fields, printed into BOTH the dialog and the no-JS
+ * disclosure below it. Labels wrap their inputs rather than using for/id: the
+ * same fields appear twice on the page and ids would collide, silently
+ * breaking both labels rather than one. The .law-rows wrapper is what
+ * booking-form.js walks to mark a refused field in place.
+ */
+$law_bl_register_fields = function ( $law_bl_prefix, $law_bl_show_other = false ) use ( $law_bl_form_state, $law_bl_typed, $law_bl_is_committee ) {
+	?>
+	<div class="law-rows" data-law-booking-rows="law_attendees" data-law-max="1">
+		<div class="law-row">
+			<div class="law-row-grid law-row-grid--attendee">
+				<?php
+				$law_bl_fields = array(
+					'name'         => array( __( 'Full name *', 'law' ), 'text' ),
+					'email'        => array( __( 'Email *', 'law' ), 'email' ),
+					'organisation' => array( __( 'Organisation *', 'law' ), 'text' ),
+					'job_title'    => array( __( 'Job title *', 'law' ), 'text' ),
+				);
+				foreach ( $law_bl_fields as $law_bl_key => $law_bl_field ) :
+					$law_bl_invalid = 0 === (int) $law_bl_form_state['row'] && $law_bl_form_state['field'] === $law_bl_key;
+					?>
+					<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off" aria-required="true" name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
+				<?php endforeach; ?>
+			</div>
+		</div>
+	</div>
+	<?php
+	// Country, accessibility and dietary, exactly as registration asks for
+	// them: the table's own columns read these live from the attendee's
+	// profile, and somebody booked in by phone has nobody else to fill them in.
+	get_template_part(
+		'parts/events/attendee-profile-fields',
+		null,
+		array(
+			'id_prefix'        => $law_bl_prefix,
+			'values'           => (array) ( $law_bl_form_state['profile'] ?? array() ),
+			'show_other'       => $law_bl_show_other,
+			'country_required' => true,
+			'note'             => __( 'Whatever they told you. They can change any of this themselves from their profile.', 'law' ),
+		)
+	);
+	?>
+	<?php if ( $law_bl_is_committee ) : ?>
+		<div class="law-form-field">
+			<div class="law-choices">
+				<label><input type="checkbox" name="law_press" value="1"> <?php esc_html_e( 'Press pass (marked as press on the attendee list and exports)', 'law' ); ?></label>
+			</div>
+		</div>
+	<?php endif; ?>
+	<?php
+};
+
+/** The hidden inputs every copy of the form needs. */
+$law_bl_register_hidden = function () use ( $law_bl_event_id ) {
+	?>
+	<input type="hidden" name="action" value="law_booking_register_attendee">
+	<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bl_event_id ); ?>">
+	<?php wp_nonce_field( 'law_booking_register_attendee' ); ?>
+	<?php law_events_honeypot_field(); ?>
+	<?php
+};
 
 /**
  * One flat table over a set of bookings: one row per booking, which is one row
@@ -68,12 +155,17 @@ $law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );
  * attendee's row simply carries an "Invited by {name}" tag).
  *
  * @param WP_Post[] $law_bl_set        Bookings to render.
- * @param bool      $law_bl_actionable Whether the Reject column is live.
+ * @param bool      $law_bl_actionable Whether this set can be acted on at all
+ *                                     (false for the cancelled table).
  * @param bool      $law_bl_waiting    Waitlist mode: a Position column and the
  *                                     reorder / promote controls.
  */
-$law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl_waiting = false ) use ( $law_bl_event_id ) {
+$law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl_waiting = false ) use ( $law_bl_event_id, $law_bl_is_committee ) {
 	$law_bl_last = count( $law_bl_set ) - 1;
+	// Cancel is committee only; Promote now is not, so the waitlist keeps its
+	// actions column for a host while the active table drops it entirely.
+	$law_bl_can_cancel  = $law_bl_actionable && $law_bl_is_committee;
+	$law_bl_has_actions = $law_bl_can_cancel || ( $law_bl_actionable && $law_bl_waiting );
 	?>
 	<div class="law-dashboard__table-wrap">
 		<table class="law-dashboard__table law-booking-table">
@@ -87,7 +179,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				<th><?php esc_html_e( 'Country', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Accessibility', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Dietary', 'law' ); ?></th>
-				<?php if ( $law_bl_actionable ) : ?><th></th><?php endif; ?>
+				<?php if ( $law_bl_has_actions ) : ?><th></th><?php endif; ?>
 			</tr></thead>
 			<tbody<?php echo $law_bl_waiting ? ' data-law-waitlist' : ''; ?>>
 			<?php foreach ( array_values( $law_bl_set ) as $law_bl_i => $law_bl_booking ) :
@@ -151,7 +243,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					<td><?php echo esc_html( (string) ( $law_bl_profile['country'] ?? '' ) ?: '—' ); ?></td>
 					<td class="law-booking-table__req"><?php echo esc_html( $law_bl_access ?: '—' ); ?></td>
 					<td class="law-booking-table__req"><?php echo esc_html( $law_bl_diet ?: '—' ); ?></td>
-					<?php if ( $law_bl_actionable ) : ?>
+					<?php if ( $law_bl_has_actions ) : ?>
 						<td class="law-dashboard__row-actions">
 							<?php if ( $law_bl_waiting ) :
 								$law_bl_remaining  = law_event_tickets_remaining( $law_bl_event_id );
@@ -193,13 +285,14 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 									?>
 								</form>
 							<?php endif; ?>
+							<?php if ( $law_bl_can_cancel ) : ?>
 							<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 								<input type="hidden" name="action" value="law_booking_reject_attendee">
 								<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
 								<?php wp_nonce_field( 'law_booking_reject_attendee' ); ?>
 								<?php law_events_honeypot_field(); ?>
 								<?php // Hollow, so the destructive action does not pull as hard as Promote now. ?>
-								<button type="submit" class="button alert hollow" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php echo esc_html( $law_bl_waiting ? __( 'Remove', 'law' ) : __( 'Cancel booking', 'law' ) ); ?></button>
+								<button type="submit" class="button alert hollow" data-law-modal-open="<?php echo esc_attr( $law_bl_modal ); ?>"><?php echo esc_html( $law_bl_waiting ? __( 'Remove', 'law' ) : __( 'Cancel', 'law' ) ); ?></button>
 								<?php
 								get_template_part(
 									'parts/layout/modal',
@@ -231,6 +324,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 								);
 								?>
 							</form>
+							<?php endif; ?>
 						</td>
 					<?php endif; ?>
 				</tr>
@@ -252,20 +346,23 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 			<?php
 			// One booking is one attendee now, so one plural selector does.
 			echo esc_html( sprintf( _n( '%s attendee.', '%s attendees.', $law_bl_total, 'law' ), number_format_i18n( $law_bl_total ) ) );
+			// Places left, not "N of M taken": the attendee count above already
+			// states how many are in, so repeating it buys nothing (Denis,
+			// 11 September 2026). Over-booked events say so instead, since
+			// "0 places left" would hide the excess.
 			if ( $law_bl_available > 0 ) {
+				$law_bl_left = max( 0, $law_bl_available - $law_bl_total );
 				printf(
 					' <span class="%s">%s</span>',
 					$law_bl_over ? 'law-booking-table__over' : '',
 					esc_html(
 						$law_bl_over
 							? sprintf(
-								/* translators: 1: places taken, 2: places available, 3: the excess. */
-								__( '%1$s of %2$s places taken (over-booked by %3$s).', 'law' ),
-								number_format_i18n( $law_bl_total ),
-								number_format_i18n( $law_bl_available ),
+								/* translators: %s: the number of attendees over capacity. */
+								__( 'Over-booked by %s.', 'law' ),
 								number_format_i18n( $law_bl_total - $law_bl_available )
 							)
-							: sprintf( __( '%1$s of %2$s places taken.', 'law' ), number_format_i18n( $law_bl_total ), number_format_i18n( $law_bl_available ) )
+							: sprintf( _n( '%s place left.', '%s places left.', $law_bl_left, 'law' ), number_format_i18n( $law_bl_left ) )
 					)
 				);
 			}
@@ -281,6 +378,69 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 			?>
 		</p>
 
+		<?php if ( $law_bl_can_register ) : ?>
+			<?php
+			// Above the table, as a dialog rather than a form sitting open at the
+			// foot of the page (Denis, 11 September 2026), the way "Add an
+			// attendee without payment" works on the flagship bookings dashboard.
+			// The page's subject is the attendee list; registering somebody on
+			// their behalf is an occasional, deliberate act, and the opener
+			// belongs with the other things you can do TO the list.
+			//
+			// The opener ships hidden and law-modal.js reveals it once the dialog
+			// it names is on the page, so a browser without JavaScript is never
+			// shown a button that cannot open anything: it gets the <noscript>
+			// disclosure below instead, which holds exactly the same form.
+			?>
+			<p class="law-booking-register__actions">
+				<button type="button" class="button orange law-booking-register__opener"
+					data-law-modal-open="<?php echo esc_attr( $law_bl_register_modal ); ?>"
+					data-law-modal-enhanced hidden>
+					<?php esc_html_e( 'Register an attendee', 'law' ); ?>
+				</button>
+			</p>
+
+			<div class="law-modal" id="<?php echo esc_attr( $law_bl_register_modal ); ?>" hidden>
+				<div class="law-modal__overlay" data-law-modal-close></div>
+				<div class="law-modal__dialog law-modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="law-booking-register-title" tabindex="-1">
+					<button type="button" class="law-modal__close" data-law-modal-close aria-label="<?php esc_attr_e( 'Close', 'law' ); ?>">&times;</button>
+					<h2 class="law-modal__title" id="law-booking-register-title"><?php esc_html_e( 'Register an attendee', 'law' ); ?></h2>
+
+					<form class="law-event-form law-event-form--light law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+						<?php $law_bl_register_hidden(); ?>
+						<p class="law-modal__copy"><?php esc_html_e( 'For requests that arrive by phone or email. The person gets a booking of their own: they are emailed a confirmation (with a link to set a password if they have no account yet) and can manage or cancel it from My bookings.', 'law' ); ?></p>
+						<?php $law_bl_register_fields( 'law-bl-register' ); ?>
+						<p class="law-modal__actions">
+							<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Cancel', 'law' ); ?></button>
+							<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Registering…', 'law' ); ?>"><?php esc_html_e( 'Register attendee', 'law' ); ?></button>
+						</p>
+					</form>
+				</div>
+			</div>
+
+			<?php
+			// The no-JS path: the same form behind a native disclosure, open
+			// already when the last submission was refused so the message and the
+			// typed values are not hidden a click away.
+			?>
+			<noscript>
+				<details class="law-booking-register__fallback"<?php echo '' !== (string) $law_bl_form_state['message'] ? ' open' : ''; ?>>
+					<summary><?php esc_html_e( 'Register an attendee', 'law' ); ?></summary>
+					<p class="law-booking-note"><?php esc_html_e( 'For requests that arrive by phone or email. The person gets a booking of their own: they are emailed a confirmation (with a link to set a password if they have no account yet) and can manage or cancel it from My bookings.', 'law' ); ?></p>
+					<?php if ( '' !== (string) $law_bl_form_state['message'] ) : ?>
+						<p class="law-form-notice is-error" role="alert"><?php echo esc_html( (string) $law_bl_form_state['message'] ); ?></p>
+					<?php endif; ?>
+					<form class="law-event-form law-event-form--light" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+						<?php $law_bl_register_hidden(); ?>
+						<?php $law_bl_register_fields( 'law-bl-register-nojs', true ); ?>
+						<p class="law-modal__actions law-booking-actions-start">
+							<button type="submit" class="button orange"><?php esc_html_e( 'Register attendee', 'law' ); ?></button>
+						</p>
+					</form>
+				</details>
+			</noscript>
+		<?php endif; ?>
+
 		<div class="law-cal-export" data-law-export data-export-url="<?php echo esc_url( $law_bl_export_base ); ?>">
 			<span class="law-cal-export__label"><?php esc_html_e( 'Export:', 'law' ); ?></span>
 			<a class="button second" data-format="csv" href="<?php echo esc_url( add_query_arg( 'format', 'csv', $law_bl_export_base ) ); ?>">CSV</a>
@@ -292,51 +452,6 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 			<p class="law-cal__empty"><?php esc_html_e( 'No active bookings yet.', 'law' ); ?></p>
 		<?php else : ?>
 			<?php $law_bl_render_table( $law_bl_active, true ); ?>
-		<?php endif; ?>
-
-		<?php if ( $law_bl_can_register ) : ?>
-			<div class="law-booking-register">
-				<h3 class="law-booking-manage__subtitle"><?php esc_html_e( 'Register an attendee', 'law' ); ?></h3>
-				<p class="law-booking-note"><?php esc_html_e( 'For requests that arrive by phone or email. The person gets a booking of their own: they are emailed a confirmation (with a link to set a password if they have no account yet) and can manage or cancel it from My bookings.', 'law' ); ?></p>
-				<?php if ( '' !== (string) $law_bl_form_state['message'] ) : ?>
-					<p class="law-form-notice is-error" role="alert"><?php echo esc_html( (string) $law_bl_form_state['message'] ); ?></p>
-				<?php endif; ?>
-				<form class="law-event-form law-event-form--light law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-					<input type="hidden" name="action" value="law_booking_register_attendee">
-					<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bl_event_id ); ?>">
-					<?php wp_nonce_field( 'law_booking_register_attendee' ); ?>
-					<?php law_events_honeypot_field(); ?>
-					<?php // The data-law-booking-rows wrapper is what booking-form.js's row/field error marking walks. ?>
-					<div class="law-rows" data-law-booking-rows="law_attendees" data-law-max="1">
-					<div class="law-row">
-						<div class="law-row-grid law-row-grid--attendee">
-							<?php
-							$law_bl_fields = array(
-								'name'         => array( __( 'Full name *', 'law' ), 'text' ),
-								'email'        => array( __( 'Email *', 'law' ), 'email' ),
-								'organisation' => array( __( 'Organisation *', 'law' ), 'text' ),
-								'job_title'    => array( __( 'Job title *', 'law' ), 'text' ),
-							);
-							foreach ( $law_bl_fields as $law_bl_key => $law_bl_field ) :
-								$law_bl_invalid = 0 === (int) $law_bl_form_state['row'] && $law_bl_form_state['field'] === $law_bl_key;
-								?>
-								<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off" aria-required="true" name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
-							<?php endforeach; ?>
-						</div>
-					</div>
-					</div>
-					<?php if ( $law_bl_is_committee ) : ?>
-						<div class="law-form-field">
-							<div class="law-choices">
-								<label><input type="checkbox" name="law_press" value="1"> <?php esc_html_e( 'Press pass (marked as press on the attendee list and exports)', 'law' ); ?></label>
-							</div>
-						</div>
-					<?php endif; ?>
-					<p class="law-modal__actions law-booking-actions-start">
-						<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Registering…', 'law' ); ?>"><?php esc_html_e( 'Register attendee', 'law' ); ?></button>
-					</p>
-				</form>
-			</div>
 		<?php endif; ?>
 
 		<?php if ( $law_bl_waitlist ) : ?>

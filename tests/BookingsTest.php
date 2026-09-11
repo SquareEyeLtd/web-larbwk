@@ -13,7 +13,7 @@
  *   refused and named, adjacent times allowed);
  * - mutations: adding a colleague, cancelling one booking, cancelling a whole
  *   party, a booker who cancels their own place keeping management and being
- *   able to book again, host reject;
+ *   able to book again, the committee-only reject and its gate;
  * - protection: the status guard reverts non-engine flips, untrash restores
  *   the trashed status, and wp-admin trash/delete recount backstops.
  */
@@ -418,14 +418,35 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'cancelled the 3 bookings they made', $this->log_text( $event ) );
 	}
 
-	public function test_reject_by_host_logs_the_reason(): void {
-		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
-		$host   = (int) get_post_field( 'post_author', $event );
-		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
+	/**
+	 * Cancelling somebody else's booking is committee only (Denis, 11 September
+	 * 2026): a host and a co-owner manage the queue and register attendees, but
+	 * may not take a place away. The engine itself still accepts a host actor,
+	 * which is why this covers the gate and not law_booking_cancel().
+	 */
+	public function test_only_the_committee_may_reject_a_booking(): void {
+		$host     = $this->make_user( 'event_host' );
+		$co_owner = $this->make_user( 'event_host' );
+		$event    = $this->make_event( array( '_law_co_owner_ids' => array( $co_owner ) ), 'publish', $host );
 
-		$this->assertTrue( law_booking_cancel( $ids[1], $host, 'host_reject', array( 'reason' => 'Capacity reshuffle' ) ) );
+		$this->assertFalse( law_booking_user_can_reject( $host, $event ), 'The host must not cancel bookings.' );
+		$this->assertTrue( law_user_can_manage_event( $host, $event ), 'The host still manages the event itself.' );
+		$this->assertFalse( law_booking_user_can_reject( $co_owner, $event ), 'A co-owner must not cancel bookings either.' );
+		$this->assertTrue( law_user_can_manage_event( $co_owner, $event ) );
+		$this->assertFalse( law_booking_user_can_reject( $this->make_user( 'event_host' ), $event ), 'An unrelated host must not cancel bookings.' );
+		$this->assertFalse( law_booking_user_can_reject( $this->make_user( 'attendee' ), $event ) );
+		$this->assertTrue( law_booking_user_can_reject( $this->make_committee_user(), $event ), 'The committee must still cancel bookings.' );
+	}
+
+	public function test_reject_logs_the_reason(): void {
+		$event     = $this->make_bookable_event();
+		$booker    = $this->make_user( 'attendee' );
+		$committee = $this->make_committee_user();
+		$ids       = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
+
+		$this->assertTrue( law_booking_cancel( $ids[1], $committee, 'host_reject', array( 'reason' => 'Capacity reshuffle' ) ) );
 		$this->assertSame( 'law-cancelled', get_post_status( $ids[1] ) );
+		$this->assertStringContainsString( 'cancelled by the committee', $this->log_text( $event ) );
 		$this->assertStringContainsString( 'Capacity reshuffle', $this->log_text( $event ) );
 	}
 
@@ -597,6 +618,108 @@ class BookingsTest extends LAW_Test_Case {
 		$result        = law_booking_register_by_manager( $event, $this->row( 'Too Late', $refused_email ), $committee );
 		$this->assertWPError( $result, 'law_booking_full' );
 		$this->assertFalse( get_user_by( 'email', $refused_email ), 'No orphan account after a refusal.' );
+	}
+
+	/* Profile details given on somebody's behalf ____________________________ */
+
+	public function test_register_by_manager_writes_the_profile_of_a_new_account(): void {
+		$event     = $this->make_bookable_event();
+		$committee = $this->make_committee_user();
+		$email     = $this->unique_email( 'profile-new' );
+
+		$profile = law_registration_clean_attendee_profile(
+			array(
+				'country'       => 'Montenegro',
+				'accessibility' => array( 'Captions', 'Other' ),
+				'accessibility_other' => 'Front row seat',
+				'dietary'       => array( 'Coeliac' ),
+				'dietary_other' => 'ignored, Other was not ticked',
+			)
+		);
+		$this->assertSame( '', $profile['dietary_other'], 'Other text is dropped unless Other is ticked.' );
+
+		$booking = law_booking_register_by_manager( $event, $this->row( 'New Person', $email ), $committee, array( 'profile' => $profile ) );
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+
+		$created = get_user_by( 'email', $email );
+		$this->assertInstanceOf( WP_User::class, $created );
+		$this->users[] = (int) $created->ID;
+
+		$values = law_profile_values( (int) $created->ID );
+		$this->assertSame( 'Montenegro', $values['country'] );
+		if ( function_exists( 'get_field' ) ) {
+			$this->assertSame( array( 'Captions', 'Other' ), array_values( (array) $values['accessibility'] ) );
+			$this->assertSame( array( 'Coeliac' ), array_values( (array) $values['dietary'] ) );
+			$this->assertSame( 'Front row seat', $values['accessibility_other'] );
+			// And so the list column and the exports, which read the profile
+			// live, have something to show.
+			$this->assertSame( 'Captions, Other: Front row seat', law_booking_profile_requirements( $values, 'accessibility' ) );
+		}
+		$this->assertStringContainsString( 'Profile details recorded', $this->log_text( $event ) );
+	}
+
+	public function test_register_by_manager_never_overwrites_an_existing_profile(): void {
+		$event     = $this->make_bookable_event();
+		$committee = $this->make_committee_user();
+		$existing  = $this->make_user( 'attendee' );
+		$email     = get_userdata( $existing )->user_email;
+
+		update_user_meta( $existing, 'country', 'United Kingdom' );
+		if ( function_exists( 'update_field' ) ) {
+			update_field( 'dietary', array( 'Vegan' ), 'user_' . $existing );
+		}
+
+		$profile = law_registration_clean_attendee_profile(
+			array(
+				'country'       => 'Montenegro',
+				'dietary'       => array( 'Coeliac' ),
+				'accessibility' => array( 'Wheelchair' ),
+			)
+		);
+		$booking = law_booking_register_by_manager( $event, $this->row( 'Ex Isting', $email ), $committee, array( 'profile' => $profile ) );
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+
+		$values = law_profile_values( $existing );
+		$this->assertSame( 'United Kingdom', $values['country'], 'What they stated themselves stands.' );
+		if ( function_exists( 'get_field' ) ) {
+			$this->assertSame( array( 'Vegan' ), array_values( (array) $values['dietary'] ), 'Their own dietary list stands.' );
+			$this->assertSame( array( 'Wheelchair' ), array_values( (array) $values['accessibility'] ), 'A blank list is filled in.' );
+		}
+	}
+
+	public function test_register_by_manager_never_writes_a_privileged_profile(): void {
+		$event     = $this->make_bookable_event();
+		$committee = $this->make_committee_user();
+		// Anyone can type any email address into the form, so a committee or
+		// admin account found by that address must be left alone entirely.
+		$target = $this->make_committee_user();
+		$email  = get_userdata( $target )->user_email;
+
+		$profile = law_registration_clean_attendee_profile(
+			array( 'country' => 'Montenegro', 'dietary' => array( 'Coeliac' ) )
+		);
+		$booking = law_booking_register_by_manager( $event, $this->row( 'Committee Person', $email ), $committee, array( 'profile' => $profile ) );
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+
+		$values = law_profile_values( $target );
+		$this->assertSame( '', (string) $values['country'], 'A committee account keeps its own profile.' );
+		if ( function_exists( 'get_field' ) ) {
+			$this->assertSame( array(), array_values( array_filter( (array) $values['dietary'] ) ) );
+		}
+	}
+
+	public function test_attendee_profile_validation_mirrors_registration(): void {
+		$clean = law_registration_clean_attendee_profile( array( 'country' => '' ) );
+		$this->assertWPError( law_registration_validate_attendee_profile( $clean, true ), 'law_profile_country' );
+		$this->assertTrue( law_registration_validate_attendee_profile( $clean, false ), 'Country is optional where the surface says so.' );
+
+		$other = law_registration_clean_attendee_profile( array( 'dietary' => array( 'Other' ), 'dietary_other' => '' ) );
+		$error = law_registration_validate_attendee_profile( $other, false );
+		$this->assertWPError( $error, 'law_profile_dietary_other' );
+		$this->assertSame( 'dietary_other', $error->get_error_data()['field'], 'The refusal names the control to mark.' );
 	}
 
 	public function test_profile_requirements_join_and_other_text(): void {
