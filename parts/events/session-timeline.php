@@ -28,9 +28,18 @@
  *   been written yet reads as a coffee break) and nothing in the data says
  *   which is which.
  *
+ * - The flagship conference renders the whole section reversed inside a filled
+ *   navy panel ('panel' => true, from templates/flagship-event.php). Its agenda
+ *   is the substance of that page, and the panel is what marks it out as the
+ *   one paid, day-long event rather than a list of sessions like any other's
+ *   (Denis, 11 September 2026). The description stays ABOVE the panel, on the
+ *   white page, so the box contains the running order and nothing else. The
+ *   speaker cards inside it reverse with it (calendar.css).
+ *
  * get_template_part( 'parts/events/session-timeline', null, array(
  *   'sessions' => law_event_session_rows( $event_id ), // required
  *   'heading'  => 'Agenda',
+ *   'panel'    => true, // reversed onto navy; default is the plain white page
  * ) );
  */
 
@@ -42,12 +51,13 @@ $args = isset( $args ) && is_array( $args ) ? $args : array();
 
 $law_tl_sessions = isset( $args['sessions'] ) && is_array( $args['sessions'] ) ? $args['sessions'] : array();
 $law_tl_heading  = (string) ( $args['heading'] ?? __( 'Agenda', 'law' ) );
+$law_tl_panel    = ! empty( $args['panel'] );
 
 if ( ! $law_tl_sessions ) {
 	return;
 }
 ?>
-<section class="law-cal-sessions law-timeline-section" aria-labelledby="law-timeline-heading">
+<section class="law-cal-sessions law-timeline-section<?php echo $law_tl_panel ? ' law-timeline-section--panel' : ''; ?>" aria-labelledby="law-timeline-heading">
 	<h2 id="law-timeline-heading" class="law-cal-acc__heading"><?php echo esc_html( $law_tl_heading ); ?></h2>
 	<ol class="law-timeline">
 		<?php foreach ( $law_tl_sessions as $law_tl_session ) : ?>

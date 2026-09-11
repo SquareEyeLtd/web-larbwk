@@ -512,8 +512,14 @@ function law_booking_render_action( $event, $preview = false ) {
 	}
 
 	ob_start();
-	law_booking_render_action_body( $state, $event, $preview );
-	law_booking_panel( $state['tone'], trim( (string) ob_get_clean() ), law_booking_panel_status( $state ) );
+	$parts = law_booking_render_action_body( $state, $event, $preview );
+	law_booking_panel(
+		$state['tone'],
+		trim( (string) ob_get_clean() ),
+		$parts['action'],
+		$parts['form'],
+		law_booking_panel_status( $state )
+	);
 }
 
 /**
@@ -525,26 +531,59 @@ function law_booking_render_action( $event, $preview = false ) {
  * The tone therefore comes from law_booking_tone(), which only reaches 'low'
  * once the event is genuinely nearly full.
  *
- * Shared with the flagship's control (law_flagship_render_action()), so the
- * two pages cannot drift into two panel styles.
+ * It lays out in TWO SLOTS: every word the state has to say on the LEFT, the
+ * thing to press on the RIGHT, the two centred against each other (Denis, 11
+ * September 2026). Flat, as direct flex items, the words came apart -- a
+ * .law-booking-state heading is flex-basis: 100% and took a row of its own, so
+ * "You're booked on this event." floated above the row holding the line under
+ * it and the button, and a lone button under justify-content: space-between
+ * parked at the panel's LEFT edge rather than its right.
+ *
+ * Shared with the flagship's control (law_flagship_render_action()), so the two
+ * pages cannot drift into two panel styles OR two layouts: this is the one
+ * place the slots are built, and both controls hand it the same three parts.
  *
  * @param string $tone   open|low|full|mine|closed.
- * @param string $body   Already-escaped markup.
- * @param string $status Optional pill label above the body.
+ * @param string $text   The words, already escaped: the left-hand slot.
+ * @param string $action The button(s), already escaped: the right-hand slot.
+ *                       More than one is laid out as a row inside it, so the
+ *                       colleagues-only state's "Manage bookings" and
+ *                       "Register" stay together at the right rather than
+ *                       straddling the panel.
+ * @param string $form   The no-JS booking form, if this is that request. It
+ *                       goes in NEITHER slot: it is a whole form, not a button,
+ *                       so it takes its own full-width row below both.
+ * @param string $status Optional pill label. It goes INSIDE the left-hand slot,
+ *                       on its own line above the words (Denis, 11 September
+ *                       2026): "Almost full" and "Only 3 places left" are one
+ *                       statement about availability, and the pill spanning the
+ *                       whole panel above both slots read as a banner over the
+ *                       button as well.
  */
-function law_booking_panel( $tone, $body, $status = '' ) {
-	$body = trim( (string) $body );
-	if ( '' === $body ) {
+function law_booking_panel( $tone, $text, $action = '', $form = '', $status = '' ) {
+	$text   = trim( (string) $text );
+	$action = trim( (string) $action );
+	$form   = trim( (string) $form );
+	$status = trim( (string) $status );
+	if ( '' === $text && '' === $status && '' === $action && '' === $form ) {
 		return;
+	}
+	if ( '' !== $status ) {
+		$text = sprintf( '<span class="law-booking-panel__status">%s</span>', esc_html( $status ) ) . $text;
 	}
 	printf(
 		'<div class="law-booking-panel law-booking-panel--%s">',
 		esc_attr( $tone ? $tone : 'open' )
 	);
-	if ( '' !== (string) $status ) {
-		printf( '<span class="law-booking-panel__status">%s</span>', esc_html( $status ) );
+	if ( '' !== $text ) {
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the caller.
+		printf( '<div class="law-booking-panel__main">%s</div>', $text );
 	}
-	echo $body; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the caller.
+	if ( '' !== $action ) {
+		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the caller.
+		printf( '<div class="law-booking-panel__action">%s</div>', $action );
+	}
+	echo $form; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the caller.
 	echo '</div>';
 }
 
@@ -570,9 +609,17 @@ function law_booking_panel_status( array $state ) {
  * The panel's contents: the six states, in the order law_booking_state()
  * resolved them.
  *
+ * Each state PRINTS its words, which the caller buffers into the panel's
+ * left-hand slot, and HANDS BACK what there is to press, which the panel puts
+ * in its right-hand one. The split is what keeps a heading with the line under
+ * it (law_booking_panel()); the branches still return early as they always did.
+ *
  * @param array $state   law_booking_state().
  * @param array $event   The calendar-mapped event array.
  * @param bool  $preview Committee preview.
+ * @return array{action:string,form:string} The right-hand slot's markup, and
+ *                                          the no-JS form when this is that
+ *                                          request.
  */
 function law_booking_render_action_body( array $state, $event, $preview = false ) {
 	// A preview reports the event's availability, never the viewer's own place
@@ -600,25 +647,31 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 				);
 			}
 		}
-		printf(
-			'<a class="button orange" href="%s">%s</a>',
-			esc_url( $state['manage_url'] ),
-			esc_html( law_booking_manage_label( $state ) )
+		return law_booking_action_parts(
+			sprintf(
+				'<a class="button orange" href="%s">%s</a>',
+				esc_url( $state['manage_url'] ),
+				esc_html( law_booking_manage_label( $state ) )
+			)
 		);
-		return;
 	}
 
 	// State: no place of their own, but they booked colleagues here. They
 	// still need the route to manage those, and may still book themselves, so
-	// this prints and then falls through to the availability states.
+	// this prints and then falls through to the availability states, whose
+	// button joins this one in the same slot.
+	$law_bk_manage = '';
 	if ( $state['colleagues'] ) {
 		printf(
-			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p><a class="button second" href="%s">%s</a> ',
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
 			esc_html( sprintf(
 				_n( "You've booked a place for %s colleague.", "You've booked places for %s colleagues.", $state['colleagues'], 'law' ),
 				number_format_i18n( $state['colleagues'] )
 			) ),
-			esc_html__( "You don't have a place yourself.", 'law' ),
+			esc_html__( "You don't have a place yourself.", 'law' )
+		);
+		$law_bk_manage = sprintf(
+			'<a class="button second" href="%s">%s</a>',
 			esc_url( $state['manage_url'] ),
 			esc_html__( 'Manage bookings', 'law' )
 		);
@@ -630,13 +683,13 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 	if ( 'not-open' === $state['state'] ) {
 		echo '<p class="law-booking-state">' . esc_html__( 'Bookings open soon', 'law' ) . '</p>';
 		echo '<p class="law-booking-substate">' . esc_html__( 'Places for this event have not been released yet. Check back nearer the date.', 'law' ) . '</p>';
-		return;
+		return law_booking_action_parts( $law_bk_manage );
 	}
 
 	// State: the event has started or passed.
 	if ( 'closed' === $state['state'] ) {
 		echo '<p class="law-booking-state">' . esc_html__( 'Bookings for this event have closed.', 'law' ) . '</p>';
-		return;
+		return law_booking_action_parts( $law_bk_manage );
 	}
 
 	// State: sold out — the waitlist. Every entry is one place, promoted
@@ -644,8 +697,7 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 	if ( 'full' === $state['state'] ) {
 		echo '<p class="law-booking-state">' . esc_html__( 'This event is fully booked.', 'law' ) . '</p>';
 		echo '<p class="law-booking-substate">' . esc_html__( "Join the waitlist and we'll email you as soon as a place opens up.", 'law' ) . '</p>';
-		law_booking_render_opener( $event, 'waitlist', $preview );
-		return;
+		return law_booking_opener_parts( $event, 'waitlist', $preview, $law_bk_manage );
 	}
 
 	// State: bookable. The count carries its own class rather than
@@ -665,7 +717,53 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 				: sprintf( _n( '%s place left', '%s places left', $law_bk_left, 'law' ), number_format_i18n( $law_bk_left ) )
 		)
 	);
-	law_booking_render_opener( $event, 'book', $preview );
+
+	return law_booking_opener_parts( $event, 'book', $preview, $law_bk_manage );
+}
+
+/**
+ * The two parts every state hands back, so no branch has to remember the shape.
+ *
+ * @param string $action The right-hand slot's markup.
+ * @param string $form   The no-JS form, which goes in neither slot.
+ */
+function law_booking_action_parts( $action = '', $form = '' ) {
+	return array( 'action' => (string) $action, 'form' => (string) $form );
+}
+
+/**
+ * law_booking_render_opener()'s output, sorted into the slot it belongs in.
+ *
+ * The opener is a button on almost every request and the WHOLE no-JS booking
+ * form on one (?law_book=1 / ?law_waitlist=1). Those go in different places --
+ * the right-hand slot and a full-width row of its own -- so which one it turned
+ * out to be is decided by law_booking_opener_is_form(), the same test the
+ * opener itself branches on, rather than by inspecting the markup it produced.
+ *
+ * @param string $before A button to place ahead of the opener's own, for the
+ *                       colleagues-only state, which offers both.
+ */
+function law_booking_opener_parts( array $event, $mode, $preview, $before = '' ) {
+	ob_start();
+	law_booking_render_opener( $event, $mode, $preview );
+	$opener = trim( (string) ob_get_clean() );
+
+	if ( law_booking_opener_is_form( $mode, $preview ) ) {
+		return law_booking_action_parts( $before, $opener );
+	}
+	return law_booking_action_parts( trim( $before . $opener ) );
+}
+
+/**
+ * Whether law_booking_render_opener() will render the whole no-JS booking form
+ * rather than a button.
+ *
+ * One function, so the opener and the panel that places its output cannot come
+ * to different conclusions about which of the two it is.
+ */
+function law_booking_opener_is_form( $mode = 'book', $preview = false ) {
+	$param = 'waitlist' === $mode ? 'law_waitlist' : 'law_book';
+	return ! $preview && ! empty( $_GET[ $param ] );
 }
 
 /**
@@ -865,7 +963,7 @@ function law_booking_render_opener( array $event, $mode = 'book', $preview = fal
 	// stacking context (position:relative, z-index 4, app.css) that would clamp
 	// it to level 4 and paint it under the fixed header (.nav z-index 99,
 	// .affix z-index 9999). So it is deferred to wp_footer, at body level.
-	if ( ! empty( $_GET[ $param ] ) ) {
+	if ( law_booking_opener_is_form( $mode, $preview ) ) {
 		law_booking_footer_modal( $event, 'success', $mode );
 		get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'inline', 'mode' => $mode ) );
 		return;

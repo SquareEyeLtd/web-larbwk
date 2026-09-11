@@ -589,22 +589,25 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    the modal and the inline (?law_book=1) contexts. */
 .law-booking-summary { margin: 0 0 .5rem; }
 .law-booking-note { font-size: .875rem; margin: .75rem 0 1rem; }
-/* The flagship application's summary: what you are applying for and what it
-   costs, given weight so it reads as the subject of the dialog rather than as
-   two grey lines above a wall of prose (Denis, 10 September 2026). The tint
-   and the orange rule are the theme's own (#f4f2fa / #ef7d05); navy on that
-   tint is about 13:1, so the block carries its own contrast wherever the
-   dialog opens. */
-.law-flagship-summary {
+/* The subject line of a booking or application dialog: what you are booking,
+   when it is, and the one fact that governs the decision (the price for the
+   flagship, the places left and the colleague allowance for a hosted event),
+   given weight so it reads as the subject of the dialog rather than as grey
+   lines above a wall of prose (Denis, 10 and 11 September 2026). One block for
+   both dialogs, because they are the same thing with a different bottom row.
+   The tint and the orange rule are the theme's own (#f4f2fa / #ef7d05); navy
+   on that tint is about 13:1, so the block carries its own contrast wherever
+   the dialog opens. */
+.law-event-summary {
   margin: 0 0 1rem;
   padding: .85rem 1rem;
   background: #f4f2fa;
   border-left: 3px solid #ef7d05;
 }
-.law-flagship-summary p { margin: 0; color: #1a1a3d; }
-.law-flagship-summary__title { font-weight: 600; font-size: 1.05rem; }
-.law-flagship-summary__when { font-size: .9rem; opacity: .85; }
-.law-flagship-summary__price {
+.law-event-summary p { margin: 0; color: #1a1a3d; }
+.law-event-summary__title { font-weight: 600; font-size: 1.05rem; }
+.law-event-summary__when { font-size: .9rem; opacity: .85; }
+.law-event-summary__row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -613,7 +616,7 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
   padding-top: .6rem;
   border-top: 1px solid #e3e0ec;
 }
-.law-flagship-summary__label {
+.law-event-summary__label {
   font-size: .75rem;
   font-weight: 600;
   letter-spacing: .04em;

@@ -261,6 +261,16 @@ $law_venue_needed = in_array( 'venue_needed', $law_locked, true ) && $law_post
 // LAW places they are the ones who know. See
 // law_events_venue_details_visible().
 $law_show_venue = law_events_venue_details_visible( $law_venue_needed );
+// "No, we already have a venue planned" makes all three required (a host only
+// ever sees the block on that answer; the committee sees it either way, and on
+// "Yes" they are filling it in for a host who cannot). See
+// law_events_venue_details_required().
+// The host's block is on screen only on that answer, so its stars are
+// unconditional -- the answer is not settled yet on a blank new form, and a
+// star that appeared only after the radio was clicked would need scripting to
+// stay honest. The committee sees the block either way, so theirs follow the
+// answer, like the hint below.
+$law_venue_star = ( ! law_user_is_committee() || law_events_venue_details_required( $law_venue_needed ) ) ? ' *' : '';
 $law_venue_toggle = law_user_is_committee() ? '' : ' data-law-toggles="law-venue-details" data-law-toggles-keep="1"';
 ?>
 <fieldset id="law-section-venue">
@@ -278,18 +288,19 @@ $law_venue_toggle = law_user_is_committee() ? '' : ' data-law-toggles="law-venue
 		<p class="law-form-hint">The host asked LAW to find a venue, so these three are not on their form. Set them here once the event has been placed.</p>
 	<?php endif; ?>
 	<div class="law-row-grid law-row-grid--three">
-		<p class="law-form-field"><label for="law-venue">Venue (name and/or address) *</label>
+		<p class="law-form-field"><label for="law-venue">Venue (name and/or address)<?php echo esc_html( $law_venue_star ); ?></label>
 			<input type="text" id="law-venue" name="venue" value="<?php echo esc_attr( $law_value( 'venue' ) ); ?>">
 			<?php $law_error_message( 'venue' ); ?></p>
-		<p class="law-form-field <?php echo in_array( 'venue_capacity', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo in_array( 'venue_capacity', $law_locked, true ) ? ' (locked)' : ''; ?></label>
+		<p class="law-form-field <?php echo in_array( 'venue_capacity', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo in_array( 'venue_capacity', $law_locked, true ) ? ' (locked)' : esc_html( $law_venue_star ); ?></label>
 			<select id="law-capacity" name="venue_capacity" data-law-capacity <?php disabled( in_array( 'venue_capacity', $law_locked, true ) ); ?>>
 				<option value="">Choose…</option>
 				<?php foreach ( law_events_venue_capacity_bands() as $law_choice => $law_band_max ) : ?>
 					<option value="<?php echo esc_attr( $law_choice ); ?>" data-law-max="<?php echo esc_attr( null === $law_band_max ? '' : (string) $law_band_max ); ?>" <?php selected( $law_value( 'venue_capacity' ), $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
 				<?php endforeach; ?>
-			</select></p>
+			</select>
+			<?php $law_error_message( 'venue_capacity' ); ?></p>
 		<p class="law-form-field">
-			<label for="law-tickets">Places available</label>
+			<label for="law-tickets">Places available<?php echo esc_html( $law_venue_star ); ?></label>
 			<?php
 			// max comes from the chosen capacity band and is kept in step by
 			// event-form.js; min is 1, as on form 2 field 54 (Tickets available).

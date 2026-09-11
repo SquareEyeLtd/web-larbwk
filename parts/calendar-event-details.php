@@ -32,9 +32,6 @@
  *                       Sector uses it: a comma-joined run of seven terms wrapped
  *                       to four lines and stretched the whole grid row, leaving
  *                       the facts beside it floating in a void.
- *                     'tone' ('low'|'full') marks the value as scarce, for the
- *                       flagship's Places row, which states its count here
- *                       rather than in the panel below.
  *   places  (array) array( 'label' => …, 'value' => … ). Appended as a final
  *                   grid item only when the booking control renders nothing.
  *   event   (array) The calendar-mapped event, for the booking control.
@@ -60,6 +57,16 @@ $law_ed_places  = isset( $args['places'] ) && is_array( $args['places'] ) ? $arg
 $law_ed_event   = isset( $args['event'] ) && is_array( $args['event'] ) ? $args['event'] : array();
 $law_ed_preview = ! empty( $args['preview'] );
 $law_ed_booking = ! array_key_exists( 'booking', $args ) || ! empty( $args['booking'] );
+
+// The flagship's facts list is FOUR columns and every other event's is three
+// (Denis, 11 September 2026). It is a different list: the flagship states date,
+// time, location and price, which is one clean row of four, while a hosted
+// event states six facts, one of them (Sector) with no ceiling on its length.
+// Read from the event rather than passed in, so the two callers that render
+// this box cannot disagree about which kind they are showing.
+$law_ed_flagship = $law_ed_event
+	&& function_exists( 'law_flagship_is' )
+	&& law_flagship_is( (int) ( $law_ed_event['id'] ?? 0 ) );
 
 if ( ! $law_ed_rows ) {
 	return;
@@ -128,7 +135,7 @@ if ( $law_ed_booking && '' === $law_ed_cta && '' !== $law_ed_places_value ) {
 	);
 }
 ?>
-<section class="law-event-details law-cal" aria-labelledby="law-event-details-heading">
+<section class="law-event-details law-cal<?php echo $law_ed_flagship ? ' law-event-details--flagship' : ''; ?>" aria-labelledby="law-event-details-heading">
 	<h2 id="law-event-details-heading" class="screen-reader-text"><?php esc_html_e( 'Event details', 'law' ); ?></h2>
 	<dl class="law-event-details__grid">
 		<?php foreach ( $law_ed_rows as $law_ed_row ) : ?>
@@ -137,7 +144,6 @@ if ( $law_ed_booking && '' === $law_ed_cta && '' !== $law_ed_places_value ) {
 			$law_ed_label = trim( (string) ( $law_ed_row['label'] ?? '' ) );
 			$law_ed_value = trim( (string) ( $law_ed_row['value'] ?? '' ) );
 			$law_ed_items = isset( $law_ed_row['items'] ) && is_array( $law_ed_row['items'] ) ? $law_ed_row['items'] : array();
-			$law_ed_tone  = trim( (string) ( $law_ed_row['tone'] ?? '' ) );
 			// Keyed off the joined value, not the items, so a row is empty or not
 			// however it happens to render.
 			if ( '' === $law_ed_value ) {
@@ -146,9 +152,6 @@ if ( $law_ed_booking && '' === $law_ed_cta && '' !== $law_ed_places_value ) {
 			$law_ed_classes = 'law-event-details__item';
 			if ( $law_ed_key ) {
 				$law_ed_classes .= ' law-event-details__item--' . $law_ed_key;
-			}
-			if ( '' !== $law_ed_tone ) {
-				$law_ed_classes .= ' law-event-details__item--tone-' . $law_ed_tone;
 			}
 			?>
 			<div class="<?php echo esc_attr( $law_ed_classes ); ?>">

@@ -788,7 +788,11 @@ ONE booking carrying an attendee rows array; that model, its flat
   on the page in one pair of queries.
   `parts/events/booking-modal.php` /
   `attendee-repeater.php` (a `mode` arg switches the same form between booking
-  and joining the waitlist) / `booking-manage.php` (`?law_booking=` on
+  and joining the waitlist; the dialog opens on the shared `.law-event-summary`
+  block (the event's title and date/time, then the places-left and colleague
+  allowance sentence on a ruled row of its own), which the flagship application
+  dialog uses for its title, date/time and price, one block for both so they
+  cannot drift, Denis, 11 September 2026) / `booking-manage.php` (`?law_booking=` on
   **My bookings**; the addressed booking resolves the event, and the view then
   shows the viewer's whole party there, with per-row cancel, add-a-colleague and
   cancel-all behind confirm modals) / `booking-list.php` (`?law_event_bookings=`
@@ -837,13 +841,47 @@ ONE booking carrying an attendee rows array; that model, its flat
   with a `.law-booking-state` sentence saying the same thing, and bookable is
   the one state with no heading, which is why its count read as an afterthought
   before. In that state the count also gains the word "Only" on the `low` tone.
+  The pill goes **inside the left slot**, directly above the count (Denis, 11
+  September 2026) — `law_booking_panel()` prepends it to the text rather than
+  printing it as a child of the panel — because "Almost full" and "Only 3 places
+  left" are one statement about availability, and a pill spanning the whole
+  panel read as a banner over the button as well.
   The resolution itself moved to `law_booking_resolve_state()` and the panel
   body to `law_booking_render_action_body()`, so the wrapper can buffer the
   whole control while the branches still return early as they always did.
   The flagship takes the same panel through `law_flagship_render_action()`
-  (tone from `law_flagship_places_tone()`), and because the flagship states its
-  count as a **fact in the box** rather than in the panel,
-  `law_flagship_details_places_tone()` colours that Places row instead.
+  (tone from `law_flagship_places_tone()`) and states its count **in the panel**
+  too, as the same `.law-booking-panel__count`: it was a Places row up in the
+  facts box until 11 September 2026, which left the panel holding nothing but an
+  Apply button floating at its left edge (Denis).
+  **The panel is built in two slots** (Denis, 11 September 2026, for both
+  controls): `.law-booking-panel__main` holds every word, `.law-booking-panel__action`
+  holds the thing to press, and the panel's existing `align-items: center` lines
+  the one up against the other. Flat, as direct flex items, the words came
+  apart: a `.law-booking-state` heading is `flex-basis: 100%` and took a row of
+  its own, so "You're attending" and "You're booked on this event." floated above
+  the row holding their own explanatory line and the button, and on a full event
+  the heading and the line explaining it sat at opposite ends of one row.
+  `margin-left: auto` on the action slot pins the button right even in the state
+  with nothing beside it, which is the bug that started this: a lone flex item
+  under `justify-content: space-between` sits at the **start**.
+  `law_booking_panel( $tone, $text, $action, $form, $status )` is the one place
+  the slots are built, so the two controls cannot drift into two layouts either;
+  both `law_booking_render_action_body()` and `law_flagship_render_action_body()`
+  **print** their words and **return** `law_booking_action_parts()`, which is
+  what lets a state keep its heading with the line under it while the button
+  goes somewhere else in the markup. The action slot is itself a flex row,
+  because the colleagues-only state offers **two** buttons ("Manage bookings"
+  and "Register"), which now stay together at the right instead of straddling
+  the panel with the count between them. The paragraphs' `color: inherit` had to
+  stop being a direct-child selector when the wrapper arrived, or every heading
+  would go back to near-black on navy — worth knowing before wrapping anything
+  else in there. The no-JS form (`?law_book=1`, `?law_waitlist=1`,
+  `?law_flagship_apply=1`) goes in **neither** slot: it is a whole form, not a
+  button, so it takes its own full-width row below both, routed by
+  `law_booking_opener_is_form()` / `law_flagship_opener_is_form()` — the same
+  test the openers themselves branch on, so the opener and the panel that places
+  its output cannot disagree about which of the two it produced.
   Redirect notices are printed **outside** the panel, above it:
   `.law-form-notice` carries its own light-surface colours and would be
   unreadable on a filled one. `.button.second` (the colleagues-only "Manage
@@ -3016,7 +3054,9 @@ These predate the rebuild and now branch on `law_events_source()`.
   fallback) and `$law_cal_sessions_heading` (the heading over the session
   timeline, "Sessions" by default and "Agenda" on the flagship; it replaced
   `$law_cal_sessions_style` on 11 September 2026, when Denis had every event
-  move to the timeline and the accordion was deleted). The
+  move to the timeline and the accordion was deleted) and
+  `$law_cal_sessions_panel` (added 11 September 2026: renders that timeline
+  reversed inside a filled navy panel, which only the flagship page sets). The
   venue markup lives in its own part, `parts/events/event-venue.php`, from
   when the flagship briefly rendered it in a different position; the
   flagship's own hero image (`_law_hero_image_id`) is read here too, and an
@@ -3040,19 +3080,30 @@ These predate the rebuild and now branch on `law_events_source()`.
   the facts in the one case where no panel is printed at all, the legacy source
   (Denis, 11 September 2026).
   The row order is date, time, location, type, hosted by, sector (then the
-  flagship's price and places), so the first desktop row reads what / when /
-  where and the second who / which sectors, with **Sector spanning the three
-  remaining columns**. Sector is the one fact with no ceiling on its length: as
-  a comma-joined string in a third-width cell, a seven-term event wrapped to
-  four lines, stretched the whole grid row and left Hosted by and Type floating
-  in a void (the client raised it, 11 September 2026). It now renders as
+  flagship's price), so the first desktop row reads what / when / where and the
+  second who / which sectors. The desktop grid is **three columns for a hosted
+  event and four for the flagship** (Denis, 11 September 2026), switched by
+  `.law-event-details--flagship`, which `parts/calendar-event-details.php` adds
+  from `law_flagship_is()` rather than from a caller arg: the two lists are
+  different shapes, the flagship's four facts being one clean row of four that
+  three columns would break into 3 + 1. At three columns the six hosted facts
+  make two tidy rows, date / time / location then Type / Hosted by / **Sector**,
+  which is a cell like any other rather than a row-spanning one (Denis, 11
+  September 2026): giving it the whole row would leave a hole beside Hosted by.
+  Sector is still the one fact with no ceiling on its length — as a comma-joined
+  string in a part-width cell, a seven-term event wrapped to four lines,
+  stretched the whole grid row and left Hosted by and Type floating in a void
+  (the client raised it, 11 September 2026) — which is why it renders as
   **wrapping pills, each linking to the programme filtered by that sector**
   (`law_sector`, which the programme already filters on and whose dropdown is
   populated from the same term names, so a pill selects an option exactly). A
-  row may carry two optional keys for this: `items`
-  (`array( 'label', 'url' )`) renders pills instead of a string, and `tone`
-  (`low` / `full`) marks a value as scarce, which only the flagship's Places row
-  uses.
+  A row may carry one optional key for this: `items`
+  (`array( 'label', 'url' )`) renders pills instead of a string.
+  **Location reads at 1rem**, not the 1.1rem every other value takes (Denis, 11
+  September 2026): it is the one value with no practical ceiling on its length,
+  a full street address sometimes with a note from the host appended, and at the
+  larger size, underlined, it wrapped to three lines and shouted over every fact
+  beside it.
   **`law_calendar_url()` now encodes its query-arg values**
   (`law_calendar_url_args()`, `functions/calendar.php`). `add_query_arg()` does
   not encode, and `esc_url()` only turns an ampersand into the entity `&#038;`,
@@ -3090,7 +3141,9 @@ These predate the rebuild and now branch on `law_events_source()`.
   weight — the part used to infer a **break** from a session having neither a
   description nor a speaker and grey it out, which Denis had removed on 11
   September 2026 because a real session whose blurb was not written yet then
-  read as a coffee break) and
+  read as a coffee break; and a `panel` arg, added 11 September 2026, which
+  wraps the whole section in a filled brand-navy box and reverses everything
+  inside it) and
   `parts/events/event-venue.php` (the address and its keyless Google map,
   extracted from `parts/calendar-body.php` so it can render above or below the
   sessions) and `parts/events/flagship-manage.php` (the committee's editor: the
@@ -3103,7 +3156,21 @@ These predate the rebuild and now branch on `law_events_source()`.
   `.law-cal-session*` styles and the style switch that chose between the two are
   gone; only the heading differs between the two pages. Each item puts its
   description on the left and that session's speakers on the right from 64em
-  (`.law-timeline__content--split`, set only when the item has both).
+  (`.law-timeline__content--split`, set only when the item has both). The
+  **flagship alone** renders the timeline inside a filled navy panel
+  (`.law-timeline-section--panel`, set from `templates/flagship-event.php` via
+  `$law_cal_sessions_panel`, Denis 11 September 2026): its agenda is the
+  substance of that page, so it reads as a block of the page rather than a list
+  inside it. Only the timeline is in the box — the flagship's description still
+  sits **above** it on the white page and the venue below it — and everything
+  inside reverses, the heading, the times, the titles, the descriptions and the
+  session's speaker cards. The CSS is colour only (one block in `calendar.css`,
+  no geometry repeated, so the light and reversed layouts cannot drift): the
+  orange marker and the orange rule and name on each speaker card carry over
+  unchanged, the marker's white ring becomes navy because the ring is the
+  surface it sits on, the connector becomes `rgba(255,255,255,.3)`, secondary
+  text becomes translucent white, and every hover and focus state that resolved
+  to navy on the white page resolves to white here.
 - **Parts** (`parts/events/`): `speaker-card.php` (one speaker card on the
   single event view — photo or initials, the name with the role at this event
   in brackets after it (`.law-cal-speakers__tag`, outside the profile link so
@@ -3983,8 +4050,10 @@ consumers, no way for the page and the email to disagree.
 
 **Seven sectors broke the grid.** A comma-joined list in a third-width cell
 wrapped to four lines and dragged Hosted by and Type along with it. The grid is
-now four columns at desktop with Sector spanning the remaining three, and the
-sectors render as pills linking to the programme filtered by that term. That
+now three columns at desktop (four on the flagship, which has four facts and no
+sector), and the sectors render as pills linking to the programme filtered by
+that term, which is what lets Sector sit in a cell the same width as every
+other. That
 link exposed a latent bug worth knowing about: `law_calendar_url()` never
 encoded its values, and `esc_url()` only entity-escapes an ampersand, which a
 browser still sends as a separator. "Banking & Financial Services" therefore
@@ -3996,6 +4065,50 @@ Deliberately **not** done: a time-based countdown ("closes in 12 days"), which
 Denis ruled out; and an availability flag on the programme listing cards, which
 would probably do more for urgency than anything on the detail page but is a
 separate decision.
+
+**The panel's two slots, later the same day.** The flagship had been given the
+same panel but not the same contents: its count was a Places row up in the facts
+box, so the panel held nothing but an Apply button, which a lone flex item under
+`justify-content: space-between` parks at the panel's LEFT edge. Denis asked for
+the count on the left of the banner and the button always on the right. The
+count moved into the panel as the same `.law-booking-panel__count`, and the
+Places row (with `law_flagship_details_places_tone()`, the grid's scarcity
+colour, and the `tone` plumbing in `parts/calendar-event-details.php` that
+existed only for it) went, because the panel's own fill already escalates.
+
+Moving it exposed the same fault in the states that DID have words, on hosted
+events as much as on the flagship: the heading is `flex-basis: 100%`, so
+"You're attending" took a row of its own above the row holding "Your place is
+confirmed…" and the button, and on a full conference "Fully booked" and the line
+explaining it sat at opposite ends of one row. The
+panel is therefore built in two slots now, `.law-booking-panel__main` and
+`.law-booking-panel__action`, and Denis asked immediately afterwards that the
+hosted events follow the same logic, so `law_booking_panel()` builds them for
+**both** controls and the colleagues-only state's two buttons share the action
+slot; see the **availability panel** entry in §"Bookings" for how they are
+assembled.
+Worth knowing if you touch either: the paragraphs' `color: inherit` was a
+direct-child selector of the panel, which the wrapper silently broke — every
+heading went back to near-black on navy — so check the ink rules, not only the
+layout ones, before wrapping anything else inside that panel. The direct-child
+layout rules themselves went, since nothing is a direct child any more but the
+pill, the two slots and the no-JS form. The availability pill then moved INTO
+the left slot, above the count, for the same reason the words were gathered
+there: "Almost full" and "Only 3 places left" are one statement, and spanning the
+whole panel made it a banner over the button too.
+
+**Three columns, four on the flagship (same day).** The facts grid had gone to
+four columns for everyone when the sector pills landed. Denis asked for three on
+hosted events and four kept on the flagship, which is the right split: the
+flagship states four facts, one clean row of four that three columns would break
+into 3 + 1, while a hosted event states six. `.law-event-details--flagship` is
+added by `parts/calendar-event-details.php` from `law_flagship_is()`, not passed
+in by a caller, so the two surfaces that render the box cannot disagree about
+which kind they are showing. Sector's row span went entirely: at three columns the six
+facts make two tidy rows on their own, and a full-width Sector would leave a
+hole beside Hosted by. Location dropped to 1rem in the same round — a long
+street address at 1.1rem and underlined wrapped to three lines and shouted over
+the facts beside it.
 
 ### Upload guidelines under every photo control (11 September 2026)
 
@@ -4065,6 +4178,46 @@ placements differ; moving the server-side ones to match was left alone.
 hand-duplicated `law_field_relationship_photo()`'s markup for its "new
 speaker" rows. It now calls the helper, which takes an optional fourth
 argument for callers whose rows are not keyed `$name[$i]`.
+
+### All three venue details required of a host who has a venue (11 September 2026)
+
+On the Venue section, answering **"No, we already have a venue planned"** now
+makes **Venue (name and/or address)**, **Venue capacity** and **Places
+available** all required, on the host form (create and manage alike) and on the
+committee edit form (Denis). Only the venue name was required before; the band
+and the places were optional, which let a host who has their own room leave
+both blank, and a blank band removes the ticket ceiling
+(`law_events_venue_capacity_bands()` maps an unrecognised band to "no limit"
+everywhere it is checked) while blank places leave the booking capacity
+unlimited. "TBC" is one of the bands, so a submitter who does not know the
+numbers yet still has an answer to give.
+
+`law_events_venue_details_required()` (submission-form.php, beside
+`law_events_venue_details_visible()`) is the single predicate: the fields are on
+this submitter's form **and** the judged answer starts with "No,". Two
+deliberate exemptions inside it:
+
+- **The other answer requires nothing.** A host who asked LAW to find a venue
+  is not shown the three at all, and the committee, who always sees them, is
+  filling them in once the event is placed -- holding up their save of any
+  other field until they have would be wrong.
+- **A locked band is never re-validated.** `venue_capacity` is in the host lock
+  list and a disabled `<select>` posts nothing, so post-approval a host's
+  posted band is always empty; requiring it would make every post-approval host
+  edit impossible. The stored band stands, as it already did on save.
+
+The answer is judged with `law_events_venue_needed_value()`, the same helper the
+form part renders by, so the two cannot disagree about what was asked.
+
+Markup (`parts/events/event-form-fields.php`): the three labels carry the `*`,
+and the capacity select gained the `law_error_message( 'venue_capacity' )` call
+it never had. **No HTML `required` attributes**, matching the sector "please
+specify" inputs: a `hidden` field is still constraint-validated by the browser,
+which would block the form with an unfocusable control, and the draft save must
+stay possible. The host's stars are unconditional, because their block is on
+screen only on that answer; the committee's follow the stored answer, like the
+hint above them. `tests/VenueDetailsTest.php` covers the new rule and both
+exemptions.
 
 ---
 

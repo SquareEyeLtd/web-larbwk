@@ -43,11 +43,16 @@ function law_flagship_details_price( array $event ) {
 }
 
 /**
- * The Places row: how many are left, or that there are none.
+ * The places count: how many are left, or that there are none.
+ *
+ * It reads in the availability panel, at the left-hand end of it, exactly where
+ * a hosted event puts its own count (Denis, 11 September 2026). It used to be a
+ * Places row in the facts box above, which left the panel holding nothing but a
+ * button floating at its left edge.
  *
  * Empty when no number has been set, because "0 places left" and "nobody has
  * said how many there are" are different things and only one of them is worth
- * a line in the box.
+ * a line in the panel.
  */
 function law_flagship_details_places( array $event ) {
 	$event_id = (int) ( $event['id'] ?? 0 );
@@ -67,32 +72,6 @@ function law_flagship_details_places( array $event ) {
 		_n( '%s place left', '%s places left', $places['remaining'], 'law' ),
 		number_format_i18n( $places['remaining'] )
 	);
-}
-
-/**
- * The scarcity tone of the Places row, or '' when there is no row to colour.
- *
- * A sibling rather than a second return value from law_flagship_details_places(),
- * which every caller and a test read as a plain string.
- *
- * It exists so the flagship does not say "6 places left" in quiet navy on the
- * one page where the number matters most, while every hosted event shouts:
- * the flagship states its count as a FACT in the box, not in the panel below,
- * so the panel's wash alone would leave the number unmarked.
- *
- * @return string open|low|full, or '' for any event with no Places row.
- */
-function law_flagship_details_places_tone( array $event ) {
-	$event_id = (int) ( $event['id'] ?? 0 );
-	if ( ! $event_id || ! function_exists( 'law_flagship_is' ) || ! law_flagship_is( $event_id ) ) {
-		return '';
-	}
-	$places = law_flagship_places();
-	if ( $places['available'] < 1 ) {
-		return '';
-	}
-
-	return law_flagship_places_tone();
 }
 
 /**
@@ -146,10 +125,10 @@ function law_flagship_render_action( array $event, $preview = false ) {
 
 	// No status pill: every flagship state already opens with a
 	// .law-booking-state heading, and the one that does not (the plain Apply
-	// button) states its count in the Places row of the box above.
+	// button) now states its count at the left-hand end of the panel itself.
 	ob_start();
-	law_flagship_render_action_body( $event, $preview, $application, $price, $passed );
-	law_booking_panel( $tone, trim( (string) ob_get_clean() ) );
+	$parts = law_flagship_render_action_body( $event, $preview, $application, $price, $passed );
+	law_booking_panel( $tone, trim( (string) ob_get_clean() ), $parts['action'], $parts['form'] );
 }
 
 /**
@@ -384,17 +363,19 @@ function law_flagship_card_action( array $event ) {
 }
 
 /**
- * The panel's contents. Split out so law_flagship_render_action() can buffer
- * it whole; the branches below still return early as they always did.
+ * The panel's contents, the same way the hosted control supplies them
+ * (law_booking_render_action_body()): each state PRINTS its words, for the
+ * panel's left-hand slot, and HANDS BACK what there is to press, for its
+ * right-hand one. law_booking_panel() does the laying out for both.
  *
  * @param WP_Post|null $application The viewer's own application, if any.
  * @param int          $price       Net price in pence; under 1 means not on sale.
  * @param bool         $passed      The conference has started or finished.
+ * @return array{action:string,form:string}
  */
 function law_flagship_render_action_body( array $event, $preview, $application, $price, $passed ) {
 	if ( $application ) {
-		law_flagship_render_own_state( $application, $passed );
-		return;
+		return law_booking_action_parts( law_flagship_render_own_state( $application, $passed ) );
 	}
 
 	// State: nothing to apply for yet. A price of 0 is the committee's way of
@@ -402,19 +383,27 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 	// than offering a free place.
 	if ( $price < 1 ) {
 		law_flagship_state( __( 'Applications open soon', 'law' ), __( 'Applications for this conference have not opened yet. Please check back.', 'law' ) );
-		return;
+		return law_booking_action_parts();
 	}
 
 	// State: it has happened, and this viewer has no place on it.
 	if ( $passed ) {
 		law_flagship_state( __( 'This event has taken place', 'law' ) );
-		return;
+		return law_booking_action_parts();
 	}
 
-	// The price and the count are now facts in the box above (the Price and
-	// Places rows), so the control repeats neither: just the button, and one
-	// line in the single case that would otherwise surprise somebody — a
-	// conference that is full and still taking applications.
+	// The price stays a fact in the box above; the count belongs here, at the
+	// left-hand end of the panel, opposite the button (Denis, 11 September
+	// 2026). Same class and so the same 1.6rem step as a hosted event's count,
+	// because it is the same number doing the same job on the same component.
+	//
+	// Below it, one line in the single case that would otherwise surprise
+	// somebody — a conference that is full and still taking applications.
+	$count = law_flagship_details_places( $event );
+	if ( '' !== $count ) {
+		printf( '<p class="law-booking-panel__count">%s</p>', esc_html( $count ) );
+	}
+
 	$places = law_flagship_places();
 	if ( $places['full'] ) {
 		printf(
@@ -423,7 +412,27 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 		);
 	}
 
+	// The opener is buffered rather than printed, because where it belongs
+	// depends on what it turns out to be: a button goes in the right-hand slot,
+	// the no-JS form on a full-width row of its own below both.
+	ob_start();
 	law_flagship_render_opener( $event, $preview );
+	$opener = trim( (string) ob_get_clean() );
+
+	return law_flagship_opener_is_form( $preview )
+		? law_booking_action_parts( '', $opener )
+		: law_booking_action_parts( $opener );
+}
+
+/**
+ * Whether law_flagship_render_opener() will render the whole no-JS application
+ * form rather than a button.
+ *
+ * One function so the opener and the panel that places its output cannot come
+ * to different conclusions about which of the two it is.
+ */
+function law_flagship_opener_is_form( $preview = false ) {
+	return ! $preview && ! empty( $_GET['law_flagship_apply'] );
 }
 
 /**
@@ -457,7 +466,7 @@ function law_flagship_render_opener( array $event, $preview = false ) {
 	// position:fixed while this control renders inside the hero's event details
 	// box, whose .grid-container is a stacking context that would clamp it under
 	// the fixed header. So it goes to wp_footer, at body level.
-	if ( ! empty( $_GET['law_flagship_apply'] ) ) {
+	if ( law_flagship_opener_is_form( $preview ) ) {
 		law_flagship_footer_modal( $event, 'success' );
 		get_template_part( 'parts/events/flagship-apply-modal', null, array( 'event' => $event, 'context' => 'inline' ) );
 		return;
@@ -476,7 +485,17 @@ function law_flagship_render_opener( array $event, $preview = false ) {
 	);
 }
 
-/** What the delegate sees once they have an application of their own. */
+/**
+ * What the delegate sees once they have an application of their own: the
+ * heading and the line beneath it printed, the button handed back.
+ *
+ * The button is returned rather than printed because the panel puts it in its
+ * own right-hand slot, beside the words rather than after them
+ * (law_flagship_render_action_body()).
+ *
+ * @return string The right-hand slot's markup, or '' for a state with nothing
+ *                left to do.
+ */
 function law_flagship_render_own_state( WP_Post $application, $passed = false ) {
 	$booking_id = (int) $application->ID;
 	$price      = law_booking_price( $booking_id );
@@ -492,14 +511,12 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 		array( 'user_id' => (int) $application->post_author )
 	);
 	if ( ! $state ) {
-		return;
+		return '';
 	}
 	$link   = law_flagship_action_link( $state );
-	$button = function () use ( $link ) {
-		if ( $link ) {
-			printf( '<a class="button orange" href="%s">%s</a>', esc_url( $link['url'] ), esc_html( $link['label'] ) );
-		}
-	};
+	$button = $link
+		? sprintf( '<a class="button orange" href="%s">%s</a>', esc_url( $link['url'] ), esc_html( $link['label'] ) )
+		: '';
 
 	if ( 'attending' === $state['state'] || 'attended' === $state['state'] ) {
 		law_flagship_state(
@@ -512,8 +529,7 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 					law_events_format_pence( $price['gross'] )
 				)
 		);
-		$button();
-		return;
+		return $button;
 	}
 
 	// Past the event, an undecided or unpaid application is history: there is
@@ -521,7 +537,7 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 	// for a conference that has happened would be worse than saying nothing.
 	if ( 'past' === $state['state'] ) {
 		law_flagship_state( __( 'This event has taken place', 'law' ) );
-		return;
+		return '';
 	}
 
 	if ( 'payment-failed' === $state['state'] ) {
@@ -532,8 +548,7 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 				? __( 'Your application has been approved, but your bank needs you to confirm the payment.', 'law' )
 				: __( 'Your application has been approved, but we could not take the payment.', 'law' )
 		);
-		$button();
-		return;
+		return $button;
 	}
 
 	// law-applied.
@@ -544,7 +559,8 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 			? __( 'We cannot put your application to the committee until your payment details are saved. Nothing is charged unless you are approved.', 'law' )
 			: __( 'The committee will decide shortly, and we will email you either way. Nothing has been charged.', 'law' )
 	);
-	$button();
+
+	return $button;
 }
 
 /** The control's heading and supporting line, in the shared markup. */

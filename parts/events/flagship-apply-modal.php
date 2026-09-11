@@ -113,7 +113,9 @@ else :
 		// grey lines above a wall of prose (Denis, 10 September 2026). The
 		// price is one of those facts, so it sits here as a labelled row
 		// instead of in a paragraph of its own — which is the paragraph that
-		// went.
+		// went. The block is .law-event-summary, shared with the hosted-event
+		// booking dialog, which puts its places-left line in the same row
+		// (Denis, 11 September 2026).
 		//
 		// This is the one place the full arithmetic is spelled out. Nothing
 		// is said about the price rising later (the switch is silent), which
@@ -121,13 +123,13 @@ else :
 		// is snapshotted onto the application at this moment, and
 		// law_flagship_apply() refuses outright if it has moved since.
 		?>
-		<div class="law-booking-summary law-flagship-summary">
-			<p class="law-flagship-summary__title"><?php echo esc_html( (string) ( $law_fa_event['title'] ?? '' ) ); ?></p>
+		<div class="law-booking-summary law-event-summary">
+			<p class="law-event-summary__title"><?php echo esc_html( (string) ( $law_fa_event['title'] ?? '' ) ); ?></p>
 			<?php if ( '' !== $law_fa_when ) : ?>
-				<p class="law-flagship-summary__when"><?php echo esc_html( $law_fa_when ); ?></p>
+				<p class="law-event-summary__when"><?php echo esc_html( $law_fa_when ); ?></p>
 			<?php endif; ?>
-			<p class="law-flagship-summary__price">
-				<span class="law-flagship-summary__label"><?php esc_html_e( 'Price', 'law' ); ?></span>
+			<p class="law-event-summary__row">
+				<span class="law-event-summary__label"><?php esc_html_e( 'Price', 'law' ); ?></span>
 				<strong><?php echo esc_html( law_events_price_label( $law_fa_price ) ); ?></strong>
 			</p>
 		</div>

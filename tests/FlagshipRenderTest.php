@@ -386,13 +386,80 @@ class FlagshipRenderTest extends LAW_Test_Case {
 		);
 	}
 
+	/**
+	 * The flagship's agenda sits reversed inside a filled navy panel (Denis, 11
+	 * September 2026): it is the substance of that page, so it reads as a block
+	 * of the page rather than a list inside it. Only the timeline goes in the
+	 * box -- the description stays above it on the white page, which is why the
+	 * panel class is on the sessions section and not on the article.
+	 */
+	public function test_the_flagship_agenda_renders_in_a_reversed_panel(): void {
+		$sessions = array(
+			array( 'id' => 1, 'title' => 'Keynote', 'start' => '09:30', 'end' => '10:30', 'time_label' => '09:30–10:30', 'description' => '<p>Opening remarks.</p>', 'speakers' => array() ),
+		);
+
+		ob_start();
+		get_template_part( 'parts/events/session-timeline', null, array( 'sessions' => $sessions, 'panel' => true ) );
+		$panelled = (string) ob_get_clean();
+		$this->assertStringContainsString( 'law-timeline-section--panel', $panelled );
+
+		// An ordinary event's sessions stay on the white page.
+		ob_start();
+		get_template_part( 'parts/events/session-timeline', null, array( 'sessions' => $sessions ) );
+		$plain = (string) ob_get_clean();
+		$this->assertStringNotContainsString( 'law-timeline-section--panel', $plain );
+
+		// The flagship template is what asks for it, and the body passes it on.
+		$this->assertStringContainsString(
+			'$law_cal_sessions_panel = true;',
+			(string) file_get_contents( get_theme_file_path( 'templates/flagship-event.php' ) )
+		);
+		$this->assertStringContainsString(
+			"'panel'    => \$law_cal_sessions_panel,",
+			(string) file_get_contents( get_theme_file_path( 'parts/calendar-body.php' ) )
+		);
+
+		// And the panel actually reverses: the box is brand navy, and the ring
+		// around each marker follows it off white, or the markers would carry a
+		// white halo on a navy fill.
+		$css = (string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) );
+		$this->assertMatchesRegularExpression( '/\.law-timeline-section--panel\s*\{[^}]*background:\s*#292459/', $css );
+		$this->assertStringContainsString( 'box-shadow: 0 0 0 3px #292459;', $css );
+	}
+
+	/**
+	 * The facts list is FOUR columns on the flagship and three everywhere else
+	 * (Denis, 11 September 2026): the flagship's four facts are one clean row of
+	 * four, where three columns would strand a single cell on a second row.
+	 */
+	public function test_the_flagship_facts_list_takes_a_fourth_column(): void {
+		$part = (string) file_get_contents( get_theme_file_path( 'parts/calendar-event-details.php' ) );
+		$css  = (string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) );
+
+		// The modifier is read from the event, not passed in, so the two callers
+		// that render this box cannot disagree about which kind it is.
+		$this->assertStringContainsString( 'law_flagship_is(', $part );
+		$this->assertStringContainsString( 'law-event-details--flagship', $part );
+
+		$this->assertStringContainsString(
+			".law-event-details__grid {\n    grid-template-columns: repeat(3, minmax(0, 1fr));",
+			$css
+		);
+		$this->assertStringContainsString(
+			".law-event-details--flagship .law-event-details__grid {\n    grid-template-columns: repeat(4, minmax(0, 1fr));",
+			$css
+		);
+	}
+
 	public function test_the_flagship_template_trims_the_details_rows(): void {
 		// The template's contract, asserted without rendering the whole page
 		// (parts/calendar-body.php calls get_header()).
 		$template = file_get_contents( get_theme_file_path( 'templates/flagship-event.php' ) );
-		// Price and Places joined the box on 10 September 2026 (Denis): the
-		// price belongs with the facts, not in a paragraph under them.
-		$this->assertStringContainsString( "\$law_cal_details_rows = array( 'date', 'time', 'venue', 'price', 'places' );", $template );
+		// Price joined the box on 10 September 2026 (Denis): the price belongs
+		// with the facts, not in a paragraph under them. Places was there too
+		// until 11 September 2026, when it moved into the availability panel
+		// below, opposite the Apply button.
+		$this->assertStringContainsString( "\$law_cal_details_rows = array( 'date', 'time', 'venue', 'price' );", $template );
 		// The control is no longer suppressed: since FLAGSHIP_PAYMENTS.md the
 		// details box carries the APPLICATION control, swapped in by
 		// law_booking_render_action() rather than by anything in the template,
