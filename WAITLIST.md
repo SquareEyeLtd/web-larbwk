@@ -147,7 +147,9 @@ every Stripe, saved-card and charge-on-promotion passage: bookings are free.
 5. **No queue position is shown to attendees**; hosts see positions.
 6. Standing rules kept: one active-or-waitlisted booking per person per event; booking and
    waitlist close at event start; no ticket number means "Bookings open soon" (no waitlist
-   either); hosts may reject (a settled divergence from spec §4.3).
+   either). Reject is committee only (Denis, 11 September 2026): the earlier divergence
+   from spec §4.3, which let hosts reject, has been closed, so a host manages the queue
+   order, promotes and registers, but cannot cancel a booking or remove a waitlist entry.
 
 ---
 
@@ -308,7 +310,7 @@ already exist).
 | `law_booking_add_attendee` | **event_id**, one row | current user has an active party on the event (engine re-checks) | was booking_id; redirect to the manage view (booker's own booking ID, else first colleague) with `attendee-added` |
 | `law_booking_cancel` | booking_id | author = me (context `self`) or booked_by = me (context `booker`) | redirect to the manage view while the party still has active bookings, else My bookings; notice `booking-cancelled` |
 | `law_booking_cancel_party` (new) | event_id | party non-empty | notice `party-cancelled` → My bookings |
-| `law_booking_reject_attendee` | booking_id (drop `attendee_email`) | `law_user_can_manage_event( post_parent )` | calls cancel with `host_reject`; action name kept so the list's nonce string is unchanged; title "Attendee rejected", message "Their booking has been cancelled and they have been emailed."; notice `booking-rejected` |
+| `law_booking_reject_attendee` | booking_id (drop `attendee_email`) | `law_user_can_manage_event( post_parent )` then `law_booking_user_can_reject()`, committee only since 11 September 2026 | calls cancel with `host_reject`; action name kept so the list's nonce string is unchanged; title "Attendee rejected", message "Their booking has been cancelled and they have been emailed."; notice `booking-rejected` |
 | `law_booking_remove_attendee` | | | **removed** (handler, both `add_action` lines, the manage view's forms) |
 | `law_booking_register_attendee`, `law_booking_export` | | | unchanged |
 
@@ -329,7 +331,7 @@ $party_ids = array() )`: per-booking `booking_number`, `attendee_name` (snapshot
 | `host_booking_received`, `committee_booking_received` | once per submission | "New booking(s) ({booking_numbers}) … Attendees: {attendee_list}" |
 | `user_attendee_invited`, `user_attendee_added` | colleague (new / existing account) | "{invited_by} has booked a place for you at {event_title} (Booking #{booking_number})."; .ics kept |
 | `user_booking_registered`, `_invited` | registered person | unchanged |
-| `user_attendee_rejected` → **`user_booking_rejected`** | attendee | "The event host has cancelled your booking (Booking #{booking_number}) …" + `{removal_reason}` + host contact line |
+| `user_attendee_rejected` → **`user_booking_rejected`** | attendee | "The events committee has cancelled your booking (Booking #{booking_number}) …" + `{removal_reason}` + host contact line (the actor became committee-only on 11 September 2026, so the copy names them) |
 | `user_attendee_removed` → **`user_booking_cancelled_by_booker`** | attendee | "{invited_by}, who booked your place, has cancelled your booking (Booking #{booking_number}) …" |
 | `user_attendee_removed_self` → **`user_booking_cancelled_self`** | attendee | "This confirms you have cancelled your booking (Booking #{booking_number}) …" |
 | `user_booking_cancelled_attendee` | | **dropped** (merged into by-booker) |
@@ -456,7 +458,7 @@ column). Events "Booked" column unchanged.
 | 6, 7 | Colleague booked by two bookers; colleague books themselves later | Duplicate guard refuses the second by user ID and email | No |
 | 8 | Booker cancels own booking but keeps management, and may re-book themselves | Rights ride `_law_booked_by`; third control sub-state | **Yes** (confirm re-booking is wanted) |
 | 9 | Booker's account deleted | Tag reads "a deleted account"; colleagues untouched; add a `deleted_user` hook cancelling that user's own active bookings with a no-email context so places free | **Yes** (extends the "WordPress default" decision) |
-| 10 | Host rejects the booker's vs a colleague's booking | Identical: cancel that one booking, email that person | No |
+| 10 | Committee rejects the booker's vs a colleague's booking | Identical: cancel that one booking, email that person | No |
 | 11 | "Cancel all" fan-out | One email per attendee (≤ 4 synchronous sends) | No |
 | 12 | Add-a-colleague does not email host/committee today | Send them (every new booking is a booking) | **Yes** (default yes) |
 | 13 | Committee lowers places below sold | Unchanged: clamp at 0, red admin cell | No |
@@ -577,7 +579,8 @@ column). Events "Booked" column unchanged.
 | `law_waitlist_promote` | same | `waitlist_manage` | `waitlist-promoted` (message adds "The event is now over-booked by N place(s)." when applicable) → list `#law-waitlist` |
 
 Reject of a waitlisted entry reuses `law_booking_reject_attendee` (`host_reject` on a
-waitlisted booking). Because booking-form.js posts `new FormData(form)` without the
+waitlisted booking), and is therefore committee only too: a host sees the arrows and
+Promote now, and no Remove. Because booking-form.js posts `new FormData(form)` without the
 submitter, reorder is one form per direction with hidden inputs.
 
 ## B4. Emails (registry after `host_capacity_warning`; pre-declare `{party_list}`, `{promoted_list}`, `{blocked_reason}`, `{waitlist_count}`)
@@ -591,7 +594,7 @@ submitter, reorder is one form per direction with hidden inputs.
 | `host_waitlist_promoted` | host | one summary per pass | no |
 | `user_waitlist_left` | attendee | self leave | no |
 | `user_waitlist_removed_by_booker` | attendee | booker removed their entry | no |
-| `user_waitlist_rejected` | attendee | host/committee reject (`{removal_reason}`) | no |
+| `user_waitlist_rejected` | attendee | committee reject (`{removal_reason}`) | no |
 | `user_waitlist_event_cancelled` | attendee | sweep | no |
 | `user_waitlist_blocked` | attendee | first skip in place | no |
 
@@ -647,7 +650,9 @@ id`): `waitlist_joined`, `waitlist_skipped`, `waitlist_promoted`, `waitlist_over
   waitlist order, and emails them their confirmation." plus, when the event is full, "This
   event is full. Promoting this entry registers one more place than the event has, so it
   will be over-booked by N." (confirm "Promote now", close "Keep on the waitlist"), and
-  Reject. The header shows sold / available in red when over-booked. The "Invited by" tag
+  Reject (committee only; a host's waitlist row shows the arrows and Promote now, and the
+  actions cell disappears entirely on the active table). The header shows sold / available
+  in red when over-booked. The "Invited by" tag
   applies here too. `law_booking_counts_label( $event_id )` → "Bookings (n) · Waitlist (m)"
   replaces the label at functions/account-events.php:242 and
   parts/events/dashboard-list.php:37. Exports stay publish-only; the Bookings dashboard's
@@ -702,7 +707,7 @@ id`): `waitlist_joined`, `waitlist_skipped`, `waitlist_promoted`, `waitlist_over
 | 5 | Waitlist entries never cleaned up after the event starts | Hide on the account page; no cron in v1 |
 | 6 | The resume relies on pseudo-cron | System cron hitting wp-cron.php before launch (ops note) |
 | 7 | Full-page caching can show a stale control to logged-out visitors | Ops note; server guards hold |
-| 8 | Spec §4.3 reserves reject to LAW admin; the code lets hosts reject | Hosts may reject waitlist entries too |
+| 8 | Spec §4.3 reserves reject to LAW admin; the code let hosts reject | **Closed 11 September 2026**: reject and waitlist removal are committee only (`law_booking_user_can_reject()`); hosts keep reorder, Promote now and Register |
 | 9 | A blocked waitlisted user who sees a free place cannot Register (their entry is the duplicate) | They leave the waitlist and register |
 
 ---

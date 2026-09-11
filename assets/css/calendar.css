@@ -339,6 +339,7 @@
 
   .law-cal-filter-form {
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
   }
 
@@ -348,6 +349,14 @@
 
   .law-cal-filter-form__field--keyword {
     flex: 1.6 1 0;
+  }
+
+  /* The event filter carries long event titles, so it gets a floor. It has to
+     sit on the field, not on the select, or flex sizing ignores it and the
+     select overflows its column and lands on top of the next filter. */
+  .law-cal-filter-form__field--event {
+    flex: 1.4 1 0;
+    min-width: 14rem;
   }
 
   .law-cal-filter-form__actions {
@@ -1407,6 +1416,16 @@
   text-transform: none;
 }
 
+/* Flush with the attendee's name: no box of its own. This needs the extra
+   selectors because it has two rules to beat, and a bare .law-booking-table__invited
+   outranks neither reliably: padding comes from .law-cal-card__badge above, and
+   margin-left: .35rem from .law-booking-table .law-cal-card__badge in
+   event-form.css, which is the more specific of the two. */
+.law-booking-table .law-cal-card__badge.law-booking-table__invited {
+  padding: 0;
+  margin: 0;
+}
+
 /* Sold beyond capacity, after a host promoted someone off the waitlist onto a
    full event. Deliberate, but it must never read as a normal count. */
 .law-booking-table__over {
@@ -1692,15 +1711,20 @@
   line-height: 1.3;
 }
 
-/* The role at this event (Speaker / Host / Moderator), on its own line
-   directly under the name so a long name and a long job title never push it
-   out of sight in a narrow column. */
+/* The role at this event (Speaker / Host / Moderator) leads the card, on its
+   own line above the name, so the eye meets what the person is doing here
+   before who they are, and a long name or job title can never push it out of
+   sight in a narrow column. It sits first in the source too, so it is also
+   what a screen reader reaches first. Uppercase at this size reads as the
+   label it is rather than as a second name. */
 .law-cal-speakers__tag {
   display: block;
-  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
   color: #292459;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .law-cal-speakers a {
@@ -2070,7 +2094,7 @@
   border-radius: 10px;
   background: #fff;
   color: #292459;
-  font-size: 0.9rem;
+  font-size: 0.74rem;
   line-height: 1.35;
   /* Long single terms ("International Arbitration") must break inside a narrow
 	   mobile column rather than push the box sideways. */

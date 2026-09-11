@@ -287,12 +287,12 @@ function law_events_email_registry() {
 			'body'    => "Dear {attendee_name},\n\n{invited_by} has booked a place for you at {event_title}, part of London Arbitration Week. Your booking number is #{booking_number}.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the booking will be listed under My bookings, where you can cancel it if you cannot attend: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
 		),
 		'user_booking_rejected' => array(
-			'name'    => 'Email to attendee > booking cancelled by the host',
-			'trigger' => 'host or committee rejects an attendee',
+			'name'    => 'Email to attendee > booking cancelled by the committee',
+			'trigger' => 'the committee cancels an attendee\'s booking',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your place at {event_title} has been cancelled',
-			'body'    => "Dear {attendee_name},\n\nThe event host has cancelled your booking (Booking #{booking_number}) for {event_title} {event_when}.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
+			'body'    => "Dear {attendee_name},\n\nThe events committee has cancelled your booking (Booking #{booking_number}) for {event_title} {event_when}.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
 		),
 		'user_booking_cancelled_by_booker' => array(
 			'name'    => 'Email to attendee > booking cancelled by whoever booked it',
@@ -385,12 +385,12 @@ function law_events_email_registry() {
 			'body'    => "Dear {attendee_name},\n\n{invited_by}, who put you on the waitlist for {event_title} {event_when}, has taken you off it, so you will not be offered a place.\n\nIf you think this is a mistake, please speak to the colleague who added you, or contact the host at {host_email}.",
 		),
 		'user_waitlist_rejected' => array(
-			'name'    => 'Email to attendee > taken off the waitlist by the host',
-			'trigger' => 'host or committee rejects a waitlist entry',
+			'name'    => 'Email to attendee > taken off the waitlist by the committee',
+			'trigger' => 'the committee removes a waitlist entry',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have been taken off the waitlist for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThe event host has taken you off the waitlist for {event_title} {event_when}, so you will not be offered a place.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
+			'body'    => "Dear {attendee_name},\n\nThe events committee has taken you off the waitlist for {event_title} {event_when}, so you will not be offered a place.\n\n{removal_reason}\n\nIf you think this is a mistake, please contact the host at {host_email}.",
 		),
 		'user_waitlist_event_cancelled' => array(
 			'name'    => 'Email to attendee > event cancelled while you were waiting',

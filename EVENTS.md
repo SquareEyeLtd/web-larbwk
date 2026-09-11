@@ -523,10 +523,10 @@ omitted when any sessions exist; it still appears for events with no sessions.
 
 Both lists render the same **speaker cards** (`parts/events/speaker-card.php`,
 two per row from 48em, each with an orange rule down its left edge): a 5.5rem
-photo or initials placeholder, the name linking to the profile with the role
-at this event in brackets after it ("Jane Doe (Moderator)" — Speaker, Host or
-Moderator, from form 8 field 9 (Role), the drop down added on 3 September
-2026; an unset role reads as Speaker), "job title, organisation", and a
+photo or initials placeholder, the role at this event as a small uppercase
+label above the name (Speaker, Host or Moderator, from form 8 (Speaker profile)
+field 9 (Role), the drop down added on 3 September 2026; an unset role reads as
+Speaker), the name linking to the profile, "job title, organisation", and a
 24-word biography excerpt with a "Read full bio" control that opens the full
 text in a dialog. Role, organisation, job title, photo and biography are all
 the speaker's values *for that event* (the appearance row), so the same person

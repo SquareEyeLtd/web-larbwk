@@ -8,8 +8,9 @@
  * session row, falling back to the parent event's row and then to the speaker
  * post's editor content), shown as a short excerpt with a "Read full bio"
  * control when there is more to read. The role at this event (Speaker / Host /
- * Moderator, per appearance too) prints on its own line under the name, outside
- * the profile link so the link text stays the name alone.
+ * Moderator, per appearance too) prints on its own line ABOVE the name, as a
+ * label for what follows, and outside the profile link so the link text stays
+ * the name alone.
  *
  * That control is progressive enhancement, on the modal component's own terms
  * (assets/js/law-modal.js): the button ships hidden and is revealed only when
@@ -51,6 +52,9 @@ $law_sc_dialog = $law_sc_bio['trimmed'] ? law_speaker_dialog_register( $law_sc )
 			<?php endif; ?>
 		</span>
 		<span class="law-cal-speakers__body">
+			<?php if ( '' !== $law_sc_tag ) : ?>
+				<span class="law-cal-speakers__tag"><?php echo esc_html( $law_sc_tag ); ?></span>
+			<?php endif; ?>
 			<span class="law-cal-speakers__name">
 				<?php if ( ! empty( $law_sc['url'] ) ) : ?>
 					<a href="<?php echo esc_url( (string) $law_sc['url'] ); ?>"><?php echo esc_html( $law_sc_name ); ?></a>
@@ -58,9 +62,6 @@ $law_sc_dialog = $law_sc_bio['trimmed'] ? law_speaker_dialog_register( $law_sc )
 					<?php echo esc_html( $law_sc_name ); ?>
 				<?php endif; ?>
 			</span>
-			<?php if ( '' !== $law_sc_tag ) : ?>
-				<span class="law-cal-speakers__tag"><?php echo esc_html( $law_sc_tag ); ?></span>
-			<?php endif; ?>
 			<?php if ( '' !== $law_sc_title ) : ?>
 				<span class="law-cal-speakers__role"><?php echo esc_html( $law_sc_title ); ?></span>
 			<?php endif; ?>

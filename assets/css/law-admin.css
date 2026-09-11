@@ -5,6 +5,10 @@
 .law-rel-results li { margin: 0; }
 .law-rel-results .button-link { display: block; width: 100%; text-align: left; padding: 6px 10px; }
 .law-rel-results .button-link:hover { background: #f0f0f1; }
+/* A result is the speaker's name, with their job title and organisation under
+   it in small type, so two similar names can be told apart. */
+.law-rel-results .law-rel-result-name { display: block; }
+.law-rel-results .law-rel-result-meta { display: block; font-size: 11px; line-height: 1.4; color: #646970; }
 .law-rel-chosen { margin: 8px 0 0; max-width: 640px; }
 .law-rel-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; background: #f6f7f7; border: 1px solid #dcdcde; margin-bottom: 4px; }
 .law-rel-item .law-rel-title { min-width: 160px; font-weight: 600; }
