@@ -484,6 +484,12 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    waitlist position) opt out individually below with `white-space: nowrap` and
    `max-width: none`, and have to out-specify this rule to do it. */
 .law-dashboard__table th, .law-dashboard__table td { text-align: left; padding: .6rem .5rem; border-bottom: 1px solid #e3e3ec; vertical-align: top; max-width: 12rem; white-space: normal; overflow-wrap: break-word; }
+/* Column headings never wrap (Denis, 11 September 2026). They are one or two
+   short words, and letting one of them wrap ("Places left") makes the whole
+   header row two lines tall for the sake of a single column. Cells still wrap
+   under the cap above; only the headings opt out, and they have to lift the
+   cap as well or the max-width would force the break anyway. */
+.law-dashboard__table th { white-space: nowrap; max-width: none; }
 /* In most of these tables the first cell holds a title, which needs room. The
    floor beats the cap above, so that column settles at a steady 220px. */
 .law-dashboard__table td:first-child { min-width: 220px; }

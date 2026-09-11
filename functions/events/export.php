@@ -34,6 +34,8 @@ function law_committee_export_columns() {
 		'Discounted fee',
 		'Venue capacity',
 		'Tickets available',
+		'Bookings',
+		'Places left',
 		'Venue',
 	);
 }
@@ -73,6 +75,10 @@ function law_committee_export_row( WP_Post $post ) {
 		law_event_meta( $id, '_law_fee_override' ) ? '£' . number_format( (float) law_event_meta( $id, '_law_fee_override_amount' ), 2 ) : '',
 		(string) law_event_meta( $id, '_law_venue_capacity' ),
 		'' === (string) $tickets ? '' : (int) $tickets,
+		// The same two figures the dashboard table shows: places taken, and
+		// places left (blank until capacity is set, i.e. not open for booking).
+		law_event_attendee_total( $id ),
+		null === law_event_tickets_remaining( $id ) ? '' : law_event_tickets_remaining( $id ),
 		(string) law_event_meta( $id, '_law_venue' ),
 	);
 }

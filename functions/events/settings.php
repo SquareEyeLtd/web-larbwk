@@ -189,6 +189,32 @@ function law_events_normalise_slot_label( $label ) {
 }
 
 /**
+ * Split a slot label into its date and its time, for surfaces that want the
+ * two on separate lines rather than one long "Tue 1st Dec: 08:30-10:00" string
+ * that decides how wide a table column has to be.
+ *
+ * The split is on the first colon FOLLOWED BY WHITESPACE, which is the one
+ * separating the two halves; the colon inside "08:30" has none, so it is left
+ * alone. A label in any other shape (a hand-typed one, a legacy import) comes
+ * back whole as the date with an empty time, so nothing is ever lost.
+ *
+ * @param string $label Stored slot label.
+ * @return array{date: string, time: string} Both '' for an empty label.
+ */
+function law_events_split_slot_label( $label ) {
+	$label = trim( (string) $label );
+	if ( '' === $label ) {
+		return array( 'date' => '', 'time' => '' );
+	}
+	$parts = preg_split( '/:\s+/', $label, 2 );
+
+	return array(
+		'date' => trim( (string) $parts[0] ),
+		'time' => isset( $parts[1] ) ? trim( (string) $parts[1] ) : '',
+	);
+}
+
+/**
  * Slot choices to offer on the submission/edit form: every active slot, plus
  * any retired slot the event already holds.
  *
