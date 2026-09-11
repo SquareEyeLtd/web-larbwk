@@ -81,6 +81,32 @@ function law_events_venue_details_visible( $venue_needed, $user_id = 0 ) {
 
 
 /**
+ * Whether the three Venue detail fields must be filled in on this save.
+ *
+ * A submitter who says they already have a venue is asked for all three --
+ * the venue itself, its capacity band and the places available (Denis,
+ * 11 September 2026). The venue name was already required on that answer; the
+ * band and the places joined it because a host with their own room knows both,
+ * and a blank band silently removes the ticket ceiling while blank places
+ * leave the booking capacity unlimited. On the other answer nothing is
+ * required: the fields are off a host's form entirely, and the committee sees
+ * them so they can fill them in once the event is placed, which is not
+ * something a save of any other field should be blocked on.
+ *
+ * "TBC" is a capacity band, so a submitter who genuinely does not know the
+ * numbers yet still has an answer to give.
+ *
+ * @param string $venue_needed The Venue needed answer to judge (stored value
+ *                             when the field is locked, else the posted one).
+ * @param int    $user_id      Defaults to the current user.
+ */
+function law_events_venue_details_required( $venue_needed, $user_id = 0 ) {
+	return law_events_venue_details_visible( $venue_needed, $user_id )
+		&& 0 === strpos( (string) $venue_needed, 'No,' );
+}
+
+
+/**
  * The Venue needed answer to judge visibility by.
  *
  * The field is in the host lock list, and a disabled radio posts nothing, so
@@ -244,12 +270,24 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 				$errors->add( 'sector_other', 'Please specify the other sector.' );
 			}
 		}
-		if ( ! in_array( 'venue_needed', $locked, true ) ) {
-			$venue_needed = (string) ( $input['venue_needed'] ?? '' );
-			if ( '' === $venue_needed ) {
-				$errors->add( 'venue_needed', 'Please tell us whether you need a venue.' );
-			} elseif ( 0 === strpos( $venue_needed, 'No,' ) && '' === trim( (string) ( $input['venue'] ?? '' ) ) ) {
+		if ( ! in_array( 'venue_needed', $locked, true ) && '' === (string) ( $input['venue_needed'] ?? '' ) ) {
+			$errors->add( 'venue_needed', 'Please tell us whether you need a venue.' );
+		}
+		// "No, we already have a venue planned" makes all three venue details
+		// required, judged on the same answer the form rendered by so the two
+		// cannot disagree about what was asked. A locked band is never
+		// re-validated: a disabled <select> posts nothing, and the stored value
+		// is the committee's to fix, not the host's.
+		$venue_answer = law_events_venue_needed_value( $post, $locked, $input );
+		if ( law_events_venue_details_required( $venue_answer, $user_id ) ) {
+			if ( '' === trim( (string) ( $input['venue'] ?? '' ) ) ) {
 				$errors->add( 'venue', 'Please give the venue name and/or address.' );
+			}
+			if ( ! in_array( 'venue_capacity', $locked, true ) && '' === trim( (string) ( $input['venue_capacity'] ?? '' ) ) ) {
+				$errors->add( 'venue_capacity', 'Please choose the venue capacity.' );
+			}
+			if ( '' === trim( (string) ( $input['tickets_available'] ?? '' ) ) ) {
+				$errors->add( 'tickets_available', 'Please give the number of places available.' );
 			}
 		}
 		// Tickets can never exceed the approved venue capacity band. The band
@@ -259,7 +297,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		// was never asked for places is not judged on them either: their posted
 		// value is ignored on save, so refusing it here would block the rest of
 		// their form over a field they cannot see.
-		$tickets = law_events_venue_details_visible( law_events_venue_needed_value( $post, $locked, $input ), $user_id )
+		$tickets = law_events_venue_details_visible( $venue_answer, $user_id )
 			? trim( (string) ( $input['tickets_available'] ?? '' ) )
 			: '';
 		if ( '' !== $tickets ) {

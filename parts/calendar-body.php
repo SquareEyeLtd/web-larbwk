@@ -44,6 +44,12 @@
  *                                 event renders its sessions open on the same
  *                                 vertical timeline
  *                                 (parts/events/session-timeline.php).
+ *   $law_cal_sessions_panel (bool) Render that timeline reversed inside a
+ *                                 filled navy panel. The flagship page sets it:
+ *                                 its agenda is the substance of the page, and
+ *                                 the panel marks it out as the one day-long
+ *                                 paid event. The description stays above the
+ *                                 panel either way.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -57,6 +63,7 @@ $law_cal_preview     = ! empty( $law_cal_preview );
 $law_cal_details_rows = isset( $law_cal_details_rows ) && is_array( $law_cal_details_rows ) ? $law_cal_details_rows : null;
 $law_cal_no_booking   = ! empty( $law_cal_no_booking );
 $law_cal_sessions_heading = ( isset( $law_cal_sessions_heading ) && '' !== trim( (string) $law_cal_sessions_heading ) ) ? (string) $law_cal_sessions_heading : __( 'Sessions', 'law' );
+$law_cal_sessions_panel   = ! empty( $law_cal_sessions_panel );
 
 $page_id = get_queried_object_id();
 $calendar_blocked = function_exists( 'members_can_current_user_view_post' )
@@ -138,23 +145,16 @@ if ( $event ) {
 				(array) $event['sectors']
 			),
 		),
-		// Only the flagship charges for a place today, and both helpers
-		// return '' for anything else, so these two rows drop out of every
-		// other event's box on their own (an empty value is skipped) rather
-		// than needing a caller to know about them.
+		// Only the flagship charges for a place today, and the helper returns ''
+		// for anything else, so this row drops out of every other event's box on
+		// its own (an empty value is skipped) rather than needing a caller to
+		// know about it. There is no Places row beside it: the flagship's count
+		// is printed in the availability panel below, opposite its button
+		// (law_flagship_render_action_body(), Denis 11 September 2026).
 		array(
 			'key'   => 'price',
 			'label' => 'Price',
 			'value' => function_exists( 'law_flagship_details_price' ) ? law_flagship_details_price( $event ) : '',
-		),
-		array(
-			'key'   => 'places',
-			'label' => 'Places',
-			'value' => function_exists( 'law_flagship_details_places' ) ? law_flagship_details_places( $event ) : '',
-			// The flagship states its count here rather than in the panel below,
-			// so the scarcity colour has to come with it or the one page where the
-			// number matters most is the one page that says it quietly.
-			'tone'  => function_exists( 'law_flagship_details_places_tone' ) ? law_flagship_details_places_tone( $event ) : '',
 		),
 	);
 	if ( null !== $law_cal_details_rows ) {
@@ -277,6 +277,7 @@ if ( $event ) {
 									array(
 										'sessions' => $event['sessions'],
 										'heading'  => $law_cal_sessions_heading,
+										'panel'    => $law_cal_sessions_panel,
 									)
 								);
 								?>

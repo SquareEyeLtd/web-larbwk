@@ -793,10 +793,87 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 		// The full arithmetic, for the form.
 		$this->assertSame( '£660.00 including VAT (£550.00 + VAT)', law_events_price_label( 55000 ) );
 
-		// And neither row appears on an ordinary event.
+		// And neither appears on an ordinary event.
 		$hosted = law_events_map_post( $this->make_event( array(), 'publish' ), array( '*' ) );
 		$this->assertSame( '', law_flagship_details_price( $hosted ) );
 		$this->assertSame( '', law_flagship_details_places( $hosted ) );
+	}
+
+	/**
+	 * Every word on the LEFT of the availability panel, the one thing to press
+	 * on the RIGHT, in every state (Denis, 11 September 2026). Before this the
+	 * count was a Places row up in the facts box, which left the panel holding
+	 * nothing but an Apply button floating at its left edge, and the words that
+	 * WERE in it came apart: a heading took a row of its own above the row
+	 * holding its own explanatory line and the button.
+	 */
+	public function test_the_panel_puts_every_word_on_the_left_and_the_button_on_the_right(): void {
+		$event_id = $this->make_flagship();
+		$event    = law_events_map_post( $event_id, array( '*' ) );
+
+		// Preview, so the control renders without a signed-in delegate and
+		// defers no dialogs: the layout under test is the same either way.
+		ob_start();
+		law_flagship_render_action( $event, true );
+		$html = (string) ob_get_clean();
+
+		// The count is in the panel's left slot, in the hosted control's own
+		// count class, because it is the same number doing the same job on the
+		// same component.
+		$this->assertStringContainsString(
+			'<div class="law-booking-panel__main"><p class="law-booking-panel__count">2 places left</p></div>',
+			$html
+		);
+		// And the button is in the right-hand slot, after it.
+		$this->assertStringContainsString( '<div class="law-booking-panel__action">', $html );
+		$this->assertLessThan(
+			strpos( $html, 'law-booking-panel__action' ),
+			strpos( $html, 'law-booking-panel__main' ),
+			'The words must precede the button in the panel.'
+		);
+
+		// The facts box no longer states the count, so the two cannot disagree.
+		$this->assertStringNotContainsString(
+			"'key'   => 'places'",
+			(string) file_get_contents( get_theme_file_path( 'parts/calendar-body.php' ) )
+		);
+	}
+
+	/**
+	 * A state's heading and the line under it are ONE block in the left slot,
+	 * vertically centred against the button, not a heading floating above a row
+	 * that holds the rest (Denis, 11 September 2026).
+	 */
+	public function test_a_states_heading_and_its_line_share_the_left_slot(): void {
+		$event_id = $this->make_flagship( array( '_law_tickets_available' => 1 ) );
+		$event    = law_events_map_post( $event_id, array( '*' ) );
+		$user_id  = $this->make_delegate();
+		$this->apply_as( $user_id );
+		wp_set_current_user( $user_id );
+
+		ob_start();
+		law_flagship_render_action( $event );
+		$html = (string) ob_get_clean();
+
+		$main = '';
+		if ( preg_match( '~<div class="law-booking-panel__main">(.*?)</div>~s', $html, $m ) ) {
+			$main = $m[1];
+		}
+		$this->assertStringContainsString( 'law-booking-state', $main, 'The heading is in the left slot.' );
+		$this->assertStringContainsString( 'law-booking-substate', $main, 'And so is the line under it.' );
+		// The button is not: it is the right-hand slot's whole contents.
+		$this->assertStringNotContainsString( 'class="button', $main );
+
+		// The rules that make the pair read as one block beside the button.
+		$css = (string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) );
+		$this->assertStringContainsString( '.law-event-details .law-booking-panel__main {', $css );
+		$this->assertStringContainsString( '.law-event-details .law-booking-panel__action {', $css );
+		// White on the filled panel, wrapper or no wrapper: the direct-child
+		// selector that used to carry the ink stops at the wrapper.
+		$this->assertStringContainsString(
+			".law-event-details .law-booking-panel .law-booking-state,\n.law-event-details .law-booking-panel .law-booking-substate {\n  color: inherit;\n}",
+			$css
+		);
 	}
 
 	/**

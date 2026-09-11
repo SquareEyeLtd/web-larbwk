@@ -324,6 +324,103 @@ class BookingCardActionTest extends LAW_Test_Case {
 	}
 
 	/**
+	 * The event page's panel reads words-left, button-right, exactly as the
+	 * flagship's does (Denis, 11 September 2026): one layout for both, built in
+	 * one place (law_booking_panel()). Flat, as direct flex items, a state's
+	 * heading took a row of its own above the row holding its own explanatory
+	 * line and the button.
+	 */
+	public function test_the_event_pages_panel_puts_the_words_left_and_the_button_right(): void {
+		$event = $this->bookable_event();
+		$user  = $this->make_user( 'attendee' );
+		$this->make_booking( $event, $user );
+		wp_set_current_user( $user );
+
+		ob_start();
+		law_booking_render_action( law_events_map_post( get_post( $event ) ) );
+		$html = (string) ob_get_clean();
+
+		$main = '';
+		if ( preg_match( '~<div class="law-booking-panel__main">(.*?)</div>~s', $html, $m ) ) {
+			$main = $m[1];
+		}
+		$this->assertStringContainsString( 'law-booking-state', $main, 'The heading is in the left slot.' );
+		$this->assertStringContainsString( esc_html__( "You're booked on this event.", 'law' ), $main );
+		$this->assertStringNotContainsString( 'class="button', $main, 'And the button is not: it has a slot of its own.' );
+		$this->assertStringContainsString( '<div class="law-booking-panel__action">', $html );
+		$this->assertLessThan(
+			strpos( $html, 'law-booking-panel__action' ),
+			strpos( $html, 'law-booking-panel__main' ),
+			'The words must precede the button in the panel.'
+		);
+	}
+
+	/**
+	 * The availability pill belongs WITH the count, inside the left slot and
+	 * directly above it (Denis, 11 September 2026): "Almost full" and "Only 3
+	 * places left" are one statement, and a pill spanning the whole panel read
+	 * as a banner over the button as well.
+	 */
+	public function test_the_availability_pill_sits_above_the_count_in_the_left_slot(): void {
+		$event = $this->bookable_event();
+		wp_set_current_user( $this->make_user( 'attendee' ) );
+
+		ob_start();
+		law_booking_render_action( law_events_map_post( get_post( $event ) ) );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString(
+			'<div class="law-booking-panel__main"><span class="law-booking-panel__status">Booking open</span>'
+			. '<p class="law-booking-panel__count">',
+			$html
+		);
+		// Not a flex item of the panel any more, so it must lay out as a block.
+		$this->assertStringContainsString(
+			".law-event-details .law-booking-panel__status {\n  display: block;",
+			(string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) )
+		);
+	}
+
+	/**
+	 * The one state with TWO buttons keeps them together in the right-hand
+	 * slot. Somebody who booked colleagues but has no place themselves is
+	 * offered "Manage bookings" and "Register"; before the slots those
+	 * straddled the panel with the places count between them.
+	 */
+	public function test_the_colleagues_only_state_keeps_both_buttons_in_the_action_slot(): void {
+		$event  = $this->bookable_event();
+		$booker = $this->make_user( 'attendee' );
+		// A colleague's place, and then not one of their own: the engine makes
+		// the booker's row first, so it is cancelled to reach this state.
+		$this->make_booking(
+			$event,
+			$booker,
+			array( array( 'name' => 'Jo Colleague', 'email' => 'jo-' . wp_generate_password( 6, false ) . '@example.test', 'organisation' => 'Firm', 'job_title' => 'Counsel' ) )
+		);
+		law_booking_cancel( (int) law_booking_user_booking_for_event( $booker, $event )->ID, $booker );
+		wp_set_current_user( $booker );
+
+		ob_start();
+		law_booking_render_action( law_events_map_post( get_post( $event ) ) );
+		$html = (string) ob_get_clean();
+
+		$action = '';
+		if ( preg_match( '~<div class="law-booking-panel__action">(.*?)</div>\s*</div>~s', $html, $m ) ) {
+			$action = $m[1];
+		}
+		$this->assertStringContainsString( 'Manage bookings', $action );
+		$this->assertStringContainsString( 'Register', $action );
+		// The count stays on the left, where every other word is.
+		$this->assertStringNotContainsString( 'law-booking-panel__count', $action );
+
+		// And the slot is a row of its own, so the pair does not run together.
+		$this->assertStringContainsString(
+			".law-event-details .law-booking-panel__action {\n  display: flex;",
+			(string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) )
+		);
+	}
+
+	/**
 	 * The committee preview renders the button where an attendee will find it
 	 * but must never be actuable, so it is a disabled <button> with nothing to
 	 * fetch and nothing to open.

@@ -82,22 +82,32 @@ else :
 		<?php wp_nonce_field( $law_bk_action ); ?>
 		<?php law_events_honeypot_field(); ?>
 
-		<p class="law-booking-summary">
-			<strong><?php echo esc_html( (string) $law_bk_event['title'] ); ?></strong>
+		<?php
+		// What you are booking, as the highlighted .law-event-summary block
+		// the flagship application uses, rather than two grey lines above the
+		// form (Denis, 11 September 2026). The availability line is the fact
+		// that governs the decision here, so it takes the ruled bottom row
+		// that holds the price on the flagship: one block, two facts, read
+		// separately.
+		?>
+		<div class="law-booking-summary law-event-summary">
+			<p class="law-event-summary__title"><?php echo esc_html( (string) $law_bk_event['title'] ); ?></p>
 			<?php if ( '' !== $law_bk_when ) : ?>
-				<br><?php echo esc_html( $law_bk_when ); ?>
+				<p class="law-event-summary__when"><?php echo esc_html( $law_bk_when ); ?></p>
 			<?php endif; ?>
-		</p>
-		<p class="law-booking-substate">
-			<?php if ( $law_bk_wait ) : ?>
-				<?php esc_html_e( 'This event is fully booked.', 'law' ); ?>
-			<?php else : ?>
-				<?php echo esc_html( sprintf( _n( '%s place left.', '%s places left.', (int) $law_bk_remaining, 'law' ), number_format_i18n( (int) $law_bk_remaining ) ) ); ?>
-			<?php endif; ?>
-			<?php if ( $law_bk_max > 0 ) : ?>
-				<?php echo esc_html( sprintf( _n( 'You can bring up to %d colleague.', 'You can bring up to %d colleagues.', $law_bk_max, 'law' ), $law_bk_max ) ); ?>
-			<?php endif; ?>
-		</p>
+			<p class="law-event-summary__row">
+				<span>
+					<?php if ( $law_bk_wait ) : ?>
+						<?php esc_html_e( 'This event is fully booked.', 'law' ); ?>
+					<?php else : ?>
+						<?php echo esc_html( sprintf( _n( '%s place left.', '%s places left.', (int) $law_bk_remaining, 'law' ), number_format_i18n( (int) $law_bk_remaining ) ) ); ?>
+					<?php endif; ?>
+					<?php if ( $law_bk_max > 0 ) : ?>
+						<?php echo esc_html( sprintf( _n( 'You can bring up to %d colleague.', 'You can bring up to %d colleagues.', $law_bk_max, 'law' ), $law_bk_max ) ); ?>
+					<?php endif; ?>
+				</span>
+			</p>
+		</div>
 
 		<?php if ( '' !== (string) $law_bk_state['message'] ) : ?>
 			<p class="law-form-notice is-error" role="alert"><?php echo esc_html( (string) $law_bk_state['message'] ); ?></p>

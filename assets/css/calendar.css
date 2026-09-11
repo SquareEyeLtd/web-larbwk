@@ -922,6 +922,99 @@
 /* A timeline is a list of times; a stacked date is not something to animate or
    collapse, so nothing here depends on JavaScript. */
 
+/* --- The timeline reversed inside a navy panel (--panel) ----------------
+   The flagship conference only (templates/flagship-event.php). Its agenda is
+   the substance of the page rather than a list inside it, so the whole section
+   -- heading, rail, sessions and their speaker cards -- reverses onto brand
+   navy in one filled box (Denis, 11 September 2026). The description stays
+   ABOVE the box on the white page and the venue stays below it, so the panel
+   contains the running order and nothing else.
+
+   Everything below is the same ruleset as the light timeline with its colours
+   swapped; no geometry is repeated, so the two layouts cannot drift. Contrast
+   on #292459: white about 14:1, orange #ef7d05 about 5.1:1, and the two
+   translucent whites used for secondary text about 11:1 and 7.5:1 -- all clear
+   AA. */
+
+.law-timeline-section--panel {
+  margin: 1.75rem 0 0.5rem;
+  padding: 1.25rem 1.25rem 1.5rem;
+  background: #292459;
+  color: #fff;
+}
+
+@media print, screen and (min-width: 40em) {
+  .law-timeline-section--panel {
+    padding: 1.75rem 2rem 2rem;
+  }
+}
+
+/* The heading's own padding-top is sized for the accordion bar it normally
+   introduces; inside the panel the box's padding is that space already. */
+.law-timeline-section--panel > .law-cal-acc__heading {
+  padding-top: 0;
+  color: #fff;
+}
+
+.law-timeline-section--panel .law-timeline__time,
+.law-timeline-section--panel .law-timeline__title {
+  color: #fff;
+}
+
+.law-timeline-section--panel .law-timeline__body {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+/* The ring around the marker is there to lift it off the connector, so it has
+   to be the surface the marker sits on -- navy in here, not white. */
+.law-timeline-section--panel .law-timeline__item::before {
+  box-shadow: 0 0 0 3px #292459;
+}
+
+.law-timeline-section--panel .law-timeline__item::after {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* The speaker cards inside the panel. The orange left rule and the orange name
+   carry over unchanged -- both clear AA on navy -- and only the text that was
+   navy or grey on white needs swapping. */
+.law-timeline-section--panel .law-cal-speakers__tag {
+  color: #fff;
+}
+
+.law-timeline-section--panel .law-cal-speakers__role {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.law-timeline-section--panel .law-cal-speakers__bio,
+.law-timeline-section--panel .law-cal-speakers__fullbio {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.law-timeline-section--panel .law-cal-speakers__photo {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.law-timeline-section--panel .law-cal-speakers__initials {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* Every hover and focus state on the light page resolves to navy, which on the
+   panel is the background: they all become white instead. */
+.law-timeline-section--panel .law-cal-speakers a:hover,
+.law-timeline-section--panel .law-cal-speakers a:focus,
+.law-cal .law-timeline-section--panel .law-cal-speakers__biolink:hover,
+.law-cal .law-timeline-section--panel .law-cal-speakers__biolink:focus,
+.law-timeline-section--panel .law-cal-speakers__fallback > summary:hover,
+.law-timeline-section--panel .law-cal-speakers__fallback > summary:focus {
+  color: #fff;
+}
+
+.law-cal .law-timeline-section--panel .law-cal-speakers__biolink:focus-visible,
+.law-timeline-section--panel .law-cal-speakers__fallback > summary:focus-visible {
+  outline: 2px solid #fff;
+}
+
 /* --- The flagship conference's block (parts/events/flagship-card.php) ----
    Pinned under its own day on the programme, so it has to read as the main
    event of the week rather than one more card: reversed onto brand navy, with
@@ -1870,8 +1963,7 @@
 }
 
 /* Explicit columns, not auto-fit: an event with only two populated facts would
-   stretch two auto-fit cells to ~500px each and look broken. Six facts divide
-   cleanly by three, which is why Places remaining is not one of them. */
+   stretch two auto-fit cells to ~500px each and look broken. */
 .law-event-details__grid {
   display: grid;
   gap: 1.75rem 2rem;
@@ -1901,30 +1993,29 @@
   }
 }
 
-/* Four, not three: six facts divided cleanly by three, but Sector is the one
-   fact with no ceiling on its length, and a seven-term list in a third-width
-   cell wrapped to four lines and stretched the whole row, leaving Hosted by and
-   Type floating in a void. At four columns the first row is date / time /
-   location / type and the second is Hosted by plus Sector across the remaining
-   three, so the long fact gets the width it needs and no cell is left empty.
-   The container is 75rem, so a column is roughly 245px at desktop: the date
-   wraps to two lines, which is why dt and dd are top-aligned already. */
+/* Three columns for a hosted event, FOUR for the flagship (Denis, 11 September
+   2026). The two lists are different shapes: the flagship states four facts
+   (date, time, location, price), which is one clean row of four and would leave
+   a three-column grid with a stranded single cell on a second row; a hosted
+   event states six, and three columns give it date / time / location, then
+   Type and Hosted by, with Sector taking a row of its own below.
+
+   Sector is a cell like any other (Denis, 11 September 2026), not a row-spanning
+   one: at three columns the six facts make two tidy rows, date / time / location
+   then Type / Hosted by / Sector, and a Sector given the whole row would leave a
+   hole beside Hosted by. Its pills wrap inside the cell, which is what they were
+   made pills for.
+
+   The container is 75rem, so a hosted column is roughly 335px at desktop and a
+   flagship one roughly 245px, at which the date wraps to two lines -- which is
+   why dt and dd are top-aligned already. */
 @media screen and (min-width: 64em) {
   .law-event-details__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .law-event-details--flagship .law-event-details__grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .law-event-details__item--sector {
-    grid-column: span 3;
-  }
-}
-
-/* At two columns Sector takes the whole row rather than half of one, for the
-   same reason. Hosted by is then alone on its row, which is a far smaller cost
-   than a four-line cell dragging the row beside it. */
-@media screen and (min-width: 40em) and (max-width: 63.9375em) {
-  .law-event-details__item--sector {
-    grid-column: 1 / -1;
   }
 }
 
@@ -1952,6 +2043,15 @@
   color: #292459;
   /* Venue is free text and can be one long unbroken string. */
   overflow-wrap: break-word;
+}
+
+/* Location reads at body size, not the facts' step up (Denis, 11 September
+   2026). It is the one value with no practical ceiling on its length -- a full
+   street address, sometimes with a note from the host appended -- so at 1.1rem
+   and underlined it wrapped to three lines and shouted over every fact beside
+   it. */
+.law-event-details__grid .law-event-details__item--venue dd {
+  font-size: 1rem;
 }
 
 .law-event-details__icon {
@@ -2004,19 +2104,6 @@
 .law-event-details .law-event-details__pill:focus-visible {
   outline: 2px solid #292459;
   outline-offset: 2px;
-}
-
-/* A fact that is running out. Only the flagship uses this: it states its
-   Places count as a fact in the grid rather than in the panel below, so the
-   panel's wash alone would leave the number unmarked. */
-.law-event-details__item--tone-low dd {
-  color: #a35300;
-  font-weight: 600;
-}
-
-.law-event-details__item--tone-full dd {
-  color: #a12622;
-  font-weight: 600;
 }
 
 /* .law-cal (which this box carries) strips underlines from links, so the jump
@@ -2084,16 +2171,21 @@
 
 /* The pill mirrors .law-cal-card__badge rather than reusing it: that one is
    position: absolute by default, and every consumer so far has had to undo it.
-   flex-basis: 100% so it sits on its own line above the count. */
+
+   It lives INSIDE the left slot, directly above the count (Denis, 11 September
+   2026): "Almost full" and "Only 3 places left" are one statement about
+   availability, and spanning the whole panel above both slots made it read as a
+   banner over the button too. display: block because it is a <span>, and the
+   0.35rem matches the gap .law-booking-state leaves under itself. */
 .law-event-details .law-booking-panel__status {
-  flex: 0 0 100%;
+  display: block;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  /* Its own line, with nothing painted behind it: the panel's fill is already
-	   the tone, and a pill on a filled ground reads as a second colour. */
-  margin: 0;
+  /* Nothing painted behind it: the panel's fill is already the tone, and a pill
+	   on a filled ground reads as a second colour. */
+  margin: 0 0 0.35rem;
   opacity: 0.8;
 }
 
@@ -2101,7 +2193,6 @@
    so availability is what carries the emphasis: it is the only number that
    changes and the only one that decides anything. */
 .law-event-details .law-booking-panel__count {
-  flex: 1 1 14rem;
   margin: 0;
   font-family: "Poppins", sans-serif;
   font-size: 1.6rem;
@@ -2110,19 +2201,13 @@
   color: inherit;
 }
 
-/* The state line keeps its own full line, as it did in the footer: "You're
-   booked on this event." is a statement, not a label for the button beside it.
-   Both inherit the tone's ink rather than restating a navy of their own. */
-.law-event-details .law-booking-panel > .law-booking-state {
-  flex: 0 0 100%;
-  color: inherit;
-}
-
-/* The substate pairs with the button on one row and drops below it when it is
-   a full sentence (sold out, bookings open soon) that will not fit. */
-.law-event-details .law-booking-panel > .law-booking-substate {
-  flex: 1 1 16rem;
-  margin: 0;
+/* Anything the panel writes straight onto its fill inherits the tone's colour
+   rather than restating a navy of its own. A plain descendant selector: every
+   paragraph now sits inside .law-booking-panel__main, a wrapper deeper than the
+   direct-child selectors this rule used to use, which silently put the headings
+   back to near-black on navy the moment that wrapper arrived. */
+.law-event-details .law-booking-panel .law-booking-state,
+.law-event-details .law-booking-panel .law-booking-substate {
   color: inherit;
 }
 
@@ -2175,6 +2260,48 @@
   font-size: 0.95rem;
 }
 
+/* The two slots, on the flagship's panel and the hosted events' alike: every
+   word on the LEFT, the thing to press on the RIGHT, the two centred against
+   each other (Denis, 11 September 2026).
+
+   Flat, as direct flex items of the panel, the words came apart: a state's
+   heading is flex-basis: 100% and took a row of its own, so "You're attending"
+   and "You're booked on this event." floated above the row holding their own
+   explanatory line and the button, and on a full event the heading and the line
+   explaining it sat at opposite ends of the same row. Wrapping them makes the
+   heading and its line one block, and the panel's existing align-items: center
+   then lines that block up with the button.
+
+   The auto margin is what pins the button right when there is nothing beside it
+   at all: a lone flex item under justify-content: space-between sits at the
+   START, which is why the flagship's Apply floated at the panel's left edge. */
+.law-event-details .law-booking-panel__main {
+  /* Shrinkable, so a long sentence wraps inside the slot rather than pushing
+	   the button off the panel's right edge. */
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+/* A row of its own, because one state offers TWO buttons: somebody who booked
+   colleagues but has no place themselves gets "Manage bookings" and "Register",
+   and they belong together at the right-hand end rather than straddling the
+   panel. The gap matches the panel's own column gap. */
+.law-event-details .law-booking-panel__action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* The slot's own last line closes the block: the paragraphs keep their spacing
+   between them, and the block as a whole centres on the button rather than
+   sitting a trailing margin's worth above it. */
+.law-event-details .law-booking-panel__main > :last-child {
+  margin-bottom: 0;
+}
+
 /* .button.second is navy on white, which disappears into a navy panel. Inside
    it, the secondary action is an outline in the panel's own ink instead. */
 .law-event-details .law-booking-panel .button.second {
@@ -2221,6 +2348,21 @@
 
   .law-event-details .law-booking-panel__count {
     font-size: 1.4rem;
+  }
+
+  /* No room for two columns: the words take the width, the button sits under
+	   them and fills it, as the programme cards' buttons already do. Where a
+	   state offers two, they stack rather than split the row in half, which is
+	   what a flex row of two full-width buttons would do. */
+  .law-event-details .law-booking-panel__main,
+  .law-event-details .law-booking-panel__action {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .law-event-details .law-booking-panel__action {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 

@@ -53,10 +53,16 @@ if ( function_exists( 'law_events_map_post' ) ) {
 
 $law_cal_show_status  = false;
 $law_cal_hero_title   = law_calendar_hero_title();
-$law_cal_details_rows = array( 'date', 'time', 'venue', 'price', 'places' );
+$law_cal_details_rows = array( 'date', 'time', 'venue', 'price' );
 // Every event renders its sessions on the same open timeline; the flagship
-// differs only in what it calls the running order, which is a day-long Agenda
-// rather than a handful of Sessions.
+// differs in what it calls the running order, which is a day-long Agenda
+// rather than a handful of Sessions, and in the panel it sits in.
 $law_cal_sessions_heading = __( 'Agenda', 'law' );
+// Reversed onto brand navy (Denis, 11 September 2026). The agenda is the
+// substance of this page -- it is the one day-long, paid event, and the reader
+// came for the running order and the speakers -- so it reads as a block of the
+// page rather than a list inside it. Only the timeline goes in the box: the
+// description stays above it on the white page, and the venue stays below.
+$law_cal_sessions_panel = true;
 
 require get_theme_file_path( 'parts/calendar-body.php' );

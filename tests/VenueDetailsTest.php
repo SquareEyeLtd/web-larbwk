@@ -205,6 +205,108 @@ class VenueDetailsTest extends LAW_Test_Case {
 		);
 	}
 
+	public function test_all_three_venue_details_are_required_when_the_host_has_a_venue(): void {
+		$host = $this->make_user( 'event_host' );
+		wp_set_current_user( $host );
+
+		$event_id = $this->make_event( array(), 'law-proposed', $host );
+
+		// The venue typed, but neither the band nor the places (Denis,
+		// 11 September 2026): all three go together on that answer.
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed' => self::HAS_VENUE,
+					'venue'        => 'Their own offices',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( '', $result->get_error_message( 'venue' ) );
+		$this->assertNotEmpty( $result->get_error_message( 'venue_capacity' ) );
+		$this->assertNotEmpty( $result->get_error_message( 'tickets_available' ) );
+
+		// "TBC" is a real answer, so nobody is stuck for not knowing the numbers.
+		$this->assertSame(
+			$event_id,
+			law_events_form_save(
+				$this->valid_input(
+					array(
+						'venue_needed'      => self::HAS_VENUE,
+						'venue'             => 'Their own offices',
+						'venue_capacity'    => 'TBC',
+						'tickets_available' => '40',
+					)
+				),
+				array(),
+				get_post( $event_id ),
+				$host
+			)
+		);
+	}
+
+	public function test_the_venue_details_are_not_required_of_a_host_who_needs_a_venue(): void {
+		$host = $this->make_user( 'event_host' );
+		wp_set_current_user( $host );
+
+		$event_id = $this->make_event( array(), 'law-proposed', $host );
+
+		// The block is off their form entirely, so an empty band and no places
+		// must not block the rest of it -- and a crafted post is ignored, not
+		// judged.
+		$this->assertSame(
+			$event_id,
+			law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $host )
+		);
+	}
+
+	public function test_the_committee_is_not_blocked_on_an_event_that_needs_a_venue(): void {
+		$host      = $this->make_user( 'event_host' );
+		$committee = $this->make_committee_user();
+		wp_set_current_user( $committee );
+
+		// The committee sees the three fields whichever way the host answered;
+		// on "Yes" they are theirs to fill in once the event is placed, so a
+		// save of anything else must not be held up by them.
+		$event_id = $this->make_event( array( '_law_venue_needed' => self::NEEDS_VENUE ), 'law-approved', $host );
+
+		$this->assertSame(
+			$event_id,
+			law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $committee )
+		);
+	}
+
+	public function test_a_post_approval_host_edit_is_not_judged_on_the_locked_band(): void {
+		$host = $this->make_user( 'event_host' );
+		wp_set_current_user( $host );
+
+		// The band is locked after approval and a disabled <select> posts
+		// nothing, so requiring it here would make every such edit impossible.
+		$event_id = $this->make_event(
+			array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ),
+			'law-approved',
+			$host
+		);
+
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'      => '',
+					'venue'             => 'A different hall, EC1',
+					'venue_capacity'    => '',
+					'tickets_available' => '90',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+		$this->assertSame( $event_id, $result );
+	}
+
 	public function test_post_approval_host_edit_still_saves_the_venue_name(): void {
 		$host = $this->make_user( 'event_host' );
 		wp_set_current_user( $host );
