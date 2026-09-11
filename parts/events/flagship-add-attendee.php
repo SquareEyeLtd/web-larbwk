@@ -19,6 +19,11 @@
  * somebody a free place is an occasional, deliberate act that deserves the
  * same "are you sure" the Approve and Decline buttons get.
  *
+ * It asks for country, accessibility and dietary as well (Denis, 11 September
+ * 2026, parts/events/attendee-profile-fields.php): the delegate list and the
+ * exports read those columns live from the attendee's profile, and a speaker or
+ * VIP put on the list here never filled a registration form in.
+ *
  * The whole form lives INSIDE the .law-modal, so law-modal.js supplies the
  * open, close and focus-trap behaviour, and booking-form.js submits it over
  * fetch with the plain-POST fallback. Without JavaScript the dialog stays
@@ -34,8 +39,15 @@ if ( ! law_user_is_committee() ) {
 	return;
 }
 
-/** The fields, printed into both the dialog and the no-JS fallback. */
-$law_fa_fields = static function () {
+/**
+ * The fields, printed into both the dialog and the no-JS fallback.
+ *
+ * @param string $law_fa_prefix     Unique per copy: the two "Other" boxes in the
+ *                                  shared profile block are toggled by id.
+ * @param bool   $law_fa_show_other Render those boxes open (the no-JS copy, where
+ *                                  no script is going to reveal them).
+ */
+$law_fa_fields = static function ( $law_fa_prefix, $law_fa_show_other = false ) {
 	?>
 	<?php
 	// Labels WRAP their inputs rather than using for/id. The same fields are
@@ -74,6 +86,22 @@ $law_fa_fields = static function () {
 		</p>
 	</div>
 
+	<?php
+	// Country, accessibility and dietary, the same set registration collects
+	// (Denis, 11 September 2026). The delegate list and the exports read these
+	// columns live from the attendee's profile, and a speaker, sponsor or VIP
+	// put on the list here never filled a registration form in.
+	get_template_part(
+		'parts/events/attendee-profile-fields',
+		null,
+		array(
+			'id_prefix'  => $law_fa_prefix,
+			'show_other' => $law_fa_show_other,
+			'note'       => __( 'Whatever they told you. They can change any of this themselves from their profile.', 'law' ),
+		)
+	);
+	?>
+
 	<p class="law-form-field">
 		<label>
 			<input type="checkbox" name="law_press" value="1">
@@ -109,7 +137,7 @@ $law_fa_hidden = static function () {
 					<?php esc_html_e( 'They will be given a confirmed place immediately, with nothing to pay. Nothing is charged and no payment details are asked for. If they do not already have an account, one is created and they are emailed a link to set their password.', 'law' ); ?>
 				</p>
 
-				<?php $law_fa_fields(); ?>
+				<?php $law_fa_fields( 'law-fa' ); ?>
 
 				<p class="law-modal__actions">
 					<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Cancel', 'law' ); ?></button>
@@ -131,7 +159,7 @@ $law_fa_hidden = static function () {
 			<form class="law-event-form law-event-form--light" method="post"
 				action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<?php $law_fa_hidden(); ?>
-				<?php $law_fa_fields(); ?>
+				<?php $law_fa_fields( 'law-fa-nojs', true ); ?>
 				<p class="law-form-buttons">
 					<button type="submit" class="button orange"><?php esc_html_e( 'Add the attendee', 'law' ); ?></button>
 				</p>

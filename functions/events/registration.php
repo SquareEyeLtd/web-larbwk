@@ -177,6 +177,122 @@ function law_registration_sync_roles( $user_id, array $selected ) {
 	}
 }
 
+/* Profiles filled in on somebody else's behalf _______________________________ */
+
+/**
+ * The profile facts a host or committee member can give when they register
+ * somebody on their behalf: country, accessibility and dietary, with the two
+ * "Other" free-text boxes. The POST names match the registration form's, so
+ * $_POST goes straight in (Denis, 11 September 2026: the register-an-attendee
+ * dialogs must collect almost what registration collects, because the bookings
+ * tables and the exports read these three columns live from the profile and a
+ * person booked by phone has nobody to fill them in).
+ *
+ * The "Other" text is dropped unless "Other" is actually ticked, so a stale box
+ * cannot attach free text to a list that has no Other in it.
+ *
+ * @return array{country:string,accessibility:string[],accessibility_other:string,dietary:string[],dietary_other:string}
+ */
+function law_registration_clean_attendee_profile( array $input ) {
+	$accessibility = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['accessibility'] ?? array() ) ), array_keys( law_registration_accessibility_choices() ) ) );
+	$dietary       = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['dietary'] ?? array() ) ), law_registration_dietary_choices() ) );
+
+	return array(
+		'country'             => sanitize_text_field( trim( (string) ( $input['country'] ?? '' ) ) ),
+		'accessibility'       => $accessibility,
+		'accessibility_other' => in_array( 'Other', $accessibility, true ) ? sanitize_text_field( trim( (string) ( $input['accessibility_other'] ?? '' ) ) ) : '',
+		'dietary'             => $dietary,
+		'dietary_other'       => in_array( 'Other', $dietary, true ) ? sanitize_text_field( trim( (string) ( $input['dietary_other'] ?? '' ) ) ) : '',
+	);
+}
+
+/**
+ * Validate a cleaned set. The rules are the registration form's, minus the
+ * required-ness of country, which each calling surface decides for itself: the
+ * per-event bookings list asks for it (its other four fields are required too,
+ * mirroring registration), the flagship's complimentary-place dialog does not
+ * (only a name and an email are required there).
+ *
+ * The refusal carries the field name so the fetch layer can mark the control.
+ *
+ * @return WP_Error|true
+ */
+function law_registration_validate_attendee_profile( array $clean, $country_required = false ) {
+	$country = law_registration_validate_country( (string) $clean['country'], (bool) $country_required );
+	if ( '' !== $country ) {
+		return new WP_Error( 'law_profile_country', $country, array( 'field' => 'country' ) );
+	}
+	if ( in_array( 'Other', (array) $clean['accessibility'], true ) && '' === (string) $clean['accessibility_other'] ) {
+		return new WP_Error( 'law_profile_accessibility_other', 'Please specify their other accessibility requirement.', array( 'field' => 'accessibility_other' ) );
+	}
+	if ( in_array( 'Other', (array) $clean['dietary'], true ) && '' === (string) $clean['dietary_other'] ) {
+		return new WP_Error( 'law_profile_dietary_other', 'Please specify their other dietary requirement.', array( 'field' => 'dietary_other' ) );
+	}
+	return true;
+}
+
+/**
+ * Write a cleaned set onto the attendee's account.
+ *
+ * A BRAND NEW account (one this registration just created) takes everything
+ * given. An account that already existed only has its BLANKS filled: the person
+ * stated those requirements themselves, from their own profile, and a host
+ * typing what they remember of a phone call must never overwrite it. The
+ * accessibility and dietary lists are written with their "Other" text or not at
+ * all, so free text can never end up attached to a list that was left alone.
+ *
+ * An account that already existed and holds anything beyond the three
+ * self-service roles — an administrator, a committee member — is not written to
+ * at all (security review, 11 September 2026). Whoever fills this form chooses
+ * the email address, and the account it lands on is found by that address
+ * alone, so a host could otherwise put accessibility or dietary details, which
+ * are health-adjacent data, onto a committee member's account simply by knowing
+ * their address. Those accounts have their own profile form; this surface is
+ * for the people being booked in.
+ *
+ * @param bool $is_new_account Whether this registration created the account.
+ * @return string[] One readable line per thing written, for the activity log.
+ */
+function law_registration_apply_attendee_profile( $user_id, array $clean, $is_new_account ) {
+	$user_id = (int) $user_id;
+	$written = array();
+
+	if ( ! $is_new_account ) {
+		$user = get_user_by( 'id', $user_id );
+		if ( ! $user || array_diff( (array) $user->roles, array_keys( law_registration_roles() ) ) ) {
+			return $written;
+		}
+	}
+
+	if ( '' !== (string) $clean['country']
+		&& ( $is_new_account || '' === (string) get_user_meta( $user_id, 'country', true ) ) ) {
+		update_user_meta( $user_id, 'country', (string) $clean['country'] );
+		$written[] = 'country: ' . $clean['country'];
+	}
+
+	// The lists live in ACF (the fields the old mu-plugin synced), so without
+	// ACF there is nowhere to put them and nothing reads them either.
+	if ( ! function_exists( 'update_field' ) || ! function_exists( 'get_field' ) ) {
+		return $written;
+	}
+
+	foreach ( array( 'accessibility', 'dietary' ) as $key ) {
+		$values = (array) $clean[ $key ];
+		if ( ! $values ) {
+			continue;
+		}
+		if ( ! $is_new_account && array_filter( (array) get_field( $key, 'user_' . $user_id ) ) ) {
+			continue; // Theirs already; leave it alone.
+		}
+		update_field( $key, $values, 'user_' . $user_id );
+		$other = (string) $clean[ $key . '_other' ];
+		update_user_meta( $user_id, $key . '_other', $other );
+		$written[] = $key . ': ' . implode( ', ', $values ) . ( '' !== $other ? ' (other: ' . $other . ')' : '' );
+	}
+
+	return $written;
+}
+
 /* Registration ______________________________________________________________ */
 
 add_action( 'admin_post_nopriv_law_register', 'law_registration_handler' );

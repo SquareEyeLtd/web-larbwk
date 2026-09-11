@@ -1353,6 +1353,10 @@ function law_booking_send_submission_emails( array $ids, array $people, array $a
  * @param int   $actor_id The manager acting.
  * @param array $args     press (bool): flag the booking as a press pass (the
  *                        handler only honours this for the committee).
+ *                        profile (array): the cleaned country/accessibility/
+ *                        dietary set from law_registration_clean_attendee_profile(),
+ *                        written onto the attendee's account once the place is
+ *                        theirs.
  * @return int|WP_Error Booking post ID.
  */
 function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, array $args = array() ) {
@@ -1422,7 +1426,41 @@ function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, 
 		return $ids;
 	}
 
+	// Country, accessibility and dietary, once the place is actually theirs.
+	law_booking_apply_attendee_profile( (int) $user->ID, (array) ( $args['profile'] ?? array() ), $created, $event_id, $actor_id );
+
 	return (int) $ids[0];
+}
+
+/**
+ * Put the country/accessibility/dietary answers given on somebody's behalf onto
+ * their account, and say so in the event's activity log.
+ *
+ * Shared by the per-event list's "Register an attendee" and the flagship's
+ * "Add an attendee without payment". An account that already existed only has
+ * its BLANKS filled (law_registration_apply_attendee_profile()), so a host
+ * repeating what they remember of a phone call can never overwrite what the
+ * person stated themselves.
+ */
+function law_booking_apply_attendee_profile( $user_id, array $profile, $new_account, $event_id, $actor_id ) {
+	if ( ! $profile || ! function_exists( 'law_registration_apply_attendee_profile' ) ) {
+		return;
+	}
+	$written = law_registration_apply_attendee_profile( (int) $user_id, $profile, (bool) $new_account );
+	if ( ! $written ) {
+		return;
+	}
+	$user = get_user_by( 'id', (int) $user_id );
+	law_event_log(
+		(int) $event_id,
+		sprintf(
+			'Profile details recorded for %s on their behalf — %s.',
+			$user ? $user->display_name : '#' . (int) $user_id,
+			implode( '; ', $written )
+		),
+		array( 'action' => 'booking_attendee_profile', 'user' => (int) $user_id, 'source' => 'bookings' ),
+		array( 'user_id' => (int) $actor_id )
+	);
 }
 
 /**
@@ -1648,7 +1686,9 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	$by = array(
 		'self'            => 'cancelled by the attendee',
 		'booker'          => 'cancelled by the person who booked it',
-		'host_reject'     => 'cancelled by the host',
+		// The context token is kept for the email map and the log filters, but
+		// only the committee can do this now, so the words have to say so.
+		'host_reject'     => 'cancelled by the committee',
 		'event_cancelled' => 'cancelled because the event was cancelled',
 		'account_deleted' => 'cancelled because the account was deleted',
 	);
@@ -2180,9 +2220,10 @@ function law_booking_cancel_party_handler() {
 }
 
 /**
- * The host/committee Reject on the bookings list: cancel that one person's
+ * The committee's Cancel on the bookings list: cancel that one person's
  * booking, with an optional reason. Gate: law_user_can_manage_event() on the
- * booking's parent, never a posted event ID.
+ * booking's parent, never a posted event ID, and then the committee-only
+ * law_booking_user_can_reject() on top of it.
  */
 function law_booking_reject_attendee_handler() {
 	$is_ajax = law_events_guard_post(
@@ -2194,7 +2235,15 @@ function law_booking_reject_attendee_handler() {
 		)
 	);
 
-	$booking    = law_booking_require_manageable( $is_ajax );
+	$booking = law_booking_require_manageable( $is_ajax );
+	if ( ! law_booking_user_can_reject( get_current_user_id(), (int) $booking->post_parent ) ) {
+		law_events_respond(
+			$is_ajax,
+			false,
+			array( 'message' => 'Sorry, only the LAW committee can cancel a booking.', 'status' => 403 ),
+			'booking-failed'
+		);
+	}
 	$waitlisted = 'law-waitlisted' === $booking->post_status;
 
 	$result = law_booking_cancel(
@@ -2247,6 +2296,22 @@ function law_booking_require_manageable( $is_ajax, $notice = 'booking-failed' ) 
 }
 
 /**
+ * Who may cancel somebody else's booking on an event: the committee only.
+ *
+ * Hosts and co-owners manage their waitlist and register attendees, but taking
+ * a place away from an attendee is LAW's call, not theirs (Denis, 11 September
+ * 2026), which closes the divergence from spec 4.3 recorded in WAITLIST.md.
+ * The attendee, and whoever booked them, can still cancel from My bookings.
+ *
+ * The per-event gate stays in the conjunction deliberately: a committee user is
+ * not special-cased past law_user_can_manage_event() anywhere else, and keeping
+ * it here means both call sites stay honest if that gate ever narrows.
+ */
+function law_booking_user_can_reject( $user_id, $event_id ) {
+	return law_user_is_committee( $user_id ) && law_user_can_manage_event( $user_id, $event_id );
+}
+
+/**
  * A refusal payload for the fetch layer: the message, plus the row and field
  * keys booking-form.js marks in place when the engine names them.
  */
@@ -2284,15 +2349,32 @@ function law_booking_register_attendee_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to manage this event\'s bookings.', 'status' => 403 ), 'booking-failed' );
 	}
 
-	$row    = wp_unslash( $_POST['law_attendees'] ?? array() );
-	$row    = is_array( $row ) ? reset( $row ) : array();
-	$press  = ! empty( $_POST['law_press'] ) && law_user_is_committee();
-	$result = law_booking_register_by_manager( $event_id, is_array( $row ) ? $row : array(), get_current_user_id(), array( 'press' => $press ) );
+	$row   = wp_unslash( $_POST['law_attendees'] ?? array() );
+	$row   = is_array( $row ) ? reset( $row ) : array();
+	$press = ! empty( $_POST['law_press'] ) && law_user_is_committee();
+	// Country, accessibility and dietary, the same set registration collects:
+	// the list's own columns and the exports read them live from the profile,
+	// so somebody booked in by phone would otherwise arrive with three empty
+	// columns (Denis, 11 September 2026). Country is required here, matching
+	// the four attendee fields, which already mirror registration.
+	$profile = law_registration_clean_attendee_profile( wp_unslash( $_POST ) );
+
+	// The attendee's own four fields are checked first, so an empty form
+	// complains about the name rather than about the country: the row cleaner
+	// is pure, and law_booking_register_by_manager() runs it again anyway.
+	$row_check = law_booking_clean_additional_rows( array( is_array( $row ) ? $row : array() ) );
+	$valid     = ( ! is_wp_error( $row_check ) && $row_check )
+		? law_registration_validate_attendee_profile( $profile, true )
+		: true;
+
+	$result = is_wp_error( $valid )
+		? $valid
+		: law_booking_register_by_manager( $event_id, is_array( $row ) ? $row : array(), get_current_user_id(), array( 'press' => $press, 'profile' => $profile ) );
 
 	if ( is_wp_error( $result ) ) {
 		if ( ! $is_ajax ) {
 			// The no-JS list form re-renders with the typed row and the refusal.
-			law_booking_store_form_state( get_current_user_id(), $result, array( is_array( $row ) ? $row : array() ) );
+			law_booking_store_form_state( get_current_user_id(), $result, array( is_array( $row ) ? $row : array() ), $profile );
 		}
 		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'booking-failed' );
 	}

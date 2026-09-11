@@ -155,7 +155,24 @@
 						var button = document.createElement('button');
 						button.type = 'button';
 						button.className = 'button-link';
-						button.textContent = item.title + ' (#' + item.id + ')';
+						// The name on its own line, with the job title and
+						// organisation under it in small type. The post ID used to
+						// be shown beside the name, which told a committee member
+						// nothing about which of two similar names they were
+						// picking (Denis, 11 September 2026).
+						var name = document.createElement('span');
+						name.className = 'law-rel-result-name';
+						name.textContent = item.title;
+						button.appendChild(name);
+						var meta = [item.job_title, item.organisation].filter(function (part) {
+							return part && String(part).trim() !== '';
+						}).join(', ');
+						if (meta) {
+							var line = document.createElement('span');
+							line.className = 'law-rel-result-meta';
+							line.textContent = meta;
+							button.appendChild(line);
+						}
 						button.addEventListener('click', function () {
 							addItem(item);
 							results.hidden = true;

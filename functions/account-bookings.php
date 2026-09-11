@@ -99,7 +99,7 @@ function law_booking_user_booking_for_event( $user_id, $event_id, array $statuse
  * One-shot form state for the no-JS (?law_book=1) booking form, so a refused
  * submission re-renders with the typed rows and the refusal message.
  */
-function law_booking_store_form_state( $user_id, WP_Error $error, array $rows ) {
+function law_booking_store_form_state( $user_id, WP_Error $error, array $rows, array $profile = array() ) {
 	$data = $error->get_error_data();
 	set_transient(
 		'law_booking_state_' . (int) $user_id,
@@ -108,6 +108,10 @@ function law_booking_store_form_state( $user_id, WP_Error $error, array $rows ) 
 			'row'     => is_array( $data ) && isset( $data['row'] ) ? (int) $data['row'] : null,
 			'field'   => is_array( $data ) && isset( $data['field'] ) ? (string) $data['field'] : '',
 			'rows'    => array_slice( array_values( array_filter( $rows, 'is_array' ) ), 0, law_booking_max_additional() + 1 ),
+			// The country/accessibility/dietary set the register-an-attendee
+			// form also collects, so a refusal does not throw away the answers
+			// somebody read off a phone call.
+			'profile' => $profile,
 		),
 		10 * MINUTE_IN_SECONDS
 	);
@@ -119,7 +123,8 @@ function law_booking_form_state() {
 	if ( $state ) {
 		delete_transient( $key );
 	}
-	return is_array( $state ) ? $state : array( 'message' => '', 'row' => null, 'field' => '', 'rows' => array() );
+	$empty = array( 'message' => '', 'row' => null, 'field' => '', 'rows' => array(), 'profile' => array() );
+	return is_array( $state ) ? array_merge( $empty, $state ) : $empty;
 }
 
 /**

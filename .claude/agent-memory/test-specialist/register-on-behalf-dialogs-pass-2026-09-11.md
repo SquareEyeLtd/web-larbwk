@@ -1,0 +1,22 @@
+---
+name: register-on-behalf-dialogs-pass-2026-09-11
+description: E2E pass of the two "register someone on their behalf" dialogs (event bookings list, flagship dashboard) with country/accessibility/dietary fields — all functional checks pass, 1 real gap found
+metadata:
+  type: project
+---
+
+Tested as Denis (administrator, front-end acts as committee) via a minted `wordpress_logged_in_*` auth cookie (no admin-panel access needed, front-end `is_user_logged_in()` only checks the logged_in cookie, not the auth/secure_auth ones — good trick for front-end-only sessions without a password).
+
+**Surface 1** (`/account/events/?law_event_bookings=15186`, "Register an attendee" button/modal): every check in the brief passed — button above table, old bottom form gone, dialog scrolls internally (`.law-modal__dialog` has `overflow-y:auto`, scrollHeight > clientHeight at short viewports) rather than pushing buttons off-screen, Escape/×/Cancel all close it, accessibility "Other" and dietary "Other" reveal independent free-text boxes, blank-name and missing-country validation both show an in-dialog alert AND visibly outline the offending control in orange, a full submission with unique email + country + both "Other" boxes correctly lands in `wp_usermeta` (`country`, `accessibility_other`, `dietary_other`) and ACF fields (`accessibility`, `dietary`), the bookings table row re-renders those exact values live, the wp-admin activity log gets a dedicated "Profile details recorded for X on their behalf — country: …; accessibility: …; dietary: …" entry alongside the account-created/booking-created/email-sent entries, and Mailpit shows the correct confirmation email. 375px viewport: two-column requirement lists collapse to one, no real overflow.
+
+**Surface 2** (`/account/dashboard/flagship-bookings/`, "Add an attendee without payment"): fields render correctly (Country of residence has no asterisk — correctly optional), two requirement columns sit side by side same as surface 1, dietary-Other-empty validation names the dietary field and outlines it, a full submission lands correctly in usermeta/ACF and the dashboard row does show Country (e.g. "France") stacked under the name same as it already does for Organisation/Job title on legacy rows. 375px: modal itself collapses to one column with no clipping.
+
+**Real finding (gap, not a crash):** on surface 2 the flagship-bookings table has no Accessibility/Dietary columns at all and no per-row expand/detail action — this is true for every row, not just new ones, so accessibility/dietary collected via this dialog is stored correctly but has no way to be seen from this dashboard (only Country shows, reusing the existing name-cell sub-line). Surface 1's table, by contrast, has explicit Accessibility and Dietary columns. Worth asking Denis whether this was intentional or a follow-up item.
+
+**Real finding (minor UX inconsistency):** surface 1 shows a clear green "The attendee has been registered and emailed their confirmation." banner on the page after the post-submit reload; surface 2 has no equivalent — the dialog's own in-dialog success text ("They have a confirmed place with no charge, and have been emailed their confirmation.") is the only confirmation, and it disappears on reload with nothing replacing it at page level. The new row does still appear correctly in the table, so this is cosmetic, not functional.
+
+**Non-issue (checked, false positive):** at 375px on surface 2, `document.documentElement.scrollWidth` (813) exceeds `clientWidth` (375) because the underlying `.law-dashboard__table-wrap` is wider than the viewport — but `body{overflow-x:hidden}` clips it and there is no visible horizontal scroll/clipping in the actual screenshot. Same false-positive pattern already noted in [[flagship-bookings-sanity-pass-2026-09-10]].
+
+Console: zero real JS errors across both surfaces in either pass. The only console "errors" logged were the expected `400 Bad Request` on `admin-post.php` for validation-failure AJAX submissions (by design of [[ajax-modal-pattern-for-actions]] — a 400 with a JSON error body still logs as a red "failed to load resource" line in the console, this is normal for every validation-refusal case, not a bug).
+
+Test data left in place (not cleaned up, per instruction to report only): users `phone-test-6873@example.test`, `flagship-test-1562@example.test`, `empty-diet-test-*@example.test` (validation-refused, likely never created), `banner-check-*@example.test`; bookings #653, #654, #655 on event 15186 / the flagship event.

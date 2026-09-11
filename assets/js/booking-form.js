@@ -385,8 +385,8 @@
 		( scope || form ).querySelectorAll('.law-modal__error, [data-law-booking-error]').forEach(function (node) {
 			node.remove();
 		});
-		form.querySelectorAll('label.is-invalid').forEach(function (label) {
-			label.classList.remove('is-invalid');
+		form.querySelectorAll('label.is-invalid, .law-form-field.is-invalid').forEach(function (node) {
+			node.classList.remove('is-invalid');
 		});
 	}
 
@@ -414,6 +414,19 @@
 		if (!input) { return; }
 		var label = input.closest('label');
 		if (label) { label.classList.add('is-invalid'); }
+		input.focus();
+	}
+
+	/* A refusal that names a field but no row: the flat fields beside the
+	   attendee row (country, accessibility, dietary — the profile details the
+	   register-an-attendee dialogs collect). Those labels sit beside their input
+	   in a .law-form-field rather than wrapping it, so mark whichever of the two
+	   this field turns out to use. */
+	function markFlatField(form, field) {
+		var input = form.querySelector('[name="' + field + '"], [name="' + field + '[]"]');
+		if (!input) { return; }
+		var owner = input.closest('label') || input.closest('.law-form-field');
+		if (owner) { owner.classList.add('is-invalid'); }
 		input.focus();
 	}
 
@@ -644,6 +657,8 @@
 						showError(form, scope, payload.message || 'Sorry, that change could not be made.');
 						if (typeof payload.row === 'number' && payload.field) {
 							markField(form, payload.row, payload.field);
+						} else if (payload.field) {
+							markFlatField(form, payload.field);
 						}
 						return;
 					}

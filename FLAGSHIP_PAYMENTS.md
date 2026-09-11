@@ -644,7 +644,13 @@ law_flagship_applications( array $filters = array() ): array
 - **`law_flagship_add_complimentary()`**: committee-only, straight to `publish`
   with `_law_is_complimentary`, no card and no invoice, reusing
   `law_booking_register_by_manager()`'s account resolve-or-create so a new
-  attendee still gets an account and a set-password link.
+  attendee still gets an account and a set-password link. Its `profile` key
+  carries the country / accessibility / dietary set the dialog now collects
+  (Denis, 11 September 2026), written onto the attendee's account by
+  `law_booking_apply_attendee_profile()` once the place is theirs: the delegate
+  list and the exports read those columns live from the profile, and somebody
+  put on the list here never filled a registration form in. Country is optional
+  on this dialog, which asks only for a name and an email.
 - **`law_flagship_review_bulk()`** is **time-boxed and cron-resumable**,
   modelled on `law_bookings_cancel_all_for_event()`'s 15-second box and
   `law_bookings_resume_cancel_sweep`. Twenty off-session charges in one request

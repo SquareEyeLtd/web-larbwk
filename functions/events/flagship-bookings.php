@@ -1294,7 +1294,10 @@ function law_flagship_store_charge_id( $booking_id, $invoice_id ) {
  * Put someone on the flagship with no card and no invoice: speakers, press,
  * sponsors, VIPs (Denis, 10 September 2026).
  *
- * @param array $row name, email, organisation, job_title, press.
+ * @param array $row name, email, organisation, job_title, press, plus profile
+ *                  (the cleaned country/accessibility/dietary set from
+ *                  law_registration_clean_attendee_profile(), written onto the
+ *                  attendee's account once the place is theirs).
  * @return int|WP_Error The booking ID.
  */
 function law_flagship_add_complimentary( array $row, $actor_id ) {
@@ -1304,7 +1307,8 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 		return $open;
 	}
 
-	$row = array(
+	$profile = (array) ( $row['profile'] ?? array() );
+	$row     = array(
 		'name'         => sanitize_text_field( (string) ( $row['name'] ?? '' ) ),
 		'email'        => sanitize_email( (string) ( $row['email'] ?? '' ) ),
 		'organisation' => sanitize_text_field( (string) ( $row['organisation'] ?? '' ) ),
@@ -1381,6 +1385,8 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	}
 
 	law_booking_grant_attendee_role( $user_id, $event_id, (int) $actor_id );
+	// Country, accessibility and dietary, once the place is actually theirs.
+	law_booking_apply_attendee_profile( $user_id, $profile, ! empty( $resolved['created'] ), $event_id, (int) $actor_id );
 
 	$actor = get_user_by( 'id', (int) $actor_id );
 	law_event_log(
@@ -1881,6 +1887,16 @@ function law_flagship_add_attendee_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, adding attendees is for the committee.', 'status' => 403 ), 'flagship-denied' );
 	}
 
+	// Country, accessibility and dietary too (Denis, 11 September 2026): the
+	// delegate list and the exports read those columns live from the profile,
+	// and a speaker or VIP added here never filled a registration form in. Not
+	// required, though — this dialog asks only for a name and an email.
+	$profile = law_registration_clean_attendee_profile( wp_unslash( $_POST ) );
+	$valid   = law_registration_validate_attendee_profile( $profile, false );
+	if ( is_wp_error( $valid ) ) {
+		law_events_respond( $is_ajax, false, law_booking_error_payload( $valid ), 'flagship-failed' );
+	}
+
 	$result = law_flagship_add_complimentary(
 		array(
 			'name'         => wp_unslash( (string) ( $_POST['name'] ?? '' ) ),
@@ -1888,6 +1904,7 @@ function law_flagship_add_attendee_handler() {
 			'organisation' => wp_unslash( (string) ( $_POST['organisation'] ?? '' ) ),
 			'job_title'    => wp_unslash( (string) ( $_POST['job_title'] ?? '' ) ),
 			'press'        => ! empty( $_POST['law_press'] ),
+			'profile'      => $profile,
 		),
 		get_current_user_id()
 	);
@@ -1902,7 +1919,10 @@ function law_flagship_add_attendee_handler() {
 		array(
 			'title'    => 'Attendee added',
 			'message'  => 'They have a confirmed place with no charge, and have been emailed their confirmation.',
-			'redirect' => law_flagship_bookings_url(),
+			// With the notice on the redirect too, so the page you land back on
+			// confirms it as well; the dialog's own success text goes with the
+			// reload. The no-JS path already got this from the last argument.
+			'redirect' => add_query_arg( 'law_notice', 'flagship-added', law_flagship_bookings_url() ),
 		),
 		'flagship-added'
 	);

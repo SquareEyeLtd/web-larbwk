@@ -190,6 +190,22 @@
 	color: #292459;
 }
 
+/* A result is the speaker's name, with their job title and organisation under
+   it in small type. The speaker's post ID used to sit beside the name, which
+   told a committee member nothing about which of two similar names they were
+   picking (Denis, 11 September 2026). */
+.law-flagship-dashboard .law-rel-results .law-rel-result-name {
+	display: block;
+}
+
+.law-flagship-dashboard .law-rel-results .law-rel-result-meta {
+	display: block;
+	margin-top: 0.1rem;
+	font-size: 0.8rem;
+	line-height: 1.35;
+	color: #5f5b7d;
+}
+
 .law-flagship-dashboard .law-rel-chosen {
 	max-width: none;
 	margin: 0.6rem 0 0;
