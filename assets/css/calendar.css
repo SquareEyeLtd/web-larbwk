@@ -509,10 +509,6 @@
   color: #a85400;
 }
 
-.law-event-card--sponsored .law-event-card__divider {
-  border-top-color: #f0d8bd;
-}
-
 .law-event-card__body {
   min-width: 0;
   flex: 1 1 auto;
@@ -567,25 +563,6 @@
    than the browser default bold, which is heavy at 0.8rem. */
 .law-event-card__meta strong {
   font-weight: 600;
-}
-
-/* Speaker profile "is speaking at" rows: the person's role, organisation and
-   position at this particular event, separated from the venue/host line and
-   one per line, because "role: Chair · organisation: X · position: Y" run
-   together reads as one fact. */
-.law-event-card__divider {
-  border: 0;
-  border-top: 1px solid #dcdcdc;
-  margin: 0.5rem 0 0.4rem;
-}
-
-.law-event-card__meta--speaker {
-  display: block;
-  color: #333;
-}
-
-.law-event-card__meta--speaker + .law-event-card__meta--speaker::before {
-  content: none;
 }
 
 .law-event-card__actions {
@@ -866,10 +843,12 @@
   margin-top: 0.9rem;
 }
 
-/* The same split as the accordion's panels, one level in: the timeline item's
-   title spans both columns, its description takes the left and its speakers
-   the right. Set on the content block only when the item has both
-   (parts/events/session-timeline.php). */
+/* Two columns from 64em: everything the session SAYS -- its title and its description -- takes the left column, and
+   the people speaking at it take the right, starting level with the title
+   (Denis, 11 September 2026). An earlier version ran the title across both
+   columns, which left the speaker cards hanging below it and broke the reading
+   line between a session's name and its blurb. Set on the content block only
+   when the item has both (parts/events/session-timeline.php). */
 @media screen and (min-width: 64em) {
   .law-timeline__content--split {
     display: grid;
@@ -878,11 +857,16 @@
     align-items: start;
   }
 
-  .law-timeline__content--split > .law-timeline__title {
-    grid-column: 1 / -1;
+  .law-timeline__content--split > .law-timeline__title,
+  .law-timeline__content--split > .law-timeline__body {
+    grid-column: 1;
   }
 
+  /* Spanning both rows rather than sitting in one, so a long description
+     cannot push the cards down the page away from the title they belong to. */
   .law-timeline__content--split > .law-timeline__speakers {
+    grid-column: 2;
+    grid-row: 1 / span 2;
     margin-top: 0;
   }
 }

@@ -104,6 +104,12 @@ backfill-session-agenda).
   `_law_preferred_slots` matched no configured slot and rendered as twelve
   unticked boxes until they were normalised (112 values across 45 events
   locally, 9 September 2026).
+- `law_events_split_slot_label()`: the label split into `date` and `time` on
+  the first colon followed by whitespace (the colon in "08:30" has none, so it
+  survives). For surfaces that stack the two halves rather than let one long
+  "Tue 1st Dec: 08:30-10:00" string set a table column's width; the committee
+  dashboard's Slot column uses it. Any label in another shape comes back whole
+  as the date with an empty time, so nothing is lost.
 - `law_events_slot_choices( $selected )`: the choices the submission/edit form
   renders — every active slot, **plus any retired slot the event already
   holds**, matched by key. This is the parity replacement for
@@ -1292,7 +1298,10 @@ block the queue. Joining is refused while places are free.
   `law_speaker_role_display()` is what a listing prints after the name — `''`
   reads as Speaker, the default, and prints as such on every card (Denis,
   8 September 2026), so it is the one line to change should the default ever
-  be suppressed. `law_speaker_appearances()`,
+  be suppressed. `law_speaker_role_headings()` / `law_speaker_role_heading()`
+  are the same vocabulary phrased as the headings the speaker profile groups
+  its events under ("Speaking at:", "Hosting:", "Moderating at:"), with the
+  same fall back to Speaker. `law_speaker_appearances()`,
   `law_speaker_appearance_for_event()` and `law_speaker_card()` expose `role`;
   a session row's blank role inherits the parent event row's, like its other
   fields, and an explicit Speaker on a session row overrides an event-level
@@ -1330,6 +1339,23 @@ block the queue. Joining is refused while places are free.
   `law_speaker_appearance_for_event()` (the exact row for one event, event row
   first then its sessions), `law_speaker_photo_url()` (row attachment, else the
   featured image).
+- `law_speaker_latest_appearance()` and `law_speaker_row_prefill()`
+  (11 September 2026): the mirror of `law_speaker_first_appearance()`, for
+  EDITING rather than for the archive. The first-appearance rule is what a
+  speaker's card shows (what they were the first time LAW hosted them);
+  prefilling a **new** appearance from the stalest values on record would be
+  wrong, so the picker starts from the latest event on record and falls through
+  to the appearance before it field by field. `law_speaker_latest_appearance()`
+  also carries `role`, which the first-appearance helper deliberately does not:
+  on a card the role is a fact about one event, on a form it is the value the
+  committee most likely wants again. `law_speaker_row_prefill()` wraps it for
+  the picker: **every** status (a speaker record exists from the first draft
+  save, and the appearance worth copying forward is often on an event that is
+  not confirmed yet), with the speaker post's editor content and featured image
+  as the last resort, and the photo's thumbnail URL alongside the ID so the row
+  can show it without a second request. There is no organisation or job title
+  on the speaker post to fall back to: those have been per appearance since 4.1
+  and the old `_law_organisation` / `_law_job_title` meta rows are inert.
 - `law_speaker_post_profile()`, `law_event_speaker_cards()`,
   `law_speaker_card()`: the profile and card shapes the archive/single views
   render. The profile carries `appearances`; a card takes its values from the
@@ -1338,11 +1364,20 @@ block the queue. Joining is refused while places are free.
   photo is the `medium` size, since the single event view renders it at 5.5rem.
   `templates/speaker.php` shows the headline job title and organisation under
   the name, the same two lines the archive card shows and from the same merged
-  profile values (Denis, 11 September 2026), then a "Speaking at:" heading over
-  the event list. It still shows **no biography**: each "Speaking at" card
-  (`parts/loop/event.php`, `speaker` arg) renders a divider and "[name]'s
-  role: …" / "[name]'s organisation: …" / "[name]'s position: …" for that
-  event, and the biography is on the event page's speaker cards. It also passes
+  profile values (Denis, 11 September 2026), then the event list **grouped by
+  the role the person held** (Denis, 11 September 2026):
+  `law_speaker_events_by_role()` splits the programme-ordered list into one
+  group per role and `law_speaker_role_heading()` heads each one — "Speaking
+  at:", "Hosting:" (you host an event, you do not host *at* one) or
+  "Moderating at:". Groups come back in `law_speaker_roles()` order, empty ones
+  are dropped, and an appearance with no role recorded falls under Speaker,
+  the same default `law_speaker_role_display()` applies. The cards themselves
+  carry **no per-appearance lines any more** (Denis, 11 September 2026): the
+  "[name]'s role / organisation / position" block `parts/loop/event.php` used
+  to render from a `speaker` arg is gone, since the heading now says the role
+  and the headline job title and organisation are already above the list. It
+  still shows **no biography** either: that is on the event page's speaker
+  cards. It also passes
   `stacked` (Denis, 11 September 2026), which keeps the card's phone layout at
   every width (buttons on their own line under the text,
   `.law-event-card--stacked`), because the profile column is narrow and the
@@ -1352,8 +1387,12 @@ block the queue. Joining is refused while places are free.
   `strip_shortcodes()` because an appearance biography never passes through
   `the_content`) and `law_speaker_bio_summary()` (the full plain text, the
   excerpt, and whether the excerpt trimmed anything — the card offers "Read
-  full bio" only when it did). `law_speaker_seo_description()` reuses the
-  excerpt.
+  full bio" only when it did). The summary trims to **14** words, about two
+  lines in the third-width card column beside a session's description, because
+  24 ran to four or five lines and the card competed with the session it
+  belongs to (Denis, 11 September 2026); the excerpt helper keeps its own 24
+  for `law_speaker_seo_description()`, which reuses it as a meta description
+  where a longer summary is the point.
 - `law_speaker_dialog_register()` / `law_speaker_dialogs()`: the request-scoped
   registry behind the single event view's biography dialogs. A speaker card
   registers and gets an element id back; `parts/calendar-body.php` prints the
@@ -2392,8 +2431,13 @@ event status by the rebuild) plus "Reference".
   date & time slots, Confirmed slot, Event status, Payment status, Submitted
   (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Linked
   organisations (`law_event_organisation_names()`, `; `-joined), Sponsored
-  (`law_events_post_is_sponsored()`, `Yes` or blank), Event fee,
-  Discounted fee, Venue capacity, Tickets available, Venue. The fee column
+  (`law_events_post_is_sponsored()`, `Yes` or blank), Run by LAW, Session
+  agenda, Event fee,
+  Discounted fee, Venue capacity, Tickets available, Bookings, Places left,
+  Venue. Bookings and Places left are the same two figures the screen table
+  shows (`law_event_attendee_total()` and `law_event_tickets_remaining()`),
+  with Places left blank when no capacity is set, i.e. not open for booking.
+  The fee column
   reads the `_law_fee_pence` approval snapshot but falls back to
   `law_event_calculate_fee_pence()` when it is not set yet, so pre-approval
   events export their live fee rather than £0.00.
@@ -2561,6 +2605,17 @@ event status by the rebuild) plus "Reference".
   cannot drift; the role choices reach it as `lawEventsAdmin.roleChoices`
   through the existing `wp_localize_script()` call. The same picker renders
   on the session screen, which is where a per-session role override lives.
+  **Choosing an existing speaker prefills the row** (Denis, 11 September 2026):
+  the search endpoint returns `law_speaker_row_prefill()` alongside each
+  speaker result — role, organisation, job title, photo (ID and thumbnail URL)
+  and biography from that person's latest appearance, falling back to their
+  profile — and `addItem()` writes them into the new row before TinyMCE
+  attaches, so the committee edits values instead of retyping them. They are
+  defaults, not facts about the person: every field stays editable and what is
+  saved is still the appearance at THIS event or session. The values are
+  assigned as element properties after the row markup is built, never
+  interpolated into the HTML string, since the biography is rich text and an
+  organisation may contain a quote or an ampersand.
 - **`event-screen.php`** — the custom event edit screen: meta boxes for
   workflow actions, fee (with override), programme facts, invoice contact,
   people (co-owners/contacts), speakers, sessions, the comment thread and the
@@ -2882,12 +2937,12 @@ These predate the rebuild and now branch on `law_events_source()`.
     name gave no clue which was which. The label/value split is why
     `law_calendar_host_names()` exists alongside `law_calendar_hosted_by()`:
     the card needs the names without the label. The weight is 600 via
-    `.law-event-card__meta strong`, which also covers the speaker lines. The same card serves the
-    speaker profile's "Speaking at:" list and the account pages, so they
+    `.law-event-card__meta strong`. The same card serves the
+    speaker profile's role-grouped lists and the account pages, so they
     got the density too, by Denis's request for the speakers; only the time
     line is contextual — `.law-cal-day-section` hides it (the slot heading
     says it) and everywhere else, where `show_date` is passed, it stays as
-    the row's date. The speaker lines stay one per line.
+    the row's date.
   - **`programme-old/` — the original layout, for reference only** at
     `/programme/?variant=old`: its own page template (`template_include`),
     verbatim copies of the two partials as they were, the old CSS rules
@@ -3016,7 +3071,8 @@ These predate the rebuild and now branch on `law_events_source()`.
   (programme), `speakers.php` (the speakers archive, page template "Speakers",
   page 658 Speakers) and `speaker.php` (a single profile — no "Template Name",
   routed in by `law_speakers_single_template()`; it shows the photo, name,
-  website link and "Speaking at" cards, with the organisation, job title and
+  website link and the event cards grouped under "Speaking at:" / "Hosting:" /
+  "Moderating at:", with the organisation, job title and
   biography now per appearance and shown on the event pages). The committee
   calendar template enforces `law_user_is_committee()` in code, not only via
   the Members plugin. The archive's loop card is `parts/loop/speaker.php` and
@@ -3155,7 +3211,8 @@ These predate the rebuild and now branch on `law_events_source()`.
   ordinary events collapsed exactly that. The accordion markup, its
   `.law-cal-session*` styles and the style switch that chose between the two are
   gone; only the heading differs between the two pages. Each item puts its
-  description on the left and that session's speakers on the right from 64em
+  title and its description on the left and that session's speakers on the
+  right from 64em, the cards starting level with the title
   (`.law-timeline__content--split`, set only when the item has both). The
   **flagship alone** renders the timeline inside a filled navy panel
   (`.law-timeline-section--panel`, set from `templates/flagship-event.php` via
@@ -3175,7 +3232,7 @@ These predate the rebuild and now branch on `law_events_source()`.
   single event view — photo or initials, the name with the role at this event
   in brackets after it (`.law-cal-speakers__tag`, outside the profile link so
   the link text stays the name), "job title, organisation", a
-  24-word biography excerpt and the "Read full bio" pair: the
+  14-word biography excerpt (about two lines) and the "Read full bio" pair: the
   `[data-law-modal-enhanced]` button and the `[data-law-modal-fallback]`
   `<details>` holding the full text for the no-JS path, which also keeps it
   indexable now that the profile page carries no biography. Used by both the
@@ -3201,7 +3258,13 @@ These predate the rebuild and now branch on `law_events_source()`.
   caller), `thread-bubble.php` (one message bubble, shared by the thread loop
   and the AJAX reply response so the two markups cannot drift),
   `dashboard-list.php` (the committee event table, rendered both
-  inline and as the `law_partial` AJAX response),
+  inline and as the `law_partial` AJAX response; columns Event, Host, Slot
+  (the date with the time under it, via `law_events_split_slot_label()`),
+  Status, Payment, Bookings, Places left, actions — the last two read
+  `_law_tickets_sold` and `_law_tickets_available` off the event rather than
+  counting bookings per row, so a 300-row list costs no extra queries;
+  Bookings links to the per-event booking list and carries the waiting count
+  underneath, and shows a dash on anything not yet Confirmed),
   `event-form-fields.php` (the six shared submission-form fieldsets — Event
   details, Speakers, Venue, Owners & contacts, Fees, Session agenda —
   consumed by both the host form template and the committee edit view so the

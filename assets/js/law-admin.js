@@ -85,13 +85,22 @@
 			return select.outerHTML;
 		}
 
-		function addItem(id, title) {
+		/* Add a chosen row. `item` is the search result, which for a speaker
+		   carries the prefill the endpoint worked out (role, organisation, job
+		   title, photo and biography from that speaker's latest appearance, falling
+		   back to their profile) so the committee edits values rather than typing
+		   them again. Every field stays editable: what is saved is still the
+		   appearance at THIS event or session. Values are assigned as properties
+		   after the markup is built, never interpolated into the HTML string: the
+		   biography is rich text and an organisation may legitimately contain a
+		   quote or an ampersand. */
+		function addItem(item) {
 			var li = document.createElement('li');
 			li.className = 'law-rel-item';
 			var i = rowIndex();
 			var fields = simple
-				? '<input type="hidden" name="' + name + '[]" value="' + id + '">'
-				: '<input type="hidden" name="' + name + '[' + i + '][speaker_id]" value="' + id + '">' +
+				? '<input type="hidden" name="' + name + '[]" value="' + item.id + '">'
+				: '<input type="hidden" name="' + name + '[' + i + '][speaker_id]" value="' + item.id + '">' +
 					roleSelect(name + '[' + i + '][role]') +
 					'<input type="text" name="' + name + '[' + i + '][organisation]" value="" placeholder="Organisation at this event" class="law-rel-org">' +
 					'<input type="text" name="' + name + '[' + i + '][job_title]" value="" placeholder="Job title at this event" class="law-rel-job">' +
@@ -107,11 +116,29 @@
 						'aria-label="Biography for this event" class="law-rich-text__area law-rel-bio" data-law-rich></textarea></span>';
 			li.innerHTML = '<span class="law-rel-title"></span>' + fields +
 				'<button type="button" class="button-link-delete law-rel-remove" aria-label="Remove">×</button>';
-			li.querySelector('.law-rel-title').textContent = title;
+			li.querySelector('.law-rel-title').textContent = item.title;
+			if (!simple) {
+				prefill(li, item);
+			}
 			chosen.appendChild(li);
 			// After the append, never before it: TinyMCE measures and replaces an
-			// element that has to already be in the document.
+			// element that has to already be in the document. The biography is set
+			// on the textarea first, so the editor opens on it.
 			if (window.lawRichText) { window.lawRichText.initAll(li); }
+		}
+
+		/* The chosen speaker's known values, written into the new row. */
+		function prefill(li, item) {
+			var role = li.querySelector('.law-rel-role');
+			if (role && item.role) { role.value = item.role; }
+			var org = li.querySelector('.law-rel-org');
+			if (org) { org.value = item.organisation || ''; }
+			var job = li.querySelector('.law-rel-job');
+			if (job) { job.value = item.job_title || ''; }
+			var bio = li.querySelector('.law-rel-bio');
+			if (bio) { bio.value = item.bio || ''; }
+			var photo = li.querySelector('[data-law-rel-photo]');
+			if (photo && item.photo_id) { setPhoto(photo, item.photo_id, item.photo || ''); }
 		}
 
 		search.addEventListener('input', function () {
@@ -130,7 +157,7 @@
 						button.className = 'button-link';
 						button.textContent = item.title + ' (#' + item.id + ')';
 						button.addEventListener('click', function () {
-							addItem(item.id, item.title);
+							addItem(item);
 							results.hidden = true;
 							search.value = '';
 						});

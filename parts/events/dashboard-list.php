@@ -38,7 +38,7 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 	</p>
 	<div class="law-dashboard__table-wrap">
 		<table class="law-dashboard__table">
-			<thead><tr><th>Event</th><th>Host</th><th>Slot</th><th>Status</th><th>Payment</th><th></th></tr></thead>
+			<thead><tr><th>Event</th><th>Host</th><th>Slot</th><th>Status</th><th>Payment</th><th>Bookings</th><th>Places left</th><th></th></tr></thead>
 			<tbody>
 			<?php foreach ( $law_events as $law_row ) :
 				$law_row_status = law_event_status_label( $law_row );
@@ -53,13 +53,69 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 							<br><span class="law-dashboard__row-note"><?php echo esc_html( $law_row_agenda ); ?></span>
 						<?php endif; ?></td>
 					<td><?php echo esc_html( $law_row_author ? $law_row_author->display_name : '—' ); ?></td>
-					<td><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_slot_label' ) ?: '—' ); ?></td>
+					<?php // Date on one line, time under it: the label is the widest thing
+					// in the column otherwise, and the two halves read faster stacked. ?>
+					<?php $law_row_slot = law_events_split_slot_label( law_event_meta( $law_row->ID, '_law_slot_label' ) ); ?>
+					<td>
+						<?php if ( '' === $law_row_slot['date'] ) : ?>
+							—
+						<?php else : ?>
+							<?php echo esc_html( $law_row_slot['date'] ); ?>
+							<?php if ( '' !== $law_row_slot['time'] ) : ?>
+								<br><span class="law-dashboard__row-note"><?php echo esc_html( $law_row_slot['time'] ); ?></span>
+							<?php endif; ?>
+						<?php endif; ?>
+					</td>
 					<td><span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( law_calendar_status_slug( $law_row_status ) ); ?>"><?php echo esc_html( $law_row_status ); ?></span></td>
 					<td><?php echo esc_html( ucfirst( (string) law_event_meta( $law_row->ID, '_law_payment_status' ) ) ?: '—' ); ?></td>
+					<?php
+					// Bookings and places left, both straight off the event's own meta
+					// (_law_tickets_sold, kept current by law_event_recount_attendees(),
+					// and _law_tickets_available) rather than a count query per row, so
+					// the columns cost nothing on a 300-row list.
+					//
+					// Only a Confirmed (published) event can hold a booking, so the count
+					// is a dash rather than a hollow 0 on everything else. Places left is
+					// null until capacity is set at approval, which means "not open for
+					// booking" -- the same reading law_booking_guard_open() takes.
+					$law_row_sold      = function_exists( 'law_event_attendee_total' ) ? law_event_attendee_total( $law_row->ID ) : 0;
+					$law_row_available = (int) law_event_meta( $law_row->ID, '_law_tickets_available' );
+					$law_row_left      = function_exists( 'law_event_tickets_remaining' ) ? law_event_tickets_remaining( $law_row->ID ) : null;
+					$law_row_waiting   = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $law_row->ID ) : 0;
+					$law_row_bookable  = 'publish' === $law_row->post_status;
+					?>
+					<td>
+						<?php if ( ! $law_row_bookable ) : ?>
+							—
+						<?php elseif ( function_exists( 'law_booking_list_url' ) ) : ?>
+							<a href="<?php echo esc_url( law_booking_list_url( $law_row->ID ) ); ?>"><?php echo esc_html( number_format_i18n( $law_row_sold ) ); ?></a>
+						<?php else : ?>
+							<?php echo esc_html( number_format_i18n( $law_row_sold ) ); ?>
+						<?php endif; ?>
+						<?php if ( $law_row_waiting ) : ?>
+							<br><span class="law-dashboard__row-note"><?php printf( esc_html( _n( '%s waiting', '%s waiting', $law_row_waiting, 'law' ) ), esc_html( number_format_i18n( $law_row_waiting ) ) ); ?></span>
+						<?php endif; ?>
+					</td>
+					<td>
+						<?php
+						// "of 80" only once some of them have gone: on an event nobody
+						// has booked yet the capacity IS the number above it, and
+						// repeating it says nothing (Denis, 11 September 2026).
+						?>
+						<?php if ( null === $law_row_left ) : ?>
+							—
+						<?php else : ?>
+							<?php echo esc_html( number_format_i18n( $law_row_left ) ); ?>
+							<?php if ( $law_row_left !== $law_row_available ) : ?>
+								<br><span class="law-dashboard__row-note"><?php printf( esc_html__( 'of %s', 'law' ), esc_html( number_format_i18n( $law_row_available ) ) ); ?></span>
+							<?php endif; ?>
+						<?php endif; ?>
+					</td>
 					<td class="law-dashboard__row-actions"><a class="button" href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, get_permalink() ) ); ?>">Review</a>
-					<?php if ( 'publish' === $law_row->post_status && function_exists( 'law_booking_list_url' ) ) : ?>
-						<?php // The same bookings list the host sees: one view, one gate. ?>
-						<a class="button" href="<?php echo esc_url( law_booking_list_url( $law_row->ID ) ); ?>"><?php echo esc_html( law_booking_counts_label( $law_row->ID ) ); ?></a>
+					<?php if ( $law_row_bookable && function_exists( 'law_booking_list_url' ) ) : ?>
+						<?php // The same bookings list the host sees: one view, one gate. The
+						// count lives in the Bookings column now, so the button is just a way in. ?>
+						<a class="button" href="<?php echo esc_url( law_booking_list_url( $law_row->ID ) ); ?>"><?php esc_html_e( 'Bookings', 'law' ); ?></a>
 					<?php endif; ?></td>
 				</tr>
 			<?php endforeach; ?>

@@ -9,6 +9,12 @@
 
 $law_speaker = law_speaker_current_profile();
 $law_events  = $law_speaker ? law_speaker_events( $law_speaker ) : array();
+// One list per role the person held (Speaking at / Hosting / Moderating at),
+// in law_speaker_roles() order; an event with no role recorded falls under
+// Speaker.
+$law_event_groups = $law_events && function_exists( 'law_speaker_events_by_role' )
+	? law_speaker_events_by_role( $law_speaker['id'], $law_events )
+	: array( 'speaker' => $law_events );
 
 get_header();
 ?>
@@ -75,40 +81,35 @@ get_header();
 						?>
 					</div>
 
-					<?php if ( $law_events ) : ?>
+					<?php if ( $law_event_groups ) : ?>
 						<?php
 						// A profile only renders while a confirmed event references the
-						// speaker, so this list is never empty.
+						// speaker, so there is always at least one group here.
 						?>
 						<div class="law-speaker__events law-cal">
-							<h3 class="law-speaker__events-heading"><?php esc_html_e( 'Speaking at:', 'law' ); ?></h3>
-							<?php foreach ( $law_events as $law_event ) : ?>
-								<?php
-								// What this speaker was at THIS event (role, organisation and
-								// position as submitted for it), rendered under "Hosted by".
-								$law_appearance = function_exists( 'law_speaker_appearance_for_event' )
-									? law_speaker_appearance_for_event( $law_speaker['id'], law_events_resolve_event_post_id( $law_event['id'] ) )
-									: null;
-								get_template_part(
-									'parts/loop/event',
-									null,
-									array(
-										'event'     => $law_event,
-										'url'       => law_speaker_event_link( $law_event['id'] ),
-										'show_date' => true,
-										// The profile column is narrow and each card also carries the
-										// appearance lines, so the buttons go under the text rather
-										// than squeezing the title into half the width.
-										'stacked'   => true,
-										'speaker'   => $law_appearance ? array(
-											'name'         => $law_speaker['name'],
-											'role'         => $law_appearance['role'],
-											'organisation' => $law_appearance['organisation'],
-											'job_title'    => $law_appearance['job_title'],
-										) : array(),
-									)
-								);
-								?>
+							<?php foreach ( $law_event_groups as $law_role => $law_role_events ) : ?>
+								<div class="law-speaker__events-group">
+									<h3 class="law-speaker__events-heading">
+										<?php echo esc_html( function_exists( 'law_speaker_role_heading' ) ? law_speaker_role_heading( $law_role ) : __( 'Speaking at:', 'law' ) ); ?>
+									</h3>
+									<?php foreach ( $law_role_events as $law_event ) : ?>
+										<?php
+										get_template_part(
+											'parts/loop/event',
+											null,
+											array(
+												'event'     => $law_event,
+												'url'       => law_speaker_event_link( $law_event['id'] ),
+												'show_date' => true,
+												// The profile column is narrow, so the buttons go under
+												// the text rather than squeezing the title into half
+												// the width.
+												'stacked'   => true,
+											)
+										);
+										?>
+									<?php endforeach; ?>
+								</div>
 							<?php endforeach; ?>
 						</div>
 					<?php endif; ?>

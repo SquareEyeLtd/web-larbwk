@@ -298,7 +298,12 @@
 	margin-bottom: 1rem;
 }
 
-/* "Speaking at:" — the heading over the profile's event list. */
+/* The profile's event list is one group per role the person held, each under
+   its own heading ("Speaking at:", "Hosting:", "Moderating at:"). */
+.law-speaker__events-group + .law-speaker__events-group {
+	margin-top: 2rem;
+}
+
 .page-section .law-speaker__events .law-speaker__events-heading {
 	margin-bottom: 1rem;
 	color: #292459;

@@ -117,6 +117,41 @@ class SpeakerRolesTest extends LAW_Test_Case {
 		$this->assertArrayNotHasKey( 'role', law_speaker_first_appearance( $speaker ), 'The archive headline never carries a role: it is per event.' );
 	}
 
+	public function test_profile_headings_and_grouping_split_events_by_role(): void {
+		$this->assertSame( 'Speaking at:', law_speaker_role_heading( 'speaker' ) );
+		$this->assertSame( 'Hosting:', law_speaker_role_heading( 'host' ), 'You host an event, you do not host at one.' );
+		$this->assertSame( 'Moderating at:', law_speaker_role_heading( 'Moderator' ), 'A label maps to the key, like every other role helper.' );
+		$this->assertSame( 'Speaking at:', law_speaker_role_heading( '' ), 'No role recorded reads as Speaker, the module default.' );
+		$this->assertSame( 'Speaking at:', law_speaker_role_heading( 'chair' ), 'Anything outside the vocabulary falls back too.' );
+
+		$speaker       = law_speaker_upsert( array( 'name' => 'Role Grouping Testspeaker', 'email' => 'role-grouping-test@example.test' ) );
+		$this->posts[] = $speaker;
+
+		$moderated     = $this->make_event( array(), 'publish' );
+		$hosted        = $this->make_event( array(), 'publish' );
+		$unset_role    = $this->make_event( array(), 'publish' );
+		law_event_update_meta( $moderated, '_law_speakers', array( array( 'speaker_id' => $speaker, 'role' => 'moderator' ) ) );
+		law_event_update_meta( $hosted, '_law_speakers', array( array( 'speaker_id' => $speaker, 'role' => 'host' ) ) );
+		law_event_update_meta( $unset_role, '_law_speakers', array( array( 'speaker_id' => $speaker ) ) );
+
+		$groups = law_speaker_events_by_role(
+			$speaker,
+			array(
+				array( 'id' => $moderated ),
+				array( 'id' => $hosted ),
+				array( 'id' => $unset_role ),
+			)
+		);
+
+		$this->assertSame( array( 'speaker', 'host', 'moderator' ), array_keys( $groups ), 'Groups come back in law_speaker_roles() order.' );
+		$this->assertSame( array( $unset_role ), array_column( $groups['speaker'], 'id' ), 'An event with no role recorded falls under Speaker.' );
+		$this->assertSame( array( $hosted ), array_column( $groups['host'], 'id' ) );
+		$this->assertSame( array( $moderated ), array_column( $groups['moderator'], 'id' ) );
+
+		$only_hosting = law_speaker_events_by_role( $speaker, array( array( 'id' => $hosted ) ) );
+		$this->assertSame( array( 'host' ), array_keys( $only_hosting ), 'Empty groups are dropped, so one role means one heading.' );
+	}
+
 	public function test_migration_maps_field_9_by_label_and_sessions_copy_the_event_row(): void {
 		// Step 3's mapper is law_speaker_role_key( rgar( $child, '9' ) ): the
 		// live drop down stores the label, a local database has no field 9 at all.

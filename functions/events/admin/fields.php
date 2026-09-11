@@ -310,9 +310,21 @@ add_action( 'wp_ajax_law_events_search_posts', function () {
 		)
 	);
 
+	// A speaker result carries everything the module already knows about that
+	// person, so picking them prefills the row instead of presenting empty
+	// fields the committee has to retype (Denis, 11 September 2026). The values
+	// are the speaker's LATEST appearance, with the speaker post's own biography
+	// and featured image as the fallback (law_speaker_row_prefill()). They are
+	// defaults, not facts about the person: the row stays fully editable, and
+	// what is saved is still the appearance at THIS event or session.
 	wp_send_json_success(
 		array_map(
-			fn( $p ) => array( 'id' => $p->ID, 'title' => $p->post_title ),
+			function ( $p ) use ( $post_type ) {
+				$item = array( 'id' => $p->ID, 'title' => $p->post_title );
+				return LAW_SPEAKER_CPT === $post_type
+					? $item + law_speaker_row_prefill( (int) $p->ID )
+					: $item;
+			},
 			$posts
 		)
 	);
@@ -338,7 +350,7 @@ add_action( 'admin_enqueue_scripts', function ( $hook ) {
 		law_rich_text_enqueue();
 	}
 	wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.6' );
-	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.6', true );
+	wp_enqueue_script( 'law-events-admin', get_theme_file_uri( 'assets/js/law-admin.js' ), array(), '1.7', true );
 	wp_localize_script(
 		'law-events-admin',
 		'lawEventsAdmin',
