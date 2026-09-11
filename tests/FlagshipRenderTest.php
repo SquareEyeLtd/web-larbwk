@@ -331,9 +331,10 @@ class FlagshipRenderTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * The agenda is a timeline, not the accordion the ordinary single event view
-	 * uses: a day-long programme is the content, and collapsing eight sessions
-	 * behind summaries hides it.
+	 * The agenda is a timeline of open sessions: a day-long programme is the
+	 * content, and collapsing eight sessions behind summaries hides it. The
+	 * ordinary single event view renders the same timeline; the flagship differs
+	 * only in calling its running order an Agenda.
 	 */
 	public function test_the_agenda_renders_as_a_timeline_of_open_sessions(): void {
 		$event_id = $this->make_flagship();
@@ -355,17 +356,18 @@ class FlagshipRenderTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'Opening keynote', $html );
 		$this->assertStringContainsString( 'Closing panel', $html );
 
-		// And the flagship template is what asks for it.
+		// And the flagship template is what names it.
 		$template = file_get_contents( get_theme_file_path( 'templates/flagship-event.php' ) );
-		$this->assertStringContainsString( "\$law_cal_sessions_style = 'timeline';", $template );
+		$this->assertStringContainsString( "\$law_cal_sessions_heading = __( 'Agenda', 'law' );", $template );
 	}
 
 	/**
-	 * A session with no description and nobody speaking is a break
-	 * (registration, coffee, lunch) and is de-emphasised, so the shape of the
-	 * day reads at a glance instead of as eight equal-weight rows.
+	 * Every session carries the same marker and the same weight. The timeline
+	 * used to guess that a session with no description and nobody speaking was a
+	 * break and grey it out; Denis had that removed on 11 September 2026, because
+	 * a real session whose blurb is not written yet then read as a coffee break.
 	 */
-	public function test_a_break_is_marked_as_one(): void {
+	public function test_no_session_is_de_emphasised_for_want_of_a_description(): void {
 		$sessions = array(
 			array( 'id' => 1, 'title' => 'Keynote', 'start' => '09:30', 'end' => '10:30', 'time_label' => '09:30–10:30', 'description' => '<p>Opening remarks.</p>', 'speakers' => array() ),
 			array( 'id' => 2, 'title' => 'Coffee break', 'start' => '10:30', 'end' => '11:00', 'time_label' => '10:30–11:00', 'description' => '', 'speakers' => array() ),
@@ -375,9 +377,13 @@ class FlagshipRenderTest extends LAW_Test_Case {
 		get_template_part( 'parts/events/session-timeline', null, array( 'sessions' => $sessions ) );
 		$html = (string) ob_get_clean();
 
-		$this->assertSame( 1, substr_count( $html, 'law-timeline__item--break' ) );
-		// The break is the second item, not the keynote.
-		$this->assertGreaterThan( strpos( $html, 'Keynote' ), strpos( $html, 'law-timeline__item--break' ) );
+		$this->assertSame( 2, substr_count( $html, '<li class="law-timeline__item">' ), 'Both items, identically classed.' );
+		$this->assertStringNotContainsString( 'law-timeline__item--break', $html );
+		$this->assertStringNotContainsString(
+			'law-timeline__item--break',
+			(string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) ),
+			'And no styles left behind to bring it back.'
+		);
 	}
 
 	public function test_the_flagship_template_trims_the_details_rows(): void {

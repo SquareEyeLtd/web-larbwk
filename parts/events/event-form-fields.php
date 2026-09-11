@@ -213,11 +213,18 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 					// carries it forward by speaker, it never trusts a posted ID).
 					$law_row_photo = ! $law_is_template && ! empty( $law_row['photo_id'] ) ? wp_get_attachment_image_url( (int) $law_row['photo_id'], 'thumbnail' ) : '';
 					?>
-					<label>Photo (JPG/PNG/WebP, 5 MB max)<input type="file" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speaker_photo[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>]" accept=".jpg,.jpeg,.png,.webp"><button type="button" class="law-file-clear" hidden>Clear photo</button>
+					<label>Photo<input type="file" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speaker_photo[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>]" accept="<?php echo esc_attr( law_events_photo_accept() ); ?>"><button type="button" class="law-file-clear" hidden>Clear photo</button>
 						<?php if ( $law_row_photo ) : ?>
 							<input type="hidden" name="speakers[<?php echo esc_attr( $law_i ); ?>][photo_id]" value="<?php echo esc_attr( (string) (int) $law_row['photo_id'] ); ?>">
 							<span class="law-current-photo"><img src="<?php echo esc_url( $law_row_photo ); ?>" alt="" width="40" height="40"> Current photo for this event (upload a new file to replace it)</span>
 						<?php endif; ?>
+						<?php
+						/* The limits, spelled out under the whole control rather than
+						   crammed into the label: the pixel bounds were enforced but
+						   never mentioned, so a big photo failed on a rule nobody had
+						   been shown. */
+						?>
+						<span class="law-form-hint"><?php echo esc_html( law_events_photo_hint() ); ?></span>
 					</label>
 					<div class="law-row-wide"><span class="law-form-label">Biography</span>
 						<?php

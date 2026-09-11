@@ -86,7 +86,7 @@ $law_fc_action = function_exists( 'law_flagship_card_action' ) ? law_flagship_ca
 			<ul class="law-flagship-card__sessions">
 				<?php foreach ( $law_fc_sessions as $law_fc_session ) : ?>
 					<?php
-					// Same fallback order as the accordion on the event page, so a
+					// Same fallback order as the timeline on the event page, so a
 					// session with no title reads the same in both places.
 					$law_fc_label = trim( (string) ( $law_fc_session['title'] ?? '' ) );
 					if ( '' === $law_fc_label ) {
@@ -94,9 +94,9 @@ $law_fc_action = function_exists( 'law_flagship_card_action' ) ? law_flagship_ca
 					}
 
 					// 12-hour, the format the flagship page's own agenda and every
-					// event's Time fact use. The row's time_label is 24-hour with an
-					// en dash, which is right inside the accordion but would print
-					// two different clocks for the same session across two pages.
+					// event's Time fact use. The row's stored time_label is 24-hour with
+					// an en dash, which would print two different clocks for the same
+					// session across two pages.
 					$law_fc_session_time = '';
 					if ( ! empty( $law_fc_session['start'] ) ) {
 						$law_fc_session_time = law_calendar_time_12h( $law_fc_session['start'] );

@@ -196,13 +196,13 @@ get_template_part( 'parts/layout/back-link', null, array(
 						</p>
 
 						<p class="law-form-field law-speaker-appearance__photo">
-							<label for="law-sm-photo-<?php echo esc_attr( (string) $law_sm_event ); ?>"><?php esc_html_e( 'Photo (JPG/PNG/WebP, 5 MB max)', 'law' ); ?></label>
+							<label for="law-sm-photo-<?php echo esc_attr( (string) $law_sm_event ); ?>"><?php esc_html_e( 'Photo', 'law' ); ?></label>
 							<?php if ( $law_sm_photo ) : ?>
 								<img src="<?php echo esc_url( (string) wp_get_attachment_image_url( $law_sm_photo, 'thumbnail' ) ); ?>" alt="" width="72" height="72">
 							<?php endif; ?>
 							<input type="file" id="law-sm-photo-<?php echo esc_attr( (string) $law_sm_event ); ?>"
 								name="speaker_photo[<?php echo esc_attr( (string) $law_sm_event ); ?>]"
-								accept=".jpg,.jpeg,.png,.webp">
+								accept="<?php echo esc_attr( law_events_photo_accept() ); ?>">
 							<?php $law_sm_error( 'speaker_photo_' . $law_sm_event ); ?>
 							<?php if ( $law_sm_photo ) : ?>
 								<label class="law-speaker-appearance__remove">
@@ -210,7 +210,10 @@ get_template_part( 'parts/layout/back-link', null, array(
 									<?php esc_html_e( 'Remove the photo for this event', 'law' ); ?>
 								</label>
 							<?php endif; ?>
-							<span class="law-form-hint"><?php esc_html_e( 'Leave empty to keep the current photo. With none, the event shows the first photo ever supplied for this speaker.', 'law' ); ?></span>
+							<span class="law-form-hint"><?php
+								esc_html_e( 'Leave empty to keep the current photo. With none, the event shows the first photo ever supplied for this speaker.', 'law' );
+								echo ' ' . esc_html( law_events_photo_hint() );
+							?></span>
 						</p>
 					</div>
 

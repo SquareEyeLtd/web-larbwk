@@ -751,6 +751,79 @@ function law_event_session_ids( $event_id ) {
 }
 
 /**
+ * Speaker cards in the order the front end shows them: alphabetical by
+ * surname, then first name (Denis, 11 September 2026). The stored order of
+ * _law_speakers is only the order whoever filled the form typed the rows in,
+ * which tells a reader nothing and puts the same person in a different place
+ * on every event.
+ *
+ * The surname comes from the speaker post when the card names one, since the
+ * two name parts have been stored separately since 9 September 2026 and are
+ * more reliable than splitting a display name ("Ali Malek KC", "van der Berg").
+ * Otherwise the card's display name is split, which is all a legacy calendar
+ * card carries.
+ *
+ * @param array[] $cards law_speaker_card() rows.
+ * @return array[]
+ */
+function law_speakers_sort_cards( array $cards ) {
+	$rows = array();
+	foreach ( array_values( $cards ) as $index => $card ) {
+		// The key is computed once per card rather than inside the comparator,
+		// which would re-read the post meta on every comparison.
+		$rows[] = array(
+			'key'   => law_speaker_sort_key( (array) $card ),
+			'index' => $index,
+			'card'  => $card,
+		);
+	}
+	usort(
+		$rows,
+		// The index breaks ties explicitly, so two identical names keep the
+		// order they were entered in whatever the sort implementation does.
+		fn( $a, $b ) => strcmp( $a['key'], $b['key'] ) ?: ( $a['index'] <=> $b['index'] )
+	);
+	return wp_list_pluck( $rows, 'card' );
+}
+
+/**
+ * The comparable "surname, first name" key for one speaker card.
+ *
+ * A one-word name ("Cher") has no surname, so it files under the name itself
+ * rather than sorting above everybody else on an empty key.
+ *
+ * @param array $card A law_speaker_card() row (or a legacy calendar card).
+ */
+function law_speaker_sort_key( array $card ) {
+	$id = (int) ( $card['id'] ?? 0 );
+	// The post-type check matters: a legacy calendar card's id is a Gravity
+	// Forms entry ID, not a post ID, so the meta is only read when the card
+	// really does point at a speaker post.
+	$parts = $id && LAW_SPEAKER_CPT === get_post_type( $id )
+		? law_speaker_name_parts( $id )
+		: law_speaker_split_name( (string) ( $card['name'] ?? '' ) );
+
+	$first = law_speaker_sort_token( $parts['first'] );
+	$last  = law_speaker_sort_token( $parts['last'] );
+	return ( '' !== $last ? $last : $first ) . ' ' . $first;
+}
+
+/**
+ * Fold one name to its comparable form: accents removed, lower case, and
+ * punctuation dropped, so "O'Donnell" files under "odonnell" and "Odegaard"
+ * files under "odegaard" rather than sorting after Z. A name that is left with
+ * nothing (a script remove_accents() cannot transliterate) keeps its own
+ * lower-cased text instead of collapsing to an empty key.
+ *
+ * @param string $name First or last name.
+ */
+function law_speaker_sort_token( $name ) {
+	$name    = mb_strtolower( trim( (string) $name ) );
+	$folded  = (string) preg_replace( '/[^a-z0-9]+/', '', remove_accents( $name ) );
+	return '' !== $folded ? $folded : $name;
+}
+
+/**
  * Card-shaped speaker rows for an event listing (the shape
  * parts/calendar-body.php renders): id, name, role, organisation, job_title,
  * url (profile), photo, photo_id, bio. Values are the event's own appearance
@@ -766,7 +839,7 @@ function law_event_speaker_cards( $event_id ) {
 			$cards[] = $card;
 		}
 	}
-	return $cards;
+	return law_speakers_sort_cards( $cards );
 }
 
 /**
@@ -947,7 +1020,7 @@ function law_event_session_rows( $event_id ) {
 			'end'         => $end,
 			'time_label'  => $time_label,
 			'description' => $desc,
-			'speakers'    => $speakers,
+			'speakers'    => law_speakers_sort_cards( $speakers ),
 		);
 	}
 	return $sessions;

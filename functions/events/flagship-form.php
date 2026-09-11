@@ -174,8 +174,7 @@ function law_flagship_render_new_speaker_row( $name, $j, array $row ) {
 		return sprintf( '%s[%s][%s]', $name, $j, $key );
 	};
 
-	$photo_id  = absint( $row['photo_id'] ?? 0 );
-	$photo_url = $photo_id ? (string) wp_get_attachment_image_url( $photo_id, 'thumbnail' ) : '';
+	$photo_id = absint( $row['photo_id'] ?? 0 );
 
 	echo '<li class="law-rel-item is-new">';
 	echo '<span class="law-rel-title">New speaker</span>';
@@ -234,12 +233,8 @@ function law_flagship_render_new_speaker_row( $name, $j, array $row ) {
 	// [data-law-rel-photo]), so a committee member picks an image they have
 	// already uploaded rather than re-uploading it.
 	echo '<span class="law-field-photo"><span class="law-form-label">Photo for this event</span>';
-	echo '<span class="law-rel-photo" data-law-rel-photo>';
-	printf( '<input type="hidden" name="%s" value="%d" class="law-rel-photo-id">', esc_attr( $field( 'photo_id' ) ), $photo_id );
-	printf( '<img class="law-rel-photo-thumb" src="%s" alt="" width="32" height="32"%s>', esc_url( $photo_url ), $photo_url ? '' : ' hidden' );
-	echo '<button type="button" class="button-link law-rel-photo-choose">' . ( $photo_url ? 'Change photo' : 'Choose photo' ) . '</button>';
-	echo '<button type="button" class="button-link law-rel-photo-clear"' . ( $photo_url ? '' : ' hidden' ) . '>Remove photo</button>';
-	echo '</span></span>';
+	law_field_relationship_photo( '', 0, $photo_id, $field( 'photo_id' ) );
+	echo '</span>';
 
 	echo '<div class="law-row-wide"><span class="law-form-label">Biography for this event</span>';
 	law_rich_text_field(

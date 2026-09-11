@@ -475,6 +475,19 @@
     align-items: center;
     justify-content: space-between;
   }
+
+  /* The 'stacked' arg: keep the phone layout at every width, buttons on their
+     own line under the text. For callers in a narrow column -- the single
+     speaker profile, whose cards also carry the appearance lines -- where the
+     right-hand button column would leave the title wrapping in half the row. */
+  .law-event-card--stacked {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.law-event-card--stacked .law-event-card__actions {
+  justify-content: flex-start;
 }
 
 /* Sponsored rows carry the whole signal in the surface: a warm orange fill
@@ -547,6 +560,13 @@
 .law-event-card__meta + .law-event-card__meta::before {
   content: " · ";
   color: #b3b0bd;
+}
+
+/* Every meta line is "label: value"; the value carries the weight so the eye
+   lands on the venue or the host, not on the word introducing it. 600 rather
+   than the browser default bold, which is heavy at 0.8rem. */
+.law-event-card__meta strong {
+  font-weight: 600;
 }
 
 /* Speaker profile "is speaking at" rows: the person's role, organisation and
@@ -825,6 +845,10 @@
 }
 
 .law-timeline__body {
+  /* A measure on the prose, not on the list: an item with no speakers beside
+     it would otherwise run the full width of the article, which on an ordinary
+     event is the whole large-12 column. */
+  max-width: 65ch;
   color: #333;
 }
 
@@ -834,32 +858,6 @@
 
 .law-timeline__body p:last-child {
   margin-bottom: 0;
-}
-
-/* A break (registration, coffee, lunch): no description and nobody speaking.
-   A hollow, smaller marker and lighter type, so the shape of the day reads at a
-   glance instead of eight equal-weight rows. #666 on white is about 5.7:1,
-   comfortably past the 4.5:1 minimum for body text. */
-.law-timeline__item--break::before {
-  background: #fff;
-  border: 2px solid #c9c7d6;
-  width: calc(var(--law-tl-dot) - 0.15rem);
-  height: calc(var(--law-tl-dot) - 0.15rem);
-  top: 0.35rem;
-}
-
-.law-timeline__item--break {
-  padding-bottom: 1.25rem;
-}
-
-.law-timeline__item--break .law-timeline__time,
-.law-timeline__item--break .law-timeline__title {
-  color: #666;
-  font-weight: 500;
-}
-
-.law-timeline__item--break .law-timeline__title {
-  font-size: 1rem;
 }
 
 /* The speaker cards already carry their own grid; inside a timeline item they
@@ -918,10 +916,6 @@
 
   .law-timeline__item::after {
     left: calc(var(--law-tl-time) + var(--law-tl-gap) / 2 - 1px);
-  }
-
-  .law-timeline__item--break::before {
-    left: calc(var(--law-tl-time) + (var(--law-tl-gap) - var(--law-tl-dot) + 0.15rem) / 2);
   }
 }
 
@@ -1045,6 +1039,23 @@
 .law-flagship-card .button:focus {
   background: #ef7d05;
   border-color: #ef7d05;
+  color: #292459;
+}
+
+/* The action button (Apply, or whatever this viewer's application state offers
+   instead) is the card's primary call to action, so it takes the brand orange
+   while Event details stays white, and the two swap colours on hover. Navy on
+   orange, not white on orange, for the same contrast reason as above. */
+.law-flagship-card .button.orange {
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #292459;
+}
+
+.law-flagship-card .button.orange:hover,
+.law-flagship-card .button.orange:focus {
+  background: #fff;
+  border-color: #fff;
   color: #292459;
 }
 
@@ -1604,14 +1615,15 @@
   line-height: 1.3;
 }
 
-/* The role at this event, in brackets after the name: quiet, so the orange
-   name keeps the weight and the tag reads as a qualifier of it. */
+/* The role at this event (Speaker / Host / Moderator), on its own line
+   directly under the name so a long name and a long job title never push it
+   out of sight in a narrow column. */
 .law-cal-speakers__tag {
-  margin-left: 0.3rem;
-  color: #666;
-  font-weight: 400;
-  font-size: 0.8rem;
-  white-space: nowrap;
+  display: block;
+  margin-top: 0.15rem;
+  color: #292459;
+  font-weight: 700;
+  font-size: 0.85rem;
 }
 
 .law-cal-speakers a {
@@ -1672,9 +1684,9 @@
   display: none !important;
 }
 
-/* The no-JS path (law-modal.js hides it when the script runs). The marker
-   rules further down are scoped to .law-cal-session__summary, so this summary
-   would otherwise keep the browser's default triangle. */
+/* The no-JS path (law-modal.js hides it when the script runs). list-style:
+   none and the two marker rules below are what strip the browser's default
+   disclosure triangle off it. */
 .law-cal-speakers__fallback {
   margin-top: 0.35rem;
 }
@@ -1740,139 +1752,12 @@
   margin-top: 0.5rem;
 }
 
-.law-cal-session {
-  margin: 0;
-  border-bottom: 1px solid #ef7d05;
-}
-
-.law-cal-session__summary {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 0;
-  color: #292459;
-  cursor: pointer;
-  list-style: none;
-}
-
-.law-cal-session__summary::-webkit-details-marker,
-.law-cal-session__summary::marker {
-  display: none;
-  content: none;
-}
-
-.law-cal-session__summary:hover,
-.law-cal-session__summary:hover .law-cal-session__title {
-  color: #ef7d05;
-}
-
-.law-cal-session__summary:focus {
-  outline: none;
-}
-
-.law-cal-session__summary:focus-visible {
-  outline: 2px solid #292459;
-  outline-offset: 2px;
-}
-
-.law-cal-session__summary::after {
-  content: "";
-  width: 0.45rem;
-  height: 0.45rem;
-  margin-top: 0.45rem;
-  border-right: 2px solid #ef7d05;
-  border-bottom: 2px solid #ef7d05;
-  transform: rotate(45deg);
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-}
-
-.law-cal-session[open] .law-cal-session__summary::after {
-  transform: translateY(0.15rem) rotate(-135deg);
-}
-
-.law-cal-session__heading {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.law-cal-session__title {
-  margin: 0;
-  color: #292459;
-  font-family: poppins, sans-serif;
-  font-size: 1.05rem;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.law-cal-session__time {
-  margin: 0;
-  color: #666;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.law-cal-session__panel {
-  padding: 0 0 1.1rem;
-}
-
-/* The 65ch measure sits on the prose rather than on .law-cal-sessions: the
-   accordion's summary rows carry the orange rule, so capping the whole list
-   would leave short rules over a full-width card grid. */
-.law-cal-session__body {
-  max-width: 65ch;
-  font-size: 1rem;
-  line-height: 1.5;
-  color: #292459;
-}
-
-.law-cal-session__body p,
-.law-cal-session__body li {
-  margin: 0 0 0.75rem;
-  line-height: 1.5;
-}
-
-.law-cal-session__body p:last-child {
-  margin-bottom: 0;
-}
-
-/* Two columns from 64em: the session's description on the left, the people
-   speaking in it on the right (.law-cal-session__panel--split, set only when
-   the session has both). 1.45fr/1fr rather than an even split because the
-   prose is the longer read; below 64em the panel is one column and the
-   speakers fall under the text as before.
-
-   The cards' own min-width is why this waits for 64em: the single event view
-   drops to one column below it, and a half-width tablet panel would leave each
-   card about 13rem wide, which folds the photo off the name. */
-@media screen and (min-width: 64em) {
-  .law-cal-session__panel--split {
-    display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-    gap: 0 2.5rem;
-    align-items: start;
-  }
-}
-
-/* One card per row wherever a session lists its speakers: in the split panel
-   it is a third-width column, and in the stacked panel below 64em the cards
+/* One card per row wherever a session lists its speakers: beside the
+   description it is a third-width column, and stacked below 64em the cards
    read better in a single file under the text they belong to than two abreast.
    Same reasoning as the speakers sidebar above. */
-.law-cal-session__speakers,
 .law-timeline__speakers {
   grid-template-columns: minmax(0, 1fr);
-}
-
-/* No top padding in the split: the description's first line and the first
-   card's name should start level. Kept below 64em, where the list follows
-   the text rather than sitting beside it. */
-@media screen and (min-width: 64em) {
-  .law-cal-session__panel--split .law-cal-session__speakers {
-    padding-top: 0;
-  }
 }
 
 #pages .hero .law-cal-banner-title {
@@ -2468,36 +2353,10 @@
   cursor: default;
 }
 
-/* No column wider than 12rem (Denis, 10 September 2026).
-
-   Every cell in .law-dashboard__table is `white-space: nowrap`, so the
-   longest single value — "Payment method saved, awaiting review", a firm
-   name, an email — decided how wide the whole table was. Capping the width
-   only works if the text is also allowed to wrap, so both go together here,
-   with overflow-wrap for the one thing that has no spaces in it: an email
-   address.
-
-   A caveat worth knowing: this table is auto-layout, so max-width caps how
-   wide a column ASKS to be, not an absolute ceiling. If the table has spare
-   room the browser may still hand a column more. It is the wrapping that
-   does the real work. */
-.law-flagship-bookings__table th,
-.law-flagship-bookings__table td {
-  max-width: 12rem;
-  white-space: normal;
-  overflow-wrap: break-word;
-}
-
-/* Two exceptions, both deliberate. The tick is a single checkbox and should
-   take a checkbox's worth of room, and the actions must stay on one line
-   whatever else wraps — which is the whole point of that column. */
-.law-flagship-bookings__table th.law-flagship-bookings__tick,
-.law-flagship-bookings__table td.law-flagship-bookings__tick,
-.law-flagship-bookings__table th.law-dashboard__row-actions,
-.law-flagship-bookings__table td.law-dashboard__row-actions {
-  max-width: none;
-  white-space: nowrap;
-}
+/* No column wider than 12rem (Denis, 10 September 2026). This started here
+   and now lives on .law-dashboard__table in event-form.css, so every
+   dashboard table wraps and caps the same way; the tick and actions
+   exceptions live there too. Nothing table-specific is needed any more. */
 
 /* The applicant column carries the most: a name and three details under it.
    Give it a floor so it does not get squeezed to one word per line. */

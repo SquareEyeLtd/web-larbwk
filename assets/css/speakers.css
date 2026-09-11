@@ -298,8 +298,12 @@
 	margin-bottom: 1rem;
 }
 
-/* "[Name] is speaking at:" — the name and the list heading are one h2; the
-   suffix sits in normal weight so the name still reads as the title. */
-.law-speaker__name-suffix {
-	font-weight: 400;
+/* "Speaking at:" — the heading over the profile's event list. */
+.page-section .law-speaker__events .law-speaker__events-heading {
+	margin-bottom: 1rem;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-weight: 700;
+	font-size: 1.3rem;
+	line-height: 1.2;
 }

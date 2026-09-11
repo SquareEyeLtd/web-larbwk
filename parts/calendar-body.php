@@ -38,12 +38,11 @@
  *                                 through its own application flow
  *                                 (EVENTS_4.2_SPECS.md §5), so this page must
  *                                 not offer to book it.
- *   $law_cal_sessions_style (string) 'accordion' (the default) or 'timeline'.
- *                                 An accordion suits an event with two or
- *                                 three sessions a reader might open; a
- *                                 day-long conference agenda is the content
- *                                 itself, so the flagship renders every
- *                                 session open on a vertical timeline
+ *   $law_cal_sessions_heading (string) Heading over the session timeline.
+ *                                 Defaults to "Sessions"; the flagship page
+ *                                 calls its running order an "Agenda". Every
+ *                                 event renders its sessions open on the same
+ *                                 vertical timeline
  *                                 (parts/events/session-timeline.php).
  */
 
@@ -57,7 +56,7 @@ $law_cal_back        = isset( $law_cal_back ) && is_array( $law_cal_back ) ? $la
 $law_cal_preview     = ! empty( $law_cal_preview );
 $law_cal_details_rows = isset( $law_cal_details_rows ) && is_array( $law_cal_details_rows ) ? $law_cal_details_rows : null;
 $law_cal_no_booking   = ! empty( $law_cal_no_booking );
-$law_cal_sessions_style = ( isset( $law_cal_sessions_style ) && 'timeline' === $law_cal_sessions_style ) ? 'timeline' : 'accordion';
+$law_cal_sessions_heading = ( isset( $law_cal_sessions_heading ) && '' !== trim( (string) $law_cal_sessions_heading ) ) ? (string) $law_cal_sessions_heading : __( 'Sessions', 'law' );
 
 $page_id = get_queried_object_id();
 $calendar_blocked = function_exists( 'members_can_current_user_view_post' )
@@ -264,66 +263,23 @@ if ( $event ) {
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
-							<?php if ( ! empty( $event['sessions'] ) && 'timeline' === $law_cal_sessions_style ) : ?>
+							<?php if ( ! empty( $event['sessions'] ) ) : ?>
 								<?php
+								// Every event's running order renders as an open timeline
+								// (Denis, 11 September 2026). The accordion this used to be
+								// collapsed the one thing a reader scans a programme for, and
+								// having two layouts for the same four sessions was a
+								// difference with no reason behind it. Only the heading
+								// differs: the flagship calls its day an Agenda.
 								get_template_part(
 									'parts/events/session-timeline',
 									null,
-									array( 'sessions' => $event['sessions'] )
+									array(
+										'sessions' => $event['sessions'],
+										'heading'  => $law_cal_sessions_heading,
+									)
 								);
 								?>
-							<?php elseif ( ! empty( $event['sessions'] ) ) : ?>
-								<section class="law-cal-sessions" aria-labelledby="law-cal-sessions-heading">
-									<h2 id="law-cal-sessions-heading" class="law-cal-acc__heading">Sessions</h2>
-									<?php foreach ( $event['sessions'] as $session ) : ?>
-										<?php
-										$session_label = trim( $session['title'] );
-										if ( '' === $session_label ) {
-											$session_label = $session['time_label'] ? $session['time_label'] : __( 'Session', 'law' );
-										}
-										?>
-										<?php
-										// Deliberately no name="" attribute: a shared name would
-										// make these an exclusive accordion, so opening one
-										// session would slam the previous one shut. Readers
-										// compare sessions side by side, so each one opens and
-										// closes on its own.
-										?>
-										<details class="law-cal-session">
-											<summary class="law-cal-session__summary">
-												<span class="law-cal-session__heading">
-													<span class="law-cal-session__title"><?php echo esc_html( $session_label ); ?></span>
-													<?php if ( $session['time_label'] && $session['time_label'] !== $session_label ) : ?>
-														<span class="law-cal-session__time"><?php echo esc_html( $session['time_label'] ); ?></span>
-													<?php endif; ?>
-												</span>
-											</summary>
-											<?php
-											// Two columns when the session has both something to read
-											// and somebody speaking (Denis, 11 September 2026): the
-											// description on the left, that session's speakers on the
-											// right. A modifier rather than a blanket rule, so a
-											// session with only one of the two still fills the panel
-											// instead of sitting in half of it.
-											$law_cal_session_split = $session['description'] && ! empty( $session['speakers'] );
-											?>
-											<div class="law-cal-session__panel<?php echo $law_cal_session_split ? ' law-cal-session__panel--split' : ''; ?>">
-												<?php if ( $session['description'] ) : ?>
-													<div class="law-cal-session__body">
-														<?php echo wp_kses_post( wpautop( $session['description'] ) ); ?>
-													</div>
-												<?php endif; ?>
-												<?php if ( ! empty( $session['speakers'] ) ) : ?>
-													<ul class="law-cal-speakers law-cal-speakers--cards law-cal-session__speakers">
-														<?php foreach ( $session['speakers'] as $session_speaker ) : ?>
-															<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $session_speaker ) ); ?>
-														<?php endforeach; ?>
-													</ul>
-												<?php endif; ?>
-											</div>
-										</details>
-									<?php endforeach; ?>
-								</section>
 							<?php endif; ?>
 							<?php
 							// Venue last, after the sessions and speakers: the running
@@ -384,11 +340,11 @@ if ( $event ) {
 					</div>
 					<?php
 					// The "Read full bio" dialogs every card above registered, printed
-					// here and nowhere else, outside both columns. They must land outside
-					// the sessions accordion, because a closed <details> renders nothing
-					// and a dialog inside one could never be opened; and outside the
-					// speakers sidebar, so it makes no difference which column registered
-					// a card.
+					// here and nowhere else, outside both columns: outside the session
+					// timeline, and outside the speakers sidebar, so it makes no
+					// difference which column registered a card. (This mattered most
+					// under the old sessions accordion, where a closed <details> renders
+					// nothing and a dialog inside one could never be opened.)
 					foreach ( law_speaker_dialogs() as $law_cal_dialog ) {
 						get_template_part( 'parts/events/speaker-bio-modal', null, $law_cal_dialog );
 					}

@@ -430,4 +430,49 @@ class SpeakerNamesTest extends LAW_Test_Case {
 		$this->posts[] = $speaker;
 		$this->assertSame( 'Onlyfirst Testperson', get_the_title( $speaker ) );
 	}
+
+	public function test_speaker_cards_are_listed_alphabetically_by_surname(): void {
+		$event = $this->make_event();
+
+		// Deliberately out of order, and with the kinds of name the key has to
+		// fold: an apostrophe, an accent, an honorific suffix and a one-word name.
+		$names = array(
+			array( 'first' => 'Zoe', 'last' => 'Testbailey' ),
+			array( 'first' => 'Ali', 'last' => 'Testmalek KC' ),
+			array( 'first' => 'Crystal', 'last' => "O'Testdonnell" ),
+			array( 'first' => 'Testcher', 'last' => '' ),
+			array( 'first' => 'Anders', 'last' => 'Ödetestgaard' ),
+			array( 'first' => 'Adam', 'last' => 'Testbailey' ),
+		);
+		$rows = array();
+		foreach ( $names as $i => $name ) {
+			$speaker       = law_speaker_upsert(
+				array( 'first_name' => $name['first'], 'last_name' => $name['last'], 'email' => 'sort-' . $i . '@example.test' )
+			);
+			$this->posts[] = $speaker;
+			$rows[]        = array( 'speaker_id' => $speaker );
+		}
+		law_event_update_meta( $event, '_law_speakers', $rows );
+
+		$expected = array(
+			'Anders Ödetestgaard',     // The accent is folded, so it files under "ode" and not after Z.
+			'Crystal O\'Testdonnell',  // Punctuation is dropped: "otestdonnell".
+			'Adam Testbailey',         // Same surname: the first name breaks the tie.
+			'Zoe Testbailey',
+			'Testcher',                // No surname: it files under the name itself.
+			'Ali Testmalek KC',        // The honorific stays on the surname and sorts with it.
+		);
+		$this->assertSame( $expected, wp_list_pluck( law_event_speaker_cards( $event ), 'name' ) );
+
+		// Session speakers are ordered the same way, and a session row that
+		// names a speaker the event does not carry is sorted with the rest.
+		$session       = wp_insert_post(
+			array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'publish', 'post_parent' => $event, 'post_title' => 'A session' )
+		);
+		$this->posts[] = $session;
+		law_event_update_meta( $session, '_law_speakers', array_reverse( $rows ) );
+
+		$sessions = law_event_session_rows( $event );
+		$this->assertSame( $expected, wp_list_pluck( $sessions[0]['speakers'], 'name' ) );
+	}
 }

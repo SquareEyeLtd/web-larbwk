@@ -1181,9 +1181,11 @@ function law_calendar_meta_line( $event ) {
 }
 
 /**
- * Host line for list/day cards. Empty string if there is no host.
+ * The host organisation name(s) alone, comma separated, with no label. Empty
+ * string if there is no host. Callers that render the label and the value with
+ * different weights (the event card) need the two apart.
  */
-function law_calendar_hosted_by( $event ) {
+function law_calendar_host_names( $event ) {
 	$host = trim( (string) ( $event['host'] ?? '' ) );
 	if ( '' === $host ) {
 		return '';
@@ -1192,10 +1194,21 @@ function law_calendar_hosted_by( $event ) {
 	if ( ! $hosts ) {
 		return '';
 	}
+	return implode( ', ', $hosts );
+}
+
+/**
+ * Host line for list/day cards. Empty string if there is no host.
+ */
+function law_calendar_hosted_by( $event ) {
+	$hosts = law_calendar_host_names( $event );
+	if ( '' === $hosts ) {
+		return '';
+	}
 	return sprintf(
 		/* translators: %s: host organisation name(s) */
 		__( 'Hosted by: %s', 'law' ),
-		implode( ', ', $hosts )
+		$hosts
 	);
 }
 
@@ -1425,7 +1438,8 @@ function law_calendar_speakers_from_ids( $raw ) {
 		);
 	}
 
-	return $speakers;
+	// Surname order, the same as the CPT source's cards.
+	return law_speakers_sort_cards( $speakers );
 }
 
 /**
@@ -1547,10 +1561,11 @@ function law_calendar_speakers( $entry ) {
 
 	$speakers = law_calendar_speakers_from_nested( $entry );
 	if ( $speakers ) {
-		return $speakers;
+		return law_speakers_sort_cards( $speakers );
 	}
 
-	return law_calendar_speakers_from_list( rgar( $entry, '48' ) );
+	// Surname order, the same as the CPT source's cards.
+	return law_speakers_sort_cards( law_calendar_speakers_from_list( rgar( $entry, '48' ) ) );
 }
 
 /**

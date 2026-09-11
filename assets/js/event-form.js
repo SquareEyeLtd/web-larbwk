@@ -196,18 +196,66 @@
 		sync();
 	});
 
-	/* Photo upload: reveal a Clear button once a file is chosen, and reset the
-	   input on click. Delegated so cloned speaker rows work too. */
-	document.addEventListener('change', function (event) {
-		if (event.target && event.target.type === 'file') {
-			var btn = event.target.parentNode && event.target.parentNode.querySelector('.law-file-clear');
-			if (btn) { btn.hidden = !event.target.value; }
+	/* Photo upload: reject a file the server would reject anyway BEFORE it is
+	   uploaded, then reveal a Clear button once a valid file is chosen, and
+	   reset the input on click. Delegated so cloned speaker rows work too.
+
+	   The size and type check is duplicated here on purpose. A server-side
+	   rejection costs the whole upload and then a form re-render, and a
+	   re-render cannot repopulate a file input, so one oversized photo lost a
+	   host every other photo on the form. The numbers are not written out
+	   again: they arrive as window.lawPhotoLimits from the same PHP helpers the
+	   validator and the help text use (functions/events/submission-form.php). */
+	var photoLimits = window.lawPhotoLimits || {};
+
+	/* The message goes beside the input, inside whatever wraps it: the label on
+	   the event form, the .law-form-field on Manage speakers. The server's own
+	   photo errors print at the top of the fieldset, too far from the row to
+	   act on, which is why these two differ. */
+	function photoError(input, message) {
+		var holder = (input.closest && input.closest('label')) || input.parentNode;
+		if (!holder) { return; }
+		var box = holder.querySelector('.law-file-error');
+		if (!message) {
+			if (box && box.parentNode) { box.parentNode.removeChild(box); }
+			return;
 		}
+		if (!box) {
+			box = document.createElement('p');
+			box.className = 'law-form-error law-file-error';
+			box.setAttribute('role', 'alert');
+			holder.appendChild(box);
+		}
+		box.textContent = message;
+	}
+
+	document.addEventListener('change', function (event) {
+		var input = event.target;
+		if (!input || input.type !== 'file') { return; }
+		var btn = input.parentNode && input.parentNode.querySelector('.law-file-clear');
+		var file = input.files && input.files[0];
+		var message = '';
+		if (file && photoLimits.maxBytes && file.size > photoLimits.maxBytes) {
+			message = photoLimits.tooLarge;
+		} else if (file && file.type && photoLimits.mimes && photoLimits.mimes.indexOf(file.type) === -1) {
+			// Only when the browser gave us a type at all: an empty file.type is
+			// "I do not know", not "not an image", and the server sniffs the
+			// content anyway.
+			message = photoLimits.badType;
+		}
+		if (message) {
+			input.value = '';
+			if (btn) { btn.hidden = true; }
+			photoError(input, message);
+			return;
+		}
+		photoError(input, '');
+		if (btn) { btn.hidden = !input.value; }
 	});
 	document.addEventListener('click', function (event) {
 		if (event.target && event.target.classList && event.target.classList.contains('law-file-clear')) {
 			var input = event.target.parentNode && event.target.parentNode.querySelector('input[type="file"]');
-			if (input) { input.value = ''; }
+			if (input) { input.value = ''; photoError(input, ''); }
 			event.target.hidden = true;
 		}
 	});

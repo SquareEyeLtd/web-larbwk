@@ -1298,11 +1298,17 @@ block the queue. Joining is refused while places are free.
   row, and a session row falls through to the parent event's row for the same
   speaker, then to the speaker post for the photo and biography. The card's
   photo is the `medium` size, since the single event view renders it at 5.5rem.
-  `templates/speaker.php` shows no headline organisation/job title **and no
-  biography**: each "Speaking at" card (`parts/loop/event.php`, `speaker` arg)
-  renders a divider and "[name]'s role: …" / "[name]'s organisation: …" /
-  "[name]'s position: …", and the biography is on the event page's speaker
-  cards.
+  `templates/speaker.php` shows the headline job title and organisation under
+  the name, the same two lines the archive card shows and from the same merged
+  profile values (Denis, 11 September 2026), then a "Speaking at:" heading over
+  the event list. It still shows **no biography**: each "Speaking at" card
+  (`parts/loop/event.php`, `speaker` arg) renders a divider and "[name]'s
+  role: …" / "[name]'s organisation: …" / "[name]'s position: …" for that
+  event, and the biography is on the event page's speaker cards. It also passes
+  `stacked` (Denis, 11 September 2026), which keeps the card's phone layout at
+  every width (buttons on their own line under the text,
+  `.law-event-card--stacked`), because the profile column is narrow and the
+  right-hand button column left the title wrapping in half the row.
 - `law_speaker_bio_excerpt()` (24 words, an explicit `…` because
   `wp_trim_words()` otherwise appends the `&hellip;` entity, and
   `strip_shortcodes()` because an appearance biography never passes through
@@ -1315,11 +1321,26 @@ block the queue. Joining is refused while places are free.
   registers and gets an element id back; `parts/calendar-body.php` prints the
   registered dialogs once, after the speaker and session sections. A registry
   rather than an index threaded through the templates because the cards render
-  in two places (the event's Speakers list and each session panel) and every
-  dialog must land **outside** the sessions accordion: a closed `<details>`
-  renders nothing, so a dialog inside one could never open. One dialog per
+  in two places (the event's Speakers list and each timeline item) and every
+  dialog must land **outside** them; this mattered most under the old sessions
+  accordion, where a closed `<details>` renders nothing and a dialog inside one
+  could never open. One dialog per
   card, not per speaker, since two session rows for the same person can
   legitimately carry different biographies.
+- `law_speakers_sort_cards()`, `law_speaker_sort_key()`,
+  `law_speaker_sort_token()`: the order the front end lists speakers in,
+  alphabetical by surname then first name (Denis, 11 September 2026). Applied
+  by `law_event_speaker_cards()`, by the session rows below and by the legacy
+  Gravity Forms readers in `functions/calendar.php`, so the sidebar list, each
+  session panel and the flagship programme all agree. The stored `sort` on a
+  `_law_speakers` row is only the order whoever filled the form typed the rows
+  in, which tells a reader nothing and puts the same person in a different
+  place on every event. The key takes the surname from the speaker post when
+  the card names one (the two name parts are more reliable than splitting a
+  display name), else splits the display name, which is all a legacy card
+  carries; it folds accents and drops punctuation, so "O'Donnell" files under
+  "odonnell" and "Ödegaard" under "ode" instead of after Z, and a one-word name
+  files under itself rather than sorting above everybody on an empty surname.
 - `law_event_session_ids()`, `law_event_session_rows()`: an event's sessions
   (child `law_session` posts) and their rows.
 
@@ -1464,7 +1485,14 @@ block the queue. Joining is refused while places are free.
   event-form.css/js (submission-form.php) gate on the template alongside the
   bookings dashboard; the table and editor styles are a
   `.law-speakers-table` / `.law-speaker-appearance` block at the foot of
-  `assets/css/event-form.css`. pdfmake loads footer-side for committee only.
+  `assets/css/event-form.css`. Column widths come from the shared
+  `.law-dashboard__table` rule, which since 11 September 2026 caps every cell
+  at 12rem and lets it wrap (it began life on the flagship applications table
+  on 10 September 2026 and moved when Manage Speakers hit the same problem:
+  one long organisation or job title pushed the right-hand columns off the
+  screen). Cells that must stay on one line — `.law-dashboard__row-actions`,
+  the waitlist position, the flagship tick — opt out there. pdfmake loads
+  footer-side for committee only.
 - **Out of scope, deliberately**: creating a speaker here, deleting one, and
   merging duplicates. Merging needs its own rules for the appearance rows on
   both sides, and duplicates are the predictable next request now that the
@@ -1968,7 +1996,17 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   none** — an unknown name is dropped, never invented.
 - `law_events_validate_photos()`, `law_events_sideload_upload()`: server-side
   speaker-photo validation (real MIME sniff, 5 MB cap, pixel bounds) and the
-  media sideload.
+  media sideload. The limits are `LAW_PHOTO_MAX_BYTES`, `LAW_PHOTO_MIN_PX` and
+  `LAW_PHOTO_MAX_PX` with `law_events_photo_mimes()`, and four derived helpers
+  read them so nothing restates a number: `law_events_photo_upload_mimes()`
+  (the `wp_handle_upload()` override), `law_events_photo_accept()` (the accept
+  attribute) and `law_events_photo_hint()` (the sentence of help text under
+  every upload control). `law_events_validate_photos()` also handles
+  `UPLOAD_ERR_INI_SIZE`/`UPLOAD_ERR_FORM_SIZE` explicitly: a file PHP itself
+  refused arrives with size 0 and an empty tmp path, and without that branch
+  the size check passed and the host was told their photo "must be a JPG, PNG
+  or WebP image" for what was really a server limit. `tests/SpeakerPhotoTest.php`
+  covers the lot.
 - `law_events_form_save_speakers()`, `law_events_form_save_sessions()`: upsert
   speakers (identity — `first_name` and `last_name`, a legacy single `name`
   split rather than dropped) and store the appearance rows with this event's
@@ -2800,8 +2838,14 @@ These predate the rebuild and now branch on `law_events_source()`.
   - **The card is a row now** (`parts/loop/event.php` unchanged; calendar.css
     restyled): hairline dividers instead of the 2px navy box, a 4px left edge
     on every row so a sponsored row's orange edge does not shift its title,
-    venue and host on one line, smaller buttons. The same card serves the
-    speaker profile's "is speaking at" list and the account pages, so they
+    venue and host on one line, smaller buttons. Both meta lines are labelled
+    with the value bold — "Venue: **…**" and "Hosted by: **…**" (Denis,
+    11 September 2026) — since a bare place name next to a bare organisation
+    name gave no clue which was which. The label/value split is why
+    `law_calendar_host_names()` exists alongside `law_calendar_hosted_by()`:
+    the card needs the names without the label. The weight is 600 via
+    `.law-event-card__meta strong`, which also covers the speaker lines. The same card serves the
+    speaker profile's "Speaking at:" list and the account pages, so they
     got the density too, by Denis's request for the speakers; only the time
     line is contextual — `.law-cal-day-section` hides it (the slot heading
     says it) and everywhere else, where `show_date` is passed, it stays as
@@ -2969,7 +3013,10 @@ These predate the rebuild and now branch on `law_events_source()`.
   programme everywhere else — the page, the nav and the chevron link); and, added 9 September 2026 for the flagship, `$law_cal_details_rows`
   (an allow-list of details-box row keys, so the flagship shows only date, time
   and location), `$law_cal_no_booking` (no booking control and no places
-  fallback) and `$law_cal_sessions_style` ('accordion' or 'timeline'). The
+  fallback) and `$law_cal_sessions_heading` (the heading over the session
+  timeline, "Sessions" by default and "Agenda" on the flagship; it replaced
+  `$law_cal_sessions_style` on 11 September 2026, when Denis had every event
+  move to the timeline and the accordion was deleted). The
   venue markup lives in its own part, `parts/events/event-venue.php`, from
   when the flagship briefly rendered it in a different position; the
   flagship's own hero image (`_law_hero_image_id`) is read here too, and an
@@ -3027,7 +3074,7 @@ These predate the rebuild and now branch on `law_events_source()`.
   (`href="#law-cal-venue-heading"`, `calendar-event-details.php`) whenever the
   address is mappable. Note that the event-level **Speakers** section still
   renders only when the event has no sessions, because a session's speakers
-  are already listed inside its own panel.
+  are already listed beside its own description on the timeline.
 - **Flagship parts** (9 September 2026): `parts/events/flagship-card.php` (the
   highlighted block on the programme: the banner photograph left, and right the
   "Flagship event" label, the title, the session list with times and an "Event
@@ -3039,17 +3086,24 @@ These predate the rebuild and now branch on `law_events_source()`.
   rail rather than cards alternating either side of a centre line — that
   variant breaks down on a phone and costs the reader the single line their eye
   follows down a schedule — the line and markers as CSS pseudo-elements
-  because they are decoration, and a lighter, hollow marker for a **break**,
-  which the part infers from a session having neither a description nor a
-  speaker rather than from a field nobody would maintain) and
+  because they are decoration, and every session on the same marker at the same
+  weight — the part used to infer a **break** from a session having neither a
+  description nor a speaker and grey it out, which Denis had removed on 11
+  September 2026 because a real session whose blurb was not written yet then
+  read as a coffee break) and
   `parts/events/event-venue.php` (the address and its keyless Google map,
   extracted from `parts/calendar-body.php` so it can render above or below the
   sessions) and `parts/events/flagship-manage.php` (the committee's editor: the
   theme's own front-end form markup for the top-level fields, and the shared
-  agenda block from `flagship-form.php` below them). The flagship renders every session open, because on a day-long
-  conference the running order IS the content and an accordion hides the whole
-  programme behind eight summaries; the accordion stays for ordinary events,
-  where two or three sessions are something a reader chooses to open.
+  agenda block from `flagship-form.php` below them). **Every** single event
+  view renders its sessions open on this timeline, the flagship and an ordinary
+  hosted event alike (Denis, 11 September 2026): the running order is what a
+  reader opens a programme page for, and the accordion that used to carry it on
+  ordinary events collapsed exactly that. The accordion markup, its
+  `.law-cal-session*` styles and the style switch that chose between the two are
+  gone; only the heading differs between the two pages. Each item puts its
+  description on the left and that session's speakers on the right from 64em
+  (`.law-timeline__content--split`, set only when the item has both).
 - **Parts** (`parts/events/`): `speaker-card.php` (one speaker card on the
   single event view — photo or initials, the name with the role at this event
   in brackets after it (`.law-cal-speakers__tag`, outside the profile link so
@@ -3942,6 +3996,77 @@ Deliberately **not** done: a time-based countdown ("closes in 12 days"), which
 Denis ruled out; and an availability flag on the programme listing cards, which
 would probably do more for urgency than anything on the detail page but is a
 separate decision.
+
+### Upload guidelines under every photo control (11 September 2026)
+
+Denis asked for the photo rules to be spelled out in small text directly
+below each upload module. They were not: the two file inputs carried
+"Photo (JPG/PNG/WebP, 5 MB max)" in the label, and the pixel bounds appeared
+nowhere at all, so a host uploading a 7000px photo failed on a rule they had
+never been shown. The media-library pickers said nothing about formats.
+
+**Checked against Gravity Forms first**, since the rebuild's brief was not to
+ship weaker than the old stack. The legacy setup had exactly one upload
+field, form 8 (Event > speaker), field 6 (Photo), reached as a GP Nested
+Forms child of form 2 (Event > submit an event), field 112 (Speakers). It set
+`allowedExtensions` to `jpg,png,webp` and nothing else: no size cap (so the
+effective limit was PHP's `upload_max_filesize`), no dimension check, no
+content sniff, and an empty `description`. The current limits are far
+stricter and stay as they are (Denis): JPG/PNG/WebP by content sniff, 5 MB,
+50×50 to 6000×6000. `EVENTS_4.1_REBUILD.md` has been corrected, since its
+"Gravity Forms provided its own hardening" line was being read as a benchmark
+and flattered the old setup.
+
+**The limits now have one home.** They were written out in four places (the
+validator's MIME list, the `wp_handle_upload()` override, and the `accept`
+attribute in two templates), and adding six strings of help text quoting the
+same numbers would have guaranteed drift. Everything derives from the
+constants and helpers listed under `submission-form.php` above, so the
+sentence a host reads cannot promise a limit the validator does not enforce,
+and `tests/SpeakerPhotoTest.php` asserts the three stay in step.
+
+**Where the text went.** `law_events_photo_hint()` renders under both real
+file inputs: the speaker row on the event form
+(`parts/events/event-form-fields.php`, inside the label, after the
+"current photo" note, with a CSS rule in `event-form.css` resetting the
+row-label weight it would otherwise inherit) and the committee's Manage
+speaker screen (`parts/events/speaker-manage.php`, appended to the existing
+hint so the cell keeps one line of help text rather than two). Both labels
+shorten to plain "Photo", because the constraints now sit below the control
+rather than in its name.
+
+The media-library pickers get their own wording, not
+`law_events_photo_hint()`, and this is deliberate: they post an attachment ID
+and never reach `law_events_validate_photos()`, so quoting our 5 MB cap and
+pixel bounds there would state a rule nothing enforces. The flagship banner
+(both `parts/events/flagship-manage.php` and the wp-admin screen) says "JPG,
+PNG or WebP. A wide image at least 1600 pixels across works best." The
+speaker rows say "JPG, PNG or WebP. Square photos at least 600 pixels across
+work best.", printed **once** by `law_field_relationship()` under the whole
+repeater rather than once per row: the per-row control is a 32px thumbnail
+and two link buttons, and a hint under each would be noise. Once on the group
+also keeps it out of `law-admin.js`, which rebuilds the row markup for a row
+added via the search and would otherwise need its own copy of the sentence.
+
+**A client-side pre-check** now runs before the upload
+(`assets/js/event-form.js`, extending the delegated file-input handler that
+already toggled "Clear photo"). Size and type only; dimensions stay
+server-side. The numbers come from PHP as `window.lawPhotoLimits`, via
+`wp_add_inline_script` rather than `wp_localize_script`, which casts every
+scalar to a string and would have made `maxBytes` a string comparison. The
+duplication with the server is on purpose: a server-side rejection costs the
+whole upload and then a form re-render, and a re-render cannot repopulate a
+file input, so a host on a phone lost every other photo on the form to one
+oversized file. The message renders next to the input rather than at the top
+of the fieldset where the server's photo errors print, which is why the two
+placements differ; moving the server-side ones to match was left alone.
+
+**Consolidated on the way past.** `functions/events/flagship-form.php` had
+hand-duplicated `law_field_relationship_photo()`'s markup for its "new
+speaker" rows. It now calls the helper, which takes an optional fourth
+argument for callers whose rows are not keyed `$name[$i]`.
+
+---
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.

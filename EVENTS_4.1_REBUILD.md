@@ -931,8 +931,17 @@ each phase lands and before cutover.
 **Spam and abuse protection** on every public-facing write surface (the
 submission form, registration, comment replies): honeypot field, nonces,
 per-IP and per-user rate limiting, and strict upload validation on speaker
-photos (type, size, dimensions). Gravity Forms provided its own hardening;
-the custom forms must not ship with less.
+photos (type, size, dimensions).
+
+Do **not** read that last requirement as parity with Gravity Forms: checked
+on 11 September 2026, the legacy setup was weaker, not stronger. There was
+one upload field in the whole stack, form 8 (Event > speaker), field 6
+(Photo), and it carried an `allowedExtensions` list of `jpg,png,webp` and
+nothing else. `maxFileSize` was blank, so the effective cap was PHP's
+`upload_max_filesize`, and there was no dimension check and no content sniff
+(GF's extension check reads the filename). The custom validation is already
+materially stronger, so this line is a floor the rebuild cleared long ago,
+not a benchmark to measure against.
 
 **Security review gate**: at the end of phase B, before phase C rehearsals, a
 structured security review of the new attack surface: the Stripe webhook
