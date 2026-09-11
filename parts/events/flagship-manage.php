@@ -183,7 +183,7 @@ get_template_part(
 					// rather than as a second field label.
 					law_field_media( 'law_flagship[hero_image_id]', __( 'Choose from the media library', 'law' ), (int) $law_fm_values['hero_image_id'] );
 					?>
-					<span class="law-form-hint"><?php esc_html_e( 'Used for the block on the programme and the banner on the flagship page. Leave it empty to use the default banner photograph.', 'law' ); ?></span>
+					<span class="law-form-hint"><?php esc_html_e( 'Used for the block on the programme and the banner on the flagship page. Leave it empty to use the default banner photograph. JPG, PNG or WebP. A wide image at least 1600 pixels across works best.', 'law' ); ?></span>
 				</div>
 
 			</fieldset>

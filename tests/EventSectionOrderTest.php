@@ -24,16 +24,35 @@ class EventSectionOrderTest extends LAW_Test_Case {
 
 		$description = strpos( $body, 'law-cal-detail__body' );
 		$timeline    = strpos( $body, "'parts/events/session-timeline'" );
-		$sessions    = strpos( $body, '<section class="law-cal-sessions"' );
 		$venue       = strpos( $body, "'parts/events/event-venue'" );
 
 		$this->assertNotFalse( $description, 'The description body renders.' );
-		$this->assertNotFalse( $timeline, 'The timeline session style renders.' );
-		$this->assertNotFalse( $sessions, 'The accordion session style renders.' );
+		$this->assertNotFalse( $timeline, 'The sessions render.' );
 		$this->assertNotFalse( $venue, 'The Venue section renders.' );
 
 		$this->assertGreaterThan( $description, $timeline, 'Sessions follow the description.' );
 		$this->assertGreaterThan( $timeline, $venue, 'The venue is last in the column.' );
+	}
+
+	/**
+	 * One session layout, so no caller can collapse a running order again: every
+	 * event renders its sessions open on the timeline, and the accordion the
+	 * ordinary event view used to carry is gone along with the style switch that
+	 * chose between the two (Denis, 11 September 2026). Two layouts for the same
+	 * four sessions was a difference with no reason behind it.
+	 */
+	public function test_sessions_have_exactly_one_layout(): void {
+		$body = $this->body();
+		$css  = (string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) );
+
+		$this->assertSame( 1, substr_count( $body, "'parts/events/session-timeline'" ) );
+		$this->assertStringNotContainsString( 'law_cal_sessions_style', $body );
+		$this->assertStringNotContainsString( 'law-cal-session__', $body, 'The accordion markup is gone.' );
+		$this->assertStringNotContainsString( 'law-cal-session__', $css, 'And so are its styles.' );
+		$this->assertStringNotContainsString(
+			'law_cal_sessions_style',
+			(string) file_get_contents( get_theme_file_path( 'templates/flagship-event.php' ) )
+		);
 	}
 
 	/**
@@ -65,27 +84,20 @@ class EventSectionOrderTest extends LAW_Test_Case {
 
 	/**
 	 * A session's own speakers sit beside its description rather than under it,
-	 * in both session styles: the accordion's panels on an ordinary event and the
-	 * timeline's items on the flagship. The split is a modifier set only when the
-	 * session has both, so a session with one of the two still fills its panel.
+	 * on every event: the split is a modifier set only when the session has both,
+	 * so a session with one of the two still fills the width.
 	 */
 	public function test_each_session_puts_its_speakers_beside_its_description(): void {
-		$body     = $this->body();
 		$timeline = (string) file_get_contents( get_theme_file_path( 'parts/events/session-timeline.php' ) );
 		$css      = (string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) );
 
-		$this->assertStringContainsString( 'law-cal-session__panel--split', $body );
-		$this->assertStringContainsString( 'law-cal-session__speakers', $body );
 		$this->assertStringContainsString( 'law-timeline__content--split', $timeline );
+		$this->assertStringContainsString( '.law-timeline__content--split {', $css );
 
-		foreach ( array( '.law-cal-session__panel--split', '.law-timeline__content--split' ) as $selector ) {
-			$this->assertStringContainsString( $selector . ' {', $css, $selector . ' is styled.' );
-		}
-
-		// One card per row in both, because each list is now a column roughly a
-		// third of the container wide.
+		// One card per row, because the list is a column roughly a third of the
+		// container wide.
 		$this->assertMatchesRegularExpression(
-			'/\.law-cal-session__speakers,\s*\n\.law-timeline__speakers \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\);/',
+			'/\.law-timeline__speakers \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\);/',
 			$css
 		);
 	}

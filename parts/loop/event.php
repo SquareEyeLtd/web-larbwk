@@ -10,6 +10,9 @@
  *   'badge'       => array(), // { label, slug }: one extra badge on the card,
  *                             // e.g. Waitlisted on a My bookings card.
  *   'show_date'   => false,   // Prefix the time with the full date, for cards shown outside the calendar.
+ *   'stacked'     => false,   // Put the buttons on their own line under the card's
+ *                             // text instead of in the right-hand column, for
+ *                             // narrow columns (the single speaker profile).
  *   'meta_lines'  => array(), // Extra meta lines below the venue/host, e.g. payment status.
  *   'speaker'     => array(), // {name, role, organisation, job_title}: one speaker's
  *                             // appearance at THIS event (the single speaker profile
@@ -50,7 +53,7 @@ if ( ! $event ) {
 $law_event_url    = ! empty( $args['url'] ) ? (string) $args['url'] : (string) ( $event['url'] ?? '' );
 $law_show_status  = ! empty( $args['show_status'] );
 $law_time_label   = law_calendar_event_time_label( $event );
-$law_hosted       = law_calendar_hosted_by( $event );
+$law_hosted       = law_calendar_host_names( $event );
 $law_meta_lines   = isset( $args['meta_lines'] ) && is_array( $args['meta_lines'] ) ? array_filter( array_map( 'strval', $args['meta_lines'] ) ) : array();
 
 // The speaker's appearance at this event (profile page only): label/value
@@ -109,8 +112,15 @@ if ( ! empty( $args['show_date'] ) && ! empty( $event['date'] ) ) {
 if ( '' !== $law_time_label ) {
 	$law_time_parts[] = $law_time_label;
 }
+
+// 'stacked': the buttons drop under the card's text instead of sitting in the
+// right-hand column, for callers in a narrow column.
+$law_card_classes = law_calendar_card_classes( $event, 'law-event-card' );
+if ( ! empty( $args['stacked'] ) ) {
+	$law_card_classes .= ' law-event-card--stacked';
+}
 ?>
-<article class="<?php echo esc_attr( law_calendar_card_classes( $event, 'law-event-card' ) ); ?>">
+<article class="<?php echo esc_attr( $law_card_classes ); ?>">
 	<div class="law-event-card__body">
 		<?php if ( $law_show_status ) : ?>
 			<?php law_calendar_status_badge( $event ); ?>
@@ -125,11 +135,12 @@ if ( '' !== $law_time_label ) {
 		<?php if ( $law_time_parts ) : ?>
 			<p class="law-event-card__time"><?php echo esc_html( implode( ' · ', $law_time_parts ) ); ?></p>
 		<?php endif; ?>
+		<?php /* Both meta lines are labelled, the value bold: a bare place name next to a bare organisation name gives no clue which is which. */ ?>
 		<?php if ( ! empty( $event['venue'] ) ) : ?>
-			<p class="law-event-card__meta"><?php echo esc_html( $event['venue'] ); ?></p>
+			<p class="law-event-card__meta"><?php echo esc_html__( 'Venue:', 'law' ); ?> <strong><?php echo esc_html( $event['venue'] ); ?></strong></p>
 		<?php endif; ?>
-		<?php if ( $law_hosted ) : ?>
-			<p class="law-event-card__meta"><?php echo esc_html( $law_hosted ); ?></p>
+		<?php if ( '' !== $law_hosted ) : ?>
+			<p class="law-event-card__meta"><?php echo esc_html__( 'Hosted by:', 'law' ); ?> <strong><?php echo esc_html( $law_hosted ); ?></strong></p>
 		<?php endif; ?>
 		<?php if ( $law_speaker_lines ) : ?>
 			<hr class="law-event-card__divider">

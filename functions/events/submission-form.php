@@ -591,20 +591,80 @@ function law_events_list_words( array $words ) {
 	return implode( ', ', $words ) . ' and ' . $last;
 }
 
+/* Photo uploads: one source of truth for the limits ________________________
+ *
+ * These three numbers and the format list are quoted back to the host in the
+ * help text under every upload control, and enforced in three more places:
+ * this validator, the wp_handle_upload() override in
+ * law_events_sideload_upload(), and the accept attribute on the two file
+ * inputs. Written out by hand in each, the help text drifts away from what is
+ * actually enforced the first time one of them changes, which is how the
+ * pixel bounds came to be enforced but never mentioned. Everything below
+ * derives from these.
+ */
+const LAW_PHOTO_MAX_BYTES = 5 * MB_IN_BYTES;
+const LAW_PHOTO_MIN_PX    = 50;
+const LAW_PHOTO_MAX_PX    = 6000;
+
+/** The MIME types a speaker photo may really be, as sniffed from its content. */
+function law_events_photo_mimes() {
+	return array( 'image/jpeg', 'image/png', 'image/webp' );
+}
+
+/** The same list in wp_handle_upload()'s extension => MIME override shape. */
+function law_events_photo_upload_mimes() {
+	return array( 'jpg|jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp' );
+}
+
+/**
+ * The accept attribute for a photo input. Both the extensions and the MIME
+ * types: an extension-only list is unreliable in some mobile file pickers,
+ * which offer nothing at all rather than falling back to everything.
+ */
+function law_events_photo_accept() {
+	return '.jpg,.jpeg,.png,.webp,' . implode( ',', law_events_photo_mimes() );
+}
+
+/**
+ * The one sentence of guidance shown under every photo upload control
+ * (Denis, 11 September 2026). Built from the constants above, so the help
+ * text cannot promise a limit the validator does not enforce.
+ */
+function law_events_photo_hint() {
+	return sprintf(
+		'JPG, PNG or WebP, up to %1$d MB, between %2$d×%2$d and %3$d×%3$d pixels.',
+		LAW_PHOTO_MAX_BYTES / MB_IN_BYTES,
+		LAW_PHOTO_MIN_PX,
+		LAW_PHOTO_MAX_PX
+	);
+}
+
 /** Photo upload validation: images only, 5 MB cap. */
 function law_events_validate_photos( array $files ) {
 	$errors  = array();
-	$allowed = array( 'image/jpeg', 'image/png', 'image/webp' );
+	$allowed = law_events_photo_mimes();
 	$batch   = $files['speaker_photo'] ?? null;
 	if ( ! $batch || ! is_array( $batch['name'] ?? null ) ) {
 		return $errors;
 	}
+	$too_large = sprintf( 'is too large (%d MB maximum).', LAW_PHOTO_MAX_BYTES / MB_IN_BYTES );
 	foreach ( $batch['name'] as $i => $name ) {
 		if ( '' === (string) $name ) {
 			continue;
 		}
-		if ( ( $batch['size'][ $i ] ?? 0 ) > 5 * MB_IN_BYTES ) {
-			$errors[ 'speaker_photo_' . $i ] = sprintf( 'Speaker photo "%s" is too large (5 MB maximum).', $name );
+		// PHP rejected the file before we ever saw it, because the server's own
+		// upload_max_filesize/MAX_FILE_SIZE is tighter than our cap. The size
+		// arrives as 0 and the tmp path empty, so without this branch the size
+		// check passes, the MIME sniff fails on nothing, and the host is told
+		// their photo "must be a JPG, PNG or WebP image" for what is really a
+		// server limit.
+		$error = (int) ( $batch['error'][ $i ] ?? UPLOAD_ERR_OK );
+		if ( UPLOAD_ERR_INI_SIZE === $error || UPLOAD_ERR_FORM_SIZE === $error ) {
+			$errors[ 'speaker_photo_' . $i ] = sprintf( 'Speaker photo "%s" %s', $name, $too_large );
+			continue;
+		}
+		if ( ( $batch['size'][ $i ] ?? 0 ) > LAW_PHOTO_MAX_BYTES ) {
+			$errors[ 'speaker_photo_' . $i ] = sprintf( 'Speaker photo "%s" %s', $name, $too_large );
 			continue;
 		}
 		$check = wp_check_filetype_and_ext( $batch['tmp_name'][ $i ] ?? '', (string) $name );
@@ -615,8 +675,17 @@ function law_events_validate_photos( array $files ) {
 		// Dimension bounds: rejects pixel-flood/decompression-bomb images
 		// before any thumbnail generation runs (§3.11 upload validation).
 		$dimensions = @getimagesize( (string) ( $batch['tmp_name'][ $i ] ?? '' ) );
-		if ( ! $dimensions || $dimensions[0] < 50 || $dimensions[1] < 50 || $dimensions[0] > 6000 || $dimensions[1] > 6000 ) {
-			$errors[ 'speaker_photo_' . $i ] = sprintf( 'Speaker photo "%s" must be between 50×50 and 6000×6000 pixels.', $name );
+		if ( ! $dimensions
+			|| $dimensions[0] < LAW_PHOTO_MIN_PX || $dimensions[1] < LAW_PHOTO_MIN_PX
+			|| $dimensions[0] > LAW_PHOTO_MAX_PX || $dimensions[1] > LAW_PHOTO_MAX_PX ) {
+			$errors[ 'speaker_photo_' . $i ] = sprintf(
+				'Speaker photo "%s" must be between %d×%d and %d×%d pixels.',
+				$name,
+				LAW_PHOTO_MIN_PX,
+				LAW_PHOTO_MIN_PX,
+				LAW_PHOTO_MAX_PX,
+				LAW_PHOTO_MAX_PX
+			);
 		}
 	}
 	return $errors;
@@ -723,7 +792,7 @@ function law_events_sideload_upload( array $file ) {
 
 	$overrides = array(
 		'test_form' => false,
-		'mimes'     => array( 'jpg|jpeg' => 'image/jpeg', 'png' => 'image/png', 'webp' => 'image/webp' ),
+		'mimes'     => law_events_photo_upload_mimes(),
 	);
 	$moved = wp_handle_upload( $file, $overrides );
 	if ( ! is_array( $moved ) || ! empty( $moved['error'] ) ) {
@@ -1189,6 +1258,22 @@ add_action( 'wp_enqueue_scripts', function () {
 			$deps[] = 'heartbeat';
 		}
 		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, filemtime( get_theme_file_path( 'assets/js/event-form.js' ) ), true );
+		// The limits the browser-side pre-check enforces, from the same helpers
+		// as the validator and the help text, so the three can never disagree.
+		// wp_add_inline_script rather than wp_localize_script: the latter casts
+		// every scalar to a string, and maxBytes is compared with a number.
+		wp_add_inline_script(
+			'law-event-form',
+			'window.lawPhotoLimits = ' . wp_json_encode(
+				array(
+					'maxBytes' => LAW_PHOTO_MAX_BYTES,
+					'mimes'    => law_events_photo_mimes(),
+					'tooLarge' => sprintf( 'That photo is too large (%d MB maximum). Choose a smaller file.', LAW_PHOTO_MAX_BYTES / MB_IN_BYTES ),
+					'badType'  => 'That file must be a JPG, PNG or WebP image.',
+				)
+			) . ';',
+			'before'
+		);
 
 		// The WYSIWYG editor behind the descriptive fields
 		// (functions/events/rich-text.php). Only the screens that actually render

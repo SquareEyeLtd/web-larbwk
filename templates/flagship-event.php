@@ -54,8 +54,9 @@ if ( function_exists( 'law_events_map_post' ) ) {
 $law_cal_show_status  = false;
 $law_cal_hero_title   = law_calendar_hero_title();
 $law_cal_details_rows = array( 'date', 'time', 'venue', 'price', 'places' );
-// A day-long agenda, not two or three optional sessions: every session renders
-// open, on a timeline, because the running order is what the reader came for.
-$law_cal_sessions_style = 'timeline';
+// Every event renders its sessions on the same open timeline; the flagship
+// differs only in what it calls the running order, which is a day-long Agenda
+// rather than a handful of Sessions.
+$law_cal_sessions_heading = __( 'Agenda', 'law' );
 
 require get_theme_file_path( 'parts/calendar-body.php' );

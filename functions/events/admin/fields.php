@@ -190,6 +190,15 @@ function law_field_relationship( $name, $label, array $rows, $post_type, $simple
 		law_field_relationship_row( $name, $i, $id, $simple ? array() : (array) $row, $simple );
 	}
 	echo '</ol>';
+	// The photo guidance for every row, once on the group rather than once per
+	// row: the per-row control is a 32px thumbnail and two link buttons, and a
+	// line of help text under each would be noise. Once here also keeps it out
+	// of law-admin.js, which rebuilds the row markup for a row added via the
+	// search and would otherwise need its own copy of the sentence.
+	// $simple rows are plain IDs with no photo control, so they get nothing.
+	if ( ! $simple ) {
+		echo '<p class="description law-form-hint">JPG, PNG or WebP. Square photos at least 600 pixels across work best.</p>';
+	}
 	if ( $after_list ) {
 		call_user_func( $after_list );
 	}
@@ -257,13 +266,20 @@ function law_field_relationship_row( $name, $i, $id, array $row, $simple ) {
  * attachment ID, thumbnail, Choose (wp.media, wired in law-admin.js) and
  * Remove. law-admin.js builds the same markup for rows added via search.
  */
-function law_field_relationship_photo( $name, $i, $photo_id ) {
+function law_field_relationship_photo( $name, $i, $photo_id, $field_name = '' ) {
 	// $i is an int for a real row and a placeholder string ("__j__") inside a
 	// clone template, so it is escaped as a string, never cast to int, which
 	// would silently turn every template row into row 0.
+	//
+	// $field_name overrides the composed name for a caller whose rows are not
+	// keyed $name[$i] (the Flagship screen's "new speaker" rows sit under a
+	// session index as well, so they compose their own). It exists so that
+	// screen can call this rather than keep its own copy of the markup, which
+	// had already drifted out of step with the JS that rebuilds it.
 	$thumb = $photo_id ? (string) wp_get_attachment_image_url( $photo_id, 'thumbnail' ) : '';
+	$field = '' !== (string) $field_name ? (string) $field_name : sprintf( '%s[%s][photo_id]', $name, (string) $i );
 	echo '<span class="law-rel-photo" data-law-rel-photo>';
-	printf( '<input type="hidden" name="%s[%s][photo_id]" value="%d" class="law-rel-photo-id">', esc_attr( $name ), esc_attr( (string) $i ), (int) $photo_id );
+	printf( '<input type="hidden" name="%s" value="%d" class="law-rel-photo-id">', esc_attr( $field ), (int) $photo_id );
 	printf( '<img class="law-rel-photo-thumb" src="%s" alt="" width="32" height="32"%s>', esc_url( $thumb ), $thumb ? '' : ' hidden' );
 	echo '<button type="button" class="button-link law-rel-photo-choose">' . ( $thumb ? 'Change photo' : 'Choose photo' ) . '</button>';
 	echo '<button type="button" class="button-link law-rel-photo-clear"' . ( $thumb ? '' : ' hidden' ) . '>Remove photo</button>';

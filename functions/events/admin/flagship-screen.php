@@ -197,7 +197,7 @@ function law_flagship_render_form( array $values, $event_id ) {
 	echo '<div class="law-flagship-hero">';
 	law_field_media( 'law_flagship[hero_image_id]', 'Banner and preview image', $values['hero_image_id'] );
 	echo '</div>';
-	echo '<p class="description">Used for the block on the programme and the banner on the flagship page. Leave it empty to use the site\'s default banner photograph.</p>';
+	echo '<p class="description">Used for the block on the programme and the banner on the flagship page. Leave it empty to use the site\'s default banner photograph. JPG, PNG or WebP. A wide image at least 1600 pixels across works best.</p>';
 
 	// Bookings and pricing (FLAGSHIP_PAYMENTS.md §2.2). Above the agenda,
 	// because the committee sets these once and edits the agenda repeatedly.

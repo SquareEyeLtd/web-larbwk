@@ -47,13 +47,19 @@ get_header();
 				<div class="large-8 cell">
 					<div class="law-speaker__details">
 						<?php
-						// One heading instead of the name plus a separate "Speaking at":
-						// "[name] is speaking at:" (Denis, 8 September 2026). No headline
-						// organisation or job title: those are per event and appear on
-						// each event card below. A profile only renders while a confirmed
-						// event references the speaker, so the list is never empty.
+						// Name, then the headline job title and organisation, exactly as
+						// the speakers archive card shows them (Denis, 11 September 2026).
+						// Both come from the merged profile (the first appearance that
+						// supplied one), so a speaker who changed jobs between events
+						// still gets the per-event values on each card below.
 						?>
-						<h2 class="law-speaker__name"><?php echo esc_html( $law_speaker['name'] ); ?> <span class="law-speaker__name-suffix">is speaking at:</span></h2>
+						<h2 class="law-speaker__name"><?php echo esc_html( $law_speaker['name'] ); ?></h2>
+						<?php if ( $law_speaker['job_title'] ) : ?>
+							<p class="law-speakers__role"><?php echo esc_html( $law_speaker['job_title'] ); ?></p>
+						<?php endif; ?>
+						<?php if ( $law_speaker['organisation'] ) : ?>
+							<p class="law-speaker__company"><?php echo esc_html( $law_speaker['organisation'] ); ?></p>
+						<?php endif; ?>
 						<?php if ( $law_speaker['url'] ) : ?>
 							<p>
 								<a class="normal-link law-speaker__website" href="<?php echo esc_url( $law_speaker['url'] ); ?>" target="_blank" rel="noopener">
@@ -70,7 +76,12 @@ get_header();
 					</div>
 
 					<?php if ( $law_events ) : ?>
+						<?php
+						// A profile only renders while a confirmed event references the
+						// speaker, so this list is never empty.
+						?>
 						<div class="law-speaker__events law-cal">
+							<h3 class="law-speaker__events-heading"><?php esc_html_e( 'Speaking at:', 'law' ); ?></h3>
 							<?php foreach ( $law_events as $law_event ) : ?>
 								<?php
 								// What this speaker was at THIS event (role, organisation and
@@ -85,6 +96,10 @@ get_header();
 										'event'     => $law_event,
 										'url'       => law_speaker_event_link( $law_event['id'] ),
 										'show_date' => true,
+										// The profile column is narrow and each card also carries the
+										// appearance lines, so the buttons go under the text rather
+										// than squeezing the title into half the width.
+										'stacked'   => true,
 										'speaker'   => $law_appearance ? array(
 											'name'         => $law_speaker['name'],
 											'role'         => $law_appearance['role'],
