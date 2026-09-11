@@ -17,8 +17,9 @@
  * from the button's own URL, and each matches the heading of the dialog that is
  * about to replace it, so nothing jumps when it lands.
  *
- * The status line stays generic for the same reason it is one line: it has to
- * be true of a booking, a waitlist place and a flagship application alike.
+ * The status line is screen-reader-only and stays generic for the same reason it
+ * is one line: it has to be true of a booking, a waitlist place and a flagship
+ * application alike.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -36,8 +37,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 			data-law-loading-waitlist="<?php esc_attr_e( 'Join the waitlist', 'law' ); ?>"
 			data-law-loading-apply="<?php esc_attr_e( 'Apply to attend', 'law' ); ?>"
 		><?php esc_html_e( 'Book your place', 'law' ); ?></h2>
-		<?php // role=status, so a screen reader is told the wait has started without the focus moving. ?>
-		<p class="law-modal__copy" role="status"><?php esc_html_e( 'Loading the form…', 'law' ); ?></p>
+		<?php
+		// Not visible: the shimmering skeleton below already says "loading" to
+		// anyone who can see it, and a line of text saying so as well was noise
+		// (Denis, 11 September 2026). It stays in the markup as a screen-reader
+		// announcement, because the skeleton is aria-hidden and a reader who
+		// cannot see it would otherwise be told nothing at all. role=status, so
+		// it is announced without the focus moving. Same pattern as
+		// #law-cal-status on the programme.
+		?>
+		<p class="show-for-sr" role="status"><?php esc_html_e( 'Loading the form…', 'law' ); ?></p>
 		<div class="law-booking-skeleton" aria-hidden="true">
 			<div class="law-cal-skeleton__line law-cal-skeleton__line--title"></div>
 			<div class="law-cal-skeleton__line law-cal-skeleton__line--meta"></div>
