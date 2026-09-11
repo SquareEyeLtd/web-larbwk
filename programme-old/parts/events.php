@@ -1,16 +1,11 @@
 <?php
 /**
- * Programme events grouped by day: the flagship strip, then one section per
- * day -- its heading, the flagship block on its day, slot headings, compact
- * event rows. calendar-tabs.js shows one day section at a time behind the day
- * tabs (parts/calendar-daynav.php) and reads each section's data-count for the
- * tab labels; without JavaScript every day renders stacked. Rendered inside
- * #law-cal-events on the calendar pages and returned on its own by the
- * &law_partial=1 AJAX endpoint.
- *
- * get_template_part( 'parts/calendar-events', null, array(
- *   'show_status' => false, // Committee status badges on cards.
- * ) );
+ * The ORIGINAL programme list, kept for reference behind ?variant=old
+ * (programme-old/README.md): every day stacked, navy day bars, orange slot
+ * bars, the flagship block under its day, full cards. A verbatim copy of
+ * parts/calendar-events.php as it was before the day-tabs layout became the
+ * default. Rendered by programme-old/template.php and returned on its own by
+ * the module's &law_partial=1 endpoint.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -41,19 +36,6 @@ foreach ( array_keys( $law_days ) as $law_date ) {
 ?>
 
 <?php
-// The strip: one line naming the flagship and linking to its day, above the
-// days, so the main event of the week is in the first screenful whatever day
-// is showing. A signpost to the block, not a second copy of it: the block
-// still renders under its own day, exactly once, and the strip deliberately
-// shares no class name with it (FlagshipRenderTest counts
-// `class="law-flagship-card"`). calendar-tabs.js hides the strip while the
-// flagship's own day is the one on screen.
-if ( $law_flagship ) {
-	get_template_part( 'parts/events/flagship-strip', null, array( 'event' => $law_flagship ) );
-}
-?>
-
-<?php
 // A flagship whose date falls outside the configured programme week (someone
 // moved the week in LAW → Events settings, or typed the wrong year) has no day
 // section to sit under. Rendered here rather than dropped, so a configuration
@@ -79,7 +61,7 @@ if ( $law_flagship && ! isset( $law_days[ $law_flagship_date ] ) ) {
 		continue;
 	}
 	?>
-	<section class="law-cal-day-section" id="day-<?php echo esc_attr( $law_date ); ?>" data-count="<?php echo (int) count( $law_by_date[ $law_date ] ?? array() ); ?>" aria-label="<?php echo esc_attr( law_calendar_day_heading( $law_date ) ); ?>">
+	<section class="law-cal-day-section" id="day-<?php echo esc_attr( $law_date ); ?>" aria-label="<?php echo esc_attr( law_calendar_day_heading( $law_date ) ); ?>">
 		<h2 class="law-cal-day-bar"><?php echo esc_html( law_calendar_day_heading( $law_date ) ); ?></h2>
 		<?php
 		// Above the day's slot bars: the flagship is the day, not one slot in it.

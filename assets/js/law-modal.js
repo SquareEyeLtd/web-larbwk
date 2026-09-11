@@ -37,14 +37,16 @@
 
 	/* The programmatic surface, for scripts that answer a modal's action over
 	   fetch and then need to swap to a result dialog or leave the page. It is
-	   defined BEFORE the "no openers on this page" guard below, because a page
-	   can carry a fetch form with no dialog at all (the waitlist reorder
-	   arrows) and redirect() has to exist there too. openModal and closeModal
-	   are function declarations, so hoisting makes this safe. */
+	   defined first because openModal and closeModal are declared further down;
+	   they are function declarations, so hoisting makes this safe. */
 	window.lawModal = {
-		open: function (id) {
+		/* The opener is optional but matters: without it closeModal() has
+		   nothing to hand focus back to. The programme's Register buttons open
+		   a dialog that was fetched rather than found, so they are not the
+		   delegated handler's `button` and have to pass themselves in. */
+		open: function (id, button) {
 			var modal = document.getElementById(id);
-			if (modal) { openModal(modal, null); }
+			if (modal) { openModal(modal, button || null); }
 		},
 		close: closeModal,
 		/* Go where the server sent us, even when that is the page we are
@@ -74,8 +76,12 @@
 		}
 	};
 
-	var openers = document.querySelectorAll('[data-law-modal-open]');
-	if (!openers.length) { return; }
+	/* No "does this page have any openers" bail. It used to return here, which
+	   skipped the delegated close and Escape handlers, the focus trap AND the
+	   assignment of window.lawModal.initAll below — so on a page whose only
+	   dialog arrives later (the programme, whose Register buttons fetch one) a
+	   dialog could be opened and then never closed. The two querySelectorAll
+	   calls it saved were not worth a trap with no way out. */
 
 	var open = null;    // The modal currently on screen.
 	var opener = null;  // The button that opened it, for focus return.
@@ -131,9 +137,22 @@
 		});
 		modal.hidden = true;
 		document.body.classList.remove('law-modal-open');
-		if (button) {
+		/* document.contains: the opener may have been thrown away while the
+		   dialog was up — the programme replaces every card when a filter
+		   changes — and focusing a detached node silently drops focus to
+		   <body>, stranding a keyboard user at the top of the page.
+
+		   The fallback is skipped when the DIALOG has gone too, which is the
+		   case when one fetched dialog replaces another: openModal() is about to
+		   focus the new one, and moving focus to the list in between would
+		   scroll the page for no reason. */
+		if (button && document.contains(button)) {
 			button.setAttribute('aria-expanded', 'false');
 			button.focus();
+		} else if (document.contains(modal)) {
+			var anchor = document.getElementById('law-cal-events') || document.body;
+			if (anchor.setAttribute) { anchor.setAttribute('tabindex', '-1'); }
+			if (anchor.focus) { anchor.focus(); }
 		}
 	}
 

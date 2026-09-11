@@ -2,9 +2,14 @@
  * The bookings front end (EVENTS_BOOKINGS.md §7): progressive enhancement over
  * three no-JS-complete pieces.
  *
- * 1. The Register opener is a real link to the inline form (?law_book=1);
- *    with JS it opens the booking modal instead (law-modal.js does the
- *    opening off data-law-modal-open — this script only stops the navigation).
+ * 1. Every booking opener — Register and Join waitlist on an event card and on
+ *    the event page itself, and the flagship's Apply on both — is a real link
+ *    to the inline form (?law_book=1, ?law_waitlist=1, ?law_flagship_apply=1)
+ *    carrying data-law-book. With JS, section 2b opens the placeholder dialog
+ *    on the press and fetches that one event's real dialog into it
+ *    (?law_dialog=1). No page ships a booking dialog of its own any more, so a
+ *    programme listing the whole week carries one button per card and no
+ *    dialogs at all, and every surface behaves the same way.
  * 2. The attendee repeater (parts/events/attendee-repeater.php): add/remove
  *    rows up to the container's data-law-max, with focus handed to the new
  *    row's first field and back to Add a colleague on removal. Deliberately
@@ -22,24 +27,27 @@
  *    that reports a promotion (or a queue this page no longer matches) falls
  *    back to the redirect, because that changes the other tables too.
  *
+ * Everything here is delegated at the document rather than bound at load: the
+ * committee's tables arrive over &law_partial=1, the programme's cards are
+ * replaced whenever a filter changes, and a card's dialog is injected on click.
+ * A handler bound to markup that later goes away is a control that quietly
+ * stops working.
+ *
  * Depends on law-modal.js for window.lawModal (open, close and redirect) and
  * the shared modal classes.
  */
 (function () {
 	'use strict';
 
-	/* 1. The modal opener is an anchor so the no-JS path navigates to the
-	   inline form; with JS, law-modal.js opens the dialog and the navigation
-	   must not happen. Scoped to this feature's own openers (Register, Join
-	   waitlist and the flagship's Apply) so a future anchor opener elsewhere
-	   is not silently deadened. */
-	document.querySelectorAll('a[data-law-modal-open="law-booking-modal"], a[data-law-modal-open="law-waitlist-modal"], a[data-law-modal-open="law-flagship-modal"]').forEach(function (link) {
-		link.addEventListener('click', function (event) {
-			event.preventDefault();
-		});
-	});
+	/* 1. (Was: stop the navigation on a Register anchor that law-modal.js had
+	   just opened a server-rendered dialog for. Nothing renders those anchors
+	   any more — every booking opener on the site is now a data-law-book link
+	   whose dialog is fetched, and section 2b below both cancels the navigation
+	   and does the opening.)
 
-	/* 2. The attendee repeater. */
+	   2. The attendee repeater. Delegated for the same reason: a dialog fetched
+	   for an event card arrives long after load, and a per-form binding made at
+	   load would leave its "Add a colleague" dead. */
 	var rowCounter = 100; // Clear of any server-rendered row indexes.
 
 	function visibleRows(container) {
@@ -54,42 +62,311 @@
 		}
 	}
 
-	document.querySelectorAll('form.law-booking-form').forEach(function (form) {
+	/* Hide "Add a colleague" on a form that is already at its cap. Matters for
+	   the inline form, which the server may repopulate with rows after a refused
+	   submission; a freshly fetched dialog starts empty, but it is run over both
+	   so the two paths cannot diverge. */
+	function initRepeaters(root) {
+		(root || document).querySelectorAll('form.law-booking-form [data-law-booking-rows]').forEach(toggleAdd);
+	}
+
+	document.addEventListener('click', function (event) {
+		var form = event.target.closest ? event.target.closest('form.law-booking-form') : null;
+		if (!form) { return; }
 		var container = form.querySelector('[data-law-booking-rows]');
 		if (!container) { return; }
-		toggleAdd(container);
 
-		form.addEventListener('click', function (event) {
-			var add = event.target.closest('[data-law-booking-add]');
-			if (add) {
-				var template = container.querySelector('[data-law-booking-row-template]');
-				var max = parseInt(container.getAttribute('data-law-max') || '0', 10);
-				if (!template || visibleRows(container).length >= max) { return; }
-				var row = template.cloneNode(true);
-				row.hidden = false;
-				row.removeAttribute('data-law-booking-row-template');
-				rowCounter += 1;
-				row.querySelectorAll('[data-name]').forEach(function (input) {
-					input.name = input.getAttribute('data-name').replace('__i__', String(rowCounter));
-					input.removeAttribute('data-name');
-				});
-				container.insertBefore(row, template);
+		var add = event.target.closest('[data-law-booking-add]');
+		if (add) {
+			var template = container.querySelector('[data-law-booking-row-template]');
+			var max = parseInt(container.getAttribute('data-law-max') || '0', 10);
+			if (!template || visibleRows(container).length >= max) { return; }
+			var row = template.cloneNode(true);
+			row.hidden = false;
+			row.removeAttribute('data-law-booking-row-template');
+			rowCounter += 1;
+			row.querySelectorAll('[data-name]').forEach(function (input) {
+				input.name = input.getAttribute('data-name').replace('__i__', String(rowCounter));
+				input.removeAttribute('data-name');
+			});
+			container.insertBefore(row, template);
+			toggleAdd(container);
+			var first = row.querySelector('input');
+			if (first) { first.focus(); }
+			return;
+		}
+		var remove = event.target.closest('[data-law-booking-remove]');
+		if (remove) {
+			var owned = remove.closest('.law-row');
+			if (owned && !owned.hasAttribute('data-law-booking-row-template')) {
+				owned.remove();
 				toggleAdd(container);
-				var first = row.querySelector('input');
-				if (first) { first.focus(); }
-				return;
+				var addButton = form.querySelector('[data-law-booking-add]');
+				if (addButton) { addButton.focus(); }
 			}
-			var remove = event.target.closest('[data-law-booking-remove]');
-			if (remove) {
-				var owned = remove.closest('.law-row');
-				if (owned && !owned.hasAttribute('data-law-booking-row-template')) {
-					owned.remove();
-					toggleAdd(container);
-					var addButton = form.querySelector('[data-law-booking-add]');
-					if (addButton) { addButton.focus(); }
+		}
+	});
+
+	initRepeaters();
+
+	/* 2b. The booking dialog for an event CARD, fetched on click.
+
+	   Cards carry a Register button but no dialog: the programme renders the
+	   whole week at once, and the dialog is per event — a fixed wrapper id, its
+	   own places count, its own colleague cap — so fifty copies would collide on
+	   that id and be thrown away on the next filter change anyway. Instead the
+	   button is a real link to the inline form on the event page, and this
+	   fetches that one event's dialog (?law_dialog=1, see
+	   law_booking_maybe_render_dialog()) and drops it in at body level.
+
+	   Everything here degrades to following the link: no fetch, a slow server, a
+	   404 because the event stopped being bookable since the page loaded. The
+	   event page then explains why, which is a better answer than a dead
+	   button. */
+
+	var LOADING_ID = 'law-booking-loading';
+	/* How long the skeleton stays up once shown, so it cannot flash. One number,
+	   here, because it is a feel setting rather than a mechanism. */
+	var MIN_LOADING = 1000;
+
+	var dialogHost = null;
+	var dialogCache = {};   // event id -> dialog HTML
+	var dialogPending = {}; // event id -> the fetch promise, shared by click and prefetch
+	var clickToken = 0;     // The press currently being served; later presses win.
+	var hoverTimer = null;
+	var hoverButton = null;
+	var prefetched = 0;
+	var PREFETCH_MAX = 8;   // A mouse swept down 50 cards must not fetch 50 pages.
+
+	/* Outside #law-cal-events on purpose: the filter bar replaces that container
+	   wholesale, and a dialog living inside it would be destroyed mid-use. */
+	function bookHost() {
+		if (!dialogHost || !document.contains(dialogHost)) {
+			dialogHost = document.createElement('div');
+			dialogHost.setAttribute('data-law-book-host', '');
+			document.body.appendChild(dialogHost);
+		}
+		return dialogHost;
+	}
+
+	function bookUrl(button) {
+		var href = button.getAttribute('href') || '';
+		return href + (href.indexOf('?') === -1 ? '?' : '&') + 'law_dialog=1';
+	}
+
+	/* One promise per event, shared by the press and by any prefetch already
+	   running for it. A prefetch must never make the press do nothing: that is
+	   exactly what "I had to click Register twice" was. */
+	function dialogFor(button) {
+		var id = button.getAttribute('data-law-book');
+		if (dialogCache[id]) { return Promise.resolve(dialogCache[id]); }
+		if (dialogPending[id]) { return dialogPending[id]; }
+
+		var controller = window.AbortController ? new AbortController() : null;
+		var timer = window.setTimeout(function () { if (controller) { controller.abort(); } }, 8000);
+		var request = fetch(bookUrl(button), {
+			credentials: 'same-origin',
+			headers: { 'X-Requested-With': 'fetch' },
+			signal: controller ? controller.signal : undefined
+		})
+			.then(function (response) {
+				if (!response.ok) { throw new Error('HTTP ' + response.status); }
+				return response.text();
+			})
+			.then(
+				function (html) {
+					window.clearTimeout(timer);
+					delete dialogPending[id];
+					dialogCache[id] = html;
+					return html;
+				},
+				function (error) {
+					window.clearTimeout(timer);
+					delete dialogPending[id];
+					throw error;
 				}
+			);
+
+		dialogPending[id] = request;
+		return request;
+	}
+
+	/* The dialog's id comes from the markup, never from the button: the server
+	   decides the mode, so a card rendered while places were free opens the
+	   waitlist dialog if the event has since filled up. */
+	function showDialog(html, button) {
+		var host = bookHost();
+		host.innerHTML = html; // Replaces the previous pair; only one is ever live.
+		if (window.lawModal && window.lawModal.initAll) { window.lawModal.initAll(host); }
+		initRepeaters(host);
+		var dialog = host.querySelector('.law-modal[id]');
+		if (!dialog) { return false; }
+		window.lawModal.open(dialog.id, button);
+		return true;
+	}
+
+	/* Which of the three things this button opens, read off its own no-JS href
+	   rather than a second attribute: the URL already says it. */
+	function bookKind(button) {
+		var href = button.getAttribute('href') || '';
+		if (href.indexOf('law_flagship_apply=') !== -1) { return 'apply'; }
+		if (href.indexOf('law_waitlist=') !== -1) { return 'waitlist'; }
+		return 'book';
+	}
+
+	/* Open the placeholder immediately, so the press is visibly answered while
+	   the real dialog is on its way. Its heading comes from the partial's own
+	   data attributes, so the copy stays in PHP and matches the heading of the
+	   dialog about to replace it. */
+	function showLoading(button) {
+		var loading = document.getElementById(LOADING_ID);
+		if (!loading) { return false; }
+		var title = loading.querySelector('.law-modal__title');
+		if (title) {
+			var wanted = title.getAttribute('data-law-loading-' + bookKind(button));
+			if (wanted) { title.textContent = wanted; }
+		}
+		window.lawModal.open(LOADING_ID, button);
+		return true;
+	}
+
+	function loadingIsUp() {
+		var loading = document.getElementById(LOADING_ID);
+		return !!loading && !loading.hidden;
+	}
+
+	document.addEventListener('click', function (event) {
+		var button = event.target.closest ? event.target.closest('[data-law-book]') : null;
+		if (!button || !window.fetch || !window.lawModal) { return; }
+		event.preventDefault();
+
+		var id = button.getAttribute('data-law-book');
+		var token = ++clickToken;
+
+		// Already in hand, from an earlier press or a prefetch: no wait, no
+		// placeholder, straight to the form. Nothing has appeared, so there is
+		// nothing that could flash.
+		if (dialogCache[id]) {
+			showDialog(dialogCache[id], button);
+			return;
+		}
+
+		// No placeholder on this page (it only renders for signed-in viewers of
+		// a card surface): fall back to marking the button itself busy.
+		var placeheld = showLoading(button);
+		if (!placeheld) { bookBusy(button, true); }
+		var shownAt = Date.now();
+
+		/* Once the skeleton is up it stays up for MIN_LOADING, even if the
+		   response beat it. A local fetch can answer in 60ms, and a skeleton
+		   that appears and vanishes inside one frame reads as a glitch rather
+		   than as loading (Denis, 11 September 2026). This only ever DELAYS the
+		   placeholder path; a cached dialog still opens instantly. */
+		function settle(done) {
+			var wait = placeheld ? Math.max(0, MIN_LOADING - (Date.now() - shownAt)) : 0;
+			window.setTimeout(function () {
+				if (token !== clickToken) { return; } // A later press won.
+				if (!placeheld) { bookBusy(button, false); }
+				// Closed while we waited: they changed their mind, so do not
+				// reopen over the top of them.
+				if (placeheld && !loadingIsUp()) { return; }
+				done();
+			}, wait);
+		}
+
+		dialogFor(button).then(
+			function (html) {
+				settle(function () {
+					if (!showDialog(html, button)) {
+						window.location.assign(button.getAttribute('href'));
+					}
+				});
+			},
+			function () {
+				settle(function () {
+					// The inline form on the event page is a working fallback,
+					// and a 404 here means the event stopped being bookable
+					// since the page loaded — which that page explains.
+					window.location.assign(button.getAttribute('href'));
+				});
 			}
+		);
+	});
+
+	function bookBusy(button, on) {
+		if (on) {
+			button.setAttribute('aria-busy', 'true');
+		} else {
+			button.removeAttribute('aria-busy');
+		}
+	}
+
+	/* Prefetch on hover and on keyboard focus, so the dialog is usually already
+	   in hand by the time the press lands and no placeholder is ever seen.
+	   Capped, and skipped on a metered connection: each one is a page bootstrap.
+
+	   It shares dialogFor()'s promise with the click handler, so a press that
+	   arrives mid-prefetch waits for that same request rather than being
+	   swallowed. */
+	function prefetch(button) {
+		var id = button && button.getAttribute('data-law-book');
+		if (!id || dialogCache[id] || dialogPending[id] || prefetched >= PREFETCH_MAX) { return; }
+		if (!window.fetch) { return; }
+		if (navigator.connection && navigator.connection.saveData) { return; }
+		prefetched += 1;
+		dialogFor(button).catch(function () { /* The press will navigate instead. */ });
+	}
+
+	/* pointerover, not pointerenter: it bubbles, so one listener covers cards
+	   that arrive later. The dwell timer is only reset when the pointer moves to
+	   a DIFFERENT button, so moving the cursor about within one button does not
+	   postpone its fetch for ever. */
+	document.addEventListener('pointerover', function (event) {
+		var button = event.target.closest ? event.target.closest('[data-law-book]') : null;
+		if (button === hoverButton) { return; }
+		hoverButton = button;
+		window.clearTimeout(hoverTimer);
+		if (!button) { return; }
+		hoverTimer = window.setTimeout(function () { prefetch(button); }, 120);
+	});
+
+	document.addEventListener('focusin', function (event) {
+		var button = event.target.closest ? event.target.closest('[data-law-book]') : null;
+		if (button) { prefetch(button); }
+	});
+
+	/* The ARIA belongs to the enhanced control only. Without JS the button is a
+	   link to a page, and aria-haspopup="dialog" would be a lie; aria-controls is
+	   left off entirely, because the dialog it would name does not exist until
+	   the button is pressed and a dangling reference is worse than none. */
+	function initBookButtons(root) {
+		(root || document).querySelectorAll('[data-law-book]').forEach(function (button) {
+			button.setAttribute('aria-haspopup', 'dialog');
+			button.setAttribute('aria-expanded', 'false');
 		});
+	}
+	initBookButtons();
+
+	/* A filter change replaces every card. The dialog host survives (it is a
+	   sibling of the list), but the opener behind an open dialog has just been
+	   thrown away, and the places counts in the cache may have moved. */
+	document.addEventListener('law:partial-rendered', function (event) {
+		var host = dialogHost;
+		if (host) {
+			var live = host.querySelector('.law-modal:not([hidden])');
+			// Not a dialog mid-request or holding a confirmation: those are
+			// locked, and closing one would lose the reader the outcome.
+			if (live && !live.classList.contains('law-modal--busy')) {
+				window.lawModal.close();
+				host.innerHTML = '';
+			} else if (!live) {
+				host.innerHTML = '';
+			}
+		}
+		if (loadingIsUp()) { window.lawModal.close(); }
+		dialogCache = {};
+		prefetched = 0;
+		initBookButtons(event.detail && event.detail.container);
 	});
 
 	/* 3. Fetch submission. */
@@ -354,6 +631,10 @@
 				.then(function (response) { return response.json(); })
 				.then(function (response) {
 					var payload = response.data || {};
+					/* Whatever the outcome, a cached dialog for this event is
+					   now suspect: the places count and the colleague cap in it
+					   were true before this submission. */
+					dialogCache = {};
 					if (!response.success) {
 						busyState(form, button, false);
 						if (form.hasAttribute('data-law-waitlist-move')) {

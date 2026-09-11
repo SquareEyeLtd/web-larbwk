@@ -32,3 +32,7 @@ require_once(get_theme_file_path('/functions/migrate-speakers.php'));
 require_once(get_theme_file_path('/functions/setup-account-pages.php'));
 require_once(get_theme_file_path('/functions/events/_load.php'));
 
+// The original programme layout, kept for reference at ?variant=old.
+// Self-contained: delete programme-old/ and this line.
+require_once(get_theme_file_path('/programme-old/programme-old.php'));
+

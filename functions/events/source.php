@@ -130,6 +130,11 @@ function law_events_map_post( $post, $allowed = null ) {
 		'unscheduled'  => '' === $slot['date'],
 		'is_flagship'  => $is_flagship,
 		'is_sponsored' => law_events_post_is_sponsored( $post ),
+		// The committee's "Run by LAW" switch, behind the programme's Organiser
+		// filter. The bool cast settles both "off" states at once: an event the
+		// committee has never saved has no meta row, and one saved with the box
+		// unticked carries a literal 0 (the 'flag' sanitiser in meta.php).
+		'is_law'       => (bool) law_event_meta( $post->ID, '_law_is_law_event' ),
 		'sort'         => ( $slot['date'] ?: '9999-99-99' ) . ' ' . ( $slot['start'] ?: '99:99' ) . ' ' . strtolower( $title ),
 	);
 }

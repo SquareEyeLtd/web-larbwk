@@ -33,50 +33,154 @@
   color: #292459;
 }
 
-/* --- Day jump links ------------------------------------------------------ */
+/* --- The day tabs (parts/calendar-daynav.php) -----------------------------
+   One day at a time: five tabs in a single sticky row directly above the
+   panel they control, the active one filled navy with an orange underline,
+   each carrying its count and the flagship's day its pill. Sticky against the
+   fixed header through --law-header-offset, which app.js measures from the
+   real nav. The bar is a direct child of .law-cal, beside the filters and the
+   results, because a sticky element only sticks within its parent's box and
+   this one has to stick for the whole list. On a phone the row scrolls
+   sideways under a thin scrollbar rather than wrapping to three rows (sticky
+   chrome has to stay a small fraction of the viewport) and calendar-tabs.js
+   brings the active day into view. Without JavaScript every day renders
+   stacked and the tabs are plain jump links. */
 
-.law-cal-daynav {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.6rem;
-  margin: 0 0 1rem;
+.law-cal {
+  --law-cal-daynav-h: 3.75rem;
 }
 
-@media (min-width: 48em) {
-  .law-cal-daynav {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-  }
+.law-cal-daynav {
+  position: sticky;
+  top: var(--law-header-offset, 130px);
+  z-index: 20;
+  display: flex;
+  gap: 0;
+  margin: 0;
+  min-height: var(--law-cal-daynav-h);
+  background: #fff;
+  border-bottom: 2px solid #292459;
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-snap-type: x proximity;
+  /* calendar-tabs.js scrolls the active day into view sideways with
+     Element.scrollBy and no behavior option, so this decides the motion and
+     the reduced-motion block at the end of this section turns it off. */
+  scroll-behavior: smooth;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+
+.law-cal-daynav::-webkit-scrollbar {
+  display: none;
 }
 
 .law-cal-daynav__link {
-  display: block;
-  padding: 0.7rem 0.5rem 0.55rem;
-  border: 1px solid #ef7d05;
-  background: #fff;
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1rem;
+  min-width: 9rem;
+  padding: 0.55rem 1rem 0.45rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
   color: #292459;
   font-family: poppins, sans-serif;
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   line-height: 1.2;
-  letter-spacing: 0.03em;
-  text-align: center;
+  letter-spacing: 0.02em;
+  text-align: left;
   text-transform: uppercase;
+  scroll-snap-align: start;
   transition:
-    background 0.3s ease,
-    color 0.3s ease;
+    background 0.2s ease,
+    color 0.2s ease;
 }
 
 .law-cal-daynav__link:hover,
 .law-cal-daynav__link:focus {
-  background: #ef7d05;
+  background: #ececf1;
+  color: #292459;
+}
+
+.law-cal-daynav__link:focus-visible {
+  outline: 3px solid #ef7d05;
+  outline-offset: -3px;
+}
+
+.law-cal-daynav__link[aria-selected="true"],
+.law-cal-daynav__link[aria-selected="true"]:hover,
+.law-cal-daynav__link[aria-selected="true"]:focus {
+  background: #292459;
   color: #fff;
+  border-bottom-color: #ef7d05;
 }
 
 .law-cal-daynav__link.is-empty {
-  border-color: #d5d2de;
+  border-color: transparent;
   color: #b3b0bd;
   cursor: default;
   pointer-events: none;
+}
+
+.law-cal-daynav__count {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.8;
+}
+
+.law-cal-daynav__count:empty {
+  display: none;
+}
+
+/* Orange on both white and navy clears AA for a label this size only as an
+   outline pill, the same reasoning as the flagship block's own badge. */
+.law-cal-daynav__flag {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+  padding: 1px 6px;
+  border: 1px solid #ef7d05;
+  border-radius: 9px;
+  color: #ef7d05;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* On a phone the row is wider than the screen, so say so: a thin scrollbar
+   under the days is the affordance that there is more to the side. */
+@media (max-width: 47.9375em) {
+  .law-cal-daynav {
+    scrollbar-width: thin;
+    scrollbar-color: #c9c7d6 transparent;
+  }
+
+  .law-cal-daynav::-webkit-scrollbar {
+    display: block;
+    height: 4px;
+  }
+
+  .law-cal-daynav::-webkit-scrollbar-thumb {
+    background: #c9c7d6;
+    border-radius: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .law-cal-daynav {
+    scroll-behavior: auto;
+  }
+
+  .law-cal-daynav__link {
+    transition: none;
+  }
 }
 
 /* --- Filters ------------------------------------------------------------- */
@@ -302,46 +406,67 @@
 
 /* --- Day sections -------------------------------------------------------- */
 
-/* No scroll offset here: html's scroll-padding-top in app.css handles every
-   anchor on the site, including the day links. */
+/* No scroll offset for the header here: html's scroll-padding-top in app.css
+   handles every anchor on the site. Only the tab bar's own height is added,
+   so a jump to the top of the panel (a tab switch while the bar is stuck, the
+   flagship strip) lands under the bar rather than behind it (WCAG 2.2 SC
+   2.4.11). Adding the header again would land a header's height too low. */
+.law-cal-events {
+  scroll-margin-top: var(--law-cal-daynav-h, 3.75rem);
+}
 
+/* calendar-tabs.js hides the other days and, on the flagship's day, the strip
+   with the hidden attribute; the strip is a flex box, so say it. */
+.law-cal-day-section[hidden],
+.law-flagship-strip[hidden] {
+  display: none !important;
+}
+
+/* The tab says which day this is, so the heading is a panel title, not a bar. */
 .law-cal-day-bar {
-  margin: 2.25rem 0 1rem;
-  padding: 1rem 1.5rem;
-  background: #292459;
-  color: #fff;
+  margin: 1.5rem 0 0.25rem;
+  padding: 0 0 0 1.1rem;
+  color: #292459;
   font-family: poppins, sans-serif;
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   font-weight: 600;
   line-height: 1.2;
 }
 
-.law-cal-day-section:first-of-type .law-cal-day-bar {
-  margin-top: 0.5rem;
-}
-
+/* The slot: a band, not a bar. Orange type on an orange rule, indented to
+   the rows' title edge (their 4px left border plus 0.85rem padding). */
 .law-cal-slot-bar {
-  margin: 1.5rem 0 1rem;
-  padding: 0.6rem 1.5rem;
-  background: #ef7d05;
-  color: #fff;
+  margin: 1.5rem 0 0;
+  padding: 0.3rem 1.1rem 0.35rem;
+  border-bottom: 2px solid #ef7d05;
+  color: #ef7d05;
   font-family: poppins, sans-serif;
-  font-size: 1rem;
+  font-size: 0.85rem;
   font-weight: 600;
   line-height: 1.3;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-/* --- Event card (parts/loop/event.php) ----------------------------------- */
+/* --- Event card (parts/loop/event.php) -----------------------------------
+   A compact row, not a box: hairline dividers, a 4px left edge on every row
+   (so a sponsored row's orange edge does not shift its title), venue and host
+   on one muted line. The same card serves the programme, the speaker
+   profile's "is speaking at" list and the account pages, so the density is
+   the card's own; only the time line is contextual. Under a slot heading it
+   would repeat the heading, so the programme's day sections hide it, while
+   the profile and the account pages (which pass show_date) keep it as the
+   row's date. */
 
 .law-event-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  margin: 0 0 1rem;
-  background: #ececf1;
-  border: 2px solid #292459;
+  gap: 0.6rem 1.25rem;
+  padding: 0.65rem 0.5rem 0.65rem 0.85rem;
+  margin: 0;
+  border-left: 4px solid transparent;
+  border-bottom: 1px solid #d5d2de;
 }
 
 @media (min-width: 48em) {
@@ -349,14 +474,30 @@
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    gap: 1.5rem;
   }
 }
 
-/* Sponsored cards sit on the same grey fill as the rest; the orange border is
-   the only difference, so the listing reads as one surface. */
+/* Sponsored rows carry the whole signal in the surface: a warm orange fill
+   and left edge against the plain rows around them, so the listing shows
+   which events are sponsored at a glance with no pill to read. The orange
+   accents inside the row darken to #a85400, which clears 4.5:1 on this fill
+   where the brand #ef7d05 would not. */
 .law-event-card--sponsored {
-  border-color: #ef7d05;
+  background: #fdeedd;
+  border-left-color: #ef7d05;
+}
+
+.law-event-card--sponsored .law-event-card__time {
+  color: #a85400;
+}
+
+.law-event-card--sponsored .law-event-card__title a:hover,
+.law-event-card--sponsored .law-event-card__title a:focus {
+  color: #a85400;
+}
+
+.law-event-card--sponsored .law-event-card__divider {
+  border-top-color: #f0d8bd;
 }
 
 .law-event-card__body {
@@ -365,9 +506,9 @@
 }
 
 .law-event-card__title {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.2rem;
   font-family: poppins, sans-serif;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 600;
   line-height: 1.3;
   color: #292459;
@@ -379,31 +520,52 @@
 }
 
 .law-event-card__time {
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.2rem;
   color: #ef7d05;
   font-family: poppins, sans-serif;
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   font-weight: 600;
   line-height: 1.35;
 }
 
+/* Under a slot heading the time is the heading's. Elsewhere (the speaker
+   profile, My events, My bookings) the row has no heading and the line is its
+   date, so it stays. */
+.law-cal-day-section .law-event-card__time {
+  display: none;
+}
+
+/* Venue and host run on as one line, a middle dot between them. */
 .law-event-card__meta {
-  margin: 0 0 0.15rem;
+  display: inline;
+  margin: 0;
   color: #555;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   line-height: 1.4;
 }
 
-/* Speaker profile "Speaking at" cards: the person's organisation and position
-   at this particular event, separated from the venue/host lines. */
+.law-event-card__meta + .law-event-card__meta::before {
+  content: " · ";
+  color: #b3b0bd;
+}
+
+/* Speaker profile "is speaking at" rows: the person's role, organisation and
+   position at this particular event, separated from the venue/host line and
+   one per line, because "role: Chair · organisation: X · position: Y" run
+   together reads as one fact. */
 .law-event-card__divider {
   border: 0;
   border-top: 1px solid #dcdcdc;
-  margin: 0.6rem 0 0.5rem;
+  margin: 0.5rem 0 0.4rem;
 }
 
 .law-event-card__meta--speaker {
+  display: block;
   color: #333;
+}
+
+.law-event-card__meta--speaker + .law-event-card__meta--speaker::before {
+  content: none;
 }
 
 .law-event-card__actions {
@@ -416,6 +578,8 @@
 .law-event-card__actions .button {
   width: auto;
   margin: 0;
+  padding: 0.55em 0.85em;
+  font-size: 0.72rem;
   white-space: nowrap;
 }
 
@@ -431,9 +595,27 @@
   height: 0.7em;
 }
 
+/* The booking button (law_booking_card_action()). Orange because it is the card's
+   primary action, and it sits last so the row ends on it. Its dialog is fetched
+   on click, so it carries a busy state the other card buttons have no use for:
+   the pointer says something is happening, and aria-busy says it to a screen
+   reader. No label swap -- the buttons sit in a flex row and a wider word would
+   shove "Event details" sideways mid-click. */
+.law-event-card__button--book[aria-busy="true"] {
+  cursor: progress;
+  opacity: 0.75;
+}
+
 @media (max-width: 47.9375em) {
+  .law-event-card__actions {
+    flex-wrap: wrap;
+  }
+
   .law-event-card__actions .button {
-    flex: 1 1 0;
+    /* flex-basis 45%, not 0: with three buttons (Event details, an account
+       action and Register) equal thirds leave nothing but a truncated word in
+       each, so they wrap to two rows instead. */
+    flex: 1 1 45%;
   }
 }
 
@@ -443,10 +625,109 @@
   margin: 0 0 0.4rem;
 }
 
-.law-event-card .law-cal-card__sponsored {
-  position: static;
-  display: inline-block;
-  margin-top: 0.5rem;
+/* --- The flagship strip (parts/events/flagship-strip.php) -----------------
+   One navy line at the top of the results naming the flagship and linking to
+   its day, so the main event of the week is in the first screenful whatever
+   day the tabs show. The colour reasoning is the flagship block's: white and
+   orange on navy both clear AA, so the tag is an orange outline pill and the
+   link is orange text. */
+
+.law-flagship-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 1rem 0 1.25rem;
+  padding: 0.7rem 1.1rem;
+  background: #292459;
+  border-left: 6px solid #ef7d05;
+  color: #fff;
+}
+
+.law-flagship-strip__badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid #ef7d05;
+  border-radius: 10px;
+  color: #ef7d05;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* .law-cal a inherits colour; these need white and orange on navy. */
+.law-cal .law-flagship-strip__link {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.75rem;
+  color: #fff;
+}
+
+.law-flagship-strip__title {
+  font-family: poppins, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.law-cal .law-flagship-strip__link:hover .law-flagship-strip__title,
+.law-cal .law-flagship-strip__link:focus .law-flagship-strip__title {
+  color: #ef7d05;
+  text-decoration: underline;
+}
+
+.law-flagship-strip__meta {
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.law-cal .law-flagship-strip__cta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #ef7d05;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.law-cal .law-flagship-strip__cta:hover,
+.law-cal .law-flagship-strip__cta:focus {
+  color: #fff;
+}
+
+.law-flagship-strip__cta svg {
+  width: 0.75em;
+  height: 0.75em;
+}
+
+/* On a phone the one-liner becomes a short stack: the tag on its own line
+   above the title, then date · time · venue, then the link. The link's 16rem
+   flex basis must go, or in a column it would become a 16rem height. */
+@media (max-width: 47.9375em) {
+  .law-flagship-strip {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+
+  .law-cal .law-flagship-strip__link {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.15rem;
+  }
+
+  .law-cal .law-flagship-strip__cta {
+    margin-top: 0.15rem;
+  }
 }
 
 /* --- The flagship agenda timeline (parts/events/session-timeline.php) ----
@@ -585,6 +866,27 @@
    only need separating from the description above them. */
 .law-timeline__speakers {
   margin-top: 0.9rem;
+}
+
+/* The same split as the accordion's panels, one level in: the timeline item's
+   title spans both columns, its description takes the left and its speakers
+   the right. Set on the content block only when the item has both
+   (parts/events/session-timeline.php). */
+@media screen and (min-width: 64em) {
+  .law-timeline__content--split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 0 2.5rem;
+    align-items: start;
+  }
+
+  .law-timeline__content--split > .law-timeline__title {
+    grid-column: 1 / -1;
+  }
+
+  .law-timeline__content--split > .law-timeline__speakers {
+    margin-top: 0;
+  }
 }
 
 @media screen and (min-width: 48em) {
@@ -855,8 +1157,33 @@
   width: 30%;
 }
 
+/* The placeholder inside the booking dialog while an event card's form is
+   fetched (parts/events/booking-loading-modal.php). It reuses the calendar's
+   skeleton pieces rather than inventing a second set; only the spacing and the
+   widths are dialog-specific. In a listing a line sits inside a card that is
+   already shimmering, so the lines themselves carry no animation; here there is
+   no card behind them, hence the extra selector on the shimmer below. */
+.law-booking-skeleton {
+  margin: 1.25rem 0 0.5rem;
+}
+
+.law-booking-skeleton .law-cal-skeleton__line--title {
+  width: 60%;
+}
+
+.law-booking-skeleton .law-cal-skeleton__line--meta {
+  width: 40%;
+  margin-bottom: 1.1rem;
+}
+
+.law-booking-skeleton .law-cal-skeleton__bar--table-row {
+  height: 2.75rem;
+  border-radius: 3px;
+}
+
 .law-cal-skeleton__bar::after,
-.law-cal-skeleton__card::after {
+.law-cal-skeleton__card::after,
+.law-booking-skeleton .law-cal-skeleton__line::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -878,27 +1205,13 @@
 
 @media (prefers-reduced-motion: reduce) {
   .law-cal-skeleton__bar::after,
-  .law-cal-skeleton__card::after {
+  .law-cal-skeleton__card::after,
+  .law-booking-skeleton .law-cal-skeleton__line::after {
     animation: none;
   }
 }
 
-/* --- Status badges (committee) and sponsored tag -------------------------- */
-
-.law-cal-card__sponsored {
-  position: absolute;
-  right: 12px;
-  bottom: 10px;
-  font-family: poppins, sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  padding: 3px 8px;
-  border-radius: 10px;
-  background: #292459;
-  color: #fff;
-}
+/* --- Status badges (committee) --------------------------------------------- */
 
 .law-cal-card__badge {
   position: absolute;
@@ -1115,9 +1428,14 @@
   line-height: 1.45;
 }
 
+/* max-width, not just 100%: the main column is full width on an event with
+   sessions, and a 16/9 map stretched across the whole container would be a
+   650px-tall billboard for one address. 48rem keeps it the size it has always
+   been in the large-8 column. */
 .law-cal-venue__map {
   position: relative;
   width: 100%;
+  max-width: 48rem;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border: 1px solid #292459;
@@ -1183,6 +1501,45 @@
 @media screen and (min-width: 48em) {
   .law-cal-speakers--cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* --- The speakers sidebar (parts/calendar-body.php) ---
+   Speakers sit in a large-4 column beside the description, sessions and venue,
+   so the two-per-row rule above does not apply in here: at a third of the
+   container each card would be about 10rem wide, which folds the photo and the
+   name on top of each other. One per row at every width, which also keeps the
+   stacked mobile layout identical to the desktop column. */
+.law-cal-detail__aside .law-cal-speakers--cards {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* The cards carry their own left rule, so the column needs no box of its own;
+   it needs only to start level with the description rather than with the
+   heading padding .law-cal-acc__heading is given for the accordion bars it
+   normally introduces. */
+.law-cal-detail__aside > .law-cal-acc__heading {
+  padding-top: 0;
+}
+
+/* Stacked below the main column on small screens, where the grid's own
+   padding-x is the only thing between the two. */
+@media screen and (max-width: 63.9375em) {
+  .law-cal-detail__sidebar {
+    margin-top: 1.75rem;
+  }
+}
+
+/* The back / register row sits outside .grid-x, under both columns, so it has
+   to reproduce the gutter Foundation's .grid-padding-x gives the cells above
+   it or the buttons would hang 0.9375rem to their left. */
+.law-cal-detail__foot {
+  padding: 0 0.625rem;
+}
+
+@media print, screen and (min-width: 40em) {
+  .law-cal-detail__foot {
+    padding: 0 0.9375rem;
   }
 }
 
@@ -1482,6 +1839,42 @@
   margin-bottom: 0;
 }
 
+/* Two columns from 64em: the session's description on the left, the people
+   speaking in it on the right (.law-cal-session__panel--split, set only when
+   the session has both). 1.45fr/1fr rather than an even split because the
+   prose is the longer read; below 64em the panel is one column and the
+   speakers fall under the text as before.
+
+   The cards' own min-width is why this waits for 64em: the single event view
+   drops to one column below it, and a half-width tablet panel would leave each
+   card about 13rem wide, which folds the photo off the name. */
+@media screen and (min-width: 64em) {
+  .law-cal-session__panel--split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+    gap: 0 2.5rem;
+    align-items: start;
+  }
+}
+
+/* One card per row wherever a session lists its speakers: in the split panel
+   it is a third-width column, and in the stacked panel below 64em the cards
+   read better in a single file under the text they belong to than two abreast.
+   Same reasoning as the speakers sidebar above. */
+.law-cal-session__speakers,
+.law-timeline__speakers {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* No top padding in the split: the description's first line and the first
+   card's name should start level. Kept below 64em, where the list follows
+   the text rather than sitting beside it. */
+@media screen and (min-width: 64em) {
+  .law-cal-session__panel--split .law-cal-session__speakers {
+    padding-top: 0;
+  }
+}
+
 #pages .hero .law-cal-banner-title {
   margin: 0;
   color: #ffffff;
@@ -1570,11 +1963,20 @@
    own background whatever is behind it. #ececf1 is the programme card's fill
    (.law-event-card), so the detail view opens on the same surface the visitor
    just clicked. Square and shadowless, like every other panel in this file. */
+/* The section itself is only a stack: the surface belongs to the facts list,
+   so the orange rule and the pale ground enclose the facts and nothing else,
+   and the availability panel sits under it as its own full-width filled block
+   (Denis, 11 September 2026). It was briefly half width; at that size the
+   longer states ("You're attending", "Your place is confirmed and £660.00 has
+   been paid.") wrapped badly, so it matches the facts list instead.
+
+   The 4px orange rule moved off the top of the facts list and onto the TOP of
+   the panel (Denis, 11 September 2026), where it marks the seam between the two
+   blocks rather than capping the box. The panel is not printed at all when the
+   booking control renders nothing, so the facts list takes the rule on its own
+   foot in that case, via :last-child below. */
 .law-event-details {
   margin-top: 2rem;
-  padding: 1.75rem 2rem;
-  background: #ececf1;
-  border-top: 4px solid #ef7d05;
   border-radius: 0;
   /* Explicit, not just inherited from the .law-cal class the box also carries:
 	   body sets color #ffffff for the dark hero, so anything added here later
@@ -1591,6 +1993,21 @@
   /* Foundation sets dl { margin-bottom: 1rem; line-height: 1.6 }. */
   margin: 0;
   line-height: 1.35;
+  /* The solid surface is the whole point, and it lives here rather than on the
+	   section: body-size text cannot meet 4.5:1 over a photograph whose
+	   brightest areas sit near #c9b8bd, and a panel supplies its own background
+	   whatever is behind it. #ececf1 is the programme card's fill
+	   (.law-event-card), so the detail view opens on the same surface the
+	   visitor just clicked. Square and shadowless, like every other panel
+	   in this file; the orange rule belongs to the panel below. */
+  padding: 1.75rem 2rem;
+  background: #ececf1;
+}
+
+/* No booking control, so no panel to carry the accent: the legacy source is the
+   only case left. The rule falls back to the foot of the facts. */
+.law-event-details__grid:last-child {
+  border-bottom: 4px solid #ef7d05;
 }
 
 @media screen and (min-width: 40em) {
@@ -1599,9 +2016,30 @@
   }
 }
 
+/* Four, not three: six facts divided cleanly by three, but Sector is the one
+   fact with no ceiling on its length, and a seven-term list in a third-width
+   cell wrapped to four lines and stretched the whole row, leaving Hosted by and
+   Type floating in a void. At four columns the first row is date / time /
+   location / type and the second is Hosted by plus Sector across the remaining
+   three, so the long fact gets the width it needs and no cell is left empty.
+   The container is 75rem, so a column is roughly 245px at desktop: the date
+   wraps to two lines, which is why dt and dd are top-aligned already. */
 @media screen and (min-width: 64em) {
   .law-event-details__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .law-event-details__item--sector {
+    grid-column: span 3;
+  }
+}
+
+/* At two columns Sector takes the whole row rather than half of one, for the
+   same reason. Hosted by is then alone on its row, which is a far smaller cost
+   than a four-line cell dragging the row beside it. */
+@media screen and (min-width: 40em) and (max-width: 63.9375em) {
+  .law-event-details__item--sector {
+    grid-column: 1 / -1;
   }
 }
 
@@ -1635,6 +2073,67 @@
   flex: 0 0 auto;
 }
 
+/* Sector, as pills. A comma-joined run of seven terms is a wall of text nobody
+   reads and the one cell that can drag a whole grid row out of shape; as chips
+   it wraps compactly and each one is a route into the programme filtered by
+   that sector. */
+.law-event-details__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  /* Foundation's ul carries a margin and a bullet. */
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.law-event-details__pills li {
+  margin: 0;
+}
+
+/* Outline, not filled: the committee's filled status badges mean "this event
+   is in that state", and a filled sector chip on the same page would read as
+   one of them. White on the box's #ececf1 so the chip has an edge of its own. */
+.law-event-details .law-event-details__pill {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #c9c5d6;
+  border-radius: 10px;
+  background: #fff;
+  color: #292459;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  /* Long single terms ("International Arbitration") must break inside a narrow
+	   mobile column rather than push the box sideways. */
+  overflow-wrap: break-word;
+}
+
+.law-event-details .law-event-details__pill:hover,
+.law-event-details .law-event-details__pill:focus {
+  border-color: #ef7d05;
+  color: #ef7d05;
+}
+
+/* .law-cal strips link underlines, so a chip has no affordance but its border:
+   give keyboard users something the border change alone does not supply. */
+.law-event-details .law-event-details__pill:focus-visible {
+  outline: 2px solid #292459;
+  outline-offset: 2px;
+}
+
+/* A fact that is running out. Only the flagship uses this: it states its
+   Places count as a fact in the grid rather than in the panel below, so the
+   panel's wash alone would leave the number unmarked. */
+.law-event-details__item--tone-low dd {
+  color: #a35300;
+  font-weight: 600;
+}
+
+.law-event-details__item--tone-full dd {
+  color: #a12622;
+  font-weight: 600;
+}
+
 /* .law-cal (which this box carries) strips underlines from links, so the jump
    to the Venue section further down needs its affordance back. */
 .law-event-details .law-event-details__link {
@@ -1649,35 +2148,159 @@
   color: #ef7d05;
 }
 
-/* The booking control's row. Reuses .law-cal-detail__actions for its flex box
-   and its ".button { width: auto }" reset (.button is width: 100% in app.css),
-   so this only adds the separation from the facts above. */
+/* The booking control's row. Reuses .law-cal-detail__actions for its
+   ".button { width: auto }" reset (.button is width: 100% in app.css). It no
+   longer lays the control out itself (.law-booking-panel below does) and no
+   longer draws a divider: the facts list now carries its own surface, so the
+   edge of that surface IS the separation, and a rule as well was a second line
+   saying the same thing. */
 .law-event-details .law-event-details__footer {
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 1.5rem;
-  padding-top: 1.25rem;
-  border-top: 1px solid #d5d2de;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
-/* The five booking states, not just the bookable one. .law-booking-state and
-   .law-booking-substate are flex-basis: 100% so they take their own line, which
-   is right for "You're booked on this event." but leaves "N places left"
-   stranded above the button. Give the substate a flexible basis so it pairs
-   with the button on one row and still drops to its own line when it is a full
-   sentence (sold out, bookings open soon). */
-/* Direct child only: on the ?law_book=1 no-JS path the inline booking form
-   renders inside this footer and carries its own .law-booking-substate ("N
-   places left. You can bring up to 3 colleagues."), which is a sentence and
-   must not be sized up like the standalone count. */
-.law-event-details__footer > .law-booking-substate {
+/* --- The availability panel ------------------------------------------------
+
+   The client asked for the places count to be "in a box, to create urgency".
+   The box is always here; only its COLOUR escalates, because a bold
+   "80 places left" creates no urgency at all, it advertises an empty room. The
+   tone comes from law_booking_tone() (functions/account-bookings.php), which
+   reaches 'low' only at law_event_capacity_warning_at() -- under 10% of the
+   places left, floored at 5 -- the same threshold that triggers the host's
+   nearly-full email, so the public page and that email cannot disagree.
+
+   The panel is FILLED, not washed (Denis, 11 September 2026). A pale tint on
+   the box's own #ececf1 read as a slightly paler patch rather than as the box
+   the client asked for, so the neutral state takes the brand navy with white
+   text and each tone escalates the fill rather than the ink. Contrast on white
+   text: #292459 about 12.7:1, #a35300 about 5.6:1, #a12622 about 6.5:1,
+   #5a5a7a about 5.6:1, all AA at this size. There is no green tone because the
+   theme has no green, and a "plenty of room" state is not worth adding one. */
+.law-event-details .law-booking-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  /* The side padding matches the facts list's, so the count lines up with the
+	   first column above it rather than sitting half an inch adrift. */
+  padding: 1.5rem 2rem;
+  /* Square and shadowless, like every other panel in this file. The orange rule
+	   sits on this edge, marking the seam with the facts above. */
+  border-radius: 0;
+  border-top: 4px solid #ef7d05;
+  /* The floor, so a tone that loses its modifier is still a filled panel
+	   rather than white text on the box's own near-white #ececf1. */
+  background: #292459;
+  color: #fff;
+}
+
+/* The pill mirrors .law-cal-card__badge rather than reusing it: that one is
+   position: absolute by default, and every consumer so far has had to undo it.
+   flex-basis: 100% so it sits on its own line above the count. */
+.law-event-details .law-booking-panel__status {
+  flex: 0 0 100%;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* Its own line, with nothing painted behind it: the panel's fill is already
+	   the tone, and a pill on a filled ground reads as a second colour. */
+  margin: 0;
+  opacity: 0.8;
+}
+
+/* The size step the count never had. Every fact in the grid above is 1.1rem,
+   so availability is what carries the emphasis: it is the only number that
+   changes and the only one that decides anything. */
+.law-event-details .law-booking-panel__count {
+  flex: 1 1 14rem;
+  margin: 0;
+  font-family: "Poppins", sans-serif;
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: inherit;
+}
+
+/* The state line keeps its own full line, as it did in the footer: "You're
+   booked on this event." is a statement, not a label for the button beside it.
+   Both inherit the tone's ink rather than restating a navy of their own. */
+.law-event-details .law-booking-panel > .law-booking-state {
+  flex: 0 0 100%;
+  color: inherit;
+}
+
+/* The substate pairs with the button on one row and drops below it when it is
+   a full sentence (sold out, bookings open soon) that will not fit. */
+.law-event-details .law-booking-panel > .law-booking-substate {
   flex: 1 1 16rem;
   margin: 0;
-  /* The one emphasised value in the box. Every fact in the grid is the same
-	   size, so availability is what carries the size step: it is the only
-	   number that changes, and the only one that decides anything. */
-  font-size: 1rem;
-  font-weight: 500;
+  color: inherit;
+}
+
+/* .law-booking-inline (the no-JS ?law_book=1 form) is already flex-basis: 100%
+   in its own rule above, so it fills the panel without help.
+
+   Its INK does need help. That form is built from the dialog's own parts, and
+   law-modal.css paints .law-modal__copy #1a1a3d for a white dialog. Rendered
+   inside this filled panel that is near-black on navy: the "You need an account
+   to book places…" paragraph was unreadable (reported 11 September 2026). Every
+   piece the form writes straight onto the panel inherits the panel's ink
+   instead. The inputs below are unaffected: they sit on their own white fields,
+   which set their own colour. */
+.law-event-details .law-booking-panel .law-booking-inline,
+.law-event-details .law-booking-panel .law-booking-inline .law-cal-acc__heading,
+.law-event-details .law-booking-panel .law-booking-inline .law-modal__copy,
+.law-event-details .law-booking-panel .law-booking-inline .law-booking-summary,
+.law-event-details .law-booking-panel .law-booking-inline .law-booking-summary strong,
+.law-event-details .law-booking-panel .law-booking-inline .law-booking-note,
+.law-event-details .law-booking-panel .law-booking-inline .law-booking-substate {
+  color: inherit;
+}
+
+/* Tone modifiers set the wash and the ink, nothing else. */
+/* The two scarcity tones are the badge set's amber and red used as FILLS
+   rather than as ink, so the escalation is a change of temperature at the same
+   weight, not a jump from pale to pale. The orange Register button keeps its
+   own rectangle against all three. */
+.law-event-details .law-booking-panel--low {
+  background: #a35300;
+}
+
+.law-event-details .law-booking-panel--full {
+  background: #a12622;
+}
+
+/* Nothing left to hurry for: an event whose bookings have closed steps back to
+   the muted navy this stylesheet already uses for secondary text. Somebody who
+   already holds a place ('mine') keeps the neutral navy, however full the
+   event is. */
+.law-event-details .law-booking-panel--closed {
+  background: #5a5a7a;
+}
+
+/* The panel's call to action. The theme's base .button is 0.8rem with 1rem of
+   side padding, which is right in a card's action row and too quiet for the
+   one thing this panel exists to offer (Denis, 11 September 2026). */
+.law-event-details .law-booking-panel .button {
+  padding: 1rem 2.25rem 0.85rem;
+  font-size: 0.95rem;
+}
+
+/* .button.second is navy on white, which disappears into a navy panel. Inside
+   it, the secondary action is an outline in the panel's own ink instead. */
+.law-event-details .law-booking-panel .button.second {
+  background: transparent;
+  border-color: #fff;
+  color: #fff;
+}
+
+.law-event-details .law-booking-panel .button.second:hover,
+.law-event-details .law-booking-panel .button.second:focus {
+  background: #fff;
   color: #292459;
 }
 
@@ -1688,16 +2311,15 @@
   margin: 0 0 0.35rem;
 }
 
-/* Redirect notices (the no-JS booking results) are emitted first and carry no
-   flex-basis of their own, so without this they sit inline beside the state
-   line and squash. */
+/* Redirect notices (the no-JS booking results) are printed OUTSIDE the panel,
+   above it: .law-form-notice carries its own light-surface colours, which would
+   be unreadable on a filled ground. */
 .law-event-details .law-form-notice {
-  flex-basis: 100%;
-  margin-bottom: 0;
+  margin-bottom: 1rem;
 }
 
 @media screen and (max-width: 39.9375em) {
-  .law-event-details {
+  .law-event-details__grid {
     padding: 1.25rem;
   }
 
@@ -1706,6 +2328,14 @@
 	   .law-cal-detail__actions .button rather than relying on source order. */
   .law-event-details .law-event-details__footer .button {
     width: 100%;
+  }
+
+  .law-event-details .law-booking-panel {
+    padding: 1.25rem;
+  }
+
+  .law-event-details .law-booking-panel__count {
+    font-size: 1.4rem;
   }
 }
 

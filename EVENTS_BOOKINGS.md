@@ -400,7 +400,7 @@ admin-post.php, which that block excludes.
 `law_booking_render_action( $event )` (in `functions/account-bookings.php`) renders in the
 footer row of the hero's event details box (`parts/calendar-event-details.php`), next to the
 facts, rather than at the bottom of the article where the placeholder Register anchor used to
-be (the "Back to events calendar" button stays there). Because that box carries the
+be (the "Back to programme" button stays there). Because that box carries the
 `law-cal` class, the control keeps the `.law-cal`-gated styling it depends on: the
 `aria-disabled` treatment that keeps the sold-out placeholder inert, the button hover, and
 the light-surface `.law-form-notice` colours.
@@ -436,6 +436,131 @@ the events are free and un-ticketed. The hero "Available tickets" fact becomes
 
 The archive/programme card loses its disabled Register default action entirely
 (`parts/loop/event.php`); the default card action is Event details only.
+
+> **Superseded (11 September 2026), see §7.1a.** Every event card now carries a live
+> booking button beside Event details. Browsing the programme meant opening each event
+> before you could see whether you could book it. **The single event page moved onto the
+> same flow at the same time:** its Register / Join waitlist opener is now a
+> `data-law-book` link whose dialog is fetched on the press, exactly like a card's, and
+> the page no longer server-renders `law-booking-modal` / `law-booking-success` into its
+> footer. One flow everywhere, so the placeholder, the skeleton and the fetch behave
+> identically wherever somebody presses Register, and the page stops shipping ~4KB of
+> dialog most visitors never open. The flagship's Apply opener moved with it.
+
+### 7.1a The booking button on an event card
+
+`law_booking_card_action()` (`functions/account-bookings.php`) returns one entry for
+`parts/loop/event.php`'s actions array, appended after the caller's own actions so the
+orange primary action ends the row. All five card surfaces get it: the public and
+committee programmes, a speaker's "Speaking at" list, My bookings and My events.
+
+**The five states are the control's, resolved once.** `law_booking_state( $event_id,
+$args )` is the single decision both surfaces read: `flagship`, `booked`, `waitlisted`,
+`not-open`, `closed`, `full`, `bookable`, plus a `colleagues` count that is deliberately
+*not* a state (someone who brought colleagues but holds no place still gets the
+availability state underneath it, and can still book). `law_booking_render_action()` is
+now a rendering of that answer; its output is unchanged. The card is the terse surface:
+Register, Join waitlist, or a link to a booking already held, and nothing at all when
+places have not been released or the event has been. The card's `booking` arg picks
+`'full'` (every state) or `'action'` (only the states offering something new, for My
+bookings and My events, whose own actions already link to the booking).
+
+**The card carries NO dialog.** A programme day listing renders the whole week at once,
+up to 500 cards, and the dialog is per event: a fixed `law-booking-modal` wrapper id, its
+own summary, places count and colleague cap. Fifty copies would collide on that id (every
+button would open the first event's dialog), add a nonce and a repeater each, and be
+destroyed on the next filter change. So the button is a plain link to the inline
+`?law_book=1` form the event page already serves, and `booking-form.js` upgrades it by
+fetching that one event's dialog on click.
+
+**The dialog fragment**: the event permalink with `?law_dialog=1` returns the dialog and
+its success dialog and nothing else (`law_booking_maybe_render_dialog()`, on
+`template_redirect`). A distinct query var, not the `?law_partial=1` the dashboards use:
+`law_calendar_is_calendar_page()` is true for an event permalink, so `law_partial` there
+already means "give me the programme list". It applies the Members gate, then
+`law_booking_guard_open()` — the same predicate the submit handler applies, so a dialog
+can never be served for something the submit would refuse — and **decides the mode
+itself**, so a card rendered while places were free opens the waitlist form if the event
+has since filled up. No nonce: it is a read-only public fragment that a signed-out
+visitor must be able to fetch, and the nonce that matters is the one inside the form.
+
+**The button repeats at the foot of the event page** (11 September 2026), in the
+`.law-cal-detail__actions` row after "Back to programme", via
+`law_booking_render_action_buttons()` — one call site, which routes a flagship to
+`law_flagship_render_action_buttons()` the way the hero's control routes to
+`law_flagship_render_action()`. A reader who has worked down the sessions, the speakers
+and the venue should not have to scroll back to the hero to act. It is the BUTTON only:
+the state has been explained at the top, and repeating three paragraphs under the back
+link would read as a second, competing control. The buttons carry no ids, so two on a
+page cost nothing — both are `data-law-book` links, the delegated handler serves whichever
+is pressed, and only one dialog is ever fetched. On the no-JS `?law_book=1` path the foot
+renders nothing, because there the opener IS the form and a second copy would duplicate
+its field names and its id.
+
+**The dialog opens on the press, not when the fetch lands.**
+`parts/events/booking-loading-modal.php` renders once per page on `wp_footer` — on the
+single event view for everybody, on a card surface for signed-in viewers only, matching
+where `data-law-book` is emitted — and the button opens it immediately, showing the shimmer skeleton the
+calendar's filter bar already uses; the fetched dialog then replaces it. Once shown it
+stays for `MIN_LOADING` (1s, one constant in `booking-form.js`): the fragment can come
+back in under 100ms, and a skeleton that appears and vanishes inside a frame reads as a
+glitch rather than as loading. The first cut
+left the button silent for the round trip, which read as a dead control and had people
+pressing Register twice (Denis, 11 September 2026). A press whose dialog is already
+cached — usually, because hovering or tabbing to the button prefetches it — skips the
+placeholder and opens the form outright. One promise per event is shared by the press
+and any prefetch already running for it, so a prefetch can never swallow a press; that
+was the other half of the double-press.
+
+**`data-law-book` is emitted for everybody, signed in or not.** It was signed-in only on
+cards at first, on the reasoning that a dialog saying nothing but "you need an account" is
+less use than landing on the event page — but that sent them to `?law_book=1`, where the
+same words render inside the filled availability panel, and the press stopped behaving
+like a press (Denis, 11 September 2026). The account requirement is exactly what a dialog
+is for: press Register, be told what Register needs, with Sign in and Create an account
+both returning to the event. The flagship's Apply behaves the same way.
+
+The cost that had justified the split is cut instead of the behaviour: `event-form.css`
+(47KB) styles the FORM, which a signed-out visitor never reaches, so it stays signed-in
+only while `law-modal` and `booking-form.js` load for everyone.
+
+While fixing that, the `?law_book=1` panel's ink was fixed too: the inline form is built
+from the dialog's parts, and `law-modal.css` paints `.law-modal__copy` `#1a1a3d` for a
+white dialog, which on the navy panel was near-black on navy. Everything the inline form
+writes straight onto the panel now inherits the panel's ink (`calendar.css`).
+
+The no-JS `?law_book=1` / `?law_flagship_apply=1` inline path is unchanged on both pages,
+and still defers its success dialog to `wp_footer` — that one is `position: fixed` and
+the control renders inside the hero's details box, whose `.grid-container` is a stacking
+context. The fetched dialogs have no such problem: the script injects them at body level.
+
+**The flagship gets the same treatment** (`parts/events/flagship-card.php`). It is not an
+ordinary card and has its own block, but a visitor browsing the programme should be able
+to apply, or reach their application, without opening the conference page first.
+`law_flagship_action_state()` is its resolver — `attending`, `attended`, `payment-failed`,
+`needs-card`, `in-review`, `past`, `not-open`, `apply` — and `law_flagship_action_link()`
+is the one place the button labels live, read by both the conference page's own control
+and the card, so a failed charge cannot be "Sort out my payment" on one surface and
+something else on the other. `law_flagship_card_action()` turns that into a card action.
+Only the `apply` state carries a dialog; the rest are plain links into the account area.
+The card additionally refuses an unpublished conference, which the committee programme
+does list — the conference page's control deliberately renders for the committee preview,
+so that gate belongs on the card and not in the resolver.
+
+The fragment endpoint branches to `law_booking_render_flagship_dialog()` before reaching
+`law_booking_guard_open()`, which refuses the flagship outright; the flagship half applies
+`law_flagship_guard_open()` instead — again, the same predicate its own submit handler
+applies. Note that one has no capacity check on purpose: a full conference still takes
+applications and queues them.
+
+Two supporting changes this needed. `law_booking_user_bookings_by_event()`
+(`functions/events/bookings.php`) answers "does this viewer hold a place here" for the
+whole request in one pair of queries, so a card costs no query of its own;
+`law_booking_user_booking_for_event()` and `law_account_bookings()` both read from it. And
+`law-modal.js` lost its "no openers on this page" early return, which had been skipping
+the delegated close and Escape handlers, the focus trap and the assignment of
+`window.lawModal.initAll` — on the programme, a fetched dialog could have been opened and
+then never closed.
 
 ### 7.2 The booking modal
 

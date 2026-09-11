@@ -75,8 +75,16 @@
 		return '<div class="law-cal-skeleton" aria-hidden="true">' + section + '</div>';
 	}
 
+	/* The day links are parts/calendar-daynav.php, a sibling of the controls
+	   (sticky, so it has to share a parent with the results), hence the
+	   document-wide lookup. Pages with no day links -- the dashboards, which
+	   share this script -- find none and skip. */
+	function dayLinks() {
+		return document.querySelectorAll('.law-cal-daynav__link');
+	}
+
 	function updateDayNav() {
-		controls.querySelectorAll('.law-cal-daynav__link').forEach(function (link) {
+		dayLinks().forEach(function (link) {
 			var day = link.getAttribute('data-day');
 			var hasEvents = !!results.querySelector('#day-' + (window.CSS && CSS.escape ? CSS.escape(day) : day));
 			link.classList.toggle('is-empty', !hasEvents);
@@ -232,7 +240,12 @@
 			event.preventDefault();
 			form.reset();
 			// reset() restores the server-rendered values, so blank explicitly.
+			// data-law-keep marks a field that is not a filter and must survive
+			// (the old programme layout's `variant` flag, programme-old/).
 			filterFields().forEach(function (field) {
+				if (field.hasAttribute('data-law-keep')) {
+					return;
+				}
 				field.value = '';
 			});
 			closeModal();
@@ -240,9 +253,16 @@
 		});
 	}
 
-	// Day links: smooth-scroll to the day section, ignore days with no events.
-	controls.querySelectorAll('.law-cal-daynav__link').forEach(function (link) {
+	// Day links as jump links: smooth-scroll to the day section, ignore days
+	// with no events. Only where the nav is NOT a tablist (the old layout at
+	// ?variant=old): on the programme the day links are tabs, calendar-tabs.js
+	// owns the click and switches the day instead of scrolling.
+	dayLinks().forEach(function (link) {
 		link.addEventListener('click', function (event) {
+			var nav = link.closest('.law-cal-daynav');
+			if (nav && nav.hasAttribute('data-law-daynav')) {
+				return;
+			}
 			if (link.classList.contains('is-empty')) {
 				event.preventDefault();
 				return;

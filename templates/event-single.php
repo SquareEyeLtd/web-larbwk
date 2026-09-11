@@ -11,5 +11,5 @@
 $_GET['event'] = (string) get_the_ID();
 
 $law_cal_show_status = false;
-$law_cal_hero_title  = 'Calendar of Events';
+$law_cal_hero_title  = law_calendar_hero_title();
 require get_theme_file_path( 'parts/calendar-body.php' );

@@ -428,7 +428,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 						<div class="law-choices">
 							<label><input type="checkbox" name="law_is_law_event" value="1" <?php checked( $law_is_law_event ); ?>> Run by LAW, not an external host</label>
 						</div>
-						<small>Tick this for an event LAW organises itself. It adds a LAW tag to the events list and the exports. It changes nothing on the public programme.</small>
+						<small>Tick this for an event LAW organises itself. It adds a LAW tag to the events list and the exports, and it lets visitors pick &ldquo;LAW events&rdquo; from the Organiser filter on the public programme.</small>
 					</div>
 
 					<div class="law-form-field">

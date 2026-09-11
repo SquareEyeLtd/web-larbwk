@@ -1,0 +1,148 @@
+/* The original programme layout (?variant=old), scoped to .law-cal--old, which
+   programme-old/template.php puts on the wrapper. Loaded after calendar.css.
+
+   These are the rules calendar.css had for the day links, the day and slot
+   bars and the event card before the day-tabs layout became the default
+   (11 September 2026), restated in full, plus explicit resets for the
+   properties the new rules introduced (the sticky flex row on the nav, the
+   inline meta line, the time hidden under a slot heading, the smaller
+   buttons). Delete with the directory. */
+
+/* --- Day jump links: a grid of buttons above the filters ------------------ */
+
+.law-cal--old .law-cal-daynav {
+  position: static;
+  top: auto;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  min-height: 0;
+  margin: 0 0 1rem;
+  background: transparent;
+  border-bottom: 0;
+  overflow: visible;
+  scroll-snap-type: none;
+  scrollbar-width: auto;
+}
+
+@media (min-width: 48em) {
+  .law-cal--old .law-cal-daynav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.law-cal--old .law-cal-daynav__link {
+  flex: none;
+  display: block;
+  min-width: 0;
+  padding: 0.7rem 0.5rem 0.55rem;
+  border: 1px solid #ef7d05;
+  background: #fff;
+  color: #292459;
+  font-family: poppins, sans-serif;
+  font-weight: 600;
+  font-size: 0.75rem;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  text-align: center;
+  text-transform: uppercase;
+  scroll-snap-align: none;
+  transition:
+    background 0.3s ease,
+    color 0.3s ease;
+}
+
+.law-cal--old .law-cal-daynav__link:hover,
+.law-cal--old .law-cal-daynav__link:focus {
+  background: #ef7d05;
+  color: #fff;
+}
+
+.law-cal--old .law-cal-daynav__link.is-empty {
+  border-color: #d5d2de;
+  color: #b3b0bd;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* --- Navy day bars, orange slot bars ------------------------------------- */
+
+.law-cal--old .law-cal-day-bar {
+  margin: 2.25rem 0 1rem;
+  padding: 1rem 1.5rem;
+  background: #292459;
+  color: #fff;
+  font-family: poppins, sans-serif;
+  font-size: 1.4rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.law-cal--old .law-cal-day-section:first-of-type .law-cal-day-bar {
+  margin-top: 0.5rem;
+}
+
+.law-cal--old .law-cal-slot-bar {
+  margin: 1.5rem 0 1rem;
+  padding: 0.6rem 1.5rem;
+  background: #ef7d05;
+  border-bottom: 0;
+  color: #fff;
+  font-family: poppins, sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* --- The full card --------------------------------------------------------- */
+
+.law-cal--old .law-event-card {
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1rem;
+  background: #ececf1;
+  border: 2px solid #292459;
+}
+
+@media (min-width: 48em) {
+  .law-cal--old .law-event-card {
+    gap: 1.5rem;
+  }
+}
+
+.law-cal--old .law-event-card--sponsored {
+  background: #fdeedd;
+  border-color: #ef7d05;
+}
+
+.law-cal--old .law-cal-day-section .law-event-card__time {
+  display: block;
+}
+
+.law-cal--old .law-event-card__time {
+  margin: 0 0 0.25rem;
+  font-size: 0.9rem;
+}
+
+.law-cal--old .law-event-card__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.law-cal--old .law-event-card__meta {
+  display: block;
+  margin: 0 0 0.15rem;
+  font-size: 0.85rem;
+}
+
+.law-cal--old .law-event-card__meta + .law-event-card__meta::before {
+  content: none;
+}
+
+.law-cal--old .law-event-card__actions .button {
+  padding: 0.65rem 1rem 0.45rem;
+  font-size: 0.8rem;
+}

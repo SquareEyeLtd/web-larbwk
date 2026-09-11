@@ -8,7 +8,10 @@
  * the background photograph, where body-size text measured roughly 1.7-3:1
  * against the 4.5:1 WCAG minimum. A solid panel supplies its own background, so
  * the contrast holds whatever pixel is behind it, without touching the photo or
- * the overlay.
+ * the overlay. That surface belongs to the FACTS LIST
+ * (.law-event-details__grid carries the pale ground), not to this section: the
+ * availability panel below is its own filled block, the same width as that
+ * list, carrying the orange rule on its top edge (Denis, 11 September 2026).
  *
  * The .law-cal class is load-bearing, not decoration: it carries the navy text
  * colour (calendar.css), the .button hover and disabled treatments the booking
@@ -23,6 +26,15 @@
  *                   price, places.
  *                   Empty values are skipped, so an event with no venue drops the
  *                   item rather than rendering a blank one.
+ *                   Two optional extras:
+ *                     'items' (array of array( 'label', 'url' )) renders the
+ *                       value as a list of linked pills instead of one string.
+ *                       Sector uses it: a comma-joined run of seven terms wrapped
+ *                       to four lines and stretched the whole grid row, leaving
+ *                       the facts beside it floating in a void.
+ *                     'tone' ('low'|'full') marks the value as scarce, for the
+ *                       flagship's Places row, which states its count here
+ *                       rather than in the panel below.
  *   places  (array) array( 'label' => …, 'value' => … ). Appended as a final
  *                   grid item only when the booking control renders nothing.
  *   event   (array) The calendar-mapped event, for the booking control.
@@ -124,11 +136,22 @@ if ( $law_ed_booking && '' === $law_ed_cta && '' !== $law_ed_places_value ) {
 			$law_ed_key   = trim( (string) ( $law_ed_row['key'] ?? '' ) );
 			$law_ed_label = trim( (string) ( $law_ed_row['label'] ?? '' ) );
 			$law_ed_value = trim( (string) ( $law_ed_row['value'] ?? '' ) );
+			$law_ed_items = isset( $law_ed_row['items'] ) && is_array( $law_ed_row['items'] ) ? $law_ed_row['items'] : array();
+			$law_ed_tone  = trim( (string) ( $law_ed_row['tone'] ?? '' ) );
+			// Keyed off the joined value, not the items, so a row is empty or not
+			// however it happens to render.
 			if ( '' === $law_ed_value ) {
 				continue;
 			}
+			$law_ed_classes = 'law-event-details__item';
+			if ( $law_ed_key ) {
+				$law_ed_classes .= ' law-event-details__item--' . $law_ed_key;
+			}
+			if ( '' !== $law_ed_tone ) {
+				$law_ed_classes .= ' law-event-details__item--tone-' . $law_ed_tone;
+			}
 			?>
-			<div class="law-event-details__item<?php echo $law_ed_key ? ' law-event-details__item--' . esc_attr( $law_ed_key ) : ''; ?>">
+			<div class="<?php echo esc_attr( $law_ed_classes ); ?>">
 				<dt>
 					<?php
 					// The icon sits inside the <dt>, not beside it: HTML5 allows a
@@ -139,7 +162,31 @@ if ( $law_ed_booking && '' === $law_ed_cta && '' !== $law_ed_places_value ) {
 					<?php echo esc_html( $law_ed_label ); ?>
 				</dt>
 				<dd>
-					<?php if ( 'venue' === $law_ed_key && $law_ed_venue_linked ) : ?>
+					<?php if ( $law_ed_items ) : ?>
+						<?php
+						// The list goes INSIDE the <dd>, not beside it, for the same
+						// reason the icon sits inside the <dt>: a <div> in a <dl> may
+						// only contain dt/dd.
+						?>
+						<ul class="law-event-details__pills">
+							<?php foreach ( $law_ed_items as $law_ed_item ) : ?>
+								<?php
+								$law_ed_item_label = trim( (string) ( $law_ed_item['label'] ?? '' ) );
+								$law_ed_item_url   = trim( (string) ( $law_ed_item['url'] ?? '' ) );
+								if ( '' === $law_ed_item_label ) {
+									continue;
+								}
+								?>
+								<li>
+									<?php if ( '' !== $law_ed_item_url ) : ?>
+										<a class="law-event-details__pill" href="<?php echo esc_url( $law_ed_item_url ); ?>"><?php echo esc_html( $law_ed_item_label ); ?></a>
+									<?php else : ?>
+										<span class="law-event-details__pill"><?php echo esc_html( $law_ed_item_label ); ?></span>
+									<?php endif; ?>
+								</li>
+							<?php endforeach; ?>
+						</ul>
+					<?php elseif ( 'venue' === $law_ed_key && $law_ed_venue_linked ) : ?>
 						<?php
 						// The Venue section further down the page repeats this address
 						// with a map, so link to it and the repetition reads as

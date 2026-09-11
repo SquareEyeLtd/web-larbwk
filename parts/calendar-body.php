@@ -19,9 +19,8 @@
  *                                 BOTH ways back off the single event view --
  *                                 the chevron link at the top and the button at
  *                                 the foot of the article -- so the two cannot
- *                                 drift. Defaults to law_calendar_url() with
- *                                 "Back to programme" / "Back to events
- *                                 calendar".
+ *                                 drift. Defaults to law_calendar_url() and
+ *                                 "Back to programme" for both.
  *   $law_cal_preview     (bool)   Committee preview: the booking control
  *                                 renders for an event of any status with its
  *                                 button inert, so the preview shows the row
@@ -116,9 +115,30 @@ if ( $event ) {
 		// law_calendar_event_time_label() falls back to.
 		array( 'key' => 'time', 'label' => 'Time', 'value' => $event['date'] ? law_calendar_event_time_label( $event ) : '' ),
 		array( 'key' => 'venue', 'label' => 'Location', 'value' => $event['venue'] ),
-		array( 'key' => 'host', 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
+		// Type before Hosted by so the desktop grid's first row reads what /
+		// when / where and the second who / which sectors, with Sector spanning
+		// the rest of that row. Sector is the one fact with no ceiling on its
+		// length, so it is last wherever the grid wraps.
 		array( 'key' => 'type', 'label' => 'Type', 'value' => $event['type'] ),
-		array( 'key' => 'sector', 'label' => 'Sector', 'value' => implode( ', ', $event['sectors'] ) ),
+		array( 'key' => 'host', 'label' => 'Hosted by', 'value' => implode( ', ', $host_list ) ),
+		// Pills, each linking to the programme filtered by that sector. The
+		// filter already exists (law_sector, law_calendar_filter_params()), and
+		// under the CPT source its dropdown is populated from the same term
+		// names, so a pill's value selects an option exactly. 'value' is still
+		// the joined string: it is what the partial tests for emptiness, and
+		// what it falls back to.
+		array(
+			'key'   => 'sector',
+			'label' => 'Sector',
+			'value' => implode( ', ', $event['sectors'] ),
+			'items' => array_map(
+				fn( $law_cal_sector ) => array(
+					'label' => $law_cal_sector,
+					'url'   => law_calendar_url( array( 'law_sector' => $law_cal_sector ), false ),
+				),
+				(array) $event['sectors']
+			),
+		),
 		// Only the flagship charges for a place today, and both helpers
 		// return '' for anything else, so these two rows drop out of every
 		// other event's box on their own (an empty value is skipped) rather
@@ -132,6 +152,10 @@ if ( $event ) {
 			'key'   => 'places',
 			'label' => 'Places',
 			'value' => function_exists( 'law_flagship_details_places' ) ? law_flagship_details_places( $event ) : '',
+			// The flagship states its count here rather than in the panel below,
+			// so the scarcity colour has to come with it or the one page where the
+			// number matters most is the one page that says it quietly.
+			'tone'  => function_exists( 'law_flagship_details_places_tone' ) ? law_flagship_details_places_tone( $event ) : '',
 		),
 	);
 	if ( null !== $law_cal_details_rows ) {
@@ -210,9 +234,24 @@ if ( $event ) {
 				);
 				?>
 
+				<?php
+				// The speakers column renders only for an event without sessions. When
+				// there are sessions, each speaker already appears in the session panel
+				// they speak in, and a sidebar copy would print every card (and its bio
+				// dialog) twice on the page.
+				$law_cal_speakers_aside = empty( $event['sessions'] ) && ! empty( $event['speakers'] );
+				?>
 				<article class="law-cal-detail">
 					<div class="grid-x grid-padding-x">
-						<div class="large-8 cell">
+						<?php
+						// large-8 only when the speakers sidebar is beside it. Without the
+						// sidebar (an event with sessions) the column takes the whole row
+						// rather than leaving a third of it empty, which is what gives each
+						// session room to put its speakers beside its description. The prose
+						// keeps its own 65ch measure either way (calendar.css), so the wider
+						// column does not make anything harder to read.
+						?>
+						<div class="<?php echo $law_cal_speakers_aside ? 'large-8' : 'large-12'; ?> cell law-cal-detail__main">
 							<?php if ( $law_cal_show_status || law_calendar_entry_admin_url( $event['id'] ) ) : ?>
 								<p class="law-cal-detail__admin">
 									<?php if ( $law_cal_show_status ) : ?>
@@ -259,14 +298,23 @@ if ( $event ) {
 													<?php endif; ?>
 												</span>
 											</summary>
-											<div class="law-cal-session__panel">
+											<?php
+											// Two columns when the session has both something to read
+											// and somebody speaking (Denis, 11 September 2026): the
+											// description on the left, that session's speakers on the
+											// right. A modifier rather than a blanket rule, so a
+											// session with only one of the two still fills the panel
+											// instead of sitting in half of it.
+											$law_cal_session_split = $session['description'] && ! empty( $session['speakers'] );
+											?>
+											<div class="law-cal-session__panel<?php echo $law_cal_session_split ? ' law-cal-session__panel--split' : ''; ?>">
 												<?php if ( $session['description'] ) : ?>
 													<div class="law-cal-session__body">
 														<?php echo wp_kses_post( wpautop( $session['description'] ) ); ?>
 													</div>
 												<?php endif; ?>
 												<?php if ( ! empty( $session['speakers'] ) ) : ?>
-													<ul class="law-cal-speakers law-cal-speakers--cards">
+													<ul class="law-cal-speakers law-cal-speakers--cards law-cal-session__speakers">
 														<?php foreach ( $session['speakers'] as $session_speaker ) : ?>
 															<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $session_speaker ) ); ?>
 														<?php endforeach; ?>
@@ -277,16 +325,6 @@ if ( $event ) {
 									<?php endforeach; ?>
 								</section>
 							<?php endif; ?>
-							<?php if ( empty( $event['sessions'] ) && ! empty( $event['speakers'] ) ) : ?>
-								<section class="law-cal-acc">
-									<h2 class="law-cal-acc__heading">Speakers</h2>
-									<ul class="law-cal-speakers law-cal-speakers--cards">
-										<?php foreach ( $event['speakers'] as $speaker ) : ?>
-											<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $speaker ) ); ?>
-										<?php endforeach; ?>
-									</ul>
-								</section>
-							<?php endif; ?>
 							<?php
 							// Venue last, after the sessions and speakers: the running
 							// order and the people are what the reader came for, and the
@@ -295,34 +333,90 @@ if ( $event ) {
 							// section, so the address is still one click from the top.
 							?>
 							<?php get_template_part( 'parts/events/event-venue', null, array( 'venue' => $event['venue'] ) ); ?>
-							<?php
-							// The "Read full bio" dialogs the cards above registered, printed
-							// here and nowhere else: they must land outside the sessions
-							// accordion, because a closed <details> renders nothing and a
-							// dialog inside one could never be opened.
-							foreach ( law_speaker_dialogs() as $law_cal_dialog ) {
-								get_template_part( 'parts/events/speaker-bio-modal', null, $law_cal_dialog );
-							}
-							?>
-							<div class="law-cal-detail__actions law-booking-actions">
-								<?php
-								// The booking control (Register / waitlist /
-								// open soon / closed / you're booked) used to sit here. It
-								// now renders in the hero's details box next to the places
-								// count, so the decision and the means to act on it are in
-								// one place. See parts/calendar-event-details.php.
-								?>
-								<a class="button" href="<?php echo esc_url( $law_cal_back_url ? $law_cal_back_url : law_calendar_url() ); ?>"><?php echo esc_html( $law_cal_back_label ? $law_cal_back_label : __( 'Back to events calendar', 'law' ) ); ?></a>
-							</div>
 						</div>
+						<?php if ( $law_cal_speakers_aside ) : ?>
+							<div class="large-4 cell law-cal-detail__sidebar">
+								<?php
+								// The speakers sit beside the running order, not under it (Denis,
+								// 11 September 2026): the description, sessions and venue are the
+								// reader's path through the event, and a column of faces alongside
+								// them answers "who is this?" without pushing the venue further
+								// down the page. One card per row in here (calendar.css): the
+								// two-per-row list is sized for the full-width column.
+								?>
+								<aside class="law-cal-detail__aside" aria-labelledby="law-cal-speakers-heading">
+									<h2 id="law-cal-speakers-heading" class="law-cal-acc__heading">Speakers</h2>
+									<ul class="law-cal-speakers law-cal-speakers--cards">
+										<?php foreach ( $event['speakers'] as $speaker ) : ?>
+											<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $speaker ) ); ?>
+										<?php endforeach; ?>
+									</ul>
+								</aside>
+							</div>
+						<?php endif; ?>
 					</div>
+					<div class="law-cal-detail__actions law-cal-detail__foot law-booking-actions">
+						<?php
+						// The booking control itself -- the state wording plus the
+						// button -- lives in the hero's details box next to the
+						// places count, so the decision and the means to act on it
+						// are in one place (parts/calendar-event-details.php).
+						//
+						// What repeats here is the BUTTON only, because a reader who
+						// has worked all the way down the sessions, the speakers and
+						// the venue should not have to scroll back up to act
+						// (Denis, 11 September 2026). One call, which routes a
+						// flagship to its own application button; it presses exactly
+						// as the one at the top does, dialog and all.
+						//
+						// The row sits OUTSIDE the two columns, under both of them
+						// (Denis, 11 September 2026), so the way off the page is the
+						// full width of the article rather than the foot of the left
+						// column. __foot carries the grid gutter the cells above get
+						// from .grid-padding-x, so the buttons line up with them.
+						?>
+						<a class="button" href="<?php echo esc_url( $law_cal_back_url ? $law_cal_back_url : law_calendar_url() ); ?>"><?php echo esc_html( $law_cal_back_label ? $law_cal_back_label : __( 'Back to programme', 'law' ) ); ?></a>
+						<?php
+						if ( function_exists( 'law_booking_render_action_buttons' ) ) {
+							law_booking_render_action_buttons( $event, $law_cal_preview );
+						}
+						?>
+					</div>
+					<?php
+					// The "Read full bio" dialogs every card above registered, printed
+					// here and nowhere else, outside both columns. They must land outside
+					// the sessions accordion, because a closed <details> renders nothing
+					// and a dialog inside one could never be opened; and outside the
+					// speakers sidebar, so it makes no difference which column registered
+					// a card.
+					foreach ( law_speaker_dialogs() as $law_cal_dialog ) {
+						get_template_part( 'parts/events/speaker-bio-modal', null, $law_cal_dialog );
+					}
+					?>
 				</article>
 
 			<?php else : ?>
 
 				<?php get_template_part( 'parts/calendar-filters' ); ?>
 
-				<div class="law-cal-events" id="law-cal-events" aria-live="polite">
+				<?php
+				// The day tabs sit between the filters and the results, as a direct
+				// child of .law-cal: the bar is sticky, and a sticky element only
+				// sticks within its parent's box, so it has to share a parent with
+				// the results it scrolls over rather than live inside the controls.
+				?>
+				<?php get_template_part( 'parts/calendar-daynav' ); ?>
+
+				<?php
+				// Announcements go through this status element (calendar-tabs.js
+				// writes "Tuesday, 1 December 2026: 32 events" on a tab switch and
+				// after a filter fetch) rather than an aria-live region around the
+				// results, which would read a whole day's cards aloud every time a
+				// tab showed or hid one.
+				?>
+				<p class="show-for-sr" id="law-cal-status" role="status"></p>
+
+				<div class="law-cal-events" id="law-cal-events">
 					<?php get_template_part( 'parts/calendar-events', null, array( 'show_status' => $law_cal_show_status ) ); ?>
 				</div>
 
