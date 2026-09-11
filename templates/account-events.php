@@ -178,6 +178,11 @@ get_header();
 											: ( $law_edit ? $law_edit : $law_event['url'] ),
 										'show_status' => true,
 										'show_date'   => true,
+										// The host's own events. 'action' so a host who has
+										// not taken a place at their own event can still
+										// register, without a second manage link beside the
+										// event actions they already have.
+										'booking'     => 'action',
 										'meta_lines'  => law_account_event_meta_lines( $law_entry ),
 										'actions'     => law_account_event_actions( $law_event, $law_entry ),
 									)

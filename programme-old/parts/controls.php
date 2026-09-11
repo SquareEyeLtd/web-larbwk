@@ -1,26 +1,44 @@
 <?php
 /**
- * Programme controls: the keyword / sector / type / organiser filters. The day
- * tabs are parts/calendar-daynav.php, which parts/calendar-body.php renders
- * after this and outside it (they are sticky, and have to share a parent with
- * the results).
- *
- * Desktop: an inline filter row applied instantly over AJAX. Mobile: the
- * filters live behind a "Filters" button that opens a modal with an Apply
- * button (assets/js/calendar-filters.js). Without JavaScript the form falls
- * back to a plain GET submit.
+ * The ORIGINAL programme controls, kept for reference behind ?variant=old
+ * (programme-old/README.md): the day links as a grid of jump buttons above
+ * the keyword / sector / type / organiser filters, exactly as the programme
+ * had them before the day-tabs layout became the default. A copy of
+ * parts/calendar-filters.php as it was, plus a hidden `variant` field so the
+ * AJAX fetch, the URL it writes and the no-JS submit keep the old layout
+ * (data-law-keep exempts it from "Clear all").
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+$law_days      = law_calendar_week_days();
+$law_by_date   = law_calendar_events_by_date();
 $law_filters   = law_calendar_filters();
 $law_page_url  = get_permalink( get_queried_object_id() );
 $law_sectors   = law_calendar_field_choices( 60 );
 $law_types     = law_calendar_field_choices( 63 );
 ?>
 <div class="law-cal-controls" data-law-cal-controls data-page-url="<?php echo esc_url( $law_page_url ); ?>">
+
+	<nav class="law-cal-daynav" aria-label="<?php esc_attr_e( 'Jump to a day', 'law' ); ?>">
+		<?php foreach ( $law_days as $law_date => $law_heading ) : ?>
+			<?php
+			// Shared with parts/calendar-events.php: the flagship's day is never
+			// empty while it is published, however the list is filtered.
+			$law_day_empty = function_exists( 'law_calendar_day_is_empty' )
+				? law_calendar_day_is_empty( $law_date )
+				: empty( $law_by_date[ $law_date ] );
+			?>
+			<a
+				class="law-cal-daynav__link<?php echo $law_day_empty ? ' is-empty' : ''; ?>"
+				href="#day-<?php echo esc_attr( $law_date ); ?>"
+				data-day="<?php echo esc_attr( $law_date ); ?>"
+				<?php echo $law_day_empty ? 'aria-disabled="true" tabindex="-1"' : ''; ?>
+			><?php echo esc_html( law_calendar_day_nav_label( $law_date ) ); ?></a>
+		<?php endforeach; ?>
+	</nav>
 
 	<div class="law-cal-filterbar">
 		<button type="button" class="button law-cal-filterbar__toggle" aria-expanded="false" aria-controls="law-cal-filter-panel" hidden>
@@ -95,9 +113,11 @@ $law_types     = law_calendar_field_choices( 63 );
 					</p>
 				<?php endif; ?>
 
+				<input type="hidden" name="variant" value="old" data-law-keep>
+
 				<div class="law-cal-filter-form__actions">
 					<button type="submit" class="button law-cal-filter-form__apply"><?php esc_html_e( 'Apply', 'law' ); ?></button>
-					<a class="button second law-cal-filter-form__clear" href="<?php echo esc_url( $law_page_url ); ?>"><?php esc_html_e( 'Clear all', 'law' ); ?></a>
+					<a class="button second law-cal-filter-form__clear" href="<?php echo esc_url( add_query_arg( 'variant', 'old', $law_page_url ) ); ?>"><?php esc_html_e( 'Clear all', 'law' ); ?></a>
 				</div>
 			</form>
 		</div>

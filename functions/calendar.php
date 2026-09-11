@@ -119,11 +119,27 @@ function law_event_agenda_summary( $event_id ) {
 }
 
 /**
+ * Filter key => query parameter. One list, because law_calendar_filters() and
+ * law_calendar_search_query_args() have to agree or a filter applies but does
+ * not survive a link back from an event page.
+ *
+ * @return array<string, string>
+ */
+function law_calendar_filter_params() {
+	return array(
+		'kw'     => 'law_kw',
+		'sector' => 'law_sector',
+		'type'   => 'law_type',
+		'run_by' => 'law_run_by',
+	);
+}
+
+/**
  * Programme filters from the query string. Fully theme-owned: the calendar
  * queries entries with GFAPI and filters mapped events in PHP, with no
  * GravityView involvement.
  *
- * @return array{kw:string,sector:string,type:string}
+ * @return array{kw:string,sector:string,type:string,run_by:string}
  */
 function law_calendar_filters( $reset = false ) {
 	static $filters = null;
@@ -135,10 +151,19 @@ function law_calendar_filters( $reset = false ) {
 	}
 
 	$filters = array();
-	foreach ( array( 'kw' => 'law_kw', 'sector' => 'law_sector', 'type' => 'law_type' ) as $key => $param ) {
+	foreach ( law_calendar_filter_params() as $key => $param ) {
 		$filters[ $key ] = isset( $_GET[ $param ] )
 			? trim( sanitize_text_field( wp_unslash( $_GET[ $param ] ) ) )
 			: '';
+	}
+
+	// Organiser is a fixed vocabulary, not typed text like the keyword: anything
+	// else is dropped rather than carried into the link-preserving query args,
+	// so a junk value filters nothing instead of emptying the programme. The
+	// 'law' / 'host' pair is the committee dashboard's, deliberately — one
+	// vocabulary in the URL wherever the switch is filtered on.
+	if ( ! in_array( $filters['run_by'], array( 'law', 'host' ), true ) ) {
+		$filters['run_by'] = '';
 	}
 
 	return $filters;
@@ -149,7 +174,7 @@ function law_calendar_filters( $reset = false ) {
  */
 function law_calendar_search_query_args() {
 	$args = array();
-	$map  = array( 'kw' => 'law_kw', 'sector' => 'law_sector', 'type' => 'law_type' );
+	$map  = law_calendar_filter_params();
 	foreach ( law_calendar_filters() as $key => $value ) {
 		if ( '' !== $value ) {
 			$args[ $map[ $key ] ] = $value;
@@ -173,13 +198,24 @@ function law_calendar_normalise_choice( $value ) {
 }
 
 /**
- * True when a mapped event passes the active keyword / sector / type filters.
+ * True when a mapped event passes the active keyword / sector / type / organiser
+ * filters.
  *
  * @param array $event   Mapped calendar event.
  * @param array $filters law_calendar_filters() result.
  */
 function law_calendar_event_matches_filters( $event, $filters ) {
 	if ( '' !== $filters['type'] && law_calendar_normalise_choice( $event['type'] ) !== law_calendar_normalise_choice( $filters['type'] ) ) {
+		return false;
+	}
+
+	// Organiser. empty() rather than a strict test so the legacy Gravity Forms
+	// map, which has no switch to read, degrades to "every event is hosted"
+	// instead of matching nothing.
+	if ( 'law' === $filters['run_by'] && empty( $event['is_law'] ) ) {
+		return false;
+	}
+	if ( 'host' === $filters['run_by'] && ! empty( $event['is_law'] ) ) {
 		return false;
 	}
 
@@ -330,21 +366,40 @@ function law_calendar_url( $args = array(), $include_search = true ) {
 		$base = function_exists( 'law_events_programme_page_id' ) && law_events_programme_page_id()
 			? get_permalink( law_events_programme_page_id() )
 			: home_url( '/programme/' );
-		return add_query_arg( array_filter( $args, fn( $v ) => '' !== $v && null !== $v ), $base );
+		return add_query_arg( law_calendar_url_args( $args ), $base );
 	}
 	$page_id = get_queried_object_id();
 	$base    = $page_id ? get_permalink( $page_id ) : home_url( law_calendar_is_committee() ? '/calendar-committee/' : '/calendar/' );
 	if ( $include_search ) {
 		$args = array_merge( law_calendar_search_query_args(), $args );
 	}
+	return add_query_arg( law_calendar_url_args( $args ), $base );
+}
+
+/**
+ * Drop the empty query args and encode the rest.
+ *
+ * The encoding is not optional. add_query_arg() does NOT encode values
+ * (build_query() passes $urlencode = false), and esc_url() only escapes an
+ * ampersand into the entity &#038;, which a browser still sends as a plain "&".
+ * So a sector like "Banking & Financial Services" became two query args and the
+ * filter saw "Banking ". It bit the sector pills in the event details box first,
+ * but "Back to programme" carried the same broken value whenever the visitor had
+ * filtered on any term with an ampersand in it.
+ *
+ * Values arrive already decoded (law_calendar_filters() reads $_GET, which PHP
+ * has decoded, and every other caller passes an int or a term name), so there is
+ * nothing here that could be encoded twice.
+ */
+function law_calendar_url_args( array $args ) {
 	$clean = array();
 	foreach ( $args as $key => $value ) {
 		if ( '' === $value || null === $value ) {
 			continue;
 		}
-		$clean[ $key ] = $value;
+		$clean[ $key ] = rawurlencode( (string) $value );
 	}
-	return add_query_arg( $clean, $base );
+	return $clean;
 }
 
 /**
@@ -400,7 +455,8 @@ function law_calendar_excerpt( $html, $words = 18 ) {
  * Form 2 entries for the programme calendars, filtered and sorted.
  *
  * Public calendar: Confirmed only. Committee calendar: all statuses. The
- * keyword / sector / type filters from the query string are applied here.
+ * keyword / sector / type / organiser filters from the query string are
+ * applied here.
  *
  * @return array<int, array>
  */
@@ -735,7 +791,9 @@ function law_calendar_is_sponsored_event( $entry ) {
 }
 
 /**
- * Listing card classes, including the sponsored modifier.
+ * Listing card classes, including the sponsored modifier. The modifier is the
+ * only sponsored signal on a card: it carries the orange fill and border that
+ * replaced the old "Sponsored" pill.
  *
  * @param array  $event Mapped calendar event.
  * @param string $base  Base class (law-cal-card or law-cal-day__item).
@@ -746,21 +804,6 @@ function law_calendar_card_classes( $event, $base = 'law-cal-card' ) {
 		$classes[] = $base . '--sponsored';
 	}
 	return implode( ' ', $classes );
-}
-
-/**
- * "Sponsored" tag for listing cards. Public and committee.
- *
- * @param array $event Mapped calendar event.
- */
-function law_calendar_sponsored_label( $event ) {
-	if ( empty( $event['is_sponsored'] ) ) {
-		return;
-	}
-	printf(
-		'<span class="law-cal-card__sponsored">%s</span>',
-		esc_html__( 'Sponsored', 'law' )
-	);
 }
 
 /**
@@ -832,8 +875,11 @@ function law_calendar_map_entry( $entry, $allowed = null ) {
 		'time_label'   => $slot['time_label'],
 		'unscheduled'  => '' === $slot['date'],
 		// The flagship is a CPT-only feature (there is no legacy entry for it),
-		// carried here purely so both maps return the same shape.
+		// carried here purely so both maps return the same shape. Same for
+		// is_law: "Run by LAW" is post meta on a law_event, with no Form 2
+		// field behind it, so every legacy entry reads as hosted.
 		'is_flagship'  => false,
+		'is_law'       => false,
 		'is_sponsored' => law_calendar_is_sponsored_event( $entry ),
 		'sort'         => ( $slot['date'] ? $slot['date'] : '9999-99-99' ) . ' ' . ( $slot['start'] ? $slot['start'] : '99:99' ) . ' ' . strtolower( $title ),
 	);
@@ -941,6 +987,31 @@ function law_calendar_event_time_label( $event ) {
 }
 
 /**
+ * Hero heading for the programme and for every single event page, e.g.
+ * "LAW 2026 Programme". One string in one place because the client asked for
+ * uniform language across the site (11 September 2026): the page, the nav,
+ * both back links and this heading all call it the programme, where the
+ * heading used to read "Calendar of Events".
+ *
+ * The year comes from the Programme year setting rather than the
+ * LAW_CALENDAR_YEAR constant where it can, so the heading rolls over when the
+ * committee sets the next programme year instead of needing a deploy.
+ */
+function law_calendar_hero_title() {
+	$year = function_exists( 'law_events_setting' )
+		? (int) law_events_setting( 'year', LAW_CALENDAR_YEAR )
+		: (int) LAW_CALENDAR_YEAR;
+	if ( ! $year ) {
+		$year = (int) LAW_CALENDAR_YEAR;
+	}
+	return sprintf(
+		/* translators: %d: programme year, e.g. 2026. */
+		__( 'LAW %d Programme', 'law' ),
+		$year
+	);
+}
+
+/**
  * Section heading for a programme day, e.g. "Monday, 30 November 2026".
  *
  * @param string $date Y-m-d key from law_calendar_week_days().
@@ -983,6 +1054,26 @@ function law_calendar_day_nav_label( $date ) {
 		return (string) $date;
 	}
 	return date_i18n( 'l, j M', $ts );
+}
+
+/**
+ * The day tab's count line (parts/calendar-daynav.php). Cards only: a day
+ * carrying nothing but the flagship leaves the count blank, because its pill
+ * already says what is on, and an empty day says so rather than "0 events".
+ * Mirrored in assets/js/calendar-tabs.js, which refreshes the counts from each
+ * day section's data-count after a filter fetch, so the two must agree.
+ *
+ * @param int  $count           Cards on the day.
+ * @param bool $is_flagship_day The flagship block is pinned to this day.
+ * @return string
+ */
+function law_calendar_day_count_text( $count, $is_flagship_day ) {
+	$count = (int) $count;
+	if ( $count > 0 ) {
+		/* translators: %d: number of events on this day */
+		return sprintf( _n( '%d event', '%d events', $count, 'law' ), $count );
+	}
+	return $is_flagship_day ? '' : __( 'No events', 'law' );
 }
 
 /**

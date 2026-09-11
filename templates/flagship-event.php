@@ -16,9 +16,7 @@
  *
  * The back links are deliberately left to the body's own defaults:
  * law_calendar_url() already sends a single law_event back to the programme,
- * and passing a $law_cal_back label would apply it to BOTH ways back, so the
- * chevron at the top and the button at the foot could no longer read
- * differently ("Back to programme" / "Back to events calendar").
+ * and the body labels both ways back "Back to programme".
  */
 
 // Still set, because the SEO title filters resolve the event from it
@@ -54,7 +52,7 @@ if ( function_exists( 'law_events_map_post' ) ) {
 }
 
 $law_cal_show_status  = false;
-$law_cal_hero_title   = 'Calendar of Events';
+$law_cal_hero_title   = law_calendar_hero_title();
 $law_cal_details_rows = array( 'date', 'time', 'venue', 'price', 'places' );
 // A day-long agenda, not two or three optional sessions: every session renders
 // open, on a timeline, because the running order is what the reader came for.

@@ -16,8 +16,19 @@
  *                             // passes it). Renders a divider under "Hosted by" then
  *                             // "[name]'s role: …", "[name]'s organisation: …" and
  *                             // "[name]'s position: …".
+ *   'booking'     => 'full',  // The booking button (law_booking_card_action()),
+ *                             // appended after the actions below:
+ *                             //   'full'   every state, including a link to a
+ *                             //            booking the viewer already holds;
+ *                             //   'action' only Register / Join waitlist, for
+ *                             //            callers whose own actions already
+ *                             //            link to the booking;
+ *                             //   false    none.
  *   'actions'     => array(), // Button overrides: array of
- *                             // { label, url, arrow (bool), external (bool) },
+ *                             // { label, url, arrow (bool), external (bool),
+ *                             //   class (extra classes), sr_label (a fuller
+ *                             //   accessible name), dialog (event id: fetch
+ *                             //   this event's booking dialog on click) },
  *                             // or a form-shaped action for a POST behind a
  *                             // confirm modal: { label, form: { action, nonce,
  *                             // event_id, modal (parts/layout/modal.php args,
@@ -66,14 +77,29 @@ if ( '' !== $law_speaker_name ) {
 
 $law_actions = isset( $args['actions'] ) && is_array( $args['actions'] ) ? $args['actions'] : array();
 if ( ! $law_actions ) {
-	// Booking lives on the single event page only (EVENTS_BOOKINGS.md §7.1):
-	// the programme card deliberately carries no booking button.
 	$law_actions = array(
 		array(
 			'label' => __( 'Event details', 'law' ),
 			'url'   => $law_event_url,
 		),
 	);
+}
+
+// The booking button, last, so the orange primary action ends the row. Appended
+// rather than folded into the defaults above, because the callers that pass
+// their own actions (My events, My bookings) want it too.
+//
+// Reverses EVENTS_BOOKINGS.md §7.1's original "booking lives on the single event
+// page only": browsing the programme meant opening every event before you could
+// see whether you could book it (Denis, 11 September 2026). The card carries the
+// button but NO dialog -- see law_booking_card_action() for why, and for how the
+// dialog is fetched instead.
+$law_booking_scope = array_key_exists( 'booking', $args ) ? $args['booking'] : 'full';
+if ( $law_booking_scope && function_exists( 'law_booking_card_action' ) ) {
+	$law_booking_action = law_booking_card_action( $event, 'action' === $law_booking_scope ? 'action' : 'full' );
+	if ( $law_booking_action ) {
+		$law_actions[] = $law_booking_action;
+	}
 }
 
 $law_time_parts = array();
@@ -114,7 +140,6 @@ if ( '' !== $law_time_label ) {
 		<?php foreach ( $law_meta_lines as $law_meta_line ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html( $law_meta_line ); ?></p>
 		<?php endforeach; ?>
-		<?php law_calendar_sponsored_label( $event ); ?>
 	</div>
 	<div class="law-event-card__actions">
 		<?php foreach ( $law_actions as $law_action ) : ?>
@@ -151,10 +176,17 @@ if ( '' !== $law_time_label ) {
 				continue;
 			}
 			$law_action_arrow = ! empty( $law_action['arrow'] );
+			$law_action_class = trim( (string) ( $law_action['class'] ?? '' ) );
+			// A fuller accessible name, for a label that only makes sense next
+			// to its own card: fifty buttons all called "Register" is a useless
+			// list to read through. The visible label stays short.
+			$law_action_sr = trim( (string) ( $law_action['sr_label'] ?? '' ) );
 			?>
 			<a
-				class="button law-event-card__button<?php echo $law_action_arrow ? ' law-event-card__button--register' : ''; ?>"
+				class="button law-event-card__button<?php echo $law_action_arrow ? ' law-event-card__button--register' : ''; ?><?php echo '' !== $law_action_class ? ' ' . esc_attr( $law_action_class ) : ''; ?>"
 				href="<?php echo esc_url( $law_action_url ); ?>"
+				<?php echo '' !== $law_action_sr ? ' aria-label="' . esc_attr( $law_action_sr ) . '"' : ''; ?>
+				<?php echo ! empty( $law_action['dialog'] ) ? ' data-law-book="' . esc_attr( (string) (int) $law_action['dialog'] ) . '"' : ''; ?>
 				<?php echo ! empty( $law_action['disabled'] ) ? ' aria-disabled="true"' : ''; ?>
 				<?php echo ! empty( $law_action['external'] ) ? ' target="_blank" rel="noopener noreferrer"' : ''; ?>
 			>

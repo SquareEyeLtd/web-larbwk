@@ -305,6 +305,104 @@ class EventFlagsTest extends LAW_Test_Case {
 		$this->assertNotContains( $hosted, $ids );
 	}
 
+	/* The public programme's Organiser filter ________________________________ */
+
+	/** A Confirmed, slotted event, which is what the public programme shows. */
+	private function make_programme_event( bool $run_by_law ): int {
+		$date     = array_key_first( law_calendar_week_days() );
+		$event_id = $this->make_event(
+			array(
+				'_law_start' => $date . ' 10:00:00',
+				'_law_end'   => $date . ' 11:00:00',
+			),
+			'publish'
+		);
+		if ( $run_by_law ) {
+			law_event_update_meta( $event_id, '_law_is_law_event', 1 );
+		}
+		return $event_id;
+	}
+
+	/** Programme event IDs under a given ?law_run_by= value. */
+	private function programme_ids( string $run_by ): array {
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
+		if ( '' !== $run_by ) {
+			$_GET['law_run_by'] = $run_by;
+		}
+		law_calendar_reset_caches();
+		$ids = wp_list_pluck( law_calendar_events(), 'id' );
+		unset( $_GET['law_run_by'] );
+		remove_filter( 'pre_option_law_events_source', $cpt );
+		law_calendar_reset_caches();
+		return $ids;
+	}
+
+	public function test_the_organiser_filter_splits_the_programme_both_ways(): void {
+		$hosted  = $this->make_programme_event( false );
+		$law_run = $this->make_programme_event( true );
+
+		$ids = $this->programme_ids( 'law' );
+		$this->assertContains( $law_run, $ids );
+		$this->assertNotContains( $hosted, $ids );
+
+		$ids = $this->programme_ids( 'host' );
+		$this->assertContains( $hosted, $ids, 'An event with no meta row is hosted.' );
+		$this->assertNotContains( $law_run, $ids );
+	}
+
+	public function test_hosted_covers_an_event_saved_with_the_switch_off(): void {
+		// The dashboard's meta_query needs NOT EXISTS *and* != '1' for this,
+		// because law_event_update_meta() stores a literal 0 rather than
+		// deleting the row. The programme filters mapped arrays in PHP, so the
+		// bool cast in law_events_map_post() has to do the same job.
+		$saved_off = $this->make_programme_event( false );
+		law_event_update_meta( $saved_off, '_law_is_law_event', 0 );
+		$this->assertSame( '0', get_post_meta( $saved_off, '_law_is_law_event', true ), 'Guard: the 0 must actually be stored.' );
+
+		$this->assertContains( $saved_off, $this->programme_ids( 'host' ) );
+		$this->assertNotContains( $saved_off, $this->programme_ids( 'law' ) );
+	}
+
+	public function test_a_junk_organiser_value_filters_nothing_out(): void {
+		$hosted  = $this->make_programme_event( false );
+		$law_run = $this->make_programme_event( true );
+
+		// Dropped in law_calendar_filters() rather than carried through, so a
+		// mistyped URL shows the whole programme instead of emptying it.
+		$ids = $this->programme_ids( 'nonsense' );
+		$this->assertContains( $hosted, $ids );
+		$this->assertContains( $law_run, $ids );
+	}
+
+	public function test_the_organiser_filter_survives_a_link_back_from_an_event(): void {
+		$_GET['law_run_by'] = 'law';
+		law_calendar_reset_caches();
+		$args = law_calendar_search_query_args();
+		unset( $_GET['law_run_by'] );
+		law_calendar_reset_caches();
+
+		$this->assertSame( 'law', $args['law_run_by'] ?? '' );
+	}
+
+	public function test_the_organiser_select_renders_with_nothing_flagged_yet(): void {
+		// Drawn regardless of the data: "LAW events" can return no cards, but
+		// never an empty page, because the flagship block is pinned to its day
+		// outside the filtered list.
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
+		law_calendar_reset_caches();
+
+		ob_start();
+		get_template_part( 'parts/calendar-filters' );
+		$html = (string) ob_get_clean();
+
+		remove_filter( 'pre_option_law_events_source', $cpt );
+		law_calendar_reset_caches();
+
+		$this->assertStringContainsString( 'name="law_run_by"', $html );
+		$this->assertStringContainsString( '>LAW events<', $html );
+		$this->assertStringContainsString( '>Hosted events<', $html );
+	}
+
 	public function test_the_agenda_filter_matches_the_switch_in_both_directions(): void {
 		$with    = $this->make_event();
 		$without = $this->make_event();

@@ -8,8 +8,11 @@
  * lists the day's sessions with their times rather than one time range.
  *
  * It does reuse .law-event-card__actions and .law-event-card__button for the
- * call to action, so the button's mobile full-width rule and its focus styles
- * cannot drift from every other card on the page.
+ * calls to action, so the buttons' mobile full-width rule and their focus styles
+ * cannot drift from every other card on the page. Since 11 September 2026 that
+ * is two buttons: Event details, and the application control
+ * (law_flagship_card_action()), matching the Register button the ordinary cards
+ * gained at the same time.
  *
  * get_template_part( 'parts/events/flagship-card', null, array(
  *   'event'       => <hydrated calendar event array>, // required
@@ -50,6 +53,14 @@ if ( '' !== $law_fc_image ) {
 $law_fc_sessions = isset( $law_fc_event['sessions'] ) && is_array( $law_fc_event['sessions'] ) ? $law_fc_event['sessions'] : array();
 
 $law_fc_meta = array_filter( array( $law_fc_time, $law_fc_venue ), 'strlen' );
+
+// Apply, or whatever this viewer's application state offers instead (their
+// booking, their unpaid charge, their application under review). The same
+// decision the conference page's own control reads, so the two cannot disagree,
+// and like the ordinary cards this carries the button but NO dialog:
+// booking-form.js fetches the apply dialog on the press. See
+// law_flagship_card_action().
+$law_fc_action = function_exists( 'law_flagship_card_action' ) ? law_flagship_card_action( $law_fc_event ) : null;
 ?>
 <article class="law-flagship-card" aria-labelledby="law-flagship-card-title">
 	<div class="law-flagship-card__media">
@@ -107,6 +118,14 @@ $law_fc_meta = array_filter( array( $law_fc_time, $law_fc_venue ), 'strlen' );
 		<?php endif; ?>
 		<div class="law-event-card__actions law-flagship-card__actions">
 			<a class="button law-event-card__button" href="<?php echo esc_url( $law_fc_url ); ?>"><?php esc_html_e( 'Event details', 'law' ); ?></a>
+			<?php if ( $law_fc_action ) : ?>
+				<a
+					class="button law-event-card__button <?php echo esc_attr( (string) $law_fc_action['class'] ); ?>"
+					href="<?php echo esc_url( (string) $law_fc_action['url'] ); ?>"
+					<?php echo ! empty( $law_fc_action['sr_label'] ) ? ' aria-label="' . esc_attr( (string) $law_fc_action['sr_label'] ) . '"' : ''; ?>
+					<?php echo ! empty( $law_fc_action['dialog'] ) ? ' data-law-book="' . esc_attr( (string) (int) $law_fc_action['dialog'] ) . '"' : ''; ?>
+				><?php echo esc_html( (string) $law_fc_action['label'] ); ?></a>
+			<?php endif; ?>
 		</div>
 	</div>
 </article>

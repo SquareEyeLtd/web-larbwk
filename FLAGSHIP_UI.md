@@ -756,8 +756,8 @@ require get_theme_file_path( 'parts/calendar-body.php' );
 
 Do not pass `$law_cal_back`: `law_calendar_url()` (calendar.php:326 to 331)
 already handles `is_singular( LAW_EVENT_CPT )`, and a label override would
-apply to both the top link ("Back to programme") and the foot button ("Back to
-events calendar"), which must differ.
+apply to both the top link and the foot button, which both read "Back to
+programme".
 
 ### 5.3 `parts/calendar-body.php` (reused, two new caller variables)
 
@@ -1113,7 +1113,7 @@ with `add_filter( 'pre_option_law_events_source', fn() => 'cpt' )`
    no booking control; "Back to programme" link; description with the list
    intact; the Sessions timeline with speaker cards and working "Read full
    bio" dialogs, then Venue with map and "Open in Google Maps"; "Back to
-   events calendar" button. Remove the hero image and reload: default banner.
+   programme" button. Remove the hero image and reload: default banner.
 4. `/programme/`: the block sits under Wednesday 2 Dec above any slot bars,
    image left, badge, title, two session lines with times, "Event details"
    button; the 2 Dec tab is active. Type a keyword matching nothing: "No

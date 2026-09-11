@@ -95,4 +95,11 @@ add_action( 'wp_enqueue_scripts', function () {
 	if ( law_calendar_is_calendar_page() || is_page_template( array( 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php', 'templates/account-dashboard-flagship-bookings.php' ) ) ) {
 		wp_enqueue_script( 'law-calendar-filters', $uri . '/assets/js/calendar-filters.js', array(), $v( '/assets/js/calendar-filters.js' ), true );
 	}
+
+	// The programme's day tabs (parts/calendar-daynav.php): one day at a time.
+	// After calendar-filters.js, whose law:partial-rendered event it listens
+	// for. Exits on its own where the nav is not a tablist (the old layout).
+	if ( law_calendar_is_calendar_page() ) {
+		wp_enqueue_script( 'law-calendar-tabs', $uri . '/assets/js/calendar-tabs.js', array( 'law-calendar-filters' ), $v( '/assets/js/calendar-tabs.js' ), true );
+	}
 }, 20 );

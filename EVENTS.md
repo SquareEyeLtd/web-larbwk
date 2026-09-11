@@ -440,9 +440,12 @@ include `parts/calendar-body.php`.
   colour-coded status badge per card.
 - Programme week dates are hardcoded in `law_calendar_week_days()`, currently
   Monday 30 November to Friday 4 December 2026. `LAW_CALENDAR_YEAR` is 2026.
-- The public page's hero title is hardcoded to "Calendar of Events" in
-  `templates/calendar.php` (`$law_cal_hero_title`), independent of the WP page
-  title.
+- The hero title on the public programme, on single event pages and on the
+  flagship page comes from `law_calendar_hero_title()` ("LAW 2026 Programme",
+  the year from the Programme year setting), passed in as
+  `$law_cal_hero_title`, independent of the WP page title. It read "Calendar of
+  Events" until 11 September 2026, when the client asked for uniform language
+  across the site.
 
 ### Listing layout
 
@@ -508,7 +511,7 @@ section (heading, the venue text as subtitle, then a Google Maps iframe). The
 embed is a search on that text (London is appended when the string does not
 already mention it). Placeholder values such as `TBC` skip the map. No
 coordinates are stored; an address field is not required. The page ends with a
-placeholder Register button and a "Back to events calendar" link. On the
+placeholder Register button and a "Back to programme" link. On the
 committee variant, the status badge and admin Edit link sit above the
 description.
 

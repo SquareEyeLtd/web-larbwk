@@ -226,6 +226,73 @@ function law_user_bookings_made_ids( $user_id, $limit = 200 ) {
 }
 
 /**
+ * Every live booking this user holds or made, grouped by event.
+ *
+ * ONE pair of queries for the whole request, whatever the caller asks about.
+ * The programme listing renders up to 500 cards and each one has to know
+ * whether the viewer already has a place on that event; asking per card
+ * (law_booking_user_booking_for_event(), one query each) would put hundreds of
+ * queries on a page that is already the theme's heaviest render. Both that
+ * function and law_account_bookings() read from here instead.
+ *
+ * Live only: a cancelled booking's trail is the email and the activity log.
+ * Nothing else is filtered here on purpose -- My bookings drops a waitlist entry
+ * for an event that has already started, but that is a display rule for that
+ * page's cards, and hiding it here would quietly change what the booking control
+ * on the event itself says.
+ *
+ * Memoised on wp_cache_get_last_changed( 'posts' ) rather than a plain static,
+ * so a request that creates or cancels a booking does not then read a stale map.
+ *
+ * @return array[] event_id => { own: WP_Post|null, colleagues: WP_Post[] }
+ */
+function law_booking_user_bookings_by_event( $user_id ) {
+	$user_id = (int) $user_id;
+	if ( $user_id < 1 ) {
+		return array();
+	}
+
+	static $cache = array();
+	$key = $user_id . ':' . wp_cache_get_last_changed( 'posts' );
+	if ( isset( $cache[ $key ] ) ) {
+		return $cache[ $key ];
+	}
+
+	$statuses    = law_booking_holding_statuses();
+	$grouped     = array();
+	$booking_ids = array_merge( law_user_booking_ids( $user_id ), law_user_bookings_made_ids( $user_id ) );
+	// fields => 'ids' does not prime the post cache, so without this each
+	// booking, and then each parent event, is an individual query.
+	if ( $booking_ids ) {
+		_prime_post_caches( $booking_ids, false, true );
+	}
+	foreach ( $booking_ids as $booking_id ) {
+		$booking = get_post( $booking_id );
+		if ( ! $booking || ! in_array( $booking->post_status, $statuses, true ) || ! $booking->post_parent ) {
+			continue;
+		}
+		$event_id = (int) $booking->post_parent;
+		if ( ! isset( $grouped[ $event_id ] ) ) {
+			$grouped[ $event_id ] = array( 'own' => null, 'colleagues' => array() );
+		}
+		if ( (int) $booking->post_author === $user_id ) {
+			// Newest wins, matching law_booking_user_booking_for_event()'s
+			// ORDER BY ID DESC. The duplicate guard means there should only
+			// ever be one, but the two must not disagree if there is not.
+			$held = $grouped[ $event_id ]['own'];
+			if ( ! $held || (int) $booking->ID > (int) $held->ID ) {
+				$grouped[ $event_id ]['own'] = $booking;
+			}
+		} else {
+			$grouped[ $event_id ]['colleagues'][] = $booking;
+		}
+	}
+
+	$cache[ $key ] = $grouped;
+	return $grouped;
+}
+
+/**
  * Events a user holds a place on via an ACTIVE booking of their own. The
  * clash guard's source, and the "You're booked" state's. A waitlist entry
  * holds no place, so it is deliberately not here: someone waiting on one

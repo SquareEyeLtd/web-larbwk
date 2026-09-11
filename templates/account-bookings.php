@@ -98,6 +98,12 @@ get_header();
 										'event'      => $law_bk_item['event'],
 										'url'        => $law_bk_item['event']['url'],
 										'show_date'  => true,
+										// 'action', not 'full': the Manage action below
+										// already links to this booking, so the card wants
+										// only the states that offer something new -- a
+										// place for someone who booked colleagues but not
+										// themselves.
+										'booking'    => 'action',
 										'badge'      => law_booking_card_badge( $law_bk_item['status'] ),
 										'meta_lines' => array_filter( array(
 											// One booking per attendee: their own place, and

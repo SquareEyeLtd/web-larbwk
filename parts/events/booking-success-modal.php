@@ -14,7 +14,13 @@
  * Escape and overlay clicks are inert. Closing in place would leave a stale
  * "Register" behind it.
  *
- * Args: event (the calendar-mapped array), mode ('book' | 'waitlist').
+ * Args: event (the calendar-mapped array), mode ('book' | 'waitlist'),
+ * close_url (optional; where Close goes, default the event permalink).
+ *
+ * close_url exists because this dialog is now also served to the programme, one
+ * event at a time, by law_booking_maybe_render_dialog(). Booking from a card
+ * there and then being dropped onto the event page would lose the reader their
+ * place in a listing they were working down.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -31,6 +37,10 @@ if ( ! $law_bks_id || ! is_user_logged_in() ) {
 }
 $law_bks_dialog = $law_bks_wait ? 'law-waitlist-success' : 'law-booking-success';
 $law_bks_title  = (string) ( $law_bks_event['title'] ?? '' );
+$law_bks_close  = trim( (string) ( $args['close_url'] ?? '' ) );
+if ( '' === $law_bks_close ) {
+	$law_bks_close = get_permalink( $law_bks_id );
+}
 ?>
 <div class="law-modal" id="<?php echo esc_attr( $law_bks_dialog ); ?>" hidden>
 	<div class="law-modal__overlay"></div>
@@ -45,7 +55,7 @@ $law_bks_title  = (string) ( $law_bks_event['title'] ?? '' );
 			<p class="law-modal__copy"><?php esc_html_e( 'Each colleague you added has a booking of their own, with their own booking number, and is emailed the event details. Those without an account are invited to set one up and add any dietary or accessibility requirements to their profile.', 'law' ); ?></p>
 		<?php endif; ?>
 		<p class="law-modal__actions">
-			<a class="button second" href="<?php echo esc_url( get_permalink( $law_bks_id ) ); ?>"><?php esc_html_e( 'Close', 'law' ); ?></a>
+			<a class="button second" href="<?php echo esc_url( $law_bks_close ); ?>"><?php esc_html_e( 'Close', 'law' ); ?></a>
 			<a class="button orange" href="<?php echo esc_url( law_account_url( 'my_bookings' ) ); ?>"><?php esc_html_e( 'View my bookings', 'law' ); ?></a>
 		</p>
 	</div>

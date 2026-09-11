@@ -80,7 +80,14 @@ if ( ! $law_tl_sessions ) {
 						<?php endif; ?>
 					</p>
 				<?php endif; ?>
-				<div class="law-timeline__content">
+				<?php
+				// Two columns from 64em when the item has both something to read and
+				// somebody speaking: the description on the left, that session's
+				// speakers on the right, matching the accordion's session panels
+				// (Denis, 11 September 2026). The title spans both (calendar.css).
+				$law_tl_split = '' !== trim( $law_tl_desc ) && $law_tl_people;
+				?>
+				<div class="law-timeline__content<?php echo $law_tl_split ? ' law-timeline__content--split' : ''; ?>">
 					<h3 class="law-timeline__title"><?php echo esc_html( $law_tl_title ); ?></h3>
 					<?php if ( '' !== trim( $law_tl_desc ) ) : ?>
 						<div class="law-timeline__body">
