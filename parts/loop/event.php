@@ -1,7 +1,7 @@
 <?php
 /**
  * Programme event card. Used by the calendar day listings and the single
- * speaker profile ("Speaking at").
+ * speaker profile's role lists ("Speaking at", "Hosting", "Moderating at").
  *
  * get_template_part( 'parts/loop/event', null, array(
  *   'event'       => $event,  // Mapped event from law_calendar_map_entry(). Required.
@@ -14,11 +14,6 @@
  *                             // text instead of in the right-hand column, for
  *                             // narrow columns (the single speaker profile).
  *   'meta_lines'  => array(), // Extra meta lines below the venue/host, e.g. payment status.
- *   'speaker'     => array(), // {name, role, organisation, job_title}: one speaker's
- *                             // appearance at THIS event (the single speaker profile
- *                             // passes it). Renders a divider under "Hosted by" then
- *                             // "[name]'s role: …", "[name]'s organisation: …" and
- *                             // "[name]'s position: …".
  *   'booking'     => 'full',  // The booking button (law_booking_card_action()),
  *                             // appended after the actions below:
  *                             //   'full'   every state, including a link to a
@@ -55,28 +50,6 @@ $law_show_status  = ! empty( $args['show_status'] );
 $law_time_label   = law_calendar_event_time_label( $event );
 $law_hosted       = law_calendar_host_names( $event );
 $law_meta_lines   = isset( $args['meta_lines'] ) && is_array( $args['meta_lines'] ) ? array_filter( array_map( 'strval', $args['meta_lines'] ) ) : array();
-
-// The speaker's appearance at this event (profile page only): label/value
-// pairs, the value rendered bold. A name ending in "s" takes a bare
-// apostrophe ("Asimakis' organisation"), house style per Denis.
-$law_speaker       = isset( $args['speaker'] ) && is_array( $args['speaker'] ) ? $args['speaker'] : array();
-$law_speaker_lines = array();
-$law_speaker_name  = trim( (string) ( $law_speaker['name'] ?? '' ) );
-if ( '' !== $law_speaker_name ) {
-	$law_possessive = $law_speaker_name . ( preg_match( '/s$/i', $law_speaker_name ) ? "'" : "'s" );
-	// The role first: it is the headline fact about the appearance, and it always
-	// prints (an unset role reads as Speaker, the default).
-	$law_speaker_role = function_exists( 'law_speaker_role_display' ) ? law_speaker_role_display( (string) ( $law_speaker['role'] ?? '' ) ) : '';
-	if ( '' !== $law_speaker_role ) {
-		$law_speaker_lines[] = array( $law_possessive . ' role:', $law_speaker_role );
-	}
-	if ( '' !== trim( (string) ( $law_speaker['organisation'] ?? '' ) ) ) {
-		$law_speaker_lines[] = array( $law_possessive . ' organisation:', trim( (string) $law_speaker['organisation'] ) );
-	}
-	if ( '' !== trim( (string) ( $law_speaker['job_title'] ?? '' ) ) ) {
-		$law_speaker_lines[] = array( $law_possessive . ' position:', trim( (string) $law_speaker['job_title'] ) );
-	}
-}
 
 $law_actions = isset( $args['actions'] ) && is_array( $args['actions'] ) ? $args['actions'] : array();
 if ( ! $law_actions ) {
@@ -141,12 +114,6 @@ if ( ! empty( $args['stacked'] ) ) {
 		<?php endif; ?>
 		<?php if ( '' !== $law_hosted ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html__( 'Hosted by:', 'law' ); ?> <strong><?php echo esc_html( $law_hosted ); ?></strong></p>
-		<?php endif; ?>
-		<?php if ( $law_speaker_lines ) : ?>
-			<hr class="law-event-card__divider">
-			<?php foreach ( $law_speaker_lines as $law_speaker_line ) : ?>
-				<p class="law-event-card__meta law-event-card__meta--speaker"><?php echo esc_html( $law_speaker_line[0] ); ?> <strong><?php echo esc_html( $law_speaker_line[1] ); ?></strong></p>
-			<?php endforeach; ?>
 		<?php endif; ?>
 		<?php foreach ( $law_meta_lines as $law_meta_line ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html( $law_meta_line ); ?></p>

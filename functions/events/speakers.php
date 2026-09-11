@@ -75,6 +75,36 @@ function law_speaker_role_display( $role ) {
 }
 
 /**
+ * The heading a speaker profile prints over the events a person held this
+ * role at. The profile groups its event list by role rather than listing
+ * everything under "Speaking at:" (Denis, 11 September 2026), so each role
+ * needs a phrase that reads naturally: you speak *at* an event and moderate
+ * *at* one, but you host one outright.
+ *
+ * @return array<string,string> Role key => heading.
+ */
+function law_speaker_role_headings() {
+	return array(
+		'speaker'   => 'Speaking at:',
+		'host'      => 'Hosting:',
+		'moderator' => 'Moderating at:',
+	);
+}
+
+/**
+ * The heading for a role key or label. Anything unknown or empty reads as
+ * Speaker, exactly as law_speaker_role_display() does: a row saved before
+ * roles existed is still somebody speaking at the event.
+ *
+ * @param string $role Row value (key, label or '').
+ * @return string Heading to print.
+ */
+function law_speaker_role_heading( $role ) {
+	$key = law_speaker_role_key( $role );
+	return law_speaker_role_headings()[ '' === $key ? 'speaker' : $key ];
+}
+
+/**
  * Find an existing speaker: by email first (same email = same person), then by
  * normalised full name.
  *
@@ -665,6 +695,83 @@ function law_speaker_first_appearance( $speaker_id, ?array $statuses = null ) {
 }
 
 /**
+ * The speaker's MOST RECENT appearance: the same four per-appearance fields
+ * plus the role, taken from the latest event on record and falling through to
+ * the appearance before it whenever the later row leaves a field empty (so an
+ * event where nobody re-entered the organisation still prefills the one the
+ * speaker last gave).
+ *
+ * The mirror of law_speaker_first_appearance(), which is the ARCHIVE rule (a
+ * speaker's card shows what they were the first time LAW hosted them). This is
+ * the EDITING rule: prefilling a new appearance with the stalest values on
+ * record would be wrong, so the picker starts from the latest (Denis,
+ * 11 September 2026). The role is included here and deliberately not there: on
+ * a card it is a fact about one event, but on a form it is the value the
+ * committee is most likely to want again.
+ *
+ * @param int           $speaker_id Speaker post ID.
+ * @param string[]|null $statuses   Event statuses to read; null = publish only.
+ * @return array{role:string,organisation:string,job_title:string,photo_id:int,bio:string,event_id:int}
+ */
+function law_speaker_latest_appearance( $speaker_id, ?array $statuses = null ) {
+	$latest = array( 'role' => '', 'organisation' => '', 'job_title' => '', 'photo_id' => 0, 'bio' => '', 'event_id' => 0 );
+	$fields = array( 'role', 'organisation', 'job_title', 'photo_id', 'bio' );
+	// law_speaker_appearances() is first-submitted first, so the newest row is
+	// the last one; reversed, the first non-empty value seen for a field is the
+	// most recent one.
+	foreach ( array_reverse( law_speaker_appearances( $speaker_id, $statuses ) ) as $appearance ) {
+		if ( ! $latest['event_id'] ) {
+			$latest['event_id'] = $appearance['event_id'];
+		}
+		foreach ( $fields as $field ) {
+			if ( empty( $latest[ $field ] ) && ! empty( $appearance[ $field ] ) ) {
+				$latest[ $field ] = $appearance[ $field ];
+			}
+		}
+		if ( $latest['role'] && $latest['organisation'] && $latest['job_title'] && $latest['photo_id'] && '' !== $latest['bio'] ) {
+			break;
+		}
+	}
+	return $latest;
+}
+
+/**
+ * What a speaker picker should put into a freshly chosen row: everything the
+ * module knows about this person, so the committee edits prefilled values
+ * instead of retyping them (Denis, 11 September 2026).
+ *
+ * Every status is read, not just confirmed events: a speaker record exists
+ * from the first draft save, and the appearance worth copying forward is often
+ * on an event that has not been confirmed yet.
+ *
+ * The speaker post's own editor content and featured image are the last
+ * resort, exactly as they are when an event renders a row that left those
+ * fields blank (law_speaker_photo_url(), the single event view). There is no
+ * organisation or job title on the speaker post to fall back to: those have
+ * been per appearance since 4.1, and the old _law_organisation /
+ * _law_job_title meta rows are inert (law_speaker_meta_schema()).
+ *
+ * @param int $speaker_id Speaker post ID.
+ * @return array{role:string,organisation:string,job_title:string,photo_id:int,photo:string,bio:string}
+ */
+function law_speaker_row_prefill( $speaker_id ) {
+	$speaker_id = (int) $speaker_id;
+	$latest     = law_speaker_latest_appearance( $speaker_id, law_event_all_status_keys() );
+
+	$photo_id = (int) $latest['photo_id'] ?: (int) get_post_thumbnail_id( $speaker_id );
+	$bio      = '' !== $latest['bio'] ? $latest['bio'] : trim( (string) get_post_field( 'post_content', $speaker_id ) );
+
+	return array(
+		'role'         => (string) $latest['role'],
+		'organisation' => (string) $latest['organisation'],
+		'job_title'    => (string) $latest['job_title'],
+		'photo_id'     => $photo_id,
+		'photo'        => $photo_id ? (string) wp_get_attachment_image_url( $photo_id, 'thumbnail' ) : '',
+		'bio'          => $bio,
+	);
+}
+
+/**
  * The exact appearance row for one event (event row first, then its
  * sessions), regardless of the event's status. Used by the profile's
  * "Speaking at" cards and the admin "Appears at" box.
@@ -692,6 +799,41 @@ function law_speaker_appearance_for_event( $speaker_id, $event_id ) {
 		}
 	}
 	return null;
+}
+
+/**
+ * A speaker profile's events split by the role the person held at each one,
+ * so the profile can head each list "Speaking at:", "Hosting:" or
+ * "Moderating at:" instead of filing everything under "Speaking at:"
+ * (Denis, 11 September 2026).
+ *
+ * Groups come back in law_speaker_roles() order and empty ones are dropped,
+ * so a person who only ever spoke still sees exactly one list. An event whose
+ * appearance row carries no role — every row migrated or saved before roles
+ * existed — falls under Speaker, the module-wide default that
+ * law_speaker_role_display() and law_speaker_role_heading() also apply.
+ *
+ * The events keep the programme order they arrive in, so each group reads
+ * chronologically.
+ *
+ * @param int                    $speaker_id Speaker post ID.
+ * @param array<int, array>      $events     Mapped calendar events, in order (law_speaker_events()).
+ * @return array<string, array<int, array>> Role key => that role's events.
+ */
+function law_speaker_events_by_role( $speaker_id, $events ) {
+	$groups = array_fill_keys( array_keys( law_speaker_roles() ), array() );
+	foreach ( $events as $event ) {
+		$appearance = law_speaker_appearance_for_event(
+			(int) $speaker_id,
+			law_events_resolve_event_post_id( $event['id'] )
+		);
+		$role = law_speaker_role_key( $appearance['role'] ?? '' );
+		if ( '' === $role || ! isset( $groups[ $role ] ) ) {
+			$role = 'speaker';
+		}
+		$groups[ $role ][] = $event;
+	}
+	return array_filter( $groups );
 }
 
 /**
@@ -930,6 +1072,14 @@ function law_speaker_bio_excerpt( $bio, $words = 24 ) {
  * The word split mirrors wp_trim_words()'s own, so the count and the excerpt
  * cannot disagree about where the limit falls.
  *
+ * Fourteen words, not law_speaker_bio_excerpt()'s own 24: a card sits in a
+ * third-width column beside a session's description, where 24 words ran to
+ * four or five lines and the card competed with the session it belongs to
+ * (Denis, 11 September 2026). Fourteen is about two lines at that width, and
+ * anyone who wants the rest is one "Read full bio" away. The excerpt helper
+ * keeps 24 because law_speaker_seo_description() uses it for a meta
+ * description, where a longer summary is the point.
+ *
  * 'full' keeps the author's markup, because the dialog and the no-JS
  * <details> block both render it through law_rich_text_render(); the excerpt
  * and the word count work off the plain text, since a card shows one line and
@@ -939,7 +1089,7 @@ function law_speaker_bio_excerpt( $bio, $words = 24 ) {
  * @param int    $words Word limit.
  * @return array{full:string,excerpt:string,trimmed:bool}
  */
-function law_speaker_bio_summary( $bio, $words = 24 ) {
+function law_speaker_bio_summary( $bio, $words = 14 ) {
 	$full  = trim( (string) $bio );
 	$plain = law_rich_text_plain( $bio );
 	$parts = '' === $plain ? array() : (array) preg_split( '/[\n\r\t ]+/', $plain, -1, PREG_SPLIT_NO_EMPTY );
