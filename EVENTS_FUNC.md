@@ -74,7 +74,7 @@ co-owners → **ics** → **discounts** → **bookings** → **waitlist** →
 registration → committee → export → Stripe (client, service, **attendees**,
 webhook) → admin (fields, event/booking/speaker/session/**flagship** screens,
 columns, emails) → migration (report, runner, page, repair-owners,
-backfill-session-agenda).
+repair-references, backfill-session-agenda).
 
 ### `settings.php`: the settings store and the LAW submenu host
 
@@ -387,11 +387,26 @@ is read.
   path** shared by the forms, the admin screens and the migrator. Writing an
   empty value deletes the meta; reads return schema-shaped fallbacks for array
   types.
-- `law_events_bump_counter( $option )` and `law_events_next_reference()`: the
-  shared counter helper (get → increment → `update_option`, **not atomic** —
-  two genuinely simultaneous callers could mint the same number; known,
-  accepted at current volumes) and the LAW reference built on it (e.g.
-  `LAW26-00212`, seeded from the legacy max at migration).
+- `law_events_event_reference()` and `law_events_ensure_reference()`: the
+  event reference. Since **14 September 2026** it is a plain number, the one
+  the committee already works from: a **migrated** event's reference is the
+  **Gravity Forms entry ID** it came from (entry 190 on form 2, Event > submit
+  an event, for "Coming Soon to an Arbitration Near You…"), and an event
+  **created here** takes its own **post ID**. `law_events_ensure_reference()`
+  writes it on the first save of any `law_event`
+  (`save_post_law_event`, priority 20) and never overwrites an existing value,
+  so a migrated entry ID survives every later save; the workflow's `submit`
+  side effect calls it again so a submission email can never print an empty
+  `{law_reference}`. Before that decision references came from GP Unique ID
+  (field 70, Unique ID) in the `LAW26-00212` format, generated in code by
+  `law_events_next_reference()` off a counter seeded from `wp_gpui_sequence`
+  at migration; that function and its seeding are **retained but no longer
+  called**, so the old sequence could be resumed. The events migrated under
+  the old rule are brought into line by the Migration screen's
+  `repair-references.php` panel.
+- `law_events_bump_counter( $option )`: the shared counter helper (get →
+  increment → `update_option`, **not atomic** — two genuinely simultaneous
+  callers could mint the same number; known, accepted at current volumes).
   `law_bookings_next_number()` (bookings.php) uses the same helper for the
   `law_bookings_counter` option behind "Booking #N", and
   `law_bookings_next_numbers( $n )` passes `$by = $n` to claim a consecutive
@@ -1508,6 +1523,23 @@ block the queue. Joining is refused while places are free.
   every width (buttons on their own line under the text,
   `.law-event-card--stacked`), because the profile column is narrow and the
   right-hand button column left the title wrapping in half the row.
+- **The flagship in a card list wears the flagship's colours** (Denis, 14
+  September 2026). A speaker who appears in a flagship session already reaches
+  the profile through the ordinary path — `law_flagship_recompute()` writes the
+  sessions' deduped speaker union onto the flagship event's `_law_speakers`, so
+  `law_speakers_confirmed_event_map()` sees it like any other event — and the
+  conference therefore turns up as one more row under "Speaking at:" /
+  "Moderating at:". `parts/loop/event.php` now reads `is_flagship` on the
+  mapped event and adds `.law-event-card--flagship`, which repaints the row in
+  the programme block's brand navy with white text, orange accents, inverted
+  buttons and an orange outline "Flagship event" pill
+  (`.law-event-card__flagship-badge`), so the conference reads as the
+  conference wherever it is listed — the profile, My bookings, My events. The
+  programme's own day lists never take this path: the flagship is lifted out of
+  them and rendered as `parts/events/flagship-card.php` instead. The row gets
+  no booking button, because `law_booking_card_action()` returns null for the
+  flagship state (its application flow has its own card), so it carries Event
+  details alone.
 - `law_speaker_bio_excerpt()` (24 words, an explicit `…` because
   `wp_trim_words()` otherwise appends the `&hellip;` entity, and
   `strip_shortcodes()` because an appearance biography never passes through
@@ -1530,9 +1562,19 @@ block the queue. Joining is refused while places are free.
   could never open. One dialog per
   card, not per speaker, since two session rows for the same person can
   legitimately carry different biographies.
-- `law_speakers_sort_cards()`, `law_speaker_sort_key()`,
-  `law_speaker_sort_token()`: the order the front end lists speakers in,
-  alphabetical by surname then first name (Denis, 11 September 2026). Applied
+- `law_speakers_sort_cards()`, `law_speaker_role_rank()`,
+  `law_speaker_sort_key()`,
+  `law_speaker_sort_token()`: the order the front end lists speakers in, by
+  **role first** — hosts, then moderators, then speakers and any row naming no
+  role at all — and alphabetical by surname then first name inside each of
+  those groups (Denis, 14 September 2026; the alphabetical part 11 September
+  2026). The role leads because it is the reader's way into a list of faces:
+  who is hosting and who is chairing are what they are looking for, and
+  alphabetical order alone buried both wherever their surname happened to
+  fall. A row with no role reads as "Speaker" everywhere it is printed
+  (`law_speaker_role_display()`), so it ranks with the speakers rather than
+  forming a fourth group; a legacy Gravity Forms card carries no role at all
+  and therefore keeps its old alphabetical order exactly. Applied
   by `law_event_speaker_cards()`, by the session rows below and by the legacy
   Gravity Forms readers in `functions/calendar.php`, so the sidebar list, each
   session panel and the flagship programme all agree. The stored `sort` on a
@@ -2343,13 +2385,17 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   the per-status, per-user lock list. For hosts — title, type, preferred
   slots, fee tier, invoice block, sectors, host organisations, venue capacity
   and `venue_needed` all freeze once the event leaves
-  draft/proposed/sent-back; description, speakers, venue, agenda, ticket
-  allocations, contacts and co-owners stay editable. **Committee members
+  draft/proposed/sent-back; description, speakers, venue, agenda,
+  contacts and co-owners stay editable. **Places available freezes earlier
+  than any of them**: it is read-only for a host from submission onwards
+  (Denis, 14 September 2026), so `law-draft` is the only status at which they
+  set it — see the change history entry below. **Committee members
   bypass every post-approval lock except `fee_tier` and `invoice`** (Denis,
   7 September 2026): fee and invoice changes stay in the dashboard override
   control and wp-admin — and, from 9 September 2026, the dashboard control is
   read-only once the event is approved (see `fees.php`), which leaves wp-admin
-  as the only post-approval fee route. Pre-approval statuses are unlocked for everyone. The
+  as the only post-approval fee route. Pre-approval statuses are otherwise
+  unlocked for everyone, the committee included. The
   user defaults to the current user, so the template render and the save-side
   enforcement always agree.
 - `law_events_form_save()`: validation + persistence, with the required set
@@ -2369,9 +2415,11 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   page; that one key had been hand-patched, the other two had not.
   `wp_update_post()` merges the existing row first and closes all three at
   once. `migration/repair-owners.php` repaired the events already damaged.
-  Co-owner and contact rows go straight to the schema sanitiser. Two behaviours worth knowing: ticket allocations are validated
-  against `law_events_venue_capacity_bands()` (on an approved event against the
-  *stored* band, since the locked select posts nothing). Preferred slots go
+  Co-owner and contact rows go straight to the schema sanitiser. Two behaviours worth knowing: the places are validated
+  against `law_events_venue_capacity_bands()`, and either half of the pair may
+  be the stored one, because a disabled control posts nothing: on an approved
+  event the band is the stored one, and from submission onwards the places
+  are, checked against the band the host is posting. Preferred slots go
   through `law_events_sanitise_preferred_slots()` **before** validation, so the
   "choose at least one" check and the write see the same whitelisted set and a
   tampered label can neither be stored nor satisfy the requirement.
@@ -3132,7 +3180,7 @@ event status by the rebuild) plus "Reference".
   `law_events_emails_handle_test_mode_post()`, see `test-mode.php`), including
   the live address check and the live-site confirmation tick.
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -3300,6 +3348,46 @@ event status by the rebuild) plus "Reference".
   trashed event's comments to `post-trashed` and `'all'` in
   `WP_Comment_Query` still means approved-or-held. Every repair writes its own
   activity-log line with the old and new values.
+- **`repair-references.php`** — the panel that reassigns event references to
+  the Gravity Forms entry IDs after the 14 September 2026 decision, rendered on
+  the LAW > Migration screen by `law_events_reference_panel()` above the
+  owner repair. `law_events_reference_expected()` is the rule in one place
+  (`_law_gf_entry_id` when the post has one, else the post ID) and is what
+  `law_migration_populate_event()` now agrees with, so a fresh migration needs
+  no repair at all. The proposed ID always comes from the stored entry link,
+  **never from a title match**; the entry is then read back from Gravity Forms
+  (`law_events_reference_entry_check()`) so the panel can show its own field 17
+  (Event title) and field 70 (Unique ID) beside the post's title, flag a real
+  difference with `law_events_reference_titles_differ()` (compared loosely, so
+  punctuation and entities are not a mismatch) and say plainly when an entry is
+  no longer readable. The scan refuses to create a duplicate: if two events
+  would end up holding the same number they both land in the "needs a human"
+  table and neither is offered, which cannot arise with the live data (entry
+  IDs run to 1,171, new post IDs are past 260,000) but is not left to trust.
+  Every registered post status is scanned, trash included, for the same reason
+  `repair-owners.php` does it, and each change writes an activity-log line with
+  the old and new reference.
+  It also **re-stamps Stripe**. Every customer and invoice raised for an event
+  (by this module, or by the retired Make scenario before it) carries a
+  `law_reference` metadata key written once at creation, so a reassignment
+  leaves the Stripe dashboard quoting a reference the site no longer uses.
+  Nothing in the code resolves an event by that key —
+  `law_stripe_resolve_event_id()` uses `law_event_id`, then `gf_entry_id` —
+  so the payment path is never at risk, but a human reconciling a payment reads
+  it. `law_events_reference_sync_stripe()` patches the stored customer and
+  invoice with the whole `law_stripe_event_metadata()` block (which also gives a
+  Make-era invoice the `law_event_id` our webhook prefers); it is a
+  metadata-only patch, which Stripe permits on a finalised or paid invoice
+  (only monetary values and `collection_method` become uneditable at
+  finalisation) and which merges, so Make's own keys survive. It is ticked by
+  default on the apply and can be declined; a failure is logged on the event and
+  reported in the notice but never holds up the reference, because the site's
+  own record is the one that matters.
+  `law_events_reference_stripe_rows()` / `law_events_reference_stripe_restamp()`
+  are the same patch as a **standalone action**, listing every event that has a
+  Stripe object whatever its reference, because the local site's references were
+  reassigned on 14 September 2026 before the Stripe patch existed and the table
+  above then offers no row to fix them from. The patch is idempotent.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
@@ -3722,10 +3810,23 @@ These predate the rebuild and now branch on `law_events_source()`.
   reader opens a programme page for, and the accordion that used to carry it on
   ordinary events collapsed exactly that. The accordion markup, its
   `.law-cal-session*` styles and the style switch that chose between the two are
-  gone; only the heading differs between the two pages. Each item puts its
-  title and its description on the left and that session's speakers on the
-  right from 64em, the cards starting level with the title
-  (`.law-timeline__content--split`, set only when the item has both). The
+  gone; only the heading differs between the two pages. Each item reads top to
+  bottom at the **full width** of the column: the title, then the description,
+  then that session's speakers below it, two cards abreast from 64em and one
+  per row under that (Denis, 14 September 2026). The speakers used to sit in a
+  right-hand column beside the prose from 64em
+  (`.law-timeline__content--split`), which narrowed both — the description ran
+  to about 60% of the page and the cards to a single file down a third of it —
+  and the description carried a 65ch measure besides; the split modifier, that
+  measure and the one-card-per-row override are all gone. The single file
+  below 64em is deliberate and overrides the two-per-row
+  `.law-cal-speakers--cards` gets from 48em, because a card at half a tablet's
+  width cannot fit the photo and the name side by side. Note the space above
+  the cards (`margin-top`) has to be declared in that same late block, not up
+  with the rest of the timeline rules: `.law-cal-speakers`'s `margin: 0`
+  shorthand sits between the two at the same specificity and silently wins over
+  any earlier `margin-top`, which is why two attempts at widening that gap
+  changed nothing on the page. The
   **flagship alone** renders the timeline inside a filled navy panel
   (`.law-timeline-section--panel`, set from `templates/flagship-event.php` via
   `$law_cal_sessions_panel`, Denis 11 September 2026): its agenda is the
@@ -4950,6 +5051,72 @@ fixture is a table of situations rather than roles, which is the change in one
 line. **Still open and now wider:** the self-asserted £0 sponsor fee tier (§6).
 **For the client:** the HubSpot Sponsor and Event Host tags come from the
 optional ticks now, and the tag strings are unchanged.
+
+### Places available belongs to the committee from submission (14 September 2026)
+
+On the event edit form, **Places available is read-only for a host**, while
+**Venue capacity stays theirs while the event is under review** (Denis). This
+**reverses 4.2 §4.2**, which had the ticket allocation as the one venue number a
+host kept editing "within the approved capacity band"; EVENTS_4.2_SPECS.md is
+left as written, since it is the record of what was asked, and this entry is the
+divergence. The reasoning is that the places are not a fact about the room, they
+are the booking and waitlist capacity: lowering them strands confirmed bookings,
+raising them offers seats to the waitlist, and both are the committee's call.
+The band is a fact about the room, which the host is the one who knows, so they
+can still correct it up to approval.
+
+**Where the lock starts.** `law_events_locked_fields()` no longer returns an
+empty list for every pre-approval status. `tickets_available` is locked for a
+host at `law-proposed`, `law-sent-back` and everything after, and **exempt at
+`law-draft`**, which is simply the create form reopened and where the field is
+required as before. The committee is unlocked throughout pre-approval, as they
+always were, and `venue_capacity` is untouched: still the host's through draft,
+review and sent-back, still locked at approval.
+
+**The save path is the dangerous half.** A disabled input posts nothing, so
+`_law_tickets_available` is now written only when the field was not locked. The
+guard matters more than the band's: writing the absent value would blank the
+places, and a blank there takes the booking and waitlist capacity with it (the
+same trap the 9 September venue-visibility rule already worked around, for the
+same reason).
+
+**The band ceiling is checked from whichever side is stored.** Places can never
+exceed the band, and now either half of the pair can be the locked one. Post
+approval the band is stored and the posted places are judged against it; from
+submission onwards the *places* are stored and are judged against **the band
+being posted**, because a host under review can still lower it. That refusal is
+attached to `venue_capacity`, not to `tickets_available`, with its own wording
+("101-150 is below the 120 places already released…"), because an error on a
+field the submitter cannot reach is a dead end. The minimum-of-1 check only ever
+runs on a posted value: a stored 0 is the committee's to fix and would otherwise
+trap a host on their own form. Requiring the places (the 11 September rule) is
+skipped when they are locked, exactly as the band already was.
+
+**The form.** The number input renders disabled with a "(locked)" label and a
+note saying the committee sets it once the event is submitted and to reply to
+any email from us to change it — the other locked fields say "Locked after
+approval", which would be wrong here, and the band gained that note now that the
+two sit side by side with different reasons. `assets/js/event-form.js` no longer
+clamps the places to a newly chosen band when the input is disabled: the field
+posts nothing, so clamping only showed the host a number the event does not
+have. Both fields also fall back to the stored value on an error re-render
+(`$law_locked_value` in `parts/events/event-form-fields.php`), since
+`law_events_form_values()` returns the posted input, which for a disabled
+control is empty — the same fallback `venue_needed` has had since 9 September.
+
+**Three host emails were wrong the moment this landed.** `host_capacity_warning`,
+`host_event_full` and `host_waitlist_activated` all told hosts they could raise the
+places themselves from the dashboard. They now say the committee sets the number
+and to reply to the email, keeping the dashboard link for the bookings. A site
+with a stored override for any of the three keeps its own text, so check
+`law_events_email_overrides` before assuming the registry default is what sends.
+
+**Not changed:** the committee's doors. The Committee controls panel on the
+dashboard (band and places, at every status), the front-end committee edit form
+and the wp-admin **Event facts** box all behave exactly as they did, and remain
+the only ways the number moves. `tests/VenueDetailsTest.php` gained five cases
+for the new rule and `tests/SubmissionFormLockTest.php`'s matrix now separates
+`law-draft` from the two review statuses.
 
 ---
 

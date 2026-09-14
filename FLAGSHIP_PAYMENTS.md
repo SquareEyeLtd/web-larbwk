@@ -48,7 +48,7 @@ places, and the brief wins.
 | §4.4: automatic promotion when a place opens | **No automatic promotion.** Approval is a committee judgement, so a freed place is offered by the committee approving the next applicant |
 | §4.3: after a failed charge the place goes to the next applicant | The retry window expiring raises a **committee alert**. It never auto-declines and never reassigns, matching the module's standing "a human decides" posture |
 | §7.6: Stripe's standard receipt | A Stripe **invoice**: VAT line, LAW's VAT number, hosted URL and PDF |
-| §3.4: "Register" | The control reads **"Apply"**. Spec §3.4 itself reserves "Register" for free events, and this button does not book a place |
+| §3.4: "Register" | The control reads **"Apply"**. Spec §3.4 itself reserves "Register" for free events, and this button does not book a place. Denis asked for "Register" on 14 September 2026 and reverted the change the same day, so "Apply" stands |
 
 Also settled:
 

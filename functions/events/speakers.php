@@ -893,11 +893,22 @@ function law_event_session_ids( $event_id ) {
 }
 
 /**
- * Speaker cards in the order the front end shows them: alphabetical by
- * surname, then first name (Denis, 11 September 2026). The stored order of
- * _law_speakers is only the order whoever filled the form typed the rows in,
- * which tells a reader nothing and puts the same person in a different place
- * on every event.
+ * Speaker cards in the order the front end shows them: by ROLE first -- hosts,
+ * then moderators, then speakers and anybody whose row names no role at all --
+ * and alphabetically by surname, then first name, inside each of those groups
+ * (Denis, 14 September 2026; the alphabetical part 11 September 2026).
+ *
+ * The role leads because it is the reader's way into a list of faces: the
+ * person hosting the session and the person chairing it are who they are
+ * looking for, and the rest are the panel. Alphabetical alone buried them
+ * wherever their surname happened to fall. The stored order of _law_speakers
+ * is only the order whoever filled the form typed the rows in, which tells a
+ * reader nothing and puts the same person in a different place on every event,
+ * so it is not used at all beyond breaking an exact tie.
+ *
+ * This is the one ordering rule for speaker cards, so the event's own Speakers
+ * list, every session's speakers on the timeline and the legacy calendar
+ * listings cannot drift apart.
  *
  * The surname comes from the speaker post when the card names one, since the
  * two name parts have been stored separately since 9 September 2026 and are
@@ -911,9 +922,10 @@ function law_event_session_ids( $event_id ) {
 function law_speakers_sort_cards( array $cards ) {
 	$rows = array();
 	foreach ( array_values( $cards ) as $index => $card ) {
-		// The key is computed once per card rather than inside the comparator,
-		// which would re-read the post meta on every comparison.
+		// Both keys are computed once per card rather than inside the
+		// comparator, which would re-read the post meta on every comparison.
 		$rows[] = array(
+			'role'  => law_speaker_role_rank( (array) $card ),
 			'key'   => law_speaker_sort_key( (array) $card ),
 			'index' => $index,
 			'card'  => $card,
@@ -923,9 +935,30 @@ function law_speakers_sort_cards( array $cards ) {
 		$rows,
 		// The index breaks ties explicitly, so two identical names keep the
 		// order they were entered in whatever the sort implementation does.
-		fn( $a, $b ) => strcmp( $a['key'], $b['key'] ) ?: ( $a['index'] <=> $b['index'] )
+		fn( $a, $b ) => ( $a['role'] <=> $b['role'] )
+			?: ( strcmp( $a['key'], $b['key'] ) ?: ( $a['index'] <=> $b['index'] ) )
 	);
 	return wp_list_pluck( $rows, 'card' );
+}
+
+/**
+ * Where one card's role puts it in that order: 0 host, 1 moderator, 2 anything
+ * else. A row with no role reads as "Speaker" everywhere it is printed
+ * (law_speaker_role_display()), so it sorts with the speakers rather than
+ * forming a fourth group of its own.
+ *
+ * @param array $card A law_speaker_card() row.
+ * @return int
+ */
+function law_speaker_role_rank( array $card ) {
+	switch ( law_speaker_role_key( $card['role'] ?? '' ) ) {
+		case 'host':
+			return 0;
+		case 'moderator':
+			return 1;
+		default:
+			return 2;
+	}
 }
 
 /**

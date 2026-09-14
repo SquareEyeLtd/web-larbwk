@@ -350,7 +350,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'A waitlist has opened for {event_title}',
-			'body'    => "Dear {host_name},\n\n{event_title} is fully booked, and people have started joining the waitlist ({waitlist_count} so far).\n\nAs places open up they are offered automatically to whoever is next in line. You do not need to do anything, but from your bookings list you can change the order of the waitlist, or promote someone straight away if you want to.\n\nIf your approved capacity allows more places, you can raise the number of places on your event and everyone who fits is booked automatically.\n\nYour events dashboard: {dashboard_link}",
+			'body'    => "Dear {host_name},\n\n{event_title} is fully booked, and people have started joining the waitlist ({waitlist_count} so far).\n\nAs places open up they are offered automatically to whoever is next in line. You do not need to do anything, but from your bookings list you can change the order of the waitlist, or promote someone straight away if you want to.\n\nThe number of places is set by the committee, so if the venue takes more, please reply to this email: when we raise it, everyone who fits is booked automatically.\n\nYour events dashboard: {dashboard_link}",
 		),
 		'user_waitlist_promoted' => array(
 			'name'    => 'Email to attendee > promoted from the waitlist',
@@ -637,7 +637,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is nearly full: {event_title}',
-			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nIf LAW arranged your venue, the places are set by the committee, so please reply to this email and we will raise them for you.\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
+			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nThe number of places is set by the committee, so if the venue takes more, please reply to this email and we will raise it for you.\n\nYour events dashboard: {dashboard_link}\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
 		),
 		// The second stage of the same warning (Denis, 10 September 2026). Both
 		// go out from law_booking_maybe_capacity_warning(), which latches the
@@ -649,7 +649,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is fully booked: {event_title}',
-			'body'    => "Dear {host_name},\n\nThe last place at {event_title} has been taken, so all {tickets_available} places are now booked.\n\nVisitors to the event page now see it as fully booked and can join the waitlist instead. As places open up they are offered automatically to whoever is next in line, so you do not need to do anything.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nIf LAW arranged your venue, the places are set by the committee, so please reply to this email and we will raise them for you.",
+			'body'    => "Dear {host_name},\n\nThe last place at {event_title} has been taken, so all {tickets_available} places are now booked.\n\nVisitors to the event page now see it as fully booked and can join the waitlist instead. As places open up they are offered automatically to whoever is next in line, so you do not need to do anything.\n\nThe number of places is set by the committee, so if the venue takes more, please reply to this email and we will raise it for you.\n\nYour events dashboard: {dashboard_link}",
 		),
 		'committee_event_full' => array(
 			'name'    => 'Email to committee > event fully booked',

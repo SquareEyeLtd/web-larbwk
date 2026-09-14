@@ -275,9 +275,10 @@ function law_event_workflow_transition( $event_id, $action, array $args = array(
 function law_event_workflow_side_effects( $event_id, $action, array $args, $actor, $source, $old_status = '' ) {
 	switch ( $action ) {
 		case 'submit':
-			if ( ! law_event_meta( $event_id, '_law_reference' ) ) {
-				update_post_meta( $event_id, '_law_reference', law_events_next_reference() );
-			}
+			// Normally already set when the post was first saved; kept here so
+			// the submission emails, which print {law_reference}, can never go
+			// out without one.
+			law_events_ensure_reference( $event_id );
 			if ( ! law_event_meta( $event_id, '_law_payment_status' ) ) {
 				update_post_meta( $event_id, '_law_payment_status', 'unpaid' );
 			}

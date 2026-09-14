@@ -785,7 +785,13 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 	law_event_update_meta( $post_id, '_law_fee_tier', $tier );
 
 	$writes = array(
-		'_law_reference'           => rgar( $entry, '70' ),
+		// The GRAVITY FORMS ENTRY ID, not field 70 (Unique ID). The legacy
+		// LAW26-00121 style references came from GP Unique ID, but the
+		// committee works from the entry IDs in the Gravity Forms entries list,
+		// so those are the references the client settled on (14 September
+		// 2026). Migration/page.php's "Reassign event references" panel
+		// rewrites the events migrated before that decision.
+		'_law_reference'           => (string) $entry_id,
 		'_law_venue'               => rgar( $entry, '21' ),
 		'_law_venue_needed'        => rgar( $entry, '103' ),
 		'_law_venue_capacity'      => rgar( $entry, '55' ),

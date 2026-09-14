@@ -28,6 +28,15 @@
  *   been written yet reads as a coffee break) and nothing in the data says
  *   which is which.
  *
+ * - A session reads top to bottom, at the full width of the column: the title,
+ *   then the description, then the people speaking at it (Denis, 14 September
+ *   2026). The speakers used to sit in a right-hand column beside the prose
+ *   from 64em, which narrowed both: the description ran to about 60% of the
+ *   page and the cards to a single file down a third of it. Below the text
+ *   they are two abreast on a desktop and one per row below that, so a session
+ *   with six speakers is three rows rather than a column longer than the blurb
+ *   beside it.
+ *
  * - The flagship conference renders the whole section reversed inside a filled
  *   navy panel ('panel' => true, from templates/flagship-event.php). Its agenda
  *   is the substance of that page, and the panel is what marks it out as the
@@ -86,14 +95,7 @@ if ( ! $law_tl_sessions ) {
 						<?php endif; ?>
 					</p>
 				<?php endif; ?>
-				<?php
-				// Two columns from 64em when the item has both something to read and
-				// somebody speaking: the title AND the description on the left, that
-				// session's speakers on the right, level with the title
-				// (Denis, 11 September 2026; calendar.css).
-				$law_tl_split = '' !== trim( $law_tl_desc ) && $law_tl_people;
-				?>
-				<div class="law-timeline__content<?php echo $law_tl_split ? ' law-timeline__content--split' : ''; ?>">
+				<div class="law-timeline__content">
 					<h3 class="law-timeline__title"><?php echo esc_html( $law_tl_title ); ?></h3>
 					<?php if ( '' !== trim( $law_tl_desc ) ) : ?>
 						<div class="law-timeline__body">

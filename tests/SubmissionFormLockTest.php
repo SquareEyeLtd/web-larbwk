@@ -7,7 +7,7 @@
  */
 class SubmissionFormLockTest extends LAW_Test_Case {
 
-	private const HOST_LOCKS = array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed' );
+	private const HOST_LOCKS = array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed', 'tickets_available' );
 
 	/** A complete, valid non-draft form input for an existing event. */
 	private function valid_input( array $overrides = array() ): array {
@@ -45,9 +45,18 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 
 		$this->assertSame( array(), law_events_locked_fields( null, $host ) );
 
-		foreach ( array( 'law-draft', 'law-proposed', 'law-sent-back' ) as $status ) {
+		// The host's own unsubmitted draft is the create form reopened, so it
+		// is unlocked outright; from submission onwards their Places available
+		// is read-only (Denis, 14 September 2026), and nothing else is until
+		// approval. The committee is unlocked throughout pre-approval, the fee
+		// included: it is only snapshotted at approval.
+		$draft = get_post( $this->make_event( array(), 'law-draft', $host ) );
+		$this->assertSame( array(), law_events_locked_fields( $draft, $host ), 'Host on law-draft' );
+		$this->assertSame( array(), law_events_locked_fields( $draft, $committee ), 'Committee on law-draft' );
+
+		foreach ( array( 'law-proposed', 'law-sent-back' ) as $status ) {
 			$event = get_post( $this->make_event( array(), $status, $host ) );
-			$this->assertSame( array(), law_events_locked_fields( $event, $host ), "Host on $status" );
+			$this->assertSame( array( 'tickets_available' ), law_events_locked_fields( $event, $host ), "Host on $status" );
 			$this->assertSame( array(), law_events_locked_fields( $event, $committee ), "Committee on $status" );
 		}
 

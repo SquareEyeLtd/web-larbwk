@@ -92,6 +92,17 @@ $law_card_classes = law_calendar_card_classes( $event, 'law-event-card' );
 if ( ! empty( $args['stacked'] ) ) {
 	$law_card_classes .= ' law-event-card--stacked';
 }
+
+// The flagship, wherever it appears as an ordinary row -- the speaker profile's
+// role lists, My bookings, My events -- takes the brand navy fill and white
+// text of its own programme block (parts/events/flagship-card.php), so the
+// conference reads as the conference in every list it turns up in
+// (Denis, 14 September 2026). The programme itself never gets here: the
+// flagship is lifted out of the day lists and rendered as that block instead.
+$law_is_flagship = ! empty( $event['is_flagship'] );
+if ( $law_is_flagship ) {
+	$law_card_classes .= ' law-event-card--flagship';
+}
 ?>
 <article class="<?php echo esc_attr( $law_card_classes ); ?>">
 	<div class="law-event-card__body">
@@ -100,6 +111,10 @@ if ( ! empty( $args['stacked'] ) ) {
 		<?php endif; ?>
 		<?php if ( ! empty( $args['badge']['label'] ) ) : ?>
 			<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( (string) ( $args['badge']['slug'] ?? 'default' ) ); ?>"><?php echo esc_html( (string) $args['badge']['label'] ); ?></span>
+		<?php endif; ?>
+		<?php if ( $law_is_flagship ) : ?>
+			<?php /* The same outline pill the programme block and the strip carry, so the fill is never the only thing saying which event this is. */ ?>
+			<span class="law-event-card__flagship-badge"><?php esc_html_e( 'Flagship event', 'law' ); ?></span>
 		<?php endif; ?>
 		<h4 class="law-event-card__title">
 			<a href="<?php echo esc_url( $law_event_url ); ?>"><?php echo esc_html( $event['title'] ); ?></a>

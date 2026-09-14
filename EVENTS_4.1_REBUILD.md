@@ -239,9 +239,14 @@ form; the entry tables stay as the read-only archive either way.
 Three of those carry behaviour the rebuild must absorb, beyond the obvious:
 
 - **GP Unique ID** generates field 70 (Unique ID), format `LAW26-00206`
-  (`LAW<yy>-<5-digit sequence>`). The rebuild generates new references in the
-  same format in code (`_law_reference`), continuing the existing sequence;
-  migration preserves existing values verbatim.
+  (`LAW<yy>-<5-digit sequence>`). The rebuild originally generated new
+  references in the same format in code (`_law_reference`), continuing the
+  existing sequence, with migration preserving existing values verbatim.
+  **Superseded on 14 September 2026**: the client works from the Gravity Forms
+  entry IDs, so a migrated event's reference is now its **entry ID** and a new
+  event's is its own **post ID**. Field 70 is no longer carried across, and
+  `migration/repair-references.php` reassigns the events migrated before the
+  decision.
 - **GW Auto Login** signs the new user in after form 1 (User registration)'s
   confirmation redirect. The custom registration form (phase D) reproduces
   auto-login on successful registration.
@@ -430,7 +435,7 @@ UI over the same keys, not ACF):
 
 | Meta key | From form 2 field | Notes |
 |---|---|---|
-| `_law_reference` | 70 (Unique ID) | The LAW reference; preserved verbatim in migration. New events get `LAW<yy>-<5-digit sequence>` generated in code, continuing the GP Unique ID sequence |
+| `_law_reference` | — (the entry ID itself) | The event reference. Since 14 September 2026 a migrated event takes its **Gravity Forms entry ID** and a new event its own **post ID**; field 70 (Unique ID) and the `LAW<yy>-<5-digit sequence>` format are no longer used, and `migration/repair-references.php` reassigns events migrated under the old rule |
 | `_law_start` / `_law_end` | 68 (Confirmed slot), parsed | Real datetimes, replacing the hardcoded slot-label parsing. Slot *choices* move to the settings page |
 | `_law_preferred_slots` | 77 (Preferred date & time slots) | Array of slot keys |
 | `_law_venue` | 21 (Venue) | Free text, as now |
@@ -1427,10 +1432,13 @@ was fixed or dispositioned:
 - **Front-end edit locking** now uses `wp_check_post_lock`/`wp_set_post_lock`:
   a second editor sees a banner and their save is refused while the lock
   holds.
-- **The post-approval lock list** matches 4.2 §4.2 exactly: tickets are
-  EDITABLE (allocations within the approved band); sectors, host
-  organisations, venue capacity and venue-needed lock alongside title, type,
-  slots and fees.
+- **The post-approval lock list** follows 4.2 §4.2 with one deliberate
+  reversal: sectors, host organisations, venue capacity and venue-needed lock
+  alongside title, type, slots and fees, and **Places available is read-only
+  for a host from submission onwards** (Denis, 14 September 2026) rather than
+  editable within the approved band, because it is the booking and waitlist
+  capacity and the committee owns it. See the change history entry in
+  EVENTS_FUNC.md.
 - The committee detail view gained the manual private note, the two
   classification switches (run by LAW, session agenda — superseding the
   short-lived event category checkboxes and the `?ec=` prepopulation, both
