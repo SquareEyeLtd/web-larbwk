@@ -294,7 +294,7 @@ In `functions/setup-account-pages.php`, replace `law_setup_account_events_attend
  *
  * @return string 'ok', or e.g. 'updated: /account/events/, /account/bookings/; missing: /account/events/submit/'.
  */
-function law_setup_account_subscriber_access() {
+function law_setup_account_page_roles() {
 	$paths = array( 'account', 'account/events', 'account/bookings', 'account/events/submit' );
 	// For each: get_page_by_path(); missing → record; no rows → record as open;
 	// rows without 'subscriber' → add_post_meta( $id, '_members_access_role', 'subscriber' ), record as updated.
@@ -306,10 +306,10 @@ Wiring (order matters: `law_setup_my_bookings_access()` copies `/account/`'s row
 row-less `/account/bookings/`, so the subscriber pass must run after it):
 
 - Trigger, `law_setup_account_pages()` (:128-135): replace the attendee line, moved to after the
-  `law_setup_my_bookings_access()` line: `'ACCESS   subscriber role on account pages: ' . law_setup_account_subscriber_access()`.
+  `law_setup_my_bookings_access()` line: `'ACCESS   account page roles: ' . law_setup_account_page_roles()`.
 - Step 10, `law_migration_run_pages()` (`runner.php:1826-1832`): delete the attendee block; add
   after the my-bookings block (:1836-1838), inside the same `! $dry` guard:
-  `law_migration_log( 'pages', 'created', 'account pages', 'Subscriber role access: ' . law_setup_account_subscriber_access() . '.' );`
+  `law_migration_log( 'pages', 'created', 'account pages', 'Account page roles: ' . law_setup_account_page_roles() . '.' );`
 
 ### A6. Migration step 11: `retire_roles`
 
@@ -728,7 +728,7 @@ No JavaScript.
   privileged role, `law_intent` equals the expected array (empty array for attendee-only, with
   `metadata_exists()` true), a second call returns `skipped`, and a pre-existing `law_intent`
   row is not overwritten. Test the per-user helper, not `law_migration_run_retire_roles()`.
-  `law_setup_account_subscriber_access()`: skip if `/account/` is missing; every restricted page
+  `law_setup_account_page_roles()`: skip if `/account/` is missing; every restricted page
   of the four carries `subscriber` afterwards; a second call returns `ok`.
 - Run the full suite: `php -d memory_limit=512M vendor/bin/phpunit`. Also
   `--filter 'HeaderNav|AccountAudience|AuthRedirect|AccountHub|RoleRetirement|MyBookingsPage|FlagshipRender|Registration|Bookings|Workflow'`
