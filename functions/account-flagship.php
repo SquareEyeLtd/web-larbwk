@@ -27,10 +27,14 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 function law_flagship_details_price( array $event ) {
 	$event_id = (int) ( $event['id'] ?? 0 );
-	if ( ! $event_id || ! function_exists( 'law_flagship_is' ) || ! law_flagship_is( $event_id ) ) {
+	if ( ! $event_id ) {
 		return '';
 	}
-	$price = law_flagship_price_pence( 0, $event_id );
+	// law_event_price_pence(), not the flagship's own reader: it delegates to
+	// that for the conference and reads the reception price for a reception,
+	// so the Price fact appears on ANY priced event with no change to the
+	// details box that calls this (RECEPTIONS.md §4.1).
+	$price = function_exists( 'law_event_price_pence' ) ? law_event_price_pence( $event_id ) : 0;
 	if ( $price < 1 ) {
 		return '';
 	}
@@ -56,6 +60,8 @@ function law_flagship_details_price( array $event ) {
  */
 function law_flagship_details_places( array $event ) {
 	$event_id = (int) ( $event['id'] ?? 0 );
+	// The flagship's own count only: a hosted event and a reception state
+	// theirs in the availability panel, which is where a count belongs.
 	if ( ! $event_id || ! function_exists( 'law_flagship_is' ) || ! law_flagship_is( $event_id ) ) {
 		return '';
 	}

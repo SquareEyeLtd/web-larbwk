@@ -36,6 +36,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 			data-law-loading-book="<?php esc_attr_e( 'Book your place', 'law' ); ?>"
 			data-law-loading-waitlist="<?php esc_attr_e( 'Join the waitlist', 'law' ); ?>"
 			data-law-loading-apply="<?php esc_attr_e( 'Apply to attend', 'law' ); ?>"
+			data-law-loading-include="<?php esc_attr_e( 'Add to my bookings', 'law' ); ?>"
 		><?php esc_html_e( 'Book your place', 'law' ); ?></h2>
 		<?php
 		// Not visible: the shimmering skeleton below already says "loading" to

@@ -135,6 +135,14 @@ function law_events_map_post( $post, $allowed = null ) {
 		// committee has never saved has no meta row, and one saved with the box
 		// unticked carries a literal 0 (the 'flag' sanitiser in meta.php).
 		'is_law'       => (bool) law_event_meta( $post->ID, '_law_is_law_event' ),
+		// The receptions (RECEPTIONS.md §4.1). A card prints the net price, or
+		// "Invitation only", as a meta line, so a reader can see what a place
+		// costs without opening the event. Read here rather than per card:
+		// a programme day renders up to 500 of these.
+		'is_reception'       => function_exists( 'law_reception_is' ) && law_reception_is( $post->ID ),
+		'price_pence'        => function_exists( 'law_event_price_pence' ) ? law_event_price_pence( $post->ID ) : 0,
+		'registration_state' => (string) law_event_meta( $post->ID, '_law_registration_state' ),
+		'flagship_included'  => (bool) law_event_meta( $post->ID, '_law_flagship_included' ),
 		'sort'         => ( $slot['date'] ?: '9999-99-99' ) . ' ' . ( $slot['start'] ?: '99:99' ) . ' ' . strtolower( $title ),
 	);
 }

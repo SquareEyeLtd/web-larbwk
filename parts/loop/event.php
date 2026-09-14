@@ -115,6 +115,27 @@ if ( ! empty( $args['stacked'] ) ) {
 		<?php if ( '' !== $law_hosted ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html__( 'Hosted by:', 'law' ); ?> <strong><?php echo esc_html( $law_hosted ); ?></strong></p>
 		<?php endif; ?>
+		<?php
+		// What a place costs, or that there is no booking route at all. Only
+		// the receptions charge on a card (the flagship has its own block), and
+		// the figure is the NET the details box quotes, not the total: one
+		// wording for a price, everywhere (RECEPTIONS.md §4.1).
+		$law_card_price = '';
+		if ( ! empty( $event['is_reception'] ) ) {
+			if ( 'invitation' === (string) ( $event['registration_state'] ?? '' ) ) {
+				$law_card_price = __( 'Invitation only', 'law' );
+			} elseif ( (int) ( $event['price_pence'] ?? 0 ) > 0 ) {
+				$law_card_price = sprintf(
+					/* translators: %s: the price excluding VAT. */
+					__( '%s + VAT', 'law' ),
+					law_events_format_pence( (int) $event['price_pence'] )
+				);
+			}
+		}
+		?>
+		<?php if ( '' !== $law_card_price ) : ?>
+			<p class="law-event-card__meta"><?php echo esc_html__( 'Price:', 'law' ); ?> <strong><?php echo esc_html( $law_card_price ); ?></strong></p>
+		<?php endif; ?>
 		<?php foreach ( $law_meta_lines as $law_meta_line ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html( $law_meta_line ); ?></p>
 		<?php endforeach; ?>

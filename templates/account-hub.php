@@ -69,6 +69,17 @@ get_header();
 						<p class="law-account-hub__lead">Signed in as <strong><?php echo esc_html( $law_hub_name ); ?></strong>.</p>
 					<?php endif; ?>
 
+					<?php
+					// Above the tiles, below the "Signed in as" line: a free
+					// place somebody has not claimed is exactly what a landing
+					// page should be telling them. The same helper My bookings
+					// calls, so the two can never word it differently
+					// (RECEPTIONS.md §7.3).
+					if ( function_exists( 'law_reception_banner' ) ) {
+						echo law_reception_banner( get_current_user_id() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
+					}
+					?>
+
 					<?php get_template_part( 'parts/layout/account-tiles', null, array( 'items' => $law_hub_items ) ); ?>
 					<?php
 				endif;

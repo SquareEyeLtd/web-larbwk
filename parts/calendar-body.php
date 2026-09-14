@@ -145,12 +145,16 @@ if ( $event ) {
 				(array) $event['sectors']
 			),
 		),
-		// Only the flagship charges for a place today, and the helper returns ''
-		// for anything else, so this row drops out of every other event's box on
-		// its own (an empty value is skipped) rather than needing a caller to
-		// know about it. There is no Places row beside it: the flagship's count
-		// is printed in the availability panel below, opposite its button
-		// (law_flagship_render_action_body(), Denis 11 September 2026).
+		// Any PRICED event: the flagship conference and the paid receptions.
+		// The helper returns '' for anything free, so the row drops out of
+		// every other event's box on its own (an empty value is skipped)
+		// rather than needing a caller to know about it. There is no Places
+		// row beside it: the count is printed in the availability panel below,
+		// opposite its button (Denis, 11 September 2026).
+		//
+		// The box states the NET, "£45.00 + VAT", the way LAW quotes it; the
+		// arithmetic belongs in the dialog, next to the consent to pay it, and
+		// doing the sum twice is two places for it to disagree.
 		array(
 			'key'   => 'price',
 			'label' => 'Price',

@@ -2997,7 +2997,7 @@ function law_reception_banner( $user_id ) {
 
 	ob_start();
 	?>
-	<div class="law-strip law-reception-strip">
+	<div class="law-strip law-strip--panel law-reception-strip">
 		<div class="law-strip__text">
 			<p class="law-strip__title"><?php esc_html_e( 'Your flagship place includes a drink with us', 'law' ); ?></p>
 			<p>
