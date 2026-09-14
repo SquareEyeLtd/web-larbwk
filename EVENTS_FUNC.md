@@ -2028,7 +2028,12 @@ and two sets of actions that do not apply to each other.
 
 - Manage bookings therefore EXCLUDES the flagship, through the
   `law_bookings_dashboard_exclude_events` filter, so that file stays about
-  hosted events and this one owns every "the flagship is different" rule.
+  every OTHER kind of booking and this one owns every "the flagship is
+  different" rule. Receptions are deliberately NOT excluded (RECEPTIONS.md
+  §8.3): a reception place is a booking at an event, and it belongs with the
+  rest. That is why the nav item went back to **"Manage bookings"** on
+  14 September 2026 — "Hosted bookings" named one of the two kinds it holds,
+  which is worse than the generic name it had replaced.
 - A flat table with the payment facts a refund has to be traced by, including
   the Stripe invoice link (spec §7.5). Filters: keyword, status, payment
   state, country. Per-row Approve and Decline, the two failed-payment actions,
