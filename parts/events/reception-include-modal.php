@@ -49,8 +49,8 @@ law_modal_enqueue();
 			$law_ri_tag  = '';
 			if ( $law_ri_held instanceof WP_Post ) {
 				$law_ri_tag = 'law-pending-payment' === $law_ri_held->post_status
-					? __( 'Payment in progress', 'law' )
-					: __( 'Already booked', 'law' );
+					? __( 'You are paying for this one', 'law' )
+					: __( 'You already have a place', 'law' );
 			}
 			?>
 			<?php
@@ -72,7 +72,14 @@ law_modal_enqueue();
 							<span class="law-reception-include__when"><?php echo esc_html( $law_ri_when ); ?></span>
 						<?php endif; ?>
 						<?php if ( '' !== $law_ri_tag ) : ?>
-							<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php echo esc_html( $law_ri_tag ); ?></span>
+							<?php
+						// .law-modal__tag, NOT .law-cal-card__badge: that one is
+						// position:absolute for a card's corner, so inside a
+						// dialog it pinned itself to the DIALOG's corner and
+						// read as a status for the whole thing (Denis,
+						// 14 September 2026).
+						?>
+						<span class="law-modal__tag"><?php echo esc_html( $law_ri_tag ); ?></span>
 						<?php endif; ?>
 					</span>
 				</label>

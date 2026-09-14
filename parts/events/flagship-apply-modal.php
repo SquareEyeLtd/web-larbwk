@@ -171,9 +171,12 @@ else :
 					$law_fa_held = law_booking_user_booking_for_event( get_current_user_id(), $law_fa_reception, law_booking_holding_statuses() );
 					$law_fa_tag  = '';
 					if ( $law_fa_held instanceof WP_Post ) {
+						// "You already have a place", not "Already booked": the
+						// shorter form read as a status for the whole dialog on a
+						// conference that was itself full (Denis, 14 September 2026).
 						$law_fa_tag = 'law-pending-payment' === $law_fa_held->post_status
-							? __( 'Payment in progress', 'law' )
-							: __( 'Already booked', 'law' );
+							? __( 'You are paying for this one', 'law' )
+							: __( 'You already have a place', 'law' );
 					}
 					$law_fa_when = law_reception_when_label( $law_fa_reception );
 					?>
@@ -187,7 +190,7 @@ else :
 								<span class="law-form-hint"><?php echo esc_html( $law_fa_when ); ?></span>
 							<?php endif; ?>
 							<?php if ( '' !== $law_fa_tag ) : ?>
-								<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php echo esc_html( $law_fa_tag ); ?></span>
+								<span class="law-modal__tag"><?php echo esc_html( $law_fa_tag ); ?></span>
 							<?php endif; ?>
 						</label>
 					</p>
