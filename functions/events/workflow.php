@@ -96,16 +96,22 @@ add_filter(
 		if ( ! empty( $GLOBALS[ $flag ] ) ) {
 			return $data; // The engine is moving the status.
 		}
-		// The flagship conference has no workflow: it is never proposed,
-		// approved or invoiced, and its two statuses mean only "on the
-		// programme" (publish) and "not yet" (law-draft), which is the tick box
-		// on the Flagship screen. Its own saver raises this flag around its
-		// wp_update_post, so the guard's invariant still holds — a status change
-		// only ever comes from a known code path — while the box actually works.
-		// Deliberately a separate flag from the engine's, rather than reusing
-		// law_workflow_transitioning, so nothing here pretends a transition ran.
-		if ( ! empty( $GLOBALS['law_flagship_saving'] ) && LAW_EVENT_CPT === $post_type
-			&& function_exists( 'law_flagship_is' ) && law_flagship_is( $post_id )
+		// LAW's OWN events have no workflow: the flagship conference and the
+		// three receptions are never proposed, approved or invoiced, and their
+		// two statuses mean only "on the programme" (publish) and "not yet"
+		// (law-draft), which is the tick box on their management screens. Their
+		// savers raise this flag around their wp_update_post, so the guard's
+		// invariant still holds — a status change only ever comes from a known
+		// code path — while the box actually works. Deliberately a separate
+		// flag from the engine's, rather than reusing law_workflow_transitioning,
+		// so nothing here pretends a transition ran.
+		//
+		// law_flagship_saving is still honoured: it is what the flagship's
+		// saver raised before the receptions generalised the name, and a
+		// half-deployed tree must not lose the exemption.
+		if ( ( ! empty( $GLOBALS['law_event_managed_saving'] ) || ! empty( $GLOBALS['law_flagship_saving'] ) )
+			&& LAW_EVENT_CPT === $post_type
+			&& law_event_is_managed_by_law( $post_id )
 			&& in_array( (string) ( $data['post_status'] ?? '' ), array( 'publish', 'law-draft' ), true ) ) {
 			return $data;
 		}
@@ -121,6 +127,23 @@ add_filter(
 	10,
 	2
 );
+
+/**
+ * Is this law_event one LAW runs itself through a management screen rather
+ * than through the submission workflow: the flagship conference, or one of the
+ * receptions?
+ *
+ * The predicate the status-guard exemption above turns on, so "which events
+ * skip the workflow" is answered in one place.
+ */
+function law_event_is_managed_by_law( $post_id ) {
+	$post_id = (int) $post_id;
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $post_id ) ) {
+		return true;
+	}
+
+	return (bool) get_post_meta( $post_id, '_law_is_reception', true );
+}
 
 /**
  * Untrash restores the status the post was trashed with (core would restore

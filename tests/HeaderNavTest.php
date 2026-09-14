@@ -50,7 +50,10 @@ class HeaderNavTest extends LAW_Test_Case {
 	 * dashboard, 'my_bookings' is the page anyone signed in gets.
 	 */
 	public static function nav_expectations(): array {
-		$committee = array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' );
+		// 'receptions' sits after 'flagship' because it is a configuration
+		// screen for an event LAW runs itself, not one of the two bookings
+		// views, which are kept together (RECEPTIONS.md §0.4).
+		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts' );
 
 		return array(
 			'subscriber, no events'   => array(

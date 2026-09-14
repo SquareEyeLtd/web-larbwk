@@ -62,6 +62,7 @@ function law_account_paths() {
 		'bookings'    => 'account/dashboard/bookings',
 		'speakers'    => 'account/dashboard/speakers',
 		'flagship'    => 'account/dashboard/flagship',
+		'receptions'  => 'account/dashboard/receptions',
 		'flagship_bookings' => 'account/dashboard/flagship-bookings',
 		'discounts'   => 'account/dashboard/discounts',
 		'events'      => 'account/events',
@@ -372,6 +373,17 @@ function law_header_nav() {
 			'group'       => 'committee',
 			'icon'        => 'flag',
 			'description' => __( 'Edit the flagship conference', 'law' ),
+		);
+		// The drinks receptions, straight after Manage flagship: like it, this
+		// is a CONFIGURATION screen for an event LAW runs itself — dates,
+		// prices, places — rather than one of the two bookings views, which
+		// the comment below keeps together (RECEPTIONS.md §0.4).
+		$items[] = array(
+			'key'         => 'receptions',
+			'label'       => __( 'Manage receptions', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'receptions',
+			'description' => __( 'Dates, prices and places for the receptions', 'law' ),
 		);
 		// The two bookings views sit together, and are named for what they
 		// hold rather than for what you do to them (Denis, 10 September

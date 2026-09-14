@@ -877,9 +877,10 @@ function law_flagship_save( array $input, $actor ) {
 	// workflow engine, which is what stops the classic editor's Publish button
 	// confirming an unapproved event. The flagship has no workflow at all, so
 	// its saver announces itself instead; the guard only honours this flag for
-	// the flagship, and only for its two statuses.
-	$GLOBALS['law_flagship_saving'] = true;
-	$updated                        = wp_update_post(
+	// an event LAW manages itself (the flagship and the receptions), and only
+	// for its two statuses.
+	$GLOBALS['law_event_managed_saving'] = true;
+	$updated                             = wp_update_post(
 		wp_slash(
 			array(
 				'ID'           => $event_id,
@@ -893,7 +894,7 @@ function law_flagship_save( array $input, $actor ) {
 		),
 		true
 	);
-	unset( $GLOBALS['law_flagship_saving'] );
+	unset( $GLOBALS['law_event_managed_saving'] );
 	if ( is_wp_error( $updated ) ) {
 		return $updated;
 	}

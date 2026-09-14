@@ -13,6 +13,7 @@ add_action( 'add_meta_boxes_' . LAW_EVENT_CPT, function () {
 	add_meta_box( 'law-event-workflow', 'Workflow', 'law_event_box_workflow', LAW_EVENT_CPT, 'side', 'high' );
 	add_meta_box( 'law-event-fee', 'Fee & invoice', 'law_event_box_fee', LAW_EVENT_CPT, 'side' );
 	add_meta_box( 'law-event-flags', 'Classification', 'law_event_box_flags', LAW_EVENT_CPT, 'side' );
+	add_meta_box( 'law-event-reception', 'Reception', 'law_event_box_reception', LAW_EVENT_CPT, 'side' );
 	add_meta_box( 'law-event-facts', 'Event details', 'law_event_box_facts', LAW_EVENT_CPT, 'normal', 'high' );
 	add_meta_box( 'law-event-invoice-contact', 'Invoice contact', 'law_event_box_invoice_contact', LAW_EVENT_CPT, 'normal' );
 	add_meta_box( 'law-event-people', 'Owners & contacts', 'law_event_box_people', LAW_EVENT_CPT, 'normal' );
@@ -98,6 +99,36 @@ function law_event_box_flags( $post ) {
 			)
 		);
 	}
+}
+
+/**
+ * The reception switches (RECEPTIONS.md §8.2), so wp-admin is not a dead end
+ * for the one kind of event LAW sells places at.
+ *
+ * It writes through law_reception_save() with partial => true, which validates
+ * and writes only the keys present, so there is ONE saver: the committee's
+ * Manage receptions screen and this box cannot disagree about what a price or
+ * an invitation-only switch means.
+ *
+ * Publishing stays a dashboard act ("Show on the programme"): this screen's
+ * Publish button keeps being refused by the status guard, which only exempts
+ * the managed savers.
+ */
+function law_event_box_reception( $post ) {
+	law_field_checkbox( 'law_reception[is_reception]', 'This is a reception', (bool) law_event_meta( $post->ID, '_law_is_reception' ) );
+
+	$price = (int) law_event_meta( $post->ID, '_law_attendee_price_pence' );
+	law_field_text(
+		'law_reception[price]',
+		'Price excluding VAT (£)',
+		$price > 0 ? number_format( $price / 100, 2, '.', '' ) : '0.00',
+		array( 'class' => 'small-text' )
+	);
+	law_field_checkbox( 'law_reception[included]', 'Included with the flagship place', (bool) law_event_meta( $post->ID, '_law_flagship_included' ) );
+	law_field_checkbox( 'law_reception[invitation]', 'Invitation only', law_event_is_invitation_only( $post->ID ) );
+
+	echo '<p class="description">Zero means the reception is not on sale. Invitation-only receptions take no bookings on the site; the price and places are kept in case one goes on sale later. Dates, venue, places and publishing are on '
+		. '<a href="' . esc_url( law_receptions_dashboard_url() ) . '">Manage receptions</a>.</p>';
 }
 
 function law_event_box_fee( $post ) {
@@ -446,6 +477,35 @@ function law_event_admin_save( $post_id, $post ) {
 	law_event_update_meta( $post_id, '_law_is_law_event', ! empty( $_POST['law_is_law_event'] ) );
 	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 	law_event_log_flag_change( $post_id, $before_flags, $actor );
+
+	// The Reception box, through the SAME saver the committee's Manage
+	// receptions screen uses (law_reception_save(), receptions.php), with
+	// partial => true so it writes only the four keys it rendered and touches
+	// neither the post nor the fields it does not carry. Unticking "This is a
+	// reception" is the one thing it does itself, because the saver's job is
+	// to write a reception, not to stop something being one.
+	if ( isset( $_POST['law_reception'] ) && is_array( $_POST['law_reception'] ) ) {
+		$law_es_raw = wp_unslash( (array) $_POST['law_reception'] );
+		if ( empty( $law_es_raw['is_reception'] ) ) {
+			if ( law_event_meta( $post_id, '_law_is_reception' ) ) {
+				$law_es_before = law_reception_snapshot( $post_id );
+				law_event_update_meta( $post_id, '_law_is_reception', 0 );
+				law_reception_log_save( $post_id, $law_es_before, law_reception_snapshot( $post_id ), $actor );
+			}
+		} else {
+			$law_es_input = law_reception_input_from_post();
+			// The box has no sentinel of its own: the nonce gate at the top of
+			// this handler already guarantees it was on the form, so its three
+			// checkboxes read straight from the POST.
+			$law_es_input['event_id']   = $post_id;
+			$law_es_input['included']   = ! empty( $law_es_raw['included'] );
+			$law_es_input['invitation'] = ! empty( $law_es_raw['invitation'] );
+			$law_es_saved               = law_reception_save( $law_es_input, $actor, array( 'partial' => true ) );
+			if ( is_wp_error( $law_es_saved ) ) {
+				law_event_admin_notice( $actor, 'Reception not saved: ' . implode( ' ', $law_es_saved->get_error_messages() ) );
+			}
+		}
+	}
 
 	// Payment status change is an explicit, logged act.
 	$new_payment = sanitize_key( $_POST['law_payment_status'] ?? '' );
