@@ -8,7 +8,7 @@
 > When you change something listed in "Known defects", move it out of that section
 > rather than leaving both descriptions in place.
 
-Last verified against the database and codebase: 2 September 2026.
+Last verified against the database and codebase: 14 September 2026.
 
 ---
 
@@ -119,6 +119,7 @@ are higher than the parent because they were created afterwards.
 | 106 | form (GPNF → 6) | Additional event owners, repeatable |
 | 110 / 112 | form (GPNF → 8) | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6), Biography (7), Email (8). Field **110** on local, **112** on live. The migrator auto-detects. |
 | 115 | form (GPNF → 9) | Sessions, repeatable. Shown on the individual event listing when child rows exist. |
+| 116 | checkbox (Hidden visibility) | Event codes. Populated from `?ec=` on `/account/events/submit/` (e.g. `?ec=Sessions`). Must be Hidden, not Administrative — otherwise front-end conditional logic cannot see it. The theme ticks the matching choice. |
 | 67 | textarea | Reason for rejection |
 
 ### Form 9 key fields (Event > session)

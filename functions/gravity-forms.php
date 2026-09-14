@@ -69,11 +69,16 @@ function law_prepopulate_orgid( $value ) {
 /* Populate field 116 from ?ec= ________________________________________________________ */
 
 /**
- * Field 116 (dynamic population parameter `ec`) takes the `ec` query string.
+ * Field 116 (parameter `ec`) takes the `ec` query string, e.g.
+ * /account/events/submit/?ec=Sessions
  *
- * Sets the field default on render so the value is in the HTML (needed for
- * AJAX submits, which do not keep the original page query string). Also fills
- * $_POST when the field is administrative and not in the front-end markup.
+ * Visibility must be Hidden (not Administrative). Administrative checkboxes
+ * render as type=hidden inputs, which front-end conditional logic cannot see.
+ * Hidden visibility still outputs real checkboxes (CSS-hidden), so GF JS
+ * can tick Sessions and show the dependent fields.
+ *
+ * AJAX submits drop the original query string, so the value is written into
+ * the field / $_POST on render.
  */
 add_filter( 'gform_field_value_ec', 'law_prepopulate_ec' );
 add_filter( 'gform_pre_render', 'law_populate_ec_field' );
@@ -101,15 +106,62 @@ function law_populate_ec_field( $form ) {
 			continue;
 		}
 		$field->allowsPrepopulate = true;
-		$field->inputName        = 'ec';
-		$field->defaultValue     = $ec;
-		if ( empty( $_POST[ 'input_' . $field->id ] ) ) {
-			$_POST[ 'input_' . $field->id ] = $ec;
-		}
+		$field->inputName         = 'ec';
+		law_select_ec_field_value( $field, $ec );
 		break;
 	}
 
 	return $form;
+}
+
+/**
+ * Tick the matching checkbox choice, or set a single-input field's value.
+ *
+ * @param GF_Field $field Form 2 field 116.
+ * @param string   $ec    Sanitised query string.
+ */
+function law_select_ec_field_value( $field, $ec ) {
+	$choices = $field->choices;
+	if ( ! is_array( $choices ) || empty( $choices ) ) {
+		$field->defaultValue = $ec;
+		if ( empty( $_POST[ 'input_' . $field->id ] ) ) {
+			$_POST[ 'input_' . $field->id ] = $ec;
+		}
+		return;
+	}
+
+	$inputs = $field->inputs;
+	foreach ( $choices as $i => $choice ) {
+		$value = (string) ( $choice['value'] ?? '' );
+		$text  = (string) ( $choice['text'] ?? '' );
+		if ( strcasecmp( $value, $ec ) !== 0 && strcasecmp( $text, $ec ) !== 0 ) {
+			continue;
+		}
+		if ( '' === $value ) {
+			$value = $ec;
+		}
+		$choices[ $i ]['isSelected'] = true;
+		$field->choices              = $choices;
+
+		$input_id = '';
+		if ( is_array( $inputs ) && isset( $inputs[ $i ]['id'] ) ) {
+			$input_id = (string) $inputs[ $i ]['id'];
+		} else {
+			$choice_number = $i + 1;
+			if ( 0 === $choice_number % 10 ) {
+				++$choice_number;
+			}
+			$input_id = $field->id . '.' . $choice_number;
+		}
+
+		$post_key = 'input_' . $input_id;
+		if ( empty( $_POST[ $post_key ] ) ) {
+			$_POST[ $post_key ] = $value;
+		}
+		return;
+	}
+
+	$field->defaultValue = $ec;
 }
 
 
