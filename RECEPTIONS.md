@@ -1,6 +1,10 @@
 # Receptions: paid, invitation-only and included-with-flagship reception events
 
-> **Status: specified 14 September 2026, not yet built.** This document is the
+> **Status: specified and BUILT, 14 September 2026.** Everything below is in
+> the working tree and the suite is green (601 tests). Read §16, "Deviations
+> from this specification", before trusting a line reference or a name here:
+> the code is the record now, `EVENTS_FUNC.md` is the living description of it,
+> and this document is what was asked for. This document is the
 > self-contained build contract, in the manner of `FLAGSHIP_PAYMENTS.md`,
 > `FLAGSHIP_UI.md` and `WAITLIST.md`. An agent starting cold should be able to
 > build everything below from this document plus the code. `EVENTS_FUNC.md` is
@@ -1293,3 +1297,92 @@ merge into staging, push staging, switch back).
 - A colleague-booking (quantity > 1) checkout was ruled out for now (§0.2);
   if it returns, it needs N holds created under one lock and released
   together, and the quote applied across the party.
+
+---
+
+## 16. Deviations from this specification
+
+Everything in §1-§14 was built. These are the places where the code differs
+from the letter of the document, and why.
+
+1. **`law_booking_payment_states()` is shared, with a flagship overlay.** §1.5
+   said the flagship's map moves wholesale into `bookings.php` with `included`
+   added, leaving `law_flagship_payment_states()` a one-line wrapper. Doing
+   that would have changed three words on the Flagship bookings screen:
+   "Payment method saved, awaiting review" → "Payment details saved",
+   "Awaiting the delegate's bank" → "Bank confirmation needed", and "No charge"
+   → "Complimentary". Those three carry the flagship's REVIEW semantics, which
+   a reception has none of. So the shared map holds the generic wording and the
+   flagship's wrapper lays its three over it: one map of states, two sets of
+   words for three of them, rather than two maps that could come to hold
+   different states.
+
+2. **The charge latch is `_law_charge_claim`, not `_law_charge_claimed_at`.**
+   §1.2 named a new key. The flagship's existing latch already works, is
+   already claimed atomically, and renaming it would have stranded any claim
+   held across the deploy — a five-minute window in which a booking could have
+   been charged twice. The key stays, and stays outside
+   `law_booking_meta_schema()` with the other one-shot latches, because a
+   sanitiser between the claim and the row it depends on is one more thing able
+   to turn a winning INSERT into a losing one. `_law_paid_at` was added to the
+   schema instead, which is what the sweep reads to decide when a confirmation
+   has waited long enough for its invoice (`post_modified` moves for any edit,
+   so it could not be that).
+
+3. **`law_booking_create()`'s insert loop was left alone.** §1.5 listed it as a
+   third copy of `law_booking_insert()`. It is not quite: it claims N
+   consecutive booking numbers in ONE atomic step
+   (`law_bookings_next_numbers( $count )`), so a party booked together reads as
+   a block in the committee's list. `law_booking_insert()` claims one. Rewriting
+   the loop around it would have broken that contract for no gain, since no
+   priced flow books a party.
+
+4. **The venue is one field, not "the address parts".** §8.1 read as though a
+   reception took a structured address. The `law_event` schema has no venue
+   address: `_law_venue` is a single free-text "Venue (name and/or address)",
+   which is what the host form, the flagship screen and the event page all use.
+   The reception form matches them. `law_events_address_parts()` is the INVOICE
+   address and belongs to the host fee.
+
+5. **Invitation-only disables the price and places server-side, with no live
+   toggle.** §8.1 asks for the controls to be disabled rather than hidden, and
+   they are — from the STORED value, so ticking the box and saving disables
+   them. There is no JavaScript that disables them the moment the box is
+   ticked: the theme's existing conditional-field helper hides rather than
+   disables, and it is not enqueued on this screen. The rendered state is
+   correct and the saver leaves a key it was not sent alone, so the stored price
+   survives either way.
+
+6. **The `included` card and dialog use `?law_reception_include=1`.** §4.2 has
+   the include control on the checkout query var. Its own var is what gives the
+   skeleton dialog the right heading ("Add to my bookings", not "Book your
+   place") and sends the no-JS fallback to the include control rather than to a
+   checkout form the handler would refuse.
+
+7. **The events export gained "Awaiting payment", not the four booking
+   columns.** §8.3 lists `export.php:80` alongside the two booking export
+   builders. That line is the EVENTS export, one row per event: "Discount code"
+   and "Invoice URL" have no meaning on it. It gained the column that does — the
+   count of places held while somebody pays, beside "Bookings", so the two
+   numbers cannot silently disagree. The two BOOKING exports gained all four.
+
+8. **The two unsure Stripe items in §3.1 were not verified with the CLI**, and
+   the code is written so that neither answer matters:
+   - `invoice_creation[invoice_data][rendering_options]` is **not sent**. The
+     invoice renders with the account default, which §3.1 said was acceptable.
+   - `invoice.paid` is not depended on. `law_reception_mark_paid()` reads the
+     `invoice` id off the Checkout session and GETs it, so the confirmation
+     carries the VAT invoice even on an account where that webhook never
+     arrives; the `invoice.paid` branch stays, and is idempotent; and the sweep
+     is the third fallback.
+
+   **Denis should still run `stripe listen` against a real test payment before
+   go-live**, with the replacement list in §3.3, and confirm that one
+   confirmation email arrives with the invoice link in it.
+
+9. **`law_booking_cancel()` gained an `included_revoked` context.** §2.6 said to
+   reuse `event_cancelled` with adapted wording. That context sends
+   `user_booking_event_cancelled`, so the delegate would have had two emails —
+   "the event was cancelled" (untrue) and the revocation notice. The new context
+   logs in its own words and sends nothing, leaving
+   `law_reception_revoke_included()` to send the one email that says why.

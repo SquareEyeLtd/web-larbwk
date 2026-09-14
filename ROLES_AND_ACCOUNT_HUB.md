@@ -461,8 +461,12 @@ users mid-request) and give the reset function a way to clear both (precedent:
      `! law_account_user_has_events()` and stays, dead on this environment but harmless)
   3. `events` "My events", gated on `law_account_user_has_events()`
   4. `submit` "Submit an event", gated on `law_events_user_can_submit()`
-  5. the six committee items in their existing order (`dashboard`, `speakers`, `flagship`,
-     `bookings`, `flagship_bookings`, `discounts`), gated on `law_user_is_committee()`
+  5. the committee items in their existing order (`dashboard`, `speakers`, `flagship`,
+     **`receptions`**, `bookings`, `flagship_bookings`, `discounts`), gated on
+     `law_user_is_committee()`. Six until 14 September 2026; `receptions` was added the same
+     day by RECEPTIONS.md §8.1, and sits after `flagship` because it is a CONFIGURATION screen
+     for an event LAW runs itself rather than one of the two bookings views, which the file's
+     own comment keeps together.
   6. `signout` "Sign out", appended unfiltered as now (:378-383)
 
   Remove the `$host_like` variable. Keep every existing comment that explains an item; update
@@ -479,6 +483,7 @@ users mid-request) and give the reset function a way to clear both (precedent:
   | dashboard | committee | `clipboard` | Review and manage every submitted event |
   | speakers | committee | `microphone` | Speaker records and their appearances |
   | flagship | committee | `flag` | Edit the flagship conference |
+  | receptions | committee | `receptions` | Dates, prices and places for the receptions |
   | bookings | committee | `places` (existing) | Bookings at hosted events |
   | flagship_bookings | committee | `price` (existing) | Applications and payments for the flagship |
   | discounts | committee | `type` (existing) | Prepare and manage discount codes |
@@ -516,6 +521,8 @@ users mid-request) and give the reset function a way to clear both (precedent:
   - `microphone`: `<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>`
   - `flag`: `<path d="M5 21V4"/><path d="M5 4h11l-1.5 3.5L16 11H5"/>`
   - `signout`: `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>`
+  - `receptions` (added 14 September 2026, RECEPTIONS.md §0.4): a raised glass,
+    `<path d="M4 4h16l-8 9-8-9Z"/><path d="M12 13v7"/><path d="M8 21h8"/>`
 - `law_icon( $key, $class = '', $size = 24, $stroke = 1.75 )`: returns the full
   `<svg class="…" width height viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">…</svg>`
   string, or `''` for an unknown key.
@@ -543,7 +550,15 @@ get_template_part( 'parts/layout/hero-title' );   // photo banner like My bookin
 	echo do_shortcode( '[action-message]' );      // /account/?action=registered callout
 	?>
 	<p class="law-account-hub__lead">Signed in as <strong><?php echo esc_html( law_header_nav_display_name() ); ?></strong>.</p>
-	<?php get_template_part( 'parts/layout/account-tiles', null, array( 'items' => law_header_nav()['account']['items'] ) );
+	<?php
+	// Added 14 September 2026 (RECEPTIONS.md §7.3): the receptions a confirmed
+	// flagship place includes and the delegate has not claimed. ABOVE the tiles
+	// and below the "Signed in as" line, because a free place somebody has not
+	// taken is exactly what a landing page should be telling them. The SAME
+	// helper My bookings calls — one function, two surfaces, so the copy can
+	// never differ between them.
+	echo law_reception_banner( get_current_user_id() );
+	get_template_part( 'parts/layout/account-tiles', null, array( 'items' => law_header_nav()['account']['items'] ) );
 endif; ?>
 </div></section>
 <?php get_footer();
@@ -751,7 +766,18 @@ Update in the same piece of work:
 - `auth.php` (:3064-3079): default `/account/` via `law_auth_default_redirect()`; committee still
   to the dashboard; "Sign out".
 - `header-nav.php` (:3080-3094): the new order, the ownership gate, the three hub keys, "the hub
-  is built from this function's items, never a second list".
+  is built from this function's items, never a second list". **Since 14 September 2026 the
+  committee list is seven**, not six: `receptions` ("Manage receptions", glyph `receptions`,
+  "Dates, prices and places for the receptions") sits after `flagship`, because it is a
+  configuration screen for an event LAW runs itself rather than one of the two bookings views
+  (RECEPTIONS.md §8.1). `HeaderNavTest::nav_expectations()` and `AccountHubTest`'s committee
+  hrefs assert the set exactly, so both moved with it.
+- The hub itself renders one thing the tiles do not: **`law_reception_banner()`**, above the
+  tiles and below the "Signed in as" line, offering the receptions a confirmed flagship place
+  includes. My bookings renders the same helper above its cards. One function, two surfaces
+  (RECEPTIONS.md §7.3), and the filled navy panel it uses is `.law-strip` — the generalisation
+  of `.law-flagship-strip`, which the My events empty state folded into at the same time rather
+  than staying a third near-copy of the same navy.
 - §4 templates: `templates/account-hub.php`, `parts/layout/account-tiles.php`,
   `assets/css/account-hub.css`, `law_icon()` / `law_icon_paths()` in helpers.php;
   `templates/account.php` now serves the confirmation page only.
