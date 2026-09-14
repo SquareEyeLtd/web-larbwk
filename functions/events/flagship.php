@@ -313,17 +313,20 @@ function law_flagship_public_url( $event_id = 0 ) {
 	if ( ! $post ) {
 		return '';
 	}
-	if ( 'publish' === $post->post_status ) {
-		return (string) get_permalink( $post );
+	// The shared reader (law_events_public_url(), source.php), which builds the
+	// address from the CPT's rewrite base rather than asking get_permalink()
+	// for a draft's — that hands back ?post_type=law_event&p=995. The one thing
+	// this adds is the flagship's own slug as a fallback, for a record saved
+	// before it had one.
+	if ( '' === (string) $post->post_name ) {
+		$object = get_post_type_object( LAW_EVENT_CPT );
+		$base   = is_object( $object ) && is_array( $object->rewrite ?? null ) ? (string) ( $object->rewrite['slug'] ?? '' ) : '';
+		if ( '' !== $base ) {
+			return home_url( '/' . trim( $base, '/' ) . '/' . LAW_FLAGSHIP_SLUG . '/' );
+		}
 	}
 
-	$object = get_post_type_object( LAW_EVENT_CPT );
-	$base   = is_object( $object ) && is_array( $object->rewrite ?? null ) ? (string) ( $object->rewrite['slug'] ?? '' ) : '';
-	$slug   = $post->post_name ? $post->post_name : LAW_FLAGSHIP_SLUG;
-	if ( '' === $base ) {
-		return (string) get_permalink( $post );
-	}
-	return home_url( '/' . trim( $base, '/' ) . '/' . $slug . '/' );
+	return law_events_public_url( $post );
 }
 
 /**

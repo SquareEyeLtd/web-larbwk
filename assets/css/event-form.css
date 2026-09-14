@@ -268,6 +268,33 @@ p.law-pass-strength.is-bad { background: #facfd2; border-color: #e65054; }
 p.law-pass-strength.is-good { background: #f5e6ab; border-color: #f0c33c; }
 p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-form-notice { background: rgba(255, 255, 255, .12); border-left: 4px solid #ffcc02; color: #fff; padding: .8rem 1rem; margin-bottom: 1.2rem; }
+/* A notice that is more than one sentence (the receptions editor's "publish it
+   at <url>") carries paragraphs; they take the notice's own rhythm rather than
+   the page's, and the last one loses its trailing gap. */
+.law-form-notice p { margin: 0 0 .4rem; line-height: 1.45; }
+.law-form-notice p:last-child { margin-bottom: 0; }
+/* An address inside one. `code` has no theme style, so it fell back to the
+   browser's light grey block -- unreadable on the navy hero and a hard edge
+   mid-sentence. It reads as an address here: monospace, a hairline of the
+   surrounding text, and allowed to break rather than forcing the notice wide. */
+.law-form-notice code {
+	display: inline-block;
+	max-width: 100%;
+	padding: .15rem .4rem;
+	background: rgba(255, 255, 255, .1);
+	border: 1px solid rgba(255, 255, 255, .25);
+	border-radius: 2px;
+	color: inherit;
+	font-size: .85rem;
+	word-break: break-all;
+}
+/* On the light surfaces the same notice is dark-on-pale, so the address needs
+   the inverse treatment. */
+.law-dashboard .law-form-notice code, .law-thread-view .law-form-notice code,
+.law-cal .law-form-notice code, .law-modal .law-form-notice code {
+	background: rgba(26, 26, 61, .06);
+	border-color: rgba(26, 26, 61, .18);
+}
 .law-form-notice.is-error { border-left-color: #ff5c4d; }
 .law-form-status { color: var(--law-form-status-colour); }
 .law-form-status strong { color: var(--law-form-status-strong); }
@@ -747,12 +774,32 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    what the button would have inherited had it never been hidden. */
 .law-booking-register__opener { display: inline-block; width: auto; margin: 0; }
 /* Country + requirements, shared by the two register-an-attendee dialogs
-   (parts/events/attendee-profile-fields.php). Inside a dialog the form's
-   1.4rem uppercase legend shouts over the 1.5rem title, so it reads as a
-   section label instead, and the fieldset gives back the 2.5rem it normally
-   puts under itself. */
-.law-modal .law-attendee-profile { margin-bottom: 1rem; }
-.law-modal .law-attendee-profile legend { font-size: 1rem; text-transform: none; margin-bottom: .5rem; }
+   (parts/events/attendee-profile-fields.php), and the included-receptions tick
+   on the flagship application and comp dialogs
+   (parts/events/flagship-apply-modal.php, flagship-add-attendee.php). Inside a
+   dialog the form's 1.4rem uppercase legend shouts over the 1.5rem title, so it
+   reads as a section label instead, and the fieldset gives back the 2.5rem it
+   normally puts under itself. */
+.law-modal .law-attendee-profile,
+.law-modal .law-flagship-receptions { margin-bottom: 1rem; }
+/* The included receptions sit in a plain bordered box (Denis, 14 September
+   2026): a hairline and no fill, so the group reads as one choice without
+   competing with the summary block above it, which is the only filled panel in
+   the dialog. */
+.law-modal .law-flagship-receptions {
+	background: none;
+	border: 1px solid #d5d2de;
+	padding: .9rem 1rem 1rem;
+}
+.law-modal .law-flagship-receptions legend { padding: 0 .4rem; margin-left: -.4rem; }
+.law-modal .law-flagship-receptions .law-form-hint { margin-bottom: .75rem; }
+.law-modal .law-flagship-receptions .law-form-field:last-child { margin-bottom: 0; }
+/* The "you already have a place" tag is an aside beside the reception's name,
+   not a badge: .law-cal-card__badge is position:absolute for a card's corner
+   and pinned itself to the DIALOG's instead. */
+.law-modal .law-flagship-receptions .law-modal__tag { margin-left: .4rem; }
+.law-modal .law-attendee-profile legend,
+.law-modal .law-flagship-receptions legend { font-size: 1rem; text-transform: none; margin-bottom: .5rem; }
 .law-attendee-profile .law-form-hint { margin-bottom: .75rem; }
 /* The two requirement lists sit side by side, each with its own "Other" box
    under it, so the dialog does not run to two screens. .law-row-grid collapses

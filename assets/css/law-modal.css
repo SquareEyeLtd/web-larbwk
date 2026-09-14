@@ -244,7 +244,8 @@ body.law-modal-open { overflow: hidden; }
 	cursor: default;
 }
 
-.law-reception-include__text .law-cal-card__badge {
+.law-reception-include__text .law-modal__tag {
 	align-self: flex-start;
 	margin-top: .15rem;
+	white-space: normal;
 }

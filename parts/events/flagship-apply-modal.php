@@ -147,19 +147,6 @@ else :
 		<?php endif; ?>
 
 		<?php
-		// No "Payment" heading: the dialog is one step and one subject, so a
-		// section title would be labelling the whole of itself.
-		?>
-		<?php
-		// The amount is stated in the summary above and again on the consent
-		// below, which is where it legally matters. Repeating it a third time
-		// here made the paragraph harder to read, not clearer.
-		?>
-		<p class="law-booking-note">
-			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your application we take the payment and confirm your place; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
-		</p>
-
-		<?php
 		// The receptions a confirmed place includes (RECEPTIONS.md §7.1). Asked
 		// HERE rather than later because it is one tick at the moment somebody
 		// is already deciding to come, and because the answer has somewhere to
@@ -173,22 +160,56 @@ else :
 		<?php if ( $law_fa_receptions ) : ?>
 			<fieldset class="law-flagship-receptions">
 				<legend><?php esc_html_e( 'Included receptions', 'law' ); ?></legend>
-				<p class="law-form-hint"><?php esc_html_e( 'Tick the receptions you would like to attend. You can add them later from My bookings.', 'law' ); ?></p>
+				<p class="law-form-hint"><?php esc_html_e( 'Included at no cost with your place. Tick the ones you would like to attend; you can add them later from My bookings.', 'law' ); ?></p>
 				<?php foreach ( $law_fa_receptions as $law_fa_reception ) : ?>
+					<?php
+					// A reception this applicant ALREADY holds a place at is ticked and
+					// DISABLED with a tag saying why, never hidden and never offered
+					// again: they may well have bought Monday before deciding to apply,
+					// and the engine skips a place somebody already has rather than
+					// granting a second (Denis, 14 September 2026).
+					$law_fa_held = law_booking_user_booking_for_event( get_current_user_id(), $law_fa_reception, law_booking_holding_statuses() );
+					$law_fa_tag  = '';
+					if ( $law_fa_held instanceof WP_Post ) {
+						// "You already have a place", not "Already booked": the
+						// shorter form read as a status for the whole dialog on a
+						// conference that was itself full (Denis, 14 September 2026).
+						$law_fa_tag = 'law-pending-payment' === $law_fa_held->post_status
+							? __( 'You are paying for this one', 'law' )
+							: __( 'You already have a place', 'law' );
+					}
+					$law_fa_when = law_reception_when_label( $law_fa_reception );
+					?>
 					<p class="law-form-field">
 						<label>
-							<input type="checkbox" name="law_flagship_apply[receptions][]" value="<?php echo esc_attr( (string) $law_fa_reception ); ?>">
+							<input type="checkbox" name="law_flagship_apply[receptions][]" value="<?php echo esc_attr( (string) $law_fa_reception ); ?>"
+								<?php checked( $law_fa_held instanceof WP_Post ); ?>
+								<?php disabled( $law_fa_held instanceof WP_Post ); ?>>
 							<strong><?php echo esc_html( get_the_title( $law_fa_reception ) ); ?></strong>
-							<?php $law_fa_when = law_reception_when_label( $law_fa_reception ); ?>
 							<?php if ( '' !== $law_fa_when ) : ?>
 								<span class="law-form-hint"><?php echo esc_html( $law_fa_when ); ?></span>
 							<?php endif; ?>
-							<span class="law-form-hint"><?php esc_html_e( 'Included at no cost', 'law' ); ?></span>
+							<?php if ( '' !== $law_fa_tag ) : ?>
+								<span class="law-modal__tag"><?php echo esc_html( $law_fa_tag ); ?></span>
+							<?php endif; ?>
 						</label>
 					</p>
 				<?php endforeach; ?>
 			</fieldset>
 		<?php endif; ?>
+
+		<?php
+		// No "Payment" heading: the dialog is one step and one subject, so a
+		// section title would be labelling the whole of itself.
+		?>
+		<?php
+		// The amount is stated in the summary above and again on the consent
+		// below, which is where it legally matters. Repeating it a third time
+		// here made the paragraph harder to read, not clearer.
+		?>
+		<p class="law-booking-note">
+			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your application we take the payment and confirm your place; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
+		</p>
 
 		<p class="law-form-field">
 			<label>

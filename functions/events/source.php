@@ -148,6 +148,39 @@ function law_events_map_post( $post, $allowed = null ) {
 }
 
 /** The public URL for an event: real permalink when Confirmed, else the committee ?event= view. */
+/**
+ * The address an event WILL have on the public site, whether or not it is
+ * published yet.
+ *
+ * NOT law_events_event_url(), which answers "where do I link this event
+ * today" and sends a draft to the committee's preview. This answers "what will
+ * its address be", which is what a committee screen needs when it says
+ * "tick the box and save to publish it at …". get_permalink() cannot: on a
+ * draft WordPress hands back the ugly ?post_type=law_event&p=995 form, which
+ * is neither the address it will get nor something anybody wants to read.
+ *
+ * Built from the CPT's own rewrite base plus the post slug, so it follows a
+ * permalink change without anything here knowing about it. Falls back to
+ * get_permalink() if the post type has no rewrite base to build from.
+ */
+function law_events_public_url( $post ) {
+	$post = get_post( $post );
+	if ( ! $post || LAW_EVENT_CPT !== $post->post_type ) {
+		return '';
+	}
+	if ( 'publish' === $post->post_status ) {
+		return (string) get_permalink( $post );
+	}
+
+	$object = get_post_type_object( LAW_EVENT_CPT );
+	$base   = is_object( $object ) && is_array( $object->rewrite ?? null ) ? (string) ( $object->rewrite['slug'] ?? '' ) : '';
+	if ( '' === $base || '' === (string) $post->post_name ) {
+		return (string) get_permalink( $post );
+	}
+
+	return home_url( '/' . trim( $base, '/' ) . '/' . $post->post_name . '/' );
+}
+
 function law_events_event_url( $post ) {
 	$post = get_post( $post );
 	if ( ! $post ) {
