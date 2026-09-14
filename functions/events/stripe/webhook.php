@@ -65,6 +65,12 @@ function law_stripe_webhook_handler( WP_REST_Request $request ) {
 
 	$handled = law_stripe_webhook_dispatch( $event );
 
+	// A cheap, bounded finishing pass for anything the webhooks and the
+	// browser could not settle (RECEPTIONS.md §9). Here as well as on cron,
+	// because the site runs on pseudo-cron and a money path must not wait for
+	// somebody to load a page.
+	do_action( 'law_stripe_webhook_dispatched', $event, $handled );
+
 	$processed[] = (string) $event['id'];
 	update_option( 'law_stripe_processed_events', array_slice( $processed, -500 ), false );
 	delete_option( $lock_key );
@@ -78,6 +84,7 @@ function law_stripe_webhook_handler( WP_REST_Request $request ) {
  */
 function law_stripe_webhook_dispatch( array $event ) {
 	$object = (array) ( $event['data']['object'] ?? array() );
+	$type   = (string) $event['type'];
 
 	// Every invoice-shaped event now has two possible subjects: a HOST fee
 	// raised against an event (4.1) and an ATTENDEE place raised against a
@@ -86,120 +93,40 @@ function law_stripe_webhook_dispatch( array $event ) {
 	// keeps serving both.
 	$booking_id = law_stripe_resolve_booking_id( $object );
 
-	switch ( (string) $event['type'] ) {
-		case 'checkout.session.completed':
-			// Setup mode only: this is a card being saved, not a payment.
-			if ( 'setup' !== (string) ( $object['mode'] ?? '' ) || ! $booking_id ) {
-				return false;
-			}
-			$attached = law_stripe_attach_setup_result( $booking_id, (string) ( $object['id'] ?? '' ) );
-			if ( ! is_wp_error( $attached ) ) {
-				law_flagship_on_card_saved( $booking_id );
-			}
-			return true;
+	// And an attendee booking has three KINDS — a flagship application, a
+	// reception place, a hosted booking that never reaches Stripe at all — each
+	// meaning something different by "paid" and "failed". This file resolves
+	// which outcome an event is and hands it to law_booking_dispatch_payment(),
+	// which looks the kind up in the handler table (RECEPTIONS.md §3.2). The
+	// webhook therefore names no flow, and adding a fourth one needs no change
+	// here.
+	$handled = law_stripe_webhook_booking_outcome( $type, $object, $booking_id, (string) $event['id'] );
+	if ( null !== $handled ) {
+		return $handled;
+	}
 
-		case 'setup_intent.succeeded':
-			// The belt to checkout.session.completed's braces: either may
-			// arrive first, and law_stripe_store_payment_method() is
-			// idempotent, so whichever loses the race changes nothing.
-			if ( ! $booking_id ) {
-				return false;
-			}
-			$stored = law_stripe_store_payment_method(
-				$booking_id,
-				(string) ( $object['payment_method'] ?? '' ),
-				(string) ( $object['id'] ?? '' )
-			);
-			if ( ! is_wp_error( $stored ) ) {
-				law_flagship_on_card_saved( $booking_id );
-			}
-			return true;
-
-		case 'setup_intent.setup_failed':
-			// Without this the application sits in pending_setup, invisible to
-			// the committee, until the 48-hour sweep closes it.
-			if ( ! $booking_id ) {
-				return false;
-			}
-			law_flagship_on_card_setup_failed(
-				$booking_id,
-				(string) ( $object['last_setup_error']['message'] ?? 'The card could not be saved.' )
-			);
-			return true;
-
+	switch ( $type ) {
 		case 'invoice.paid':
-			if ( $booking_id ) {
-				return law_flagship_mark_paid( $booking_id, $object, (string) $event['id'] );
-			}
 			return law_stripe_handle_invoice_paid( $object, (string) $event['id'] );
-
-		case 'invoice.payment_action_required':
-			// The card is fine; the bank wants the delegate present. A
-			// different state from a decline, and a different message.
-			if ( ! $booking_id ) {
-				return false;
-			}
-			law_flagship_mark_payment_failed(
-				$booking_id,
-				'Your bank needs you to confirm this payment.',
-				'action_required',
-				(string) ( $object['hosted_invoice_url'] ?? '' )
-			);
-			return true;
-
-		case 'payment_intent.payment_failed':
-			if ( ! $booking_id ) {
-				return false;
-			}
-			law_flagship_mark_payment_failed(
-				$booking_id,
-				(string) ( $object['last_payment_error']['message'] ?? 'The payment was declined.' )
-			);
-			return true;
 
 		case 'invoice.payment_failed':
 		case 'invoice.voided':
 		case 'invoice.marked_uncollectible':
-			if ( $booking_id ) {
-				if ( 'invoice.payment_failed' === (string) $event['type'] ) {
-					law_flagship_mark_payment_failed(
-						$booking_id,
-						(string) ( $object['last_finalization_error']['message'] ?? 'The card was declined.' )
-					);
-					return true;
-				}
-				law_event_log(
-					(int) get_post_field( 'post_parent', $booking_id ),
-					sprintf( 'Stripe: %s for invoice %s on booking #%d.', $event['type'], $object['id'] ?? '?', law_event_meta( $booking_id, '_law_booking_number' ) ),
-					array( 'action' => 'stripe_event', 'type' => $event['type'], 'stripe_event' => $event['id'], 'booking' => $booking_id, 'source' => 'stripe_webhook' ),
-					array( 'user_id' => 0 )
-				);
-				return true;
-			}
 			$event_id = law_stripe_resolve_event_id( $object );
 			if ( $event_id ) {
 				law_event_log(
 					$event_id,
-					sprintf( 'Stripe: %s for invoice %s.', $event['type'], $object['id'] ?? '?' ),
-					array( 'action' => 'stripe_event', 'type' => $event['type'], 'stripe_event' => $event['id'], 'source' => 'stripe_webhook' ),
+					sprintf( 'Stripe: %s for invoice %s.', $type, $object['id'] ?? '?' ),
+					array( 'action' => 'stripe_event', 'type' => $type, 'stripe_event' => $event['id'], 'source' => 'stripe_webhook' ),
 					array( 'user_id' => 0 )
 				);
 			}
 			return true;
 
 		case 'charge.refunded':
-			// A Charge created by an invoice payment carries NO invoice
-			// metadata, so refunds resolve by the charge ID captured at
-			// invoice.paid, with metadata as a best-effort fallback.
 			$refunded = (int) ( $object['amount_refunded'] ?? 0 );
 			$charged  = (int) ( $object['amount'] ?? 0 );
 			$partial  = $charged > 0 && $refunded > 0 && $refunded < $charged;
-
-			$booking_id = law_stripe_booking_by_charge_id( (string) ( $object['id'] ?? '' ) ) ?: $booking_id;
-			if ( $booking_id ) {
-				law_flagship_mark_refunded( $booking_id, $refunded, $charged, $partial );
-				return true;
-			}
 
 			$event_id = law_stripe_event_by_charge_id( (string) ( $object['id'] ?? '' ) );
 			if ( ! $event_id ) {
@@ -232,6 +159,112 @@ function law_stripe_webhook_dispatch( array $event ) {
 	}
 
 	return false;
+}
+
+/**
+ * The BOOKING half of the dispatch: which outcome, if any, this event is about
+ * one attendee booking.
+ *
+ * Returns NULL when the event is not a booking's business at all, so the
+ * caller falls through to the host-fee branches; a bool when it was handled
+ * (or deliberately not), so nothing downstream sees it twice.
+ *
+ * @return bool|null
+ */
+function law_stripe_webhook_booking_outcome( $type, array $object, $booking_id, $stripe_event_id ) {
+	$dispatch = function ( $outcome ) use ( $object, $stripe_event_id, &$booking_id ) {
+		return law_booking_dispatch_payment( $booking_id, $outcome, $object, $stripe_event_id );
+	};
+
+	switch ( $type ) {
+		case 'checkout.session.completed':
+			if ( ! $booking_id ) {
+				return false;
+			}
+			// Setup mode is a payment method being SAVED; payment mode is money.
+			if ( 'setup' === (string) ( $object['mode'] ?? '' ) ) {
+				$attached = law_stripe_attach_setup_result( $booking_id, (string) ( $object['id'] ?? '' ) );
+				if ( is_wp_error( $attached ) ) {
+					return true;
+				}
+				return $dispatch( 'card_saved' );
+			}
+			if ( 'payment' !== (string) ( $object['mode'] ?? '' ) ) {
+				return false;
+			}
+			// A card clears inside the session; a bank debit does not, and
+			// Stripe says so here rather than making anyone wait for the async
+			// event that follows.
+			return $dispatch( 'paid' === (string) ( $object['payment_status'] ?? '' ) ? 'paid' : 'processing' );
+
+		case 'checkout.session.async_payment_succeeded':
+			return $booking_id ? $dispatch( 'paid' ) : false;
+
+		case 'checkout.session.async_payment_failed':
+			return $booking_id ? $dispatch( 'payment_failed' ) : false;
+
+		case 'checkout.session.expired':
+			return $booking_id ? $dispatch( 'session_expired' ) : false;
+
+		case 'setup_intent.succeeded':
+			// The belt to checkout.session.completed's braces: either may
+			// arrive first, and law_stripe_store_payment_method() is
+			// idempotent, so whichever loses the race changes nothing.
+			if ( ! $booking_id ) {
+				return false;
+			}
+			$stored = law_stripe_store_payment_method(
+				$booking_id,
+				(string) ( $object['payment_method'] ?? '' ),
+				(string) ( $object['id'] ?? '' )
+			);
+			if ( is_wp_error( $stored ) ) {
+				return true;
+			}
+			return $dispatch( 'card_saved' );
+
+		case 'setup_intent.setup_failed':
+			// Without this the application sits in pending_setup, invisible to
+			// the committee, until the 48-hour sweep closes it.
+			return $booking_id ? $dispatch( 'setup_failed' ) : false;
+
+		case 'invoice.paid':
+			return $booking_id ? $dispatch( 'paid' ) : null;
+
+		case 'invoice.payment_action_required':
+			// The card is fine; the bank wants the delegate present. A
+			// different state from a decline, and a different message.
+			return $booking_id ? $dispatch( 'action_required' ) : false;
+
+		case 'payment_intent.payment_failed':
+			return $booking_id ? $dispatch( 'payment_failed' ) : false;
+
+		case 'invoice.payment_failed':
+			return $booking_id ? $dispatch( 'payment_failed' ) : null;
+
+		case 'invoice.voided':
+		case 'invoice.marked_uncollectible':
+			if ( ! $booking_id ) {
+				return null;
+			}
+			law_event_log(
+				(int) get_post_field( 'post_parent', $booking_id ),
+				sprintf( 'Stripe: %s for invoice %s on booking #%d.', $type, $object['id'] ?? '?', law_event_meta( $booking_id, '_law_booking_number' ) ),
+				array( 'action' => 'stripe_event', 'type' => $type, 'stripe_event' => $stripe_event_id, 'booking' => $booking_id, 'source' => 'stripe_webhook' ),
+				array( 'user_id' => 0 )
+			);
+			return true;
+
+		case 'charge.refunded':
+			// A Charge created by an invoice payment carries NO invoice
+			// metadata, so refunds resolve by the charge ID captured at
+			// invoice.paid, with metadata as a best-effort fallback.
+			$booking_id = law_stripe_booking_by_charge_id( (string) ( $object['id'] ?? '' ) ) ?: $booking_id;
+
+			return $booking_id ? $dispatch( 'refunded' ) : null;
+	}
+
+	return null;
 }
 
 /** invoice.paid: mark paid and confirm/publish the event. */

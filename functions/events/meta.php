@@ -225,6 +225,10 @@ function law_booking_meta_schema() {
 		// event for a superseded session cannot release a live hold.
 		'_law_stripe_checkout_session_id' => 'text',
 		'_law_checkout_expires_at'    => 'datetime',
+		// When the money actually landed. The sweep reads it to decide when a
+		// confirmation has waited long enough for its invoice, and it is the
+		// only honest "paid on" date: post_modified moves for any edit.
+		'_law_paid_at'                => 'datetime',
 		// The charge latch (_law_charge_claim) and the one-shot email latches
 		// are deliberately NOT here: they are claimed with
 		// add_post_meta( …, $unique = true ), which is one INSERT and therefore

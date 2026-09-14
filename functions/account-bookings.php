@@ -223,6 +223,19 @@ function law_booking_notice_text( $key ) {
 		'waitlist-promoted'  => array( 'ok', __( 'The entry has been promoted and the attendee emailed their confirmation.', 'law' ) ),
 		'waitlist-failed'    => array( 'error', __( 'Sorry, that waitlist change could not be made.', 'law' ) ),
 	);
+
+	/**
+	 * Filter the notice map, so a flow with its own outcomes can register them
+	 * here rather than stacking a third _notice_render() on the template.
+	 *
+	 * The receptions use it (functions/events/receptions.php): a paid place,
+	 * an abandoned payment, an expired hold and an included place are all
+	 * things only they can say, and none of them belongs in the list above.
+	 *
+	 * @param array<string,array{0:string,1:string}> $map key => [ ok|error, message ].
+	 */
+	$map = (array) apply_filters( 'law_booking_notice_text', $map );
+
 	return $map[ $key ] ?? null;
 }
 

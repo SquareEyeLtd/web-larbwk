@@ -427,6 +427,73 @@ function law_flagship_person_from_input( $user_id, array $input ) {
 	return law_booking_person_from_profile( $user_id, (array) ( $input['answers'] ?? array() ) );
 }
 
+/* The payment handler row ____________________________________________________ */
+
+/**
+ * How a flagship application answers each payment outcome
+ * (law_booking_payment_handlers(), bookings.php).
+ *
+ * Registered through the filter rather than named in stripe/webhook.php, so
+ * the webhook stays a router and this file stays the only place that knows
+ * what an approval, a decline and a failed charge mean here.
+ */
+add_filter(
+	'law_booking_payment_handlers',
+	function ( array $table ) {
+		$table['flagship'] = array(
+			'card_saved'      => function ( $booking_id ) {
+				return law_flagship_on_card_saved( $booking_id );
+			},
+			'setup_failed'    => function ( $booking_id, array $object ) {
+				return law_flagship_on_card_setup_failed(
+					$booking_id,
+					(string) ( $object['last_setup_error']['message'] ?? 'The card could not be saved.' )
+				);
+			},
+			'paid'            => function ( $booking_id, array $object, $stripe_event_id ) {
+				return law_flagship_mark_paid( $booking_id, $object, $stripe_event_id );
+			},
+			'processing'      => function ( $booking_id, array $object ) {
+				return law_flagship_mark_payment_processing( $booking_id, (string) ( $object['hosted_invoice_url'] ?? '' ) );
+			},
+			'payment_failed'  => function ( $booking_id, array $object ) {
+				return law_flagship_mark_payment_failed(
+					$booking_id,
+					(string) (
+						$object['last_payment_error']['message']
+						?? $object['last_finalization_error']['message']
+						?? 'The payment was declined.'
+					)
+				);
+			},
+			'action_required' => function ( $booking_id, array $object ) {
+				return law_flagship_mark_payment_failed(
+					$booking_id,
+					'Your bank needs you to confirm this payment.',
+					'action_required',
+					(string) ( $object['hosted_invoice_url'] ?? '' )
+				);
+			},
+			'refunded'        => function ( $booking_id, array $object ) {
+				$refunded = (int) ( $object['amount_refunded'] ?? 0 );
+				$charged  = (int) ( $object['amount'] ?? 0 );
+
+				return law_flagship_mark_refunded(
+					$booking_id,
+					$refunded,
+					$charged,
+					$charged > 0 && $refunded > 0 && $refunded < $charged
+				);
+			},
+			// A flagship SETUP session expiring means only that the delegate
+			// did not finish saving a card; the 48-hour sweep closes the
+			// application, and nothing here should pre-empt it.
+		);
+
+		return $table;
+	}
+);
+
 /* Card outcomes (called by the webhook and the return URL) ___________________ */
 
 /**
@@ -857,7 +924,21 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 		array( 'user_id' => (int) $actor_id )
 	);
 
+	// The receptions the delegate ticked when they applied are granted NOW,
+	// because now is when the place they come with is real (RECEPTIONS.md
+	// §7.2). Before the approval email, so it can say what was added.
+	$receptions = array();
+	if ( function_exists( 'law_reception_grant_choices' ) ) {
+		$choices = array_map( 'absint', (array) law_event_meta( $booking_id, '_law_reception_choices' ) );
+		if ( $choices ) {
+			$receptions = law_reception_grant_choices( $booking_id, $choices, (int) $actor_id, 'flagship_confirm' );
+		}
+	}
+
 	$extra = law_flagship_email_extra( $booking_id );
+	if ( $receptions ) {
+		$extra['placeholders']['included_receptions'] = law_reception_choices_note( $receptions );
+	}
 	law_booking_send_with_ics(
 		'complimentary' === $how ? 'user_flagship_complimentary' : 'user_flagship_approved',
 		$event_id,
@@ -1145,6 +1226,14 @@ function law_flagship_mark_refunded( $booking_id, $refunded, $charged, $partial 
 
 	if ( ! $partial ) {
 		law_event_update_meta( (int) $booking->ID, '_law_payment_status', 'refunded' );
+		// The flagship ticket is what made the included receptions free, so a
+		// full refund takes them back with it (RECEPTIONS.md §7.2). Only
+		// reachable through a committee refund, since a paid flagship place
+		// cannot be withdrawn. A PART refund changes nothing: the place is
+		// still confirmed, so the receptions it includes still stand.
+		if ( function_exists( 'law_reception_revoke_included' ) ) {
+			law_reception_revoke_included( (int) $booking->ID, 0 );
+		}
 	}
 
 	law_event_log(
@@ -1209,6 +1298,8 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	}
 
 	$profile = (array) ( $row['profile'] ?? array() );
+	// Captured before $row is rewritten below into the four snapshot fields.
+	$law_fc_row_receptions = (array) ( $row['receptions'] ?? array() );
 	$row     = array(
 		'name'         => sanitize_text_field( (string) ( $row['name'] ?? '' ) ),
 		'email'        => sanitize_email( (string) ( $row['email'] ?? '' ) ),
@@ -1282,7 +1373,12 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	// The receptions the committee ticked on the comp form, granted at once:
 	// the place is already confirmed, so there is nothing left to wait for
 	// (RECEPTIONS.md §7.1).
-	$law_fc_receptions = array_values( array_filter( array_map( 'absint', (array) ( $row['receptions'] ?? array() ) ) ) );
+	// Only receptions that really are included, so a forged checkbox on the
+	// comp form cannot conjure a place at anything else.
+	$law_fc_receptions = array_values( array_filter( array_map( 'absint', (array) ( $law_fc_row_receptions ?? array() ) ) ) );
+	if ( $law_fc_receptions && function_exists( 'law_reception_included_ids' ) ) {
+		$law_fc_receptions = array_values( array_intersect( $law_fc_receptions, law_reception_included_ids() ) );
+	}
 
 	// Country, accessibility and dietary, once the place is actually theirs.
 	law_booking_apply_attendee_profile( $user_id, $profile, ! empty( $resolved['created'] ), $event_id, (int) $actor_id );
@@ -1301,7 +1397,19 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 		array( 'user_id' => (int) $actor_id )
 	);
 
-	law_booking_send_with_ics( 'user_flagship_complimentary', $event_id, law_flagship_email_extra( $booking_id ) );
+	// The receptions the committee ticked, granted at once: this place is
+	// already confirmed, so there is nothing left to wait for
+	// (RECEPTIONS.md §7.1).
+	$law_fc_result = array();
+	if ( $law_fc_receptions && function_exists( 'law_reception_grant_choices' ) ) {
+		$law_fc_result = law_reception_grant_choices( $booking_id, $law_fc_receptions, (int) $actor_id, 'flagship_complimentary' );
+	}
+
+	$law_fc_extra = law_flagship_email_extra( $booking_id );
+	if ( $law_fc_result ) {
+		$law_fc_extra['placeholders']['included_receptions'] = law_reception_choices_note( $law_fc_result );
+	}
+	law_booking_send_with_ics( 'user_flagship_complimentary', $event_id, $law_fc_extra );
 
 	return $booking_id;
 }
@@ -1423,6 +1531,11 @@ function law_flagship_input_from_request() {
 		// The net price the form displayed, so law_flagship_apply() can
 		// refuse rather than reprice under the delegate.
 		'price_shown' => absint( $raw['price_shown'] ?? 0 ),
+		// The included receptions ticked on the consent step. Stored on the
+		// application and granted when the place is confirmed
+		// (RECEPTIONS.md §7.1); law_flagship_apply() checks each one really is
+		// included, so a forged checkbox reaches nothing.
+		'receptions'  => array_values( array_filter( array_map( 'absint', (array) ( $raw['receptions'] ?? array() ) ) ) ),
 	);
 }
 
@@ -1757,6 +1870,10 @@ function law_flagship_add_attendee_handler() {
 			'job_title'    => wp_unslash( (string) ( $_POST['job_title'] ?? '' ) ),
 			'press'        => ! empty( $_POST['law_press'] ),
 			'profile'      => $profile,
+			// The same "Included receptions" fieldset the application form
+			// carries, so a comp place gets the drinks its paid equivalent
+			// would (RECEPTIONS.md §0.3).
+			'receptions'   => array_map( 'absint', (array) ( $_POST['law_receptions'] ?? array() ) ),
 		),
 		get_current_user_id()
 	);
@@ -1796,11 +1913,24 @@ function law_flagship_handle_setup_return() {
 	// Abandoning Stripe's page comes back with ?law_setup=cancelled and no
 	// session. Say so, rather than leaving the delegate on a page that looks
 	// exactly as it did before they left it.
+	//
+	// Both priced flows return here: this handler dispatches on
+	// law_booking_kind(), because a reception waitlist entry saves a payment
+	// method through the same Checkout session in setup mode, and a second
+	// copy of this round trip would be a second place for the notices and the
+	// idempotency to drift (RECEPTIONS.md §6.1).
 	if ( isset( $_GET['law_setup'] ) && 'cancelled' === $_GET['law_setup'] && is_user_logged_in() ) {
 		$cancelled = absint( $_GET['law_booking'] ?? 0 );
-		if ( $cancelled && law_flagship_booking_is( $cancelled )
+		$kind      = $cancelled ? law_booking_kind( $cancelled ) : 'hosted';
+		if ( $cancelled && 'hosted' !== $kind
 			&& (int) get_post_field( 'post_author', $cancelled ) === get_current_user_id() ) {
-			wp_safe_redirect( add_query_arg( 'law_notice', 'flagship-card-cancelled', law_booking_manage_url( $cancelled ) ) );
+			wp_safe_redirect(
+				add_query_arg(
+					'law_notice',
+					'reception' === $kind ? 'reception-card-cancelled' : 'flagship-card-cancelled',
+					law_booking_manage_url( $cancelled )
+				)
+			);
 			exit;
 		}
 	}
@@ -1809,7 +1939,11 @@ function law_flagship_handle_setup_return() {
 	}
 	$booking_id = absint( $_GET['law_booking'] ?? 0 );
 	$booking    = $booking_id ? get_post( $booking_id ) : null;
-	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type ) {
+		return;
+	}
+	$kind = law_booking_kind( $booking );
+	if ( 'hosted' === $kind ) {
 		return;
 	}
 	if ( (int) $booking->post_author !== get_current_user_id() ) {
@@ -1819,26 +1953,33 @@ function law_flagship_handle_setup_return() {
 	$session = sanitize_text_field( wp_unslash( (string) $_GET['law_setup_session'] ) );
 	$stored  = law_stripe_attach_setup_result( $booking_id, $session );
 
-	$notice = 'flagship-card';
+	$notice = 'reception' === $kind ? 'reception-card' : 'flagship-card';
 	if ( is_wp_error( $stored ) ) {
-		$notice = 'flagship-card-failed';
+		$notice = 'reception' === $kind ? 'reception-card-cancelled' : 'flagship-card-failed';
 	} else {
-		law_flagship_on_card_saved( $booking_id );
+		law_booking_dispatch_payment( $booking_id, 'card_saved' );
 		// A payment method added after a decline retries the charge at once,
 		// so one round trip fixes it rather than waiting on the committee
 		// again.
 		if ( 'law-payment-failed' === $booking->post_status ) {
-			$retried = law_flagship_retry_charge( $booking_id, 0 );
+			if ( 'reception' === $kind ) {
+				// The reception's retry can only take the place if one is
+				// free; otherwise the entry goes to the front of the queue and
+				// says so. Either way the notice IS the outcome.
+				$notice = law_reception_retry_charge( $booking_id, get_current_user_id() ) ?: '';
+			} else {
+				$retried = law_flagship_retry_charge( $booking_id, 0 );
 
-			// Report the OUTCOME, not the attempt. "We have tried the payment
-			// again" sat above the red "We could not take your payment" panel
-			// and read as two contradictory answers to the same question
-			// (Denis, 10 September 2026). A success gets its own notice; any
-			// other result gets none, because the panel below already says
-			// what happened, in more detail, and says it once.
-			$notice = ( ! is_wp_error( $retried ) && 'confirmed' === ( $retried['status'] ?? '' ) )
-				? 'flagship-paid'
-				: '';
+				// Report the OUTCOME, not the attempt. "We have tried the payment
+				// again" sat above the red "We could not take your payment" panel
+				// and read as two contradictory answers to the same question
+				// (Denis, 10 September 2026). A success gets its own notice; any
+				// other result gets none, because the panel below already says
+				// what happened, in more detail, and says it once.
+				$notice = ( ! is_wp_error( $retried ) && 'confirmed' === ( $retried['status'] ?? '' ) )
+					? 'flagship-paid'
+					: '';
+			}
 		}
 	}
 

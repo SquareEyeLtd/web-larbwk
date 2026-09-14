@@ -210,6 +210,207 @@ function law_stripe_setup_return_url( $booking_id ) {
 	return home_url( '/account/bookings/' );
 }
 
+/* Taking the money now: Checkout in payment mode _____________________________ */
+
+/**
+ * A Stripe Checkout session in PAYMENT mode: the hosted page where a delegate
+ * pays for a reception place there and then (RECEPTIONS.md §3.1).
+ *
+ * The other half of law_stripe_create_setup_session() above, and a different
+ * shape for a different promise. The flagship saves a method and charges it
+ * later, because a place there is a committee decision; a reception place is
+ * bought, so the delegate sees "Pay £54.00" on Stripe's page and comes back
+ * with a confirmed place.
+ *
+ * invoice_creation is on, so they still get a VAT invoice and a PDF: an
+ * invoice is what a firm reclaims VAT against, and a card receipt is not.
+ * customer_update lets the address Stripe collects reach the Customer, which
+ * is what that invoice is addressed to — without it Stripe refuses to update a
+ * customer it did not create in this session.
+ *
+ * `payment_method_types` is deliberately NOT set, exactly as above: whatever
+ * the Dashboard has enabled is the supported set. Unlike setup mode, nothing
+ * here has to be re-chargeable off-session, so this is the wider list.
+ *
+ * @param int $booking_id law_booking post ID, already inserted as a hold.
+ * @return string|WP_Error The URL to send the delegate to.
+ */
+function law_stripe_create_checkout_session( $booking_id ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type ) {
+		return new WP_Error( 'law_booking_missing', 'That booking could not be found.' );
+	}
+	$booking_id = (int) $booking->ID;
+	$event_id   = (int) $booking->post_parent;
+	$price      = law_booking_price( $booking_id );
+
+	if ( $price['free'] ) {
+		return new WP_Error( 'law_booking_free', 'There is nothing to charge for this booking.' );
+	}
+
+	// The same loud configuration guard the charge path uses: a VAT-liable
+	// payment with no tax rate configured must fail rather than quietly bill
+	// the net amount and leave LAW owing the VAT.
+	$tax_rate = (string) law_events_setting( 'tax_rate_id', '' );
+	if ( $price['vatable'] && '' === $tax_rate ) {
+		return new WP_Error(
+			'law_no_tax_rate',
+			'VAT applies to this booking but no Stripe tax rate ID is configured in LAW → Events settings. Nothing has been charged.'
+		);
+	}
+
+	$customer_id = law_stripe_user_customer_id( (int) $booking->post_author );
+	if ( is_wp_error( $customer_id ) ) {
+		return $customer_id;
+	}
+	law_event_update_meta( $booking_id, '_law_stripe_customer_id', $customer_id );
+
+	$metadata = law_stripe_booking_metadata( $booking_id );
+	$return   = law_booking_manage_url( $booking_id );
+
+	$line = array(
+		'quantity'   => 1,
+		'price_data' => array(
+			'currency'     => 'gbp',
+			// The NET amount. Stripe adds the tax rate below, so sending the
+			// gross here would charge VAT on VAT.
+			'unit_amount'  => $price['net'],
+			'product_data' => array( 'name' => law_stripe_booking_line_description( $booking_id, $price ) ),
+		),
+	);
+	if ( $price['vatable'] ) {
+		$line['tax_rates'] = array( $tax_rate );
+	}
+
+	// 1800 seconds is Stripe's minimum, and exactly 1800 is refused when our
+	// clock runs a second behind theirs, so the minute of slack is not
+	// decoration. law_reception_release_hold() adds ten more minutes on top
+	// before it will release a hold, so the webhook normally wins the race.
+	$expires_at = time() + 1800 + 60;
+
+	$body = array(
+		'mode'                       => 'payment',
+		'customer'                   => $customer_id,
+		// So the address collected at Checkout reaches the Customer, and from
+		// there the generated VAT invoice.
+		'customer_update'            => array( 'address' => 'auto', 'name' => 'auto' ),
+		'billing_address_collection' => 'required',
+		'line_items'                 => array( $line ),
+		'invoice_creation'           => array(
+			'enabled'      => 'true',
+			'invoice_data' => array( 'metadata' => $metadata ),
+		),
+		// Repeated onto the PaymentIntent, which a Charge inherits, so a later
+		// charge.refunded resolves back to this booking through the webhook's
+		// metadata path as well as through the stored charge id.
+		'payment_intent_data'        => array( 'metadata' => $metadata ),
+		'metadata'                   => $metadata,
+		'expires_at'                 => $expires_at,
+		'success_url'                => add_query_arg( 'law_checkout_session', '{CHECKOUT_SESSION_ID}', $return ),
+		'cancel_url'                 => add_query_arg(
+			array( 'law_checkout' => 'cancelled', 'law_checkout_session' => '{CHECKOUT_SESSION_ID}' ),
+			$return
+		),
+	);
+
+	// A fresh attempt number per session, so opening a second one after the
+	// first expired is a new idempotency key rather than a replay Stripe would
+	// answer with the original (now dead) session.
+	$attempt = (int) get_post_meta( $booking_id, '_law_stripe_attempt', true ) + 1;
+	update_post_meta( $booking_id, '_law_stripe_attempt', $attempt );
+
+	$session = law_stripe_request(
+		'POST',
+		'/v1/checkout/sessions',
+		$body,
+		sprintf( 'law-co-%d-a%d', $booking_id, $attempt )
+	);
+	if ( is_wp_error( $session ) ) {
+		law_event_log(
+			$event_id,
+			sprintf(
+				'Could not open a payment page for booking #%d: %s',
+				law_event_meta( $booking_id, '_law_booking_number' ),
+				$session->get_error_message()
+			),
+			array( 'source' => 'stripe', 'action' => 'checkout_session_failed', 'booking' => $booking_id )
+		);
+		return $session;
+	}
+
+	$url = (string) ( $session['url'] ?? '' );
+	if ( '' === $url ) {
+		return new WP_Error( 'law_stripe_no_session', 'Stripe did not return a payment page.' );
+	}
+
+	law_event_update_meta( $booking_id, '_law_stripe_checkout_session_id', (string) ( $session['id'] ?? '' ) );
+	law_event_update_meta(
+		$booking_id,
+		'_law_checkout_expires_at',
+		gmdate( 'Y-m-d H:i', (int) ( $session['expires_at'] ?? $expires_at ) )
+	);
+
+	law_event_log(
+		$event_id,
+		sprintf(
+			'Payment page opened for booking #%d (%s).',
+			law_event_meta( $booking_id, '_law_booking_number' ),
+			law_events_format_pence( $price['gross'] )
+		),
+		array(
+			'source'  => 'stripe',
+			'action'  => 'checkout_session_opened',
+			'booking' => $booking_id,
+			'amount'  => $price['gross'],
+			'session' => (string) ( $session['id'] ?? '' ),
+		)
+	);
+
+	return $url;
+}
+
+/**
+ * Ask Stripe to expire a Checkout session now.
+ *
+ * Used when a hold is being released, so the delegate cannot come back to a
+ * page that is still payable for a place they no longer have. A session Stripe
+ * reports as already `complete` is returned to the caller, which is how
+ * law_reception_release_hold() detects a payment that landed in the race and
+ * confirms instead of cancelling.
+ *
+ * @return array|WP_Error The session as Stripe last reported it.
+ */
+function law_stripe_expire_checkout_session( $session_id ) {
+	$session_id = trim( (string) $session_id );
+	if ( '' === $session_id ) {
+		return new WP_Error( 'law_stripe_no_session', 'There is no payment page to close.' );
+	}
+
+	$expired = law_stripe_request( 'POST', '/v1/checkout/sessions/' . rawurlencode( $session_id ) . '/expire', array() );
+	if ( ! is_wp_error( $expired ) ) {
+		return $expired;
+	}
+
+	// Stripe refuses to expire a session that is already complete, which is
+	// exactly the case that must NOT be read as "nothing to see here": the
+	// money has arrived. Fetch it and hand the caller the truth.
+	return law_stripe_request( 'GET', '/v1/checkout/sessions/' . rawurlencode( $session_id ), array( 'expand' => array( 'payment_intent' ) ) );
+}
+
+/** One Checkout session, with its PaymentIntent expanded. */
+function law_stripe_get_checkout_session( $session_id ) {
+	$session_id = trim( (string) $session_id );
+	if ( '' === $session_id ) {
+		return new WP_Error( 'law_stripe_no_session', 'There is no payment page to read.' );
+	}
+
+	return law_stripe_request(
+		'GET',
+		'/v1/checkout/sessions/' . rawurlencode( $session_id ),
+		array( 'expand' => array( 'payment_intent' ) )
+	);
+}
+
 /**
  * Read a completed Checkout session and store what it produced.
  *

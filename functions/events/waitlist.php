@@ -321,9 +321,19 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 		law_booking_unlock( $event_id );
 	}
 
+	// The priced flows charge here, outside the lock, because a card takes
+	// seconds and the next booker must not queue behind it. They send their own
+	// confirmations, which is why the generic one below skips them: a delegate
+	// whose card has not been charged yet must not be told their place is
+	// confirmed (RECEPTIONS.md §6.2).
+	do_action( 'law_waitlist_seated_after_unlock', $event_id, $promoted, $source );
+
 	// Emails only once the lock is released: a promotion cascade must never
 	// queue the next booker behind a mailbox.
 	foreach ( $promoted as $booking_id ) {
+		if ( law_event_is_priced( $event_id ) ) {
+			continue;
+		}
 		law_waitlist_notify_promoted( $booking_id );
 	}
 	if ( $promoted ) {
@@ -383,7 +393,26 @@ function law_waitlist_check_promotable( $entry, ?array $taken = null ) {
 	}
 	// No name: the refusal is quoted straight into an email addressed TO this
 	// person, and "Jane Smith is already booked on X" reads wrong to Jane.
-	return law_booking_guard_clash( (int) $entry->post_author, $event_id, '' );
+	$clash = law_booking_guard_clash( (int) $entry->post_author, $event_id, '' );
+	if ( is_wp_error( $clash ) ) {
+		return $clash;
+	}
+
+	// A PRICED event's queue promotes by charging a saved payment method, so
+	// an entry without one cannot be offered the place: there would be nothing
+	// to charge and the place would sit confirmed and unpaid. Skipped IN PLACE
+	// through the standing blocked-entry latch, so the person keeps their
+	// position and the queue moves on, and told once
+	// (RECEPTIONS.md §6.2).
+	if ( law_event_is_priced( $event_id )
+		&& 'ready' !== (string) law_event_meta( $entry->ID, '_law_payment_status' ) ) {
+		return new WP_Error(
+			'law_waitlist_no_payment_method',
+			__( 'A place opened up but we could not offer it to you because no payment method is saved. Add one to keep your place in the queue.', 'law' )
+		);
+	}
+
+	return true;
 }
 
 /**
@@ -403,6 +432,17 @@ function law_waitlist_seat( $entry, $actor_id, $mode, $source ) {
 	delete_post_meta( $entry->ID, '_law_waitlist_position' );
 	delete_post_meta( $entry->ID, '_law_waitlist_blocked' );
 	law_event_update_meta( $entry->ID, '_law_waitlist_promoted', current_time( 'mysql' ) );
+
+	// A PRICED place is seated but not yet paid for. The status and the CHARGE
+	// CLAIM are both taken here, under the lock the caller holds, so the place
+	// and the exclusive right to bill it are held together before anything
+	// slow runs; the charge itself happens after the unlock, on the
+	// law_waitlist_seated_after_unlock hook (RECEPTIONS.md §6.2).
+	if ( law_event_is_priced( $event_id ) ) {
+		law_event_update_meta( $entry->ID, '_law_payment_status', 'processing' );
+		law_event_update_meta( $entry->ID, '_law_payment_processing_at', gmdate( 'Y-m-d H:i' ) );
+		law_booking_claim_charge( (int) $entry->ID );
+	}
 
 	$sold      = law_event_recount_attendees( $event_id );
 	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
@@ -500,8 +540,15 @@ function law_waitlist_mark_blocked( $entry, WP_Error $error, $source, $first = n
 	if ( '' === $email ) {
 		return;
 	}
+	// A priced queue has its own wording for the one refusal that is about
+	// money rather than about a clash: "add a payment method to keep your
+	// place", not "you are already booked on something else".
+	$slug = ( 'law_waitlist_no_payment_method' === $code && law_reception_booking_is( $entry ) )
+		? 'user_reception_waitlist_blocked_no_card'
+		: 'user_waitlist_blocked';
+
 	law_events_send(
-		'user_waitlist_blocked',
+		$slug,
 		$event_id,
 		array(
 			'to'           => array( $email ),
@@ -556,7 +603,13 @@ function law_waitlist_promote( $booking_id, $actor_id ) {
 	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
 	law_booking_unlock( $event_id );
 
-	law_waitlist_notify_promoted( (int) $entry->ID );
+	// "Promote now" goes through the same seat path, so a priced entry is
+	// charged and confirmed by the same hook rather than by a second route.
+	do_action( 'law_waitlist_seated_after_unlock', $event_id, array( (int) $entry->ID ), 'manual' );
+
+	if ( ! law_event_is_priced( $event_id ) ) {
+		law_waitlist_notify_promoted( (int) $entry->ID );
+	}
 	law_waitlist_notify_host( $event_id, array( (int) $entry->ID ) );
 
 	$over = $available > 0 ? max( 0, $sold - $available ) : 0;

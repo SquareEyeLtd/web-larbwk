@@ -462,6 +462,88 @@ function law_booking_attendee( $booking ) {
 	);
 }
 
+/* The payment handler table _________________________________________________ */
+
+/**
+ * Which function handles one payment outcome for one KIND of booking.
+ *
+ * The Stripe webhook resolves the kind once and looks the outcome up here, so
+ * stripe/webhook.php never names the flagship or a reception. Each flow
+ * registers its own row through the `law_booking_payment_handlers` filter —
+ * the same pattern flagship-bookings-dashboard.php uses to keep "the flagship
+ * is different" out of bookings-dashboard.php.
+ *
+ * The outcomes, in the vocabulary Stripe's events map onto:
+ *
+ *   card_saved      a payment method was stored (setup mode)
+ *   setup_failed    it could not be stored
+ *   paid            money has arrived and settled
+ *   processing      money is on its way but has not settled
+ *   payment_failed  it was refused
+ *   action_required the bank wants the delegate present
+ *   refunded        money has gone back
+ *   session_expired a Checkout session ran out without being paid
+ *
+ * Every handler takes ( $booking_id, array $object, $stripe_event_id ) —
+ * $object being the Stripe object as delivered — so the dispatcher has one
+ * shape to call and a flow can ignore what it does not need.
+ *
+ * @param string $kind law_booking_kind().
+ * @return array<string,callable>
+ */
+function law_booking_payment_handlers( $kind ) {
+	$table = (array) apply_filters( 'law_booking_payment_handlers', array() );
+	$row   = $table[ (string) $kind ] ?? array();
+
+	return is_array( $row ) ? $row : array();
+}
+
+/**
+ * Run one payment outcome against one booking, whatever kind it is.
+ *
+ * "No handler for this kind" is logged and returns false, which is what the
+ * three verbatim fail-closed blocks inside the flagship functions used to do
+ * by hand: money must never be handled by a flow that means something else by
+ * these statuses.
+ *
+ * @return bool Whether a handler ran and reported a change.
+ */
+function law_booking_dispatch_payment( $booking_id, $outcome, array $object = array(), $stripe_event_id = '' ) {
+	$booking_id = (int) $booking_id;
+	$booking    = $booking_id ? get_post( $booking_id ) : null;
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type ) {
+		return false;
+	}
+
+	$kind     = law_booking_kind( $booking );
+	$handlers = law_booking_payment_handlers( $kind );
+	$handler  = $handlers[ (string) $outcome ] ?? null;
+
+	if ( ! is_callable( $handler ) ) {
+		law_event_log(
+			(int) $booking->post_parent,
+			sprintf(
+				'A payment event (%1$s) arrived for booking #%2$d, which is a %3$s booking with no handler for it. Nothing was changed.',
+				(string) $outcome,
+				(int) law_event_meta( $booking_id, '_law_booking_number' ),
+				$kind
+			),
+			array(
+				'source'       => 'stripe_webhook',
+				'action'       => 'payment_no_handler',
+				'booking'      => $booking_id,
+				'kind'         => $kind,
+				'outcome'      => (string) $outcome,
+				'stripe_event' => (string) $stripe_event_id,
+			),
+			array( 'user_id' => 0 )
+		);
+		return false;
+	}
+
+	return (bool) call_user_func( $handler, $booking_id, $object, (string) $stripe_event_id );
+}
+
 /* The delegate's own payment method _________________________________________ */
 
 add_action( 'admin_post_law_booking_update_card', 'law_booking_update_card_handler' );
@@ -2384,7 +2466,10 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
  *                           'host_reject' (host or committee, with a reason),
  *                           'event_cancelled' (the event-cancel sweep),
  *                           'account_deleted' (their account is gone, so there
- *                           is nobody to email).
+ *                           is nobody to email),
+ *                           'included_revoked' (a free reception place taken
+ *                           back with the flagship ticket that granted it; the
+ *                           caller sends its own email).
  * @param array  $args       Optional: reason (host_reject).
  * @return true|WP_Error
  */
@@ -2474,6 +2559,11 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		'host_reject'     => 'cancelled by the committee',
 		'event_cancelled' => 'cancelled because the event was cancelled',
 		'account_deleted' => 'cancelled because the account was deleted',
+		// A reception place that came free with a flagship ticket, taken back
+		// because that ticket was refunded (RECEPTIONS.md §2.6). It sends no
+		// email from here: law_reception_revoke_included() sends its own, which
+		// says WHY, and the generic "the event was cancelled" would be untrue.
+		'included_revoked' => 'withdrawn: the flagship place it came with is no longer confirmed',
 	);
 	law_event_log(
 		$event_id,
