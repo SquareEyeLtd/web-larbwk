@@ -2136,8 +2136,24 @@ of `stripe/attendees.php`, and the waitlist.
 ### `receptions-dashboard.php`: the committee's Manage receptions screen (14 September 2026)
 
 `/account/dashboard/receptions/`, committee-only, gated in three places. List
-plus edit on the Manage speakers pattern (`?law_reception=<id|new>`), with the
-CSV/Excel/PDF trio.
+plus edit on the Manage speakers pattern (`?law_reception=<id|new>`).
+
+**TWO SHAPES, on purpose** (Denis, 14 September 2026). The LIST is a dashboard
+table like every other committee list: hero title, then a white page section,
+because a table of facts belongs on white. The EDITOR is the SUBMIT-AN-EVENT
+form's shape — the filled navy hero, `.auth-hero`, `.law-event-form`, the same
+markup contract as `templates/account-event-form.php` — because a reception IS
+an event and editing one should look like it. It prints the reception's name
+and no status: the submission form carries one because a host's event moves
+through a queue, and a reception's two statuses mean "on the programme" or "not
+yet", which is the tick box below.
+
+**No export trio, unlike every sibling dashboard** (Denis, 14 September 2026):
+there are three receptions and every figure is on the screen already, so a
+CSV/Excel/PDF row over a three-line table is furniture — and it kept ~3MB of
+pdfmake in the page to produce it. The BOOKINGS at a reception do export, from
+Manage bookings and from the per-event list, which is where somebody wanting a
+spreadsheet of people actually goes.
 
 - It edits the SAME posts through the SAME code as the wp-admin **Reception**
   meta box: `law_reception_input_from_post()`, `_validate()`, `_save()`,
@@ -2157,6 +2173,16 @@ CSV/Excel/PDF trio.
   take a reception off the programme.
 - The places column is three figures, not one — confirmed, awaiting payment,
   left — because on a priced event a hold counts towards the total sold.
+- Its stylesheets are the ones every account screen needs, and the page has to
+  be named in THREE separate gates to get them: `calendar.css`
+  (`functions/enqueue.php`, which supplies `.law-dashboard`'s text colour and
+  the tables), `event-form.css` (`submission-form.php`, the form vocabulary —
+  `.law-row-grid`, `.law-form-field`, `.law-form-hint`, `.law-form-buttons`)
+  and `auth.css` (`enqueue.php` again, the navy hero the editor renders in).
+  Missing from any of them the screen renders white on white, which is exactly
+  what happened on 14 September 2026 until Denis saw it. The same trap caught
+  the account hub, which renders the receptions banner and was not on the
+  calendar list either.
 - `law_flagship_saving` generalised to **`law_event_managed_saving`**, honoured
   for any event LAW runs itself (`law_event_is_managed_by_law()`, in
   `workflow.php`) and still only for `publish` and `law-draft`. The old flag
