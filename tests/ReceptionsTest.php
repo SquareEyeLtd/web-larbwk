@@ -415,6 +415,38 @@ class ReceptionsTest extends LAW_Test_Case {
 		$this->assertSame( 'failed', (string) law_event_meta( $booking_id, '_law_payment_status' ) );
 	}
 
+	/**
+	 * A place a 100% code made free is marked `paid` and had nothing taken, so
+	 * there is no invoice to wait for and no refund to protect: it confirms by
+	 * email like any other place, and it stays the delegate's to cancel.
+	 */
+	public function test_a_free_place_confirms_by_email_and_stays_cancellable(): void {
+		$event_id = $this->make_reception();
+		$user_id  = $this->make_delegate();
+		$code     = $this->make_code( array( '_law_discount_value' => 100 ) );
+		$GLOBALS['law_test_stripe_queue'] = array();
+
+		$result = law_reception_checkout(
+			$user_id,
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'applied_code' => $code['code'], 'terms' => 1, 'price_shown' => 0, 'ajax' => true )
+		);
+		$booking_id    = (int) $result['booking'];
+		$this->posts[] = $booking_id;
+
+		$this->assertSame( 'publish', get_post_status( $booking_id ) );
+		$this->assertSame(
+			'1',
+			(string) get_post_meta( $booking_id, '_law_confirmation_sent', true ),
+			'Nothing to invoice is nothing to wait for: the confirmation goes at once.'
+		);
+
+		$this->assertTrue(
+			law_booking_cancel( $booking_id, $user_id, 'self' ),
+			'No money changed hands, so there is nothing to stand between them and giving the place back.'
+		);
+		$this->assertSame( 'law-cancelled', get_post_status( $booking_id ) );
+	}
+
 	public function test_a_stale_session_id_is_ignored(): void {
 		$event_id = $this->make_reception();
 		$user_id  = $this->make_delegate();

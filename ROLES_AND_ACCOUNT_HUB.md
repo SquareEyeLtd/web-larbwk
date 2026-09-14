@@ -484,7 +484,7 @@ users mid-request) and give the reset function a way to clear both (precedent:
   | speakers | committee | `microphone` | Speaker records and their appearances |
   | flagship | committee | `flag` | Edit the flagship conference |
   | receptions | committee | `receptions` | Dates, prices and places for the receptions |
-  | bookings | committee | `places` (existing) | Bookings at hosted events |
+  | bookings | committee | `places` (existing) | Bookings at hosted events and receptions |
   | flagship_bookings | committee | `price` (existing) | Applications and payments for the flagship |
   | discounts | committee | `type` (existing) | Prepare and manage discount codes |
   | signout | signout | `signout` | (empty) |

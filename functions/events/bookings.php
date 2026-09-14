@@ -2491,7 +2491,12 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	// rather than only in the UI, because hiding a button is not a control.
 	// The committee still can, through the host_reject context, which alerts
 	// and refunds nothing.
-	if ( 'paid' === $payment && in_array( $context, array( 'self', 'booker' ), true ) ) {
+	// The GROSS, not the status: a place a 100% discount code made free is
+	// marked `paid` and had nothing taken for it, so there is nothing to refund
+	// and no reason to stand between the delegate and giving the place back
+	// (browser pass, 14 September 2026).
+	if ( 'paid' === $payment && law_booking_price( (int) $booking->ID )['gross'] > 0
+		&& in_array( $context, array( 'self', 'booker' ), true ) ) {
 		return new WP_Error(
 			'law_booking_paid_place',
 			__( 'This place has been paid for, so it cannot be cancelled here. Contact us and we will sort it out.', 'law' )

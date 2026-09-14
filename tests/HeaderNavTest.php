@@ -234,7 +234,10 @@ class HeaderNavTest extends LAW_Test_Case {
 		$this->assertSame( 'Manage events', $items['dashboard'] );
 		$this->assertSame( 'Manage speakers', $items['speakers'] );
 		$this->assertSame( 'Manage flagship', $items['flagship'] );
-		$this->assertSame( 'Hosted bookings', $items['bookings'] );
+		// "Hosted bookings" until 14 September 2026, when the receptions' own
+		// bookings landed in this same view (RECEPTIONS.md §8.3) and the label
+		// stopped being true. The description carries which bookings now.
+		$this->assertSame( 'Manage bookings', $items['bookings'] );
 		$this->assertSame( 'Flagship bookings', $items['flagship_bookings'] );
 
 		$keys      = array_keys( $items );

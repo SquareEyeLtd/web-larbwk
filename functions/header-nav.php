@@ -387,18 +387,23 @@ function law_header_nav() {
 		);
 		// The two bookings views sit together, and are named for what they
 		// hold rather than for what you do to them (Denis, 10 September
-		// 2026). "Manage bookings" said nothing about which bookings, and sat
-		// three items away from the other kind.
+		// 2026). That renaming made this one "Hosted bookings", which was true
+		// then and stopped being true on 14 September 2026, when the receptions
+		// landed: this page holds their bookings too, by decision
+		// (RECEPTIONS.md §8.3 — a reception belongs in the hosted list). A
+		// label that names one of the two kinds it holds is worse than the
+		// generic one it replaced, so it goes back to "Manage bookings" and the
+		// DESCRIPTION carries the specificity the renaming was after.
 		//
-		// The cross-event view of bookings at HOSTED events (free, instant,
-		// no review), EVENTS_BOOKINGS.md §7.6: a child page of the events
-		// dashboard with the same Members restriction.
+		// The cross-event view of every booking except the flagship's, whose
+		// applications are a priced request the committee reviews and have
+		// their own page below.
 		$items[] = array(
 			'key'         => 'bookings',
-			'label'       => __( 'Hosted bookings', 'law' ),
+			'label'       => __( 'Manage bookings', 'law' ),
 			'group'       => 'committee',
 			'icon'        => 'places',
-			'description' => __( 'Bookings at hosted events', 'law' ),
+			'description' => __( 'Bookings at hosted events and receptions', 'law' ),
 		);
 		// The flagship's applications and payments, deliberately a separate
 		// page: a hosted booking is free and instant, a flagship application

@@ -286,12 +286,22 @@ class ReceptionWaitlistTest extends LAW_Test_Case {
 		);
 		$this->posts[] = $booking;
 
+		// Asserted on THIS booking's latch, not on the sweep's counter: the
+		// sweep walks every reception on the site, so a counter assertion
+		// passes or fails on whatever else happens to be waiting — which on a
+		// live install is real bookings.
+		//
 		// Fresh: the sweep waits, in case invoice.paid is a second away.
-		$this->assertSame( 0, law_reception_sweep()['confirmed'] );
+		law_reception_sweep();
+		$this->assertSame( '', (string) get_post_meta( $booking, '_law_confirmation_sent', true ) );
 
 		law_event_update_meta( $booking, '_law_paid_at', gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) );
-		$this->assertSame( 1, law_reception_sweep()['confirmed'], 'A confirmation with no receipt link beats no confirmation at all.' );
-		$this->assertSame( '1', (string) get_post_meta( $booking, '_law_confirmation_sent', true ) );
+		law_reception_sweep();
+		$this->assertSame(
+			'1',
+			(string) get_post_meta( $booking, '_law_confirmation_sent', true ),
+			'A confirmation with no receipt link beats no confirmation at all.'
+		);
 	}
 
 	public function test_withdrawing_from_the_queue_releases_the_code(): void {

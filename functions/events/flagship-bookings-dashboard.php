@@ -293,7 +293,8 @@ function law_flagship_redirect_hosted_list() {
 /* Keeping the flagship out of Manage bookings ________________________________ */
 
 /**
- * Manage bookings is the HOSTED-event view; the flagship has its own page.
+ * Manage bookings holds every booking EXCEPT the flagship's; the flagship has
+ * its own page. Hosted events and, since 14 September 2026, the receptions.
  *
  * Filtered rather than edited into bookings-dashboard.php's query, so that
  * file stays about hosted events and this one owns every "the flagship is

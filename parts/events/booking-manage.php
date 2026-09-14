@@ -51,7 +51,10 @@ $law_bm_cancelled = 'law-cancelled' === $law_bm_booking->post_status;
 // apply: one place per checkout, and colleagues buy their own
 // (RECEPTIONS.md §7.5).
 $law_bm_reception = function_exists( 'law_reception_booking_is' ) && law_reception_booking_is( $law_bm_booking );
-$law_bm_paid      = 'paid' === (string) law_event_meta( $law_bm_id, '_law_payment_status' );
+// "Paid" means money actually changed hands: a place a 100% code made free is
+// marked paid and had nothing taken, so it stays cancellable.
+$law_bm_paid      = 'paid' === (string) law_event_meta( $law_bm_id, '_law_payment_status' )
+	&& law_booking_price( $law_bm_id )['gross'] > 0;
 
 // The user's live party on this event. A colleague viewing their own booking
 // is not a booker, so their "party" is just themselves.

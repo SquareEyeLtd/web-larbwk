@@ -137,13 +137,20 @@ else :
 		// about a discount nobody has claimed.
 		?>
 		<div class="law-reception-price">
+			<?php
+			// Price is the LIST price, and the Discount line is what comes off
+			// it: the block reads like a receipt, and price − discount + VAT
+			// equals the total. Showing the DISCOUNTED net here with the
+			// reduction under it made the discount look as though it had been
+			// taken twice (browser pass, 14 September 2026).
+			?>
 			<p class="law-reception-price__row">
 				<span><?php esc_html_e( 'Price', 'law' ); ?></span>
-				<span data-law-price="net"><?php echo esc_html( law_events_format_pence( $law_rc_quote['net'] ) ); ?></span>
+				<span data-law-price="net"><?php echo esc_html( law_events_format_pence( $law_rc_quote['list_net'] ) ); ?></span>
 			</p>
 			<p class="law-reception-price__row law-reception-price__row--discount" data-law-price-discount-row hidden>
 				<span><?php esc_html_e( 'Discount', 'law' ); ?></span>
-				<span data-law-price="discount"><?php echo esc_html( law_events_format_pence( $law_rc_quote['discount'] ) ); ?></span>
+				<span data-law-price="discount">&minus;<?php echo esc_html( law_events_format_pence( $law_rc_quote['discount'] ) ); ?></span>
 			</p>
 			<p class="law-reception-price__row">
 				<span><?php esc_html_e( 'VAT', 'law' ); ?></span>

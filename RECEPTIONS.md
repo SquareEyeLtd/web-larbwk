@@ -1489,3 +1489,41 @@ from the letter of the document, and why.
       washed out to almost nothing.
     - the banner gained a rule under it (`.law-strip-divider`), because on
       both surfaces the next thing is a list it is not part of.
+
+18. **Three bugs the browser pass found, all fixed.** A `test-specialist` run
+    through the whole UX on 14 September 2026 — viewing, managing, paying,
+    and the committee's view of the result — passed all five groups and turned
+    up three real defects, every one of them in a path the unit tests did not
+    reach:
+    - **wp-admin's ordinary Update button un-scheduled a reception.** The event
+      screen writes the slot keys on every save, and
+      `law_event_apply_slot_label()` reads an empty label as "clear the dates",
+      so a reception — which holds no programme slot — lost `_law_start` and
+      `_law_end` on any Update at all, dropped off its calendar day and stopped
+      resolving. The flagship already had the guard, with a comment describing
+      this exact failure; the receptions joined that screen and inherited the
+      hazard without it. The predicate is now
+      `law_event_is_managed_by_law()`, and it is deliberately NOT the same
+      variable as the flagship's session-recompute, which must still run for
+      the flagship alone — running it on a reception would blank the dates from
+      the other end. Pinned by
+      `ReceptionsDashboardTest::test_a_bare_wp_admin_update_keeps_a_receptions_dates()`.
+    - **A rejected discount code refused silently.** The message was rendered,
+      in `.law-form-notice`, which `event-form.css` draws as white text for the
+      purple hero — invisible inside the white checkout dialog. The script now
+      scopes the error to the dialog (`.law-modal__error`, already coloured for
+      a light surface), and `law-modal.css` gained the light-mode override for
+      `.law-form-notice` that its sibling `.law-form-error` has had since the
+      same problem was found there.
+    - **A place a 100% code made free sent no confirmation at all.** The
+      confirmation waits for an invoice URL, and a free place has no invoice
+      and never will, so the delegate got a confirmed place and silence: no
+      calendar invitation, and nobody on the committee told. "Nothing to
+      invoice" now counts as "nothing to wait for". The same booking was also
+      refusing self-cancellation as a "paid place"; the refusal now tests the
+      GROSS rather than the status, because there is no refund to protect.
+
+19. **The price block reads like a receipt.** The Price line showed the
+    DISCOUNTED net with the reduction under it, so the discount appeared to
+    have been taken twice. Price is the list price now, Discount is a signed
+    deduction, and price − discount + VAT equals the total.

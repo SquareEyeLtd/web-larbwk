@@ -1211,7 +1211,13 @@ function law_reception_maybe_send_confirmation( $booking_id, $force = false ) {
 	if ( 'paid' !== (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
 		return false;
 	}
-	if ( ! $force && '' === (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' ) ) {
+	// A place a 100% code made free has no invoice and never will: there was
+	// nothing to bill, so nothing to wait for. Waiting anyway meant a delegate
+	// who used a full-price code got a confirmed place and SILENCE — no
+	// calendar invitation, and nobody on the committee told (found by the
+	// browser pass, 14 September 2026).
+	$price = law_booking_price( $booking_id );
+	if ( ! $force && ! $price['free'] && '' === (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' ) ) {
 		return false;
 	}
 	if ( ! law_booking_claim_latch( $booking_id, '_law_confirmation_sent' ) ) {
@@ -2414,7 +2420,11 @@ function law_reception_quote_handler() {
 
 	wp_send_json_success(
 		array(
-			'net'      => law_events_format_pence( $quote['net'] ),
+			// The LIST price on the Price line, so the block reads like a
+			// receipt: price, less the discount, plus VAT, equals the total.
+			// Showing the discounted net there and the reduction under it made
+			// the discount look as though it had been taken twice.
+			'net'      => law_events_format_pence( $quote['list_net'] ),
 			'discount' => law_events_format_pence( $quote['discount'] ),
 			'vat'      => law_events_format_pence( $quote['vat'] ),
 			'gross'    => law_events_format_pence( $quote['gross'] ),

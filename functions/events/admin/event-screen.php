@@ -385,11 +385,24 @@ function law_event_admin_save( $post_id, $post ) {
 		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
 	);
 
-	// The flagship conference derives its start, end and speakers from its
-	// sessions (law_flagship_recompute()), and holds no slot, so this screen
-	// must not write those keys for it: the slot select would blank its
-	// datetimes on the first Update. Everything else on the screen still saves,
-	// and the derived values are refreshed at the end of this handler.
+	// LAW's OWN events hold no programme slot, so this screen must not write
+	// the slot keys for them: the slot select posts nothing, and
+	// law_event_apply_slot_label() reads an empty label as "clear the dates",
+	// which DELETES _law_start and _law_end. The flagship derives its range
+	// from its sessions; a reception's is typed on Manage receptions. Either
+	// way an ordinary Update here, with nothing changed, would un-schedule the
+	// event and drop it off the programme — which is exactly what a reception
+	// did until 14 September 2026, when the receptions joined this screen and
+	// inherited the hazard the flagship already had a guard for.
+	//
+	// law_event_is_managed_by_law() (workflow.php) is the predicate, so "which
+	// events LAW runs itself" is answered in one place.
+	// TWO predicates, not one. $is_managed says "do not touch the slot keys",
+	// which is true of the flagship and of every reception. $is_flagship says
+	// "recompute the derived range from the sessions", which is true of the
+	// flagship ALONE — running it on a reception would blank the dates all over
+	// again, from the other end.
+	$is_managed  = function_exists( 'law_event_is_managed_by_law' ) && law_event_is_managed_by_law( $post_id );
 	$is_flagship = function_exists( 'law_flagship_is' ) && law_flagship_is( $post_id );
 
 	$plain = array(
@@ -408,7 +421,7 @@ function law_event_admin_save( $post_id, $post ) {
 		'law_invoice_email'       => '_law_invoice_email',
 		'law_vat_number'          => '_law_vat_number',
 	);
-	if ( $is_flagship ) {
+	if ( $is_managed ) {
 		unset( $plain['law_slot_label'], $plain['law_start'], $plain['law_end'] );
 	}
 	foreach ( $plain as $field => $key ) {
@@ -439,8 +452,10 @@ function law_event_admin_save( $post_id, $post ) {
 	}
 
 	// A chosen slot fills the start/end datetimes; an emptied slot clears them
-	// (shared helper, so this matches the committee dashboard save path).
-	if ( ! $is_flagship ) {
+	// (shared helper, so this matches the committee dashboard save path). Never
+	// for an event LAW runs itself: see the note above the $is_managed
+	// assignment.
+	if ( ! $is_managed ) {
 		law_event_apply_slot_label( $post_id, sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ?? '' ) ) );
 	}
 

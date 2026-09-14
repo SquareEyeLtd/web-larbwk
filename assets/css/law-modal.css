@@ -96,6 +96,23 @@ body.law-modal-open { overflow: hidden; }
 .law-modal span.law-form-error {
 	background: #fcf0f1; border-left-color: #b32d2e; color: #1a1a3d;
 }
+/* The same treatment for .law-form-notice, for the same reason: it is drawn in
+   event-form.css for the dark hero, so a dialog that renders one -- a refused
+   discount code, a refused booking -- showed white on white. The scripts now
+   prefer .law-modal__error inside a dialog, but any caller that reaches for the
+   shared notice must still be readable here. */
+.law-modal .law-form-notice,
+.law-modal p.law-form-notice,
+.law-modal div.law-form-notice {
+	background: #f4f3f8; border-left-color: #292459; color: #1a1a3d;
+}
+
+.law-modal .law-form-notice.is-error,
+.law-modal p.law-form-notice.is-error,
+.law-modal div.law-form-notice.is-error {
+	background: #fcf0f1; border-left-color: #b32d2e; color: #1a1a3d;
+}
+
 /* The invalid control's own border, in the light form's darker red rather than
    the hero's #ff5c4d, and held through focus: the textarea's :focus rule above
    would otherwise put the resting grey back the moment the field is focused,

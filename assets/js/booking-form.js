@@ -653,7 +653,9 @@
 	function quoteApply(form, data) {
 		['net', 'discount', 'vat', 'gross'].forEach(function (key) {
 			var cell = form.querySelector('[data-law-price="' + key + '"]');
-			if (cell && typeof data[key] === 'string') { cell.textContent = data[key]; }
+			if (!cell || typeof data[key] !== 'string') { return; }
+			/* The discount is a deduction, and reads as one. */
+			cell.textContent = ('discount' === key ? '\u2212' : '') + data[key];
 		});
 
 		var row = form.querySelector('[data-law-price-discount-row]');
@@ -747,7 +749,13 @@
 			function (error) {
 				quoteBusy(form, false);
 				quoteStatus(form, '');
-				showError(form, form, error && error.message ? error.message : 'We could not check that code. Please try again.');
+				/* scopeFor(), not the form: inside a dialog this renders as
+				   .law-modal__error, which is coloured for a WHITE surface.
+				   Handed the form instead it rendered .law-form-notice, drawn
+				   for the purple hero -- white text on a translucent white
+				   strip -- so a rejected code refused SILENTLY and the delegate
+				   saw nothing at all (browser pass, 14 September 2026). */
+				showError(form, scopeFor(form), error && error.message ? error.message : 'We could not check that code. Please try again.');
 				if (error && error.field) { markFlatField(form, error.field); }
 				throw error;
 			}

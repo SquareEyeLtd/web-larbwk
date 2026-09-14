@@ -248,6 +248,37 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 		$this->assertSame( 60, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
 	}
 
+	/**
+	 * wp-admin's ordinary Update button must not un-schedule a reception.
+	 *
+	 * The event screen writes the slot keys on every save, and an empty slot
+	 * label means "clear the dates" — so a reception, which holds no programme
+	 * slot, lost its _law_start and _law_end on any Update at all and dropped
+	 * off the programme. The flagship already had the guard; this is the same
+	 * one, through law_event_is_managed_by_law() (found by the browser pass,
+	 * 14 September 2026).
+	 */
+	public function test_a_bare_wp_admin_update_keeps_a_receptions_dates(): void {
+		$event_id = $this->make_reception( array( '_law_start' => '2026-11-30 18:30', '_law_end' => '2026-11-30 20:30' ) );
+		$actor    = $this->make_committee_user();
+		wp_set_current_user( $actor );
+
+		$_POST = array(
+			'law_event_admin_nonce' => wp_create_nonce( 'law_event_admin_save' ),
+			// Exactly what the screen posts with nothing changed: the slot
+			// select is empty, because a reception has no slot.
+			'law_slot_label'        => '',
+			'law_reception'         => array( 'is_reception' => '1', 'price' => '45.00' ),
+		);
+		law_event_admin_save( $event_id, get_post( $event_id ) );
+		$_POST = array();
+		wp_set_current_user( 0 );
+
+		$this->assertSame( '2026-11-30 18:30', (string) law_event_meta( $event_id, '_law_start' ) );
+		$this->assertSame( '2026-11-30 20:30', (string) law_event_meta( $event_id, '_law_end' ) );
+		$this->assertSame( 4500, law_event_price_pence( $event_id ), 'And the box it DID render still saved.' );
+	}
+
 	public function test_a_posted_id_that_is_not_a_reception_reaches_nothing(): void {
 		$other = $this->make_event( array(), 'publish' );
 		$result = law_reception_save( array( 'event_id' => $other, 'title' => 'Sneaky' ), $this->make_committee_user() );
