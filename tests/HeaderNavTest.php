@@ -50,7 +50,10 @@ class HeaderNavTest extends LAW_Test_Case {
 	 * dashboard, 'my_bookings' is the page anyone signed in gets.
 	 */
 	public static function nav_expectations(): array {
-		$committee = array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' );
+		// 'receptions' sits after 'flagship' because it is a configuration
+		// screen for an event LAW runs itself, not one of the two bookings
+		// views, which are kept together (RECEPTIONS.md §0.4).
+		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts' );
 
 		return array(
 			'subscriber, no events'   => array(
@@ -231,7 +234,10 @@ class HeaderNavTest extends LAW_Test_Case {
 		$this->assertSame( 'Manage events', $items['dashboard'] );
 		$this->assertSame( 'Manage speakers', $items['speakers'] );
 		$this->assertSame( 'Manage flagship', $items['flagship'] );
-		$this->assertSame( 'Hosted bookings', $items['bookings'] );
+		// "Hosted bookings" until 14 September 2026, when the receptions' own
+		// bookings landed in this same view (RECEPTIONS.md §8.3) and the label
+		// stopped being true. The description carries which bookings now.
+		$this->assertSame( 'Manage bookings', $items['bookings'] );
 		$this->assertSame( 'Flagship bookings', $items['flagship_bookings'] );
 
 		$keys      = array_keys( $items );

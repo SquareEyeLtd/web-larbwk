@@ -69,6 +69,15 @@ get_header();
 							law_flagship_notice_render();
 						}
 
+						// The receptions a confirmed flagship place includes
+						// and the delegate has not claimed (RECEPTIONS.md
+						// §7.3). One helper, two surfaces: the Account hub
+						// renders the same markup, because that is where a
+						// sign-in now lands.
+						if ( function_exists( 'law_reception_banner' ) ) {
+							echo law_reception_banner( get_current_user_id() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
+						}
+
 						$law_bookings = $law_is_cpt && function_exists( 'law_account_bookings' ) ? law_account_bookings() : array();
 						?>
 

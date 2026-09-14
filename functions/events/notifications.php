@@ -350,7 +350,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'A waitlist has opened for {event_title}',
-			'body'    => "Dear {host_name},\n\n{event_title} is fully booked, and people have started joining the waitlist ({waitlist_count} so far).\n\nAs places open up they are offered automatically to whoever is next in line. You do not need to do anything, but from your bookings list you can change the order of the waitlist, or promote someone straight away if you want to.\n\nIf your approved capacity allows more places, you can raise the number of places on your event and everyone who fits is booked automatically.\n\nYour events dashboard: {dashboard_link}",
+			'body'    => "Dear {host_name},\n\n{event_title} is fully booked, and people have started joining the waitlist ({waitlist_count} so far).\n\nAs places open up they are offered automatically to whoever is next in line. You do not need to do anything, but from your bookings list you can change the order of the waitlist, or promote someone straight away if you want to.\n\nThe number of places is set by the committee, so if the venue takes more, please reply to this email: when we raise it, everyone who fits is booked automatically.\n\nYour events dashboard: {dashboard_link}",
 		),
 		'user_waitlist_promoted' => array(
 			'name'    => 'Email to attendee > promoted from the waitlist',
@@ -469,7 +469,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your place at {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour application to attend {event_title} has been approved and your place is confirmed (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. Your VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nYour application to attend {event_title} has been approved and your place is confirmed (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. Your VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_complimentary' => array(
 			'name'    => 'Email to delegate > flagship place, no charge',
@@ -477,7 +477,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your place at {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} is confirmed (booking #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} is confirmed (booking #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_declined' => array(
 			'name'    => 'Email to delegate > flagship application declined',
@@ -527,13 +527,117 @@ function law_events_email_registry() {
 			'subject' => 'ACTION NEEDED: payment received after a decision on {event_title}',
 			'body'    => "A payment has arrived for an application that had already been declined or withdrawn, so it was NOT confirmed and no place has been given.\n\nApplication: #{booking_number}\nApplicant: {attendee_list}\nAmount: {price_total}\nInvoice: {invoice_link}\n\nThis usually means the delegate paid from the hosted invoice link in an earlier email before it could be voided. Review it in Stripe and refund if appropriate: nothing has been done automatically.\n\nThe application is on the flagship bookings dashboard: {flagship_bookings_link}",
 		),
+		/* The drinks receptions (RECEPTIONS.md §10). Monday and Wednesday are
+		 * paid and pay-now; both are also free with a confirmed flagship
+		 * place; Friday is by invitation and takes no bookings, so it sends
+		 * nothing at all.
+		 *
+		 * Same house rule as the flagship block above, and for the same
+		 * reason: never interpolate anything a delegate typed into a SUBJECT.
+		 * These carry {event_title} only. */
+		'user_reception_confirmed' => array(
+			'name'    => 'Email to delegate > reception place confirmed',
+			'trigger' => 'A reception place is paid for and confirmed',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title} is confirmed',
+			'body'    => "Dear {attendee_name},\n\nThank you. Your place at {event_title} is confirmed (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou paid {price_total}, which is {price} plus {price_vat} VAT. {discount_note}\n\nYour VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the night: {profile_link}",
+		),
+		'committee_reception_booking' => array(
+			'name'    => 'Email to committee > reception place booked',
+			'trigger' => 'A reception place is paid for and confirmed',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'Place booked at {event_title}',
+			'body'    => "A place has been booked and paid for at {event_title}.\n\nBooking: #{booking_number}\nAttendee: {attendee_list}\nAmount: {price_total}\n{discount_note}\n\nPlaces taken: {tickets_remaining} of {tickets_available} remain.\n\nThe bookings for this event are on the bookings dashboard: {bookings_link}",
+		),
+		'user_reception_included' => array(
+			'name'    => 'Email to delegate > reception included with the flagship place',
+			'trigger' => 'A reception is added at no cost to a confirmed flagship delegate',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title} is confirmed',
+			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} is confirmed (booking #{booking_number}). It is included with your flagship conference place, so there is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\nIf you find you cannot come, please cancel it there so somebody else can have the place.",
+		),
+		'user_reception_included_revoked' => array(
+			'name'    => 'Email to delegate > included reception withdrawn',
+			'trigger' => 'The flagship place the reception came with was refunded',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title}',
+			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} (booking #{booking_number}) came with your place at the flagship conference, which is no longer confirmed. The reception place has therefore been released.\n\nYou have not been charged for it.\n\nIf you would still like to come, places may be available to book: {bookings_link}\n\nIf you think this is a mistake, please reply to this email.",
+		),
+		'user_reception_payment_failed' => array(
+			'name'    => 'Email to delegate > reception payment failed',
+			'trigger' => 'An asynchronous payment bounced, or a promotion charge was declined',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'We could not take payment for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nWe were not able to take the payment of {price_total} for your place at {event_title} (booking #{booking_number}). The payment method we had on file ({payment_method}) was declined:\n\n{payment_error}\n\nThe place has gone to the next person on the waitlist for now. Update your payment method by {payment_deadline} and we will book you in if a place is free, or put you at the front of the waitlist if it is not:\n\n{update_payment_link}",
+		),
+		'committee_reception_payment_failed' => array(
+			'name'    => 'Email to committee > reception payment declined',
+			'trigger' => 'A waitlist promotion charge was declined',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'Payment declined at {event_title}',
+			'body'    => "A payment for {event_title} was declined, so the place has been released for the next person on the waitlist.\n\nBooking: #{booking_number}\nAttendee: {attendee_list}\nAmount: {price_total}\nReason: {payment_error}\n\nThe delegate has been asked to update their payment method by {payment_deadline}. Nothing else has been done automatically.",
+		),
+		'user_reception_waitlist_joined' => array(
+			'name'    => 'Email to delegate > reception waitlist joined',
+			'trigger' => 'A payment method is saved on a reception waitlist entry',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => "You're on the waitlist for {event_title}",
+			'body'    => "Dear {attendee_name},\n\nYou are on the waitlist for {event_title} (booking #{booking_number}), and your payment details are saved.\n\nIf a place opens up we will charge {price_total} and confirm your place automatically, then email you straight away. You do not need to do anything else, and you will not be charged unless a place is yours.\n\nYou can leave the waitlist at any time before then, under My bookings: {bookings_link}",
+		),
+		'user_reception_waitlist_no_card' => array(
+			'name'    => 'Email to delegate > reception waitlist entry closed',
+			'trigger' => 'No payment method was saved within 48 hours',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your waitlist place for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nYour waitlist entry for {event_title} (booking #{booking_number}) has been closed, because no payment details were saved for it.\n\nThe waitlist works by charging a saved payment method the moment a place opens up, so an entry without one can never be offered a place.\n\nNothing has been charged. You are welcome to join the waitlist again: {bookings_link}",
+		),
+		'user_reception_waitlist_blocked_no_card' => array(
+			'name'    => 'Email to delegate > reception waitlist needs payment details',
+			'trigger' => 'A place opened up but the entry had no payment method',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Please add payment details for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nA place opened up at {event_title}, but we could not offer it to you because no payment method is saved against your waitlist entry (booking #{booking_number}).\n\nYou have kept your place in the queue. Add your payment details and we will charge {price_total} and confirm your place the next time one comes free:\n\n{update_payment_link}",
+		),
+		'user_reception_promoted_paid' => array(
+			'name'    => 'Email to delegate > reception waitlist place confirmed',
+			'trigger' => 'A waitlist entry was promoted and charged',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'A place has opened up: you are booked for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nGood news: a place has opened up at {event_title} and it is yours (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), as agreed when you joined the waitlist. {discount_note}\n\nYour VAT invoice is here: {invoice_link}\n\nA calendar invitation is attached. Your booking is under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}",
+		),
+		'committee_reception_overbooked' => array(
+			'name'    => 'Email to committee > reception over-booked',
+			'trigger' => 'An included place was granted on a full reception',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'ACTION NEEDED: {event_title} is over-booked',
+			'body'    => "A confirmed flagship delegate has taken the reception place their ticket includes at {event_title}, which was already full.\n\nBooking: #{booking_number}\nAttendee: {attendee_list}\n\nThe place was granted rather than refused, because the flagship ticket promises it. Places taken now exceed the number available: {tickets_available} were released.\n\nEither raise the number of places on Manage receptions, or check with the venue that the room takes the extra.",
+		),
+		'committee_reception_paid_cancelled' => array(
+			'name'    => 'Email to committee > payment on a cancelled reception place',
+			'trigger' => 'A payment arrived for a place that had already been cancelled',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'ACTION NEEDED: payment on a cancelled place at {event_title}',
+			'body'    => "A payment has arrived for a reception place that had already been cancelled, so it was NOT confirmed and no place has been given.\n\nBooking: #{booking_number}\nAttendee: {attendee_list}\nAmount: {price_total}\nInvoice: {invoice_link}\n\nThis usually means the delegate paid on Stripe's page a moment after the hold ran out. Review it in Stripe and refund: nothing has been done automatically.",
+		),
 		'host_capacity_warning' => array(
 			'name'    => 'Email to host > event nearly full',
 			'trigger' => 'fewer than 10% of the places remaining, or 5 left, whichever comes first',
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is nearly full: {event_title}',
-			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nIf LAW arranged your venue, the places are set by the committee, so please reply to this email and we will raise them for you.\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
+			'body'    => "Dear {host_name},\n\n{event_title} is nearly fully booked: {tickets_remaining} of {tickets_available} places remain.\n\nThe number of places is set by the committee, so if the venue takes more, please reply to this email and we will raise it for you.\n\nYour events dashboard: {dashboard_link}\n\nOnce the last place is taken, further visitors will see the event as fully booked.",
 		),
 		// The second stage of the same warning (Denis, 10 September 2026). Both
 		// go out from law_booking_maybe_capacity_warning(), which latches the
@@ -545,7 +649,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is fully booked: {event_title}',
-			'body'    => "Dear {host_name},\n\nThe last place at {event_title} has been taken, so all {tickets_available} places are now booked.\n\nVisitors to the event page now see it as fully booked and can join the waitlist instead. As places open up they are offered automatically to whoever is next in line, so you do not need to do anything.\n\nIf your approved capacity band allows it, you can raise the number of places on your event from your events dashboard: {dashboard_link}\n\nIf LAW arranged your venue, the places are set by the committee, so please reply to this email and we will raise them for you.",
+			'body'    => "Dear {host_name},\n\nThe last place at {event_title} has been taken, so all {tickets_available} places are now booked.\n\nVisitors to the event page now see it as fully booked and can join the waitlist instead. As places open up they are offered automatically to whoever is next in line, so you do not need to do anything.\n\nThe number of places is set by the committee, so if the venue takes more, please reply to this email and we will raise it for you.\n\nYour events dashboard: {dashboard_link}",
 		),
 		'committee_event_full' => array(
 			'name'    => 'Email to committee > event fully booked',
@@ -666,6 +770,12 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		// does not supply it renders empty rather than printing the raw tag.
 		'{price}'                 => '',
 		'{price_vat}'             => '',
+		// The receptions (RECEPTIONS.md §10). Declared here so an admin
+		// editing a template on the Emails screen sees the tags exist, and so
+		// a template using one on an email that does not supply it renders
+		// empty rather than printing the raw tag.
+		'{discount_note}'         => '',
+		'{included_receptions}'   => '',
 		'{price_total}'           => '',
 		'{invoice_link}'          => '',
 		'{decline_reason}'        => '',

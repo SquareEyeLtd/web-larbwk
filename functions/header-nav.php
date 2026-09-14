@@ -62,6 +62,7 @@ function law_account_paths() {
 		'bookings'    => 'account/dashboard/bookings',
 		'speakers'    => 'account/dashboard/speakers',
 		'flagship'    => 'account/dashboard/flagship',
+		'receptions'  => 'account/dashboard/receptions',
 		'flagship_bookings' => 'account/dashboard/flagship-bookings',
 		'discounts'   => 'account/dashboard/discounts',
 		'events'      => 'account/events',
@@ -373,20 +374,36 @@ function law_header_nav() {
 			'icon'        => 'flag',
 			'description' => __( 'Edit the flagship conference', 'law' ),
 		);
+		// The drinks receptions, straight after Manage flagship: like it, this
+		// is a CONFIGURATION screen for an event LAW runs itself — dates,
+		// prices, places — rather than one of the two bookings views, which
+		// the comment below keeps together (RECEPTIONS.md §0.4).
+		$items[] = array(
+			'key'         => 'receptions',
+			'label'       => __( 'Manage receptions', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'receptions',
+			'description' => __( 'Dates, prices and places for the receptions', 'law' ),
+		);
 		// The two bookings views sit together, and are named for what they
 		// hold rather than for what you do to them (Denis, 10 September
-		// 2026). "Manage bookings" said nothing about which bookings, and sat
-		// three items away from the other kind.
+		// 2026). That renaming made this one "Hosted bookings", which was true
+		// then and stopped being true on 14 September 2026, when the receptions
+		// landed: this page holds their bookings too, by decision
+		// (RECEPTIONS.md §8.3 — a reception belongs in the hosted list). A
+		// label that names one of the two kinds it holds is worse than the
+		// generic one it replaced, so it goes back to "Manage bookings" and the
+		// DESCRIPTION carries the specificity the renaming was after.
 		//
-		// The cross-event view of bookings at HOSTED events (free, instant,
-		// no review), EVENTS_BOOKINGS.md §7.6: a child page of the events
-		// dashboard with the same Members restriction.
+		// The cross-event view of every booking except the flagship's, whose
+		// applications are a priced request the committee reviews and have
+		// their own page below.
 		$items[] = array(
 			'key'         => 'bookings',
-			'label'       => __( 'Hosted bookings', 'law' ),
+			'label'       => __( 'Manage bookings', 'law' ),
 			'group'       => 'committee',
 			'icon'        => 'places',
-			'description' => __( 'Bookings at hosted events', 'law' ),
+			'description' => __( 'Bookings at hosted events and receptions', 'law' ),
 		);
 		// The flagship's applications and payments, deliberately a separate
 		// page: a hosted booking is free and instant, a flagship application
@@ -399,9 +416,11 @@ function law_header_nav() {
 			'icon'        => 'price',
 			'description' => __( 'Applications and payments for the flagship', 'law' ),
 		);
-		// The discount-code catalogue (functions/events/discounts.php).
-		// Nothing accepts a code yet; the screen says so. It is here so the
-		// committee can prepare codes for whatever starts charging first.
+		// The discount-code catalogue (functions/events/discounts.php). Codes
+		// are accepted when booking a paid reception (RECEPTIONS.md §8.4);
+		// the flagship deliberately takes none, because its price is the
+		// committee's decision at approval rather than the delegate's at
+		// checkout.
 		$items[] = array(
 			'key'         => 'discounts',
 			'label'       => __( 'Discount codes', 'law' ),

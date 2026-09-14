@@ -75,7 +75,7 @@ class AccountHubTest extends LAW_Test_Case {
 
 		$this->assertStringContainsString( 'Committee tools', $html );
 		$this->assertStringContainsString( 'Your account', $html, 'The personal tiles stay: committee access is additive.' );
-		foreach ( array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' ) as $key ) {
+		foreach ( array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts' ) as $key ) {
 			$this->assertStringContainsString( esc_url( law_account_url( $key ) ), $html, "No tile for '{$key}'." );
 		}
 	}

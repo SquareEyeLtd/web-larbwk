@@ -70,6 +70,24 @@ function law_event_meta_schema() {
 		// both the programme block and the hero on the flagship page.
 		'_law_is_flagship'          => 'flag',
 		'_law_flagship_date'        => 'date',
+		// The drinks receptions (RECEPTIONS.md §1.1). A reception is an
+		// ordinary law_event carrying _law_is_reception, so it gets the
+		// programme, the event page, the .ics, the bookings engine, capacity,
+		// the per-event list and the exports for free; these three are the
+		// only things about it that are new.
+		//
+		// _law_attendee_price_pence is NET of VAT, in pence, and 0 means "not
+		// on sale". It is named to sit beside _law_fee_pence (the HOST fee)
+		// and _law_flagship_price_pence rather than reusing _law_price_pence,
+		// which is the BOOKING's price snapshot and must not be shadowed by an
+		// event key of the same name.
+		//
+		// _law_flagship_included: a confirmed flagship delegate gets a place
+		// here at no cost (RECEPTIONS.md §2.6). Invitation-only is not a flag
+		// of its own: it is _law_registration_state = 'invitation' below.
+		'_law_is_reception'         => 'flag',
+		'_law_attendee_price_pence' => 'int',
+		'_law_flagship_included'    => 'flag',
 		'_law_hero_image_id'        => 'int',
 		// Flagship pricing (FLAGSHIP_PAYMENTS.md §2.2). Both prices are NET of
 		// VAT, in pence, and the switch is a site-local 'Y-m-d H:i' compared
@@ -187,6 +205,35 @@ function law_booking_meta_schema() {
 		'_law_reviewed_by'            => 'int',
 		'_law_decline_reason'         => 'multiline',
 		'_law_is_complimentary'       => 'flag',
+		// The receptions (RECEPTIONS.md §1.2).
+		//
+		// _law_discount_id is the CLAIMED code and is DELETED on release, which
+		// is what makes releasing idempotent per booking: a second release
+		// finds no key and takes nobody else's live claim. The code and the
+		// amount stay behind afterwards, because the record of what was
+		// allowed is worth keeping once the claim is gone.
+		'_law_discount_id'            => 'int',
+		'_law_discount_code'          => 'text',
+		'_law_discount_pence'         => 'int',
+		// The flagship booking a free included place was granted from.
+		'_law_included_with'          => 'int',
+		// On a FLAGSHIP application: the receptions ticked at apply time,
+		// granted when the place is confirmed.
+		'_law_reception_choices'      => 'int_array',
+		// The live Checkout session in payment mode. Every checkout.session.*
+		// handler ignores a session whose id differs from this one, so a late
+		// event for a superseded session cannot release a live hold.
+		'_law_stripe_checkout_session_id' => 'text',
+		'_law_checkout_expires_at'    => 'datetime',
+		// When the money actually landed. The sweep reads it to decide when a
+		// confirmation has waited long enough for its invoice, and it is the
+		// only honest "paid on" date: post_modified moves for any edit.
+		'_law_paid_at'                => 'datetime',
+		// The charge latch (_law_charge_claim) and the one-shot email latches
+		// are deliberately NOT here: they are claimed with
+		// add_post_meta( …, $unique = true ), which is one INSERT and therefore
+		// one winner, and registering them would invite a sanitiser between the
+		// claim and the row it depends on.
 	);
 }
 
@@ -305,10 +352,13 @@ function law_events_sanitize_value( $value, $type ) {
 			// saved but nothing charged yet, a charge the bank wants
 			// authenticating, a charge still settling because the delegate
 			// did not pay by card). Unknown values fall back to
-			// pending_setup, the state that grants nothing.
+			// pending_setup, the state that grants nothing. 'included' is the
+			// receptions' free place granted with a confirmed flagship ticket:
+			// a real place that was never charged, which 'complimentary'
+			// (the committee gave it) would mis-describe.
 			return in_array(
 				$value,
-				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary' ),
+				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary', 'included' ),
 				true
 			) ? $value : 'pending_setup';
 		case 'registration_state':
@@ -560,9 +610,78 @@ function law_events_bump_counter( $option, $by = 1 ) {
  * Generate the next LAW reference, continuing the GP Unique ID sequence
  * (format LAW<yy>-<5 digits>, e.g. LAW26-00207). The counter option is
  * seeded by the migrator from wp_gpui_sequence.
+ *
+ * SUPERSEDED, and deliberately left in place. On 14 September 2026 the client
+ * settled on plain numeric references instead of the LAW<yy>-<sequence>
+ * format: a migrated event's reference is its Gravity Forms entry ID and a new
+ * event's is its own post ID (law_events_event_reference()). Nothing calls
+ * this any more, and the counter it reads is still seeded by migration step 7,
+ * so the old sequence can be resumed if that decision is ever reversed.
  */
 function law_events_next_reference() {
 	$counter = law_events_bump_counter( 'law_events_reference_counter' );
 	$year    = (int) law_events_setting( 'year', (int) gmdate( 'Y' ) );
 	return sprintf( 'LAW%02d-%05d', $year % 100, $counter );
 }
+
+/**
+ * The reference a NEW event gets: its own post ID, as a string.
+ *
+ * The client's decision of 14 September 2026. The legacy site's references
+ * came from GP Unique ID (field 70 on form 2, Event > submit an event) in the
+ * form LAW26-00121, but the committee works from the Gravity Forms entry IDs
+ * they see in the entries list, so those are what migration now stores
+ * (law_migration_populate_event()) and the post ID is the natural continuation
+ * of the same idea: one number, visible in wp-admin, that identifies the
+ * event everywhere.
+ *
+ * @param int $event_id law_event post ID.
+ * @return string
+ */
+function law_events_event_reference( $event_id ) {
+	return (string) (int) $event_id;
+}
+
+/**
+ * Give an event its reference if it has none, and return it.
+ *
+ * Idempotent and never overwrites: a migrated event's reference is its
+ * Gravity Forms entry ID, which must survive every later save. Use the
+ * Migration screen's "Reassign event references" panel to change one
+ * deliberately.
+ *
+ * @param int $event_id law_event post ID.
+ * @return string The event's reference.
+ */
+function law_events_ensure_reference( $event_id ) {
+	$event_id = (int) $event_id;
+	$existing = (string) law_event_meta( $event_id, '_law_reference' );
+	if ( '' !== $existing ) {
+		return $existing;
+	}
+
+	$reference = law_events_event_reference( $event_id );
+	law_event_update_meta( $event_id, '_law_reference', $reference );
+	return $reference;
+}
+
+/**
+ * Every event carries a reference from the moment it exists.
+ *
+ * It used to be minted on the `submit` transition alone, so an event created
+ * in wp-admin (or a reception seeded by the provisioning step) showed an empty
+ * Reference on its own edit screen and in the bookings dashboard until a host
+ * submitted it. With the reference now being the post ID there is nothing to
+ * wait for, so it is written on the first save.
+ */
+add_action(
+	'save_post_' . LAW_EVENT_CPT,
+	function ( $post_id, $post ) {
+		if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) || 'auto-draft' === $post->post_status ) {
+			return;
+		}
+		law_events_ensure_reference( $post_id );
+	},
+	20,
+	2
+);

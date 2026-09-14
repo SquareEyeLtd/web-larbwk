@@ -83,21 +83,41 @@ class EventSectionOrderTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * A session's own speakers sit beside its description rather than under it,
-	 * on every event: the split is a modifier set only when the session has both,
-	 * so a session with one of the two still fills the width.
+	 * A session reads top to bottom at the full width of the column: title,
+	 * description, then the people speaking at it as a grid of three (Denis,
+	 * 14 September 2026). The speakers used to sit in a right-hand column from
+	 * 64em, which narrowed the prose to about 60% of the page and stacked the
+	 * cards in a single file down the rest.
 	 */
-	public function test_each_session_puts_its_speakers_beside_its_description(): void {
+	public function test_each_session_puts_its_speakers_under_its_description(): void {
 		$timeline = (string) file_get_contents( get_theme_file_path( 'parts/events/session-timeline.php' ) );
 		$css      = (string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) );
 
-		$this->assertStringContainsString( 'law-timeline__content--split', $timeline );
-		$this->assertStringContainsString( '.law-timeline__content--split {', $css );
+		$this->assertStringNotContainsString( 'law-timeline__content--split', $timeline, 'The two-column split is gone from the markup.' );
+		$this->assertStringNotContainsString( 'law-timeline__content--split', $css, 'And from the stylesheet, so nothing can set it back.' );
 
-		// One card per row, because the list is a column roughly a third of the
-		// container wide.
+		// The speakers follow the description in the source, inside the same
+		// full-width content block.
+		$body     = strpos( $timeline, 'law-timeline__body' );
+		$speakers = strpos( $timeline, 'law-timeline__speakers' );
+		$this->assertNotFalse( $body );
+		$this->assertNotFalse( $speakers );
+		$this->assertGreaterThan( $body, $speakers, 'The cards come after the prose.' );
+
+		// Two abreast on a desktop, and one per row below 64em: the single file
+		// overrides the two-per-row .law-cal-speakers--cards gets from 48em.
 		$this->assertMatchesRegularExpression(
 			'/\.law-timeline__speakers \{\s*\n\s*grid-template-columns: minmax\(0, 1fr\);/',
+			$css
+		);
+		$this->assertMatchesRegularExpression(
+			'/min-width: 64em\) \{\s*\n\s*\.law-timeline__speakers \{\s*\n\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/',
+			$css
+		);
+
+		// And no measure on the prose: the description fills the column.
+		$this->assertDoesNotMatchRegularExpression(
+			'/\.law-timeline__body \{[^}]*max-width/',
 			$css
 		);
 	}

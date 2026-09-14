@@ -785,7 +785,13 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 	law_event_update_meta( $post_id, '_law_fee_tier', $tier );
 
 	$writes = array(
-		'_law_reference'           => rgar( $entry, '70' ),
+		// The GRAVITY FORMS ENTRY ID, not field 70 (Unique ID). The legacy
+		// LAW26-00121 style references came from GP Unique ID, but the
+		// committee works from the entry IDs in the Gravity Forms entries list,
+		// so those are the references the client settled on (14 September
+		// 2026). Migration/page.php's "Reassign event references" panel
+		// rewrites the events migrated before that decision.
+		'_law_reference'           => (string) $entry_id,
 		'_law_venue'               => rgar( $entry, '21' ),
 		'_law_venue_needed'        => rgar( $entry, '103' ),
 		'_law_venue_capacity'      => rgar( $entry, '55' ),
@@ -1748,6 +1754,7 @@ function law_migration_page_map() {
 		'account/dashboard/bookings' => array( 'title' => 'Bookings dashboard', 'template' => 'templates/account-bookings-dashboard.php' ),
 		'account/dashboard/speakers' => array( 'title' => 'Speakers dashboard', 'template' => 'templates/account-speakers-dashboard.php' ),
 		'account/dashboard/flagship' => array( 'title' => 'Flagship dashboard', 'template' => 'templates/account-dashboard-flagship.php' ),
+		'account/dashboard/receptions' => array( 'title' => 'Receptions dashboard', 'template' => 'templates/account-dashboard-receptions.php' ),
 		'account/dashboard/flagship-bookings' => array( 'title' => 'Flagship bookings', 'template' => 'templates/account-dashboard-flagship-bookings.php' ),
 		'account/dashboard/discounts' => array( 'title' => 'Discount codes', 'template' => 'templates/account-dashboard-discounts.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
@@ -1859,6 +1866,10 @@ function law_migration_run_pages( $dry ) {
 	if ( ! $dry && function_exists( 'law_setup_flagship_dashboard_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/dashboard/flagship/', 'Committee restriction: ' . law_setup_flagship_dashboard_access() . '.' );
 	}
+	// And Manage receptions, the fifth.
+	if ( ! $dry && function_exists( 'law_setup_receptions_dashboard_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/receptions/', 'Committee restriction: ' . law_setup_receptions_dashboard_access() . '.' );
+	}
 	// The per-booking host and committee emails were retired on 10 September
 	// 2026. The registry default is inactive, but a stored override from the
 	// Emails screen would beat it, so drop the stored 'active' key. Shared
@@ -1904,9 +1915,38 @@ function law_migration_run_pages( $dry ) {
 		}
 	}
 
+	// The three drinks receptions, the same way as the flagship above: law_event
+	// posts rather than pages, seeded as drafts with no price, so a deployed
+	// environment has them without anyone running anything by hand
+	// (RECEPTIONS.md §8.1). Deliberately INSIDE this step rather than a step of
+	// its own: "Run all" executes the gated steps in array order and step 11
+	// (retire_roles) must stay last.
+	$reception_summary = 'not available';
+	if ( function_exists( 'law_reception_ensure_posts' ) ) {
+		$receptions = law_reception_ensure_posts( $dry );
+		foreach ( $receptions['messages'] as $reception_message ) {
+			law_migration_log(
+				'pages',
+				$dry ? 'dry-run' : ( 0 === strpos( $reception_message, 'Created' ) ? 'created' : 'skipped' ),
+				'/events/receptions/',
+				$reception_message
+			);
+		}
+		$created          += $receptions['created'];
+		$reception_summary = $dry
+			? 'checked'
+			: ( $receptions['created'] ? $receptions['created'] . ' created' : 'already present' );
+	}
+
 	return array(
 		'done'    => true,
-		'summary' => sprintf( '%d templates assigned, %d pages created, flagship event %s.', $updated, $created, $flagship_summary ),
+		'summary' => sprintf(
+			'%d templates assigned, %d pages created, flagship event %s, receptions %s.',
+			$updated,
+			$created,
+			$flagship_summary,
+			$reception_summary
+		),
 	);
 }
 

@@ -50,6 +50,203 @@ class ReferenceAndMigrationTest extends LAW_Test_Case {
 		delete_option( $option );
 	}
 
+	/**
+	 * The 14 September 2026 rule: a new event's reference is its own post ID,
+	 * written on the first save rather than waiting for the submit transition
+	 * (an event created in wp-admin used to show an empty Reference until a
+	 * host submitted it).
+	 */
+	public function test_a_new_event_takes_its_own_id_as_its_reference(): void {
+		$event = $this->make_event();
+		$this->assertSame( (string) $event, (string) law_event_meta( $event, '_law_reference' ) );
+
+		// Idempotent, and never overwrites: a migrated event's entry-ID
+		// reference has to survive every later save.
+		law_event_update_meta( $event, '_law_reference', '190' );
+		law_events_ensure_reference( $event );
+		wp_update_post( array( 'ID' => $event, 'post_title' => 'Renamed' ) );
+		$this->assertSame( '190', (string) law_event_meta( $event, '_law_reference' ) );
+	}
+
+	/** A migrated event's reference is the Gravity Forms entry ID it came from. */
+	public function test_the_reassignment_offers_the_entry_id_for_migrated_events(): void {
+		// An entry ID no real event claims: the local database already holds
+		// the migrated events, and the scan (rightly) refuses to hand two
+		// events the same number.
+		$entry_id = 900000 + wp_rand( 1, 99999 );
+		$migrated = $this->make_event();
+		law_event_update_meta( $migrated, '_law_gf_entry_id', $entry_id );
+		law_event_update_meta( $migrated, '_law_reference', 'LAW26-00121' );
+
+		$native = $this->make_event();
+		law_event_update_meta( $native, '_law_reference', 'LAW26-00214' );
+
+		$expected = law_events_reference_expected( $migrated );
+		$this->assertSame( (string) $entry_id, $expected['reference'] );
+		$this->assertSame( 'gf_entry', $expected['basis'] );
+		$this->assertSame( 'post_id', law_events_reference_expected( $native )['basis'] );
+
+		$rows = wp_list_pluck( law_events_reference_scan()['fix'], 'reference_new', 'event_id' );
+		$this->assertSame( (string) $entry_id, $rows[ $migrated ] ?? '', 'Migrated: the entry ID.' );
+		$this->assertSame( (string) $native, $rows[ $native ] ?? '', 'Not migrated: the event ID.' );
+
+		$result = law_events_reference_apply( array( $migrated, $native ) );
+		$this->assertSame( 2, $result['applied'] );
+		$this->assertSame( (string) $entry_id, (string) law_event_meta( $migrated, '_law_reference' ) );
+		$this->assertSame( (string) $native, (string) law_event_meta( $native, '_law_reference' ) );
+
+		// Re-running finds nothing: both are now right.
+		$again = wp_list_pluck( law_events_reference_scan()['fix'], 'event_id' );
+		$this->assertNotContains( $migrated, $again );
+		$this->assertNotContains( $native, $again );
+
+		// And the change is on the record, not silent.
+		$messages = wp_list_pluck( law_event_log_entries( $migrated ), 'comment_content' );
+		$this->assertNotEmpty( array_filter( $messages, fn( $m ) => str_contains( $m, 'Reference changed from LAW26-00121 to ' . $entry_id ) ) );
+	}
+
+	/**
+	 * Two events can never be given the same reference. Impossible with the
+	 * live data (entry IDs run to 1,171, new post IDs are past 260,000) but
+	 * the scan refuses rather than trusting that.
+	 */
+	public function test_a_duplicate_reference_is_refused(): void {
+		$one = $this->make_event();
+		$two = $this->make_event();
+		// Both claim the same entry, so both would want the same number.
+		law_event_update_meta( $one, '_law_gf_entry_id', 987654 );
+		law_event_update_meta( $two, '_law_gf_entry_id', 987654 );
+
+		$scan      = law_events_reference_scan();
+		$offered   = wp_list_pluck( $scan['fix'], 'event_id' );
+		$conflicts = wp_list_pluck( $scan['conflicts'], 'event_id' );
+
+		$this->assertNotContains( $one, $offered );
+		$this->assertNotContains( $two, $offered );
+		$this->assertContains( $one, $conflicts );
+		$this->assertContains( $two, $conflicts );
+
+		$this->assertSame( 0, law_events_reference_apply( array( $one, $two ) )['applied'] );
+		$this->assertSame( (string) $one, (string) law_event_meta( $one, '_law_reference' ), 'Untouched.' );
+	}
+
+	/**
+	 * The reference also lives in Stripe metadata (`law_reference`, on the
+	 * customer and the invoice), written at creation and never updated since.
+	 * Nothing resolves an event by it, but it is what a human reconciling a
+	 * payment reads, so the reassignment re-stamps it.
+	 */
+	public function test_the_reassignment_restamps_the_stripe_metadata(): void {
+		$entry_id = 900000 + wp_rand( 1, 99999 );
+		$event    = $this->make_event();
+		law_event_update_meta( $event, '_law_gf_entry_id', $entry_id );
+		law_event_update_meta( $event, '_law_reference', 'LAW26-00121' );
+		law_event_update_meta( $event, '_law_stripe_customer_id', 'cus_test_ref' );
+		law_event_update_meta( $event, '_law_stripe_invoice_id', 'in_test_ref' );
+
+		$GLOBALS['law_test_stripe_queue'] = array(
+			array( 'id' => 'cus_test_ref', 'object' => 'customer' ),
+			array( 'id' => 'in_test_ref', 'object' => 'invoice' ),
+		);
+
+		$result = law_events_reference_apply( array( $event ) );
+		$this->assertSame( 1, $result['applied'] );
+		$this->assertSame( 2, $result['stripe'] );
+		$this->assertSame( array(), $result['stripe_failed'] );
+		$this->assertSame(
+			array(
+				array( 'method' => 'POST', 'path' => '/v1/customers/cus_test_ref' ),
+				array( 'method' => 'POST', 'path' => '/v1/invoices/in_test_ref' ),
+			),
+			$GLOBALS['law_test_stripe_calls'],
+			'A metadata patch on each object, and nothing else: no finalise, no send, no money.'
+		);
+
+		// The patch carries the WHOLE identifier block, so an invoice raised by
+		// the retired Make scenario also picks up law_event_id.
+		$body = $GLOBALS['law_test_stripe_idem'][1]['body'];
+		$this->assertSame( (string) $entry_id, $body['metadata']['law_reference'] );
+		$this->assertSame( (string) $event, $body['metadata']['law_event_id'] );
+		$this->assertSame( (string) $entry_id, $body['metadata']['gf_entry_id'] );
+		$this->assertSame( array( 'metadata' ), array_keys( $body ), 'Metadata only.' );
+
+		$logged = wp_list_pluck( law_event_log_entries( $event ), 'comment_content' );
+		$this->assertNotEmpty( array_filter( $logged, fn( $m ) => str_contains( $m, 'Stripe invoice in_test_ref re-stamped' ) ) );
+	}
+
+	/** Opting out of the Stripe patch still reassigns the reference. */
+	public function test_the_stripe_patch_can_be_declined(): void {
+		$event = $this->make_event();
+		law_event_update_meta( $event, '_law_gf_entry_id', 900000 + wp_rand( 1, 99999 ) );
+		law_event_update_meta( $event, '_law_reference', 'LAW26-00121' );
+		law_event_update_meta( $event, '_law_stripe_invoice_id', 'in_test_ref' );
+
+		$result = law_events_reference_apply( array( $event ), false );
+		$this->assertSame( 1, $result['applied'] );
+		$this->assertSame( 0, $result['stripe'] );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'Stripe is never touched.' );
+	}
+
+	/**
+	 * A Stripe failure must not cost the local reference: the site's record is
+	 * the one that matters, and the failure is reported and logged instead.
+	 */
+	public function test_a_failed_stripe_patch_does_not_hold_up_the_reference(): void {
+		$entry_id = 900000 + wp_rand( 1, 99999 );
+		$event    = $this->make_event();
+		law_event_update_meta( $event, '_law_gf_entry_id', $entry_id );
+		law_event_update_meta( $event, '_law_reference', 'LAW26-00121' );
+		law_event_update_meta( $event, '_law_stripe_invoice_id', 'in_test_ref' );
+
+		// Nothing queued: the test harness refuses the call, standing in for a
+		// missing key, a deleted object or a network error.
+		$result = law_events_reference_apply( array( $event ) );
+
+		$this->assertSame( 1, $result['applied'] );
+		$this->assertSame( (string) $entry_id, (string) law_event_meta( $event, '_law_reference' ), 'Written anyway.' );
+		$this->assertCount( 1, $result['stripe_failed'] );
+
+		$logged = wp_list_pluck( law_event_log_entries( $event ), 'comment_content' );
+		$this->assertNotEmpty( array_filter( $logged, fn( $m ) => str_contains( $m, 'could NOT be re-stamped' ) ) );
+	}
+
+	/**
+	 * The re-stamp is reachable on its own, for an event whose reference is
+	 * already right but whose Stripe objects were stamped before it changed.
+	 */
+	public function test_the_stripe_restamp_stands_alone(): void {
+		$event = $this->make_event(); // Reference already its own post ID.
+		law_event_update_meta( $event, '_law_stripe_invoice_id', 'in_test_restamp' );
+
+		$this->assertNotContains(
+			$event,
+			wp_list_pluck( law_events_reference_scan()['fix'], 'event_id' ),
+			'Nothing to reassign, so the table above offers no row to fix it from.'
+		);
+		$this->assertContains( $event, wp_list_pluck( law_events_reference_stripe_rows(), 'event_id' ) );
+
+		$GLOBALS['law_test_stripe_queue'] = array( array( 'id' => 'in_test_restamp', 'object' => 'invoice' ) );
+		$result = law_events_reference_stripe_restamp( array( $event ) );
+
+		$this->assertSame( 1, $result['patched'] );
+		$this->assertSame( array(), $result['failed'] );
+		$this->assertSame(
+			array( array( 'method' => 'POST', 'path' => '/v1/invoices/in_test_restamp' ) ),
+			$GLOBALS['law_test_stripe_calls']
+		);
+		$this->assertSame(
+			(string) $event,
+			$GLOBALS['law_test_stripe_idem'][0]['body']['metadata']['law_reference']
+		);
+	}
+
+	/** Titles are compared loosely: punctuation and entities are not a mismatch. */
+	public function test_title_comparison_only_flags_a_real_difference(): void {
+		$this->assertFalse( law_events_reference_titles_differ( 'Arbitration &amp; Energy: Hot Topics', 'Arbitration & Energy — Hot topics' ) );
+		$this->assertTrue( law_events_reference_titles_differ( 'Arbitration and Energy', 'A completely different event' ) );
+		$this->assertFalse( law_events_reference_titles_differ( 'Anything', '' ), 'Nothing to compare against is not a mismatch.' );
+	}
+
 	public function test_merge_tag_translation(): void {
 		$in  = 'Dear {Name (First):3.3}, your event {Event title:17} ({Unique ID:70}) — pay at {Stripe invoice URL:83}. {latest_comment}';
 		$out = law_migration_translate_tags( $in );

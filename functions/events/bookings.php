@@ -110,12 +110,23 @@ function law_event_recount_attendees( $event_id, $log_source = '' ) {
 
 	// One booking is one place, so the count IS the query — no meta reads,
 	// and no cap that a truncated read could use to reopen a sold-out event.
+	//
+	// A PRICED event counts its `law-pending-payment` holds as well: somebody
+	// standing on Stripe's hosted page has the place, and leaving them out
+	// would sell the last one twice in the forty minutes a Checkout session
+	// lives (RECEPTIONS.md §1.3). Gated on the price so a hosted event's and
+	// the flagship's counts stay byte-identical — neither can hold a booking
+	// in that status, but the query is the thing every surface trusts, so it
+	// is left literally unchanged for them rather than merely equivalent.
 	global $wpdb;
-	$sold = (int) $wpdb->get_var(
+	$statuses = law_event_is_priced( $event_id )
+		? array( 'publish', 'law-pending-payment' )
+		: array( 'publish' );
+	$in       = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
+	$sold     = (int) $wpdb->get_var(
 		$wpdb->prepare(
-			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND post_parent = %d AND post_status = 'publish'",
-			LAW_BOOKING_CPT,
-			$event_id
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND post_parent = %d AND post_status IN ({$in})",
+			array_merge( array( LAW_BOOKING_CPT, $event_id ), $statuses )
 		)
 	);
 
@@ -451,6 +462,184 @@ function law_booking_attendee( $booking ) {
 	);
 }
 
+/* The payment handler table _________________________________________________ */
+
+/**
+ * Which function handles one payment outcome for one KIND of booking.
+ *
+ * The Stripe webhook resolves the kind once and looks the outcome up here, so
+ * stripe/webhook.php never names the flagship or a reception. Each flow
+ * registers its own row through the `law_booking_payment_handlers` filter —
+ * the same pattern flagship-bookings-dashboard.php uses to keep "the flagship
+ * is different" out of bookings-dashboard.php.
+ *
+ * The outcomes, in the vocabulary Stripe's events map onto:
+ *
+ *   card_saved      a payment method was stored (setup mode)
+ *   setup_failed    it could not be stored
+ *   paid            money has arrived and settled
+ *   processing      money is on its way but has not settled
+ *   payment_failed  it was refused
+ *   action_required the bank wants the delegate present
+ *   refunded        money has gone back
+ *   session_expired a Checkout session ran out without being paid
+ *
+ * Every handler takes ( $booking_id, array $object, $stripe_event_id ) —
+ * $object being the Stripe object as delivered — so the dispatcher has one
+ * shape to call and a flow can ignore what it does not need.
+ *
+ * @param string $kind law_booking_kind().
+ * @return array<string,callable>
+ */
+function law_booking_payment_handlers( $kind ) {
+	$table = (array) apply_filters( 'law_booking_payment_handlers', array() );
+	$row   = $table[ (string) $kind ] ?? array();
+
+	return is_array( $row ) ? $row : array();
+}
+
+/**
+ * Run one payment outcome against one booking, whatever kind it is.
+ *
+ * "No handler for this kind" is logged and returns false, which is what the
+ * three verbatim fail-closed blocks inside the flagship functions used to do
+ * by hand: money must never be handled by a flow that means something else by
+ * these statuses.
+ *
+ * @return bool Whether a handler ran and reported a change.
+ */
+function law_booking_dispatch_payment( $booking_id, $outcome, array $object = array(), $stripe_event_id = '' ) {
+	$booking_id = (int) $booking_id;
+	$booking    = $booking_id ? get_post( $booking_id ) : null;
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type ) {
+		return false;
+	}
+
+	$kind     = law_booking_kind( $booking );
+	$handlers = law_booking_payment_handlers( $kind );
+	$handler  = $handlers[ (string) $outcome ] ?? null;
+
+	if ( ! is_callable( $handler ) ) {
+		law_event_log(
+			(int) $booking->post_parent,
+			sprintf(
+				'A payment event (%1$s) arrived for booking #%2$d, which is a %3$s booking with no handler for it. Nothing was changed.',
+				(string) $outcome,
+				(int) law_event_meta( $booking_id, '_law_booking_number' ),
+				$kind
+			),
+			array(
+				'source'       => 'stripe_webhook',
+				'action'       => 'payment_no_handler',
+				'booking'      => $booking_id,
+				'kind'         => $kind,
+				'outcome'      => (string) $outcome,
+				'stripe_event' => (string) $stripe_event_id,
+			),
+			array( 'user_id' => 0 )
+		);
+		return false;
+	}
+
+	return (bool) call_user_func( $handler, $booking_id, $object, (string) $stripe_event_id );
+}
+
+/* The delegate's own payment method _________________________________________ */
+
+add_action( 'admin_post_law_booking_update_card', 'law_booking_update_card_handler' );
+add_action( 'admin_post_nopriv_law_booking_update_card', 'law_events_nopriv_json' );
+
+/**
+ * Open a Stripe Checkout session in setup mode so a delegate can add or
+ * replace the payment method on their own booking.
+ *
+ * One handler for both priced flows (RECEPTIONS.md §1.5). It was the
+ * flagship's alone; a reception's waitlist entry needs exactly the same thing,
+ * and duplicating it would have meant two places deciding which statuses may
+ * change a method and two answers to "what does Stripe call this reason".
+ *
+ * @param string $action The nonce and admin-post action the caller registered
+ *                       under, so the flagship's older action name keeps
+ *                       working for markup already in somebody's browser.
+ */
+function law_booking_update_card_handler( $action = 'law_booking_update_card' ) {
+	$action  = in_array( $action, array( 'law_booking_update_card', 'law_flagship_update_card' ), true )
+		? $action
+		: 'law_booking_update_card';
+	$is_ajax = law_events_guard_post(
+		$action,
+		array(
+			'rate'          => array( 'booking_edit', 15, 600, 150 ),
+			'honeypot_json' => array( 'message' => 'Done.' ),
+		)
+	);
+
+	$booking = law_booking_require_own_priced_booking(
+		$is_ajax,
+		array( 'law-applied', 'law-payment-failed', 'law-waitlisted' )
+	);
+	$kind    = law_booking_kind( $booking );
+	// 'retry' when a charge has already been refused, 'replace' when the
+	// method on file has simply been changed, and 'waitlist' when there is no
+	// method yet because the queue entry is what wants one.
+	if ( 'law-payment-failed' === $booking->post_status ) {
+		$reason = 'retry';
+	} elseif ( 'law-waitlisted' === $booking->post_status ) {
+		$reason = 'waitlist';
+	} else {
+		$reason = 'replace';
+	}
+
+	$url = law_stripe_create_setup_session( (int) $booking->ID, $reason );
+	if ( is_wp_error( $url ) ) {
+		law_events_respond(
+			$is_ajax,
+			false,
+			array( 'message' => $url->get_error_message(), 'status' => 502 ),
+			'reception' === $kind ? 'reception-checkout-failed' : 'flagship-failed'
+		);
+	}
+
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => __( 'Taking you to our payment page', 'law' ),
+			'message'  => __( 'Stripe will ask for your payment details.', 'law' ),
+			'redirect' => $url,
+		),
+		'reception' === $kind ? 'reception-card' : 'flagship-card'
+	);
+}
+
+/**
+ * Load a PRICED booking this user owns, or respond and exit.
+ *
+ * The IDOR rule the whole module follows: load the booking, check its post
+ * type, derive the event from post_parent, and only then check who is asking.
+ * Nothing trusts an event ID out of the request.
+ *
+ * @param bool     $is_ajax  From law_events_guard_post().
+ * @param string[] $statuses Statuses the action is legal in; empty = any.
+ * @return WP_Post
+ */
+function law_booking_require_own_priced_booking( $is_ajax, array $statuses = array() ) {
+	$booking_id = absint( $_POST['booking_id'] ?? 0 );
+	$booking    = $booking_id ? get_post( $booking_id ) : null;
+
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type || 'hosted' === law_booking_kind( $booking ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking could not be found.', 'law' ), 'status' => 404 ), 'booking-failed' );
+	}
+	if ( (int) $booking->post_author !== get_current_user_id() ) {
+		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking belongs to someone else.', 'law' ), 'status' => 403 ), 'booking-failed' );
+	}
+	if ( $statuses && ! in_array( $booking->post_status, $statuses, true ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking cannot be changed now.', 'law' ), 'status' => 409 ), 'booking-failed' );
+	}
+
+	return $booking;
+}
+
 /** The next booking number (Booking #N), starting at 1. */
 function law_bookings_next_number() {
 	return law_events_bump_counter( 'law_bookings_counter' );
@@ -468,12 +657,140 @@ function law_bookings_next_numbers( $count ) {
 	return range( $last - $count + 1, $last );
 }
 
+/* Kind and price _____________________________________________________________
+ *
+ * Three kinds of booking now share this engine: a HOSTED place (free,
+ * instant), a FLAGSHIP application (reviewed, then charged) and a RECEPTION
+ * place (paid at Checkout, or included with a flagship ticket). The kind is
+ * never stored — it is a property of the event the booking hangs under — so
+ * these read it rather than trusting a meta key that could drift from the
+ * parent.
+ */
+
+/**
+ * What kind of booking this is, from its parent event.
+ *
+ * The one place the question is answered, so the webhook's handler table
+ * (RECEPTIONS.md §3.2), the manage view and the payment columns cannot come to
+ * three different conclusions about the same post.
+ *
+ * @param int|WP_Post $booking law_booking post or ID.
+ * @return string flagship | reception | hosted. 'hosted' for anything that is
+ *                not a booking at all, because that is the kind with no money
+ *                and no special handling — failing closed here means failing
+ *                towards the harmless one.
+ */
+function law_booking_kind( $booking ) {
+	$post = $booking instanceof WP_Post ? $booking : get_post( (int) $booking );
+	if ( ! $post || LAW_BOOKING_CPT !== $post->post_type ) {
+		return 'hosted';
+	}
+	$event_id = (int) $post->post_parent;
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return 'flagship';
+	}
+	if ( law_event_meta( $event_id, '_law_is_reception' ) ) {
+		return 'reception';
+	}
+	return 'hosted';
+}
+
+/**
+ * What one place at this event costs, NET of VAT, in pence. 0 means free, or
+ * (on a reception) "not on sale yet".
+ *
+ * The flagship is the exception and is delegated rather than duplicated: its
+ * price is time-switched between two stored figures, not a single int, so
+ * asking it for the number is the only way to get the right one.
+ */
+function law_event_price_pence( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( $event_id < 1 ) {
+		return 0;
+	}
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return (int) law_flagship_price_pence( 0, $event_id );
+	}
+	return max( 0, (int) law_event_meta( $event_id, '_law_attendee_price_pence' ) );
+}
+
+/** Does a place at this event cost money? */
+function law_event_is_priced( $event_id ) {
+	return law_event_price_pence( $event_id ) > 0;
+}
+
+/**
+ * Is this event invitation-only — LAW invites people itself, and the site
+ * shows it for information with no booking route (RECEPTIONS.md §4.1)?
+ *
+ * Read from the reserved _law_registration_state vocabulary rather than a flag
+ * of its own, because "how is this booked" already has a key and a sanitiser.
+ */
+function law_event_is_invitation_only( $event_id ) {
+	return 'invitation' === (string) law_event_meta( (int) $event_id, '_law_registration_state' );
+}
+
+/**
+ * How many places on this event are held by somebody who is part-way through
+ * paying for them.
+ *
+ * The lists print "Bookings (N)" from _law_tickets_sold, which on a priced
+ * event now includes these holds, while law_bookings_for_event() defaults to
+ * `publish` — so without a separate number the table would show N-1 rows under
+ * a heading saying N (RECEPTIONS.md §1.3).
+ */
+function law_booking_pending_payment_count( $event_id ) {
+	global $wpdb;
+	$event_id = (int) $event_id;
+	if ( $event_id < 1 ) {
+		return 0;
+	}
+	return (int) $wpdb->get_var(
+		$wpdb->prepare(
+			"SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s AND post_parent = %d AND post_status = 'law-pending-payment'",
+			LAW_BOOKING_CPT,
+			$event_id
+		)
+	);
+}
+
+/**
+ * A payment state's label for a committee-facing list.
+ *
+ * Moved up from law_flagship_payment_states() (flagship-bookings-dashboard.php)
+ * when the receptions needed the same vocabulary on the hosted bookings views:
+ * one map, so "Awaiting payment" cannot mean two things on two screens.
+ *
+ * @return array<string,string>
+ */
+function law_booking_payment_states() {
+	return array(
+		'pending_setup'   => __( 'Awaiting payment details', 'law' ),
+		'ready'           => __( 'Payment details saved', 'law' ),
+		'processing'      => __( 'Payment in progress', 'law' ),
+		'paid'            => __( 'Paid', 'law' ),
+		'failed'          => __( 'Payment failed', 'law' ),
+		'action_required' => __( 'Bank confirmation needed', 'law' ),
+		'refunded'        => __( 'Refunded', 'law' ),
+		'complimentary'   => __( 'Complimentary', 'law' ),
+		'included'        => __( 'Included', 'law' ),
+	);
+}
+
 /* Guards _____________________________________________________________________ */
 
 /**
- * Is the event open for booking at all? Confirmed, on the CPT source, with a
- * ticket number set, and not yet started (settled: booking closes at event
- * start; an event with no start cannot close by time).
+ * Is the event LIVE — confirmed, on the CPT source, with a ticket number set,
+ * and not yet started (settled: booking closes at event start; an event with
+ * no start cannot close by time)?
+ *
+ * This is the event-state half of the old single guard. It is what the
+ * waitlist's internals and the untrash hook ask, because a queue must keep
+ * promoting on a priced reception exactly as it does on a free hosted event —
+ * the money is the FORM's problem, not the event's.
+ *
+ * Anything that takes a submission asks law_booking_guard_form_open() instead,
+ * which adds the two refusals that are about how a place is obtained.
  *
  * @return true|WP_Error
  */
@@ -497,6 +814,48 @@ function law_booking_guard_open( $event_id ) {
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' !== $start && strtotime( $start ) <= current_time( 'timestamp' ) ) {
 		return new WP_Error( 'law_booking_closed', 'This event has taken place, so bookings are closed.' );
+	}
+	return true;
+}
+
+/**
+ * Is this event open to the FREE booking form — the hosted-event dialog, "add
+ * a colleague", register-on-behalf, the plain waitlist join and the dialog
+ * server?
+ *
+ * The event-live test above, plus the two refusals that are about how a place
+ * is obtained rather than about the event's state:
+ *
+ *  - invitation only: LAW invites people itself and nothing on the site takes
+ *    a booking (RECEPTIONS.md §4.1);
+ *  - priced: a paid reception is bought at Checkout, so a form that creates a
+ *    confirmed place out of nothing must not serve it.
+ *
+ * Hiding a button is not a control; this is. The committee's own
+ * register-on-behalf passes allow_priced, because a complimentary place at a
+ * priced reception is a real thing it may give (RECEPTIONS.md §2.1).
+ *
+ * @param int   $event_id law_event post ID.
+ * @param array $args     allow_priced (bool): the caller is writing a
+ *                        complimentary place and knows the event charges.
+ * @return true|WP_Error
+ */
+function law_booking_guard_form_open( $event_id, array $args = array() ) {
+	$open = law_booking_guard_open( $event_id );
+	if ( is_wp_error( $open ) ) {
+		return $open;
+	}
+	if ( law_event_is_invitation_only( $event_id ) ) {
+		return new WP_Error(
+			'law_booking_invitation_only',
+			'Places at this reception are by invitation from LAW.'
+		);
+	}
+	if ( empty( $args['allow_priced'] ) && law_event_is_priced( $event_id ) ) {
+		return new WP_Error(
+			'law_booking_priced',
+			'This reception is booked through checkout.'
+		);
 	}
 	return true;
 }
@@ -688,7 +1047,7 @@ function law_booking_price( $booking_id ) {
  * @return string[]
  */
 function law_booking_holding_statuses() {
-	return array( 'publish', 'law-waitlisted', 'law-applied', 'law-payment-failed' );
+	return array( 'publish', 'law-waitlisted', 'law-applied', 'law-payment-failed', 'law-pending-payment' );
 }
 
 /**
@@ -735,6 +1094,17 @@ function law_booking_guard_clash( $user_id, $event_id, $attendee_name = '' ) {
 		return true;
 	}
 
+	// A reception and the flagship are exempt, on BOTH sides of the pair: the
+	// receptions run in the evenings of the same week the conference and the
+	// hosted events fill, and a delegate is meant to attend a session and then
+	// go for a drink (RECEPTIONS.md §0.3). The exemption lives here rather
+	// than at the call sites because law_waitlist_check_promotable() calls
+	// this, so a reception queue would otherwise refuse to promote anybody who
+	// had booked something else that evening.
+	if ( law_booking_clash_exempt( $event_id ) ) {
+		return true;
+	}
+
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' === $start ) {
 		return true;
@@ -750,6 +1120,9 @@ function law_booking_guard_clash( $user_id, $event_id, $attendee_name = '' ) {
 		if ( '' === $other_start ) {
 			continue;
 		}
+		if ( law_booking_clash_exempt( $other_id ) ) {
+			continue;
+		}
 		$os = (int) strtotime( $other_start );
 		$oe = law_booking_clash_end( $other_start, (string) law_event_meta( $other_id, '_law_end' ) );
 		if ( $os < $this_end && $oe > $this_start ) {
@@ -761,6 +1134,23 @@ function law_booking_guard_clash( $user_id, $event_id, $attendee_name = '' ) {
 		}
 	}
 	return true;
+}
+
+/**
+ * Events the overlap test ignores, whichever side of the pair they are on: the
+ * flagship conference and the drinks receptions.
+ *
+ * A delegate is meant to spend the day at the conference or at a hosted
+ * session and then go for a drink, so refusing the second booking because it
+ * overlaps the first would refuse the intended pattern of the week
+ * (RECEPTIONS.md §0.3).
+ */
+function law_booking_clash_exempt( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return true;
+	}
+	return (bool) law_event_meta( $event_id, '_law_is_reception' );
 }
 
 /**
@@ -972,6 +1362,444 @@ function law_booking_set_status( $booking_id, $status ) {
 	return is_wp_error( $updated ) ? $updated : true;
 }
 
+/* Shared payment plumbing ____________________________________________________
+ *
+ * Extracted from functions/events/flagship-bookings.php when the receptions
+ * became the second priced flow (RECEPTIONS.md §1.5). Nothing here knows what
+ * kind of booking it is holding: it is the machinery any priced place needs —
+ * the profile the snapshot is built from, the insert, the one-shot latches,
+ * the price-changed guard, the mismatch log and the email placeholders. The
+ * flagship's old names survive as one-line wrappers, so its own file still
+ * reads in its own vocabulary and its suites did not have to move.
+ */
+
+/**
+ * What a priced booking needs from somebody's profile before it can be taken.
+ *
+ * A name, and nothing else. Country, dietary and accessibility are read live
+ * from the profile wherever they are shown, so a blank one is a gap the person
+ * can fill later; a missing NAME is different, because the committee's list
+ * and the badge on the door have nothing to print.
+ *
+ * @return string[] Human-readable names of what is missing; empty when ready.
+ */
+function law_booking_profile_gaps( $user_id ) {
+	$profile = law_profile_values( (int) $user_id );
+	$needed  = array(
+		'first_name' => __( 'first name', 'law' ),
+		'last_name'  => __( 'surname', 'law' ),
+	);
+
+	$missing = array();
+	foreach ( $needed as $field => $label ) {
+		if ( '' === trim( (string) ( $profile[ $field ] ?? '' ) ) ) {
+			$missing[] = $label;
+		}
+	}
+
+	return $missing;
+}
+
+/**
+ * The snapshot row a priced booking carries, built from the account's profile
+ * (with an optional override map from a form that collected anything itself).
+ */
+function law_booking_person_from_profile( $user_id, array $answers = array() ) {
+	$profile = law_profile_values( (int) $user_id );
+
+	$first = sanitize_text_field( (string) ( $answers['first_name'] ?? $profile['first_name'] ?? '' ) );
+	$last  = sanitize_text_field( (string) ( $answers['last_name'] ?? $profile['last_name'] ?? '' ) );
+	$name  = trim( $first . ' ' . $last );
+
+	return array(
+		'user_id'      => (int) $user_id,
+		'name'         => '' !== $name ? $name : (string) ( $profile['email'] ?? '' ),
+		'email'        => (string) ( $profile['email'] ?? '' ),
+		'organisation' => sanitize_text_field( (string) ( $answers['organisation'] ?? $profile['organisation'] ?? '' ) ),
+		'job_title'    => sanitize_text_field( (string) ( $answers['job_title'] ?? $profile['job_title'] ?? '' ) ),
+	);
+}
+
+/**
+ * Insert ONE booking for one person: the post, its number, its attendee
+ * snapshot and whatever meta the caller wants frozen onto it.
+ *
+ * THE CALLER HOLDS THE EVENT LOCK. This does no guarding and no recounting of
+ * its own precisely so that it can be the last step inside somebody else's
+ * locked block, between their guards and their recount.
+ *
+ * It was three copies before the receptions: law_flagship_apply(),
+ * law_flagship_add_complimentary() and the loop inside law_booking_create(),
+ * and they had already drifted over which meta they wrote first.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param int    $user_id  The attendee (becomes post_author).
+ * @param string $status   Booking post status.
+ * @param array  $person   law_booking_attendee()-shaped row.
+ * @param array  $meta     key => value, written through law_event_update_meta().
+ * @return int|WP_Error The booking post ID.
+ */
+function law_booking_insert( $event_id, $user_id, $status, array $person, array $meta = array() ) {
+	$numbers    = law_bookings_next_numbers( 1 );
+	$booking_id = wp_insert_post(
+		wp_slash(
+			array(
+				'post_type'   => LAW_BOOKING_CPT,
+				'post_status' => $status,
+				'post_parent' => (int) $event_id,
+				'post_author' => (int) $user_id,
+				'post_title'  => 'Booking #' . $numbers[0],
+			)
+		),
+		true
+	);
+	if ( is_wp_error( $booking_id ) || ! $booking_id ) {
+		return is_wp_error( $booking_id )
+			? $booking_id
+			: new WP_Error( 'law_booking_insert_failed', 'Your booking could not be saved. Please try again.' );
+	}
+	$booking_id = (int) $booking_id;
+
+	law_event_update_meta( $booking_id, '_law_booking_number', $numbers[0] );
+	law_booking_write_attendee( $booking_id, $person, (int) $user_id );
+	foreach ( $meta as $key => $value ) {
+		law_event_update_meta( $booking_id, $key, $value );
+	}
+
+	return $booking_id;
+}
+
+/**
+ * Claim a one-shot latch on a booking, atomically.
+ *
+ * It has to be CLAIMED, not read and then written. Several requests reach the
+ * same outcome for one payment — the browser returning from Checkout and two
+ * or three webhook deliveries — within milliseconds of each other, and a
+ * read-then-update latch lets every one of them read "not sent", write it, and
+ * send. On 10 September 2026 that put two of each email in the committee's
+ * inbox.
+ *
+ * So: the event lock serialises them, and add_post_meta( …, $unique = true )
+ * is the claim, returning false when the row already exists. Belt and braces
+ * deliberately — the lock has a 3-second acquire timeout, and if it is ever
+ * not granted the unique claim still narrows the window to almost nothing.
+ *
+ * @return bool True for the one caller that won it.
+ */
+function law_booking_claim_latch( $booking_id, $key ) {
+	$booking_id = (int) $booking_id;
+	$event_id   = (int) get_post_field( 'post_parent', $booking_id );
+
+	$locked  = $event_id ? law_booking_lock( $event_id ) : false;
+	$claimed = (bool) add_post_meta( $booking_id, $key, 1, true );
+	if ( $locked ) {
+		law_booking_unlock( $event_id );
+	}
+
+	return $claimed;
+}
+
+/**
+ * Take the exclusive right to charge this booking, atomically.
+ *
+ * The event lock cannot be held across the Stripe round trip — four calls, up
+ * to 30 seconds each, would queue every other action behind one card. So the
+ * decision is made under the lock and the charge is claimed with a single
+ * add_post_meta( …, $unique = true ), which is one INSERT and therefore one
+ * winner.
+ *
+ * A claim older than five minutes is stale (a fatal mid-charge, a killed
+ * request) and is taken over, so a crash cannot lock a delegate out for ever.
+ *
+ * Raw post meta, deliberately outside law_booking_meta_schema(): a sanitiser
+ * between the claim and the row it depends on would be one more thing able to
+ * turn a winning INSERT into a losing one.
+ */
+function law_booking_claim_charge( $booking_id ) {
+	$booking_id = (int) $booking_id;
+	$existing   = get_post_meta( $booking_id, '_law_charge_claim', true );
+
+	if ( '' !== (string) $existing ) {
+		if ( ( time() - (int) $existing ) < 5 * MINUTE_IN_SECONDS ) {
+			return false;
+		}
+		delete_post_meta( $booking_id, '_law_charge_claim' );
+	}
+
+	return (bool) add_post_meta( $booking_id, '_law_charge_claim', time(), true );
+}
+
+/** Is a charge claim being held, and how long has it been held for? 0 = none. */
+function law_booking_charge_claimed_at( $booking_id ) {
+	return (int) get_post_meta( (int) $booking_id, '_law_charge_claim', true );
+}
+
+/** Give the charge claim back, whatever happened. */
+function law_booking_release_charge( $booking_id ) {
+	delete_post_meta( (int) $booking_id, '_law_charge_claim' );
+}
+
+/**
+ * The form posted the price it displayed. If it no longer matches — the
+ * delegate had the page open across a price change, or a discount code ran out
+ * while they were typing — refuse rather than silently taking a figure they
+ * never saw and never consented to.
+ *
+ * A $shown of 0 means the form did not say (a hand-made POST, or the no-JS
+ * path with nothing filled in), which is not a mismatch to report.
+ *
+ * @param int    $shown  Gross pence the form displayed.
+ * @param int    $actual Gross pence the server has just calculated.
+ * @param string $code   WP_Error code to refuse with.
+ * @return true|WP_Error
+ */
+function law_booking_guard_price_shown( $shown, $actual, $code ) {
+	$shown  = (int) $shown;
+	$actual = (int) $actual;
+	if ( $shown < 1 || $shown === $actual ) {
+		return true;
+	}
+
+	return new WP_Error(
+		$code,
+		sprintf(
+			/* translators: %s: the new total, including VAT. */
+			__( 'The price changed to %s while you were filling this in, so nothing has been taken. Please check the new total and try again.', 'law' ),
+			law_events_format_pence( $actual )
+		)
+	);
+}
+
+/**
+ * Reconcile what Stripe says was paid against the snapshot the booking carries.
+ *
+ * A mismatch NEVER blocks the place — the money genuinely arrived — but it is
+ * logged loudly, because it is the only signal that a price moved underneath a
+ * payment.
+ */
+function law_booking_log_amount_mismatch( $booking_id, $paid, $expected, $context = 'stripe_webhook' ) {
+	$booking_id = (int) $booking_id;
+	$paid       = (int) $paid;
+	$expected   = (int) $expected;
+	if ( $paid < 1 || $expected < 1 || $paid === $expected ) {
+		return false;
+	}
+
+	law_event_log(
+		(int) get_post_field( 'post_parent', $booking_id ),
+		sprintf(
+			'AMOUNT MISMATCH on booking #%d: paid %s, expected %s. Review in Stripe.',
+			(int) law_event_meta( $booking_id, '_law_booking_number' ),
+			law_events_format_pence( $paid ),
+			law_events_format_pence( $expected )
+		),
+		array(
+			'source'   => $context,
+			'action'   => 'amount_mismatch',
+			'booking'  => $booking_id,
+			'paid'     => $paid,
+			'expected' => $expected,
+		),
+		array( 'user_id' => 0 )
+	);
+
+	return true;
+}
+
+/**
+ * Is this Stripe failure OURS rather than the delegate's?
+ *
+ * The two are handled in opposite ways: a decline is theirs to fix and they
+ * are told the reason verbatim, while a configuration error stops quietly with
+ * the booking untouched and alerts an admin. On 10 September 2026 a reused
+ * idempotency key came back as invalid_request_error and was shown to a
+ * delegate as the reason their payment had failed, telling them to go and sort
+ * out a key.
+ *
+ * Only the listed types are claimed as ours. Anything unrecognised stays with
+ * the delegate, so a genuine decline in a shape not seen here is never
+ * silently swallowed into an admin email nobody is waiting for.
+ */
+function law_booking_is_configuration_error( WP_Error $error ) {
+	$ours = array(
+		'law_no_tax_rate',
+		'law_stripe_unconfigured',
+		'law_stripe_no_user',
+		'law_stripe_no_customer',
+		'law_stripe_no_invoice',
+		'law_stripe_no_method',
+		'law_stripe_no_session',
+		'law_booking_missing',
+		'law_booking_free',
+		'law_stripe_resume_unreadable',
+		'law_stripe_bad_response',
+	);
+	if ( in_array( $error->get_error_code(), $ours, true ) ) {
+		return true;
+	}
+
+	$data   = $error->get_error_data();
+	$stripe = is_array( $data ) && is_array( $data['stripe'] ?? null ) ? $data['stripe'] : array();
+	$type   = (string) ( $stripe['type'] ?? '' );
+
+	return in_array(
+		$type,
+		array( 'idempotency_error', 'invalid_request_error', 'authentication_error', 'api_error', 'rate_limit_error' ),
+		true
+	);
+}
+
+/** Days a delegate has to fix a failed payment. */
+function law_booking_payment_window_days() {
+	$days = (int) law_events_setting( 'flagship_payment_window_days', LAW_FLAGSHIP_PAYMENT_WINDOW_DAYS );
+
+	return $days > 0 ? $days : LAW_FLAGSHIP_PAYMENT_WINDOW_DAYS;
+}
+
+/**
+ * The deadline a failed payment must be fixed by, as a timestamp; 0 when the
+ * booking has not failed.
+ */
+function law_booking_payment_deadline_ts( $booking_id ) {
+	$failed = (string) law_event_meta( $booking_id, '_law_payment_failed_at' );
+	if ( '' === $failed ) {
+		return 0;
+	}
+	$ts = strtotime( $failed . ' UTC' );
+
+	return $ts ? $ts + ( law_booking_payment_window_days() * DAY_IN_SECONDS ) : 0;
+}
+
+/**
+ * The recipient and placeholders every priced-booking email needs.
+ *
+ * @return array{to:string,placeholders:array<string,string>}
+ */
+function law_booking_email_extra( $booking_id ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking ) {
+		return array( 'to' => '', 'placeholders' => array() );
+	}
+	$booking_id = (int) $booking->ID;
+	$price      = law_booking_price( $booking_id );
+	$person     = law_booking_attendee( $booking_id );
+	$deadline   = law_booking_payment_deadline_ts( $booking_id );
+	$discount   = (int) law_event_meta( $booking_id, '_law_discount_pence' );
+	$code       = (string) law_event_meta( $booking_id, '_law_discount_code' );
+
+	return array(
+		'to'           => $person['email'],
+		'placeholders' => array_merge(
+			law_booking_email_placeholders( $booking_id ),
+			array(
+				'attendee_name'       => $person['name'],
+				'price'               => law_events_format_pence( $price['net'] ),
+				'price_vat'           => law_events_format_pence( $price['vat'] ),
+				'price_total'         => law_events_format_pence( $price['gross'] ),
+				'invoice_link'        => (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' ),
+				'decline_reason'      => (string) law_event_meta( $booking_id, '_law_decline_reason' ),
+				'payment_error'       => (string) law_event_meta( $booking_id, '_law_payment_error' ),
+				'payment_deadline'    => $deadline ? wp_date( 'j F Y', $deadline ) : '',
+				// A line only when a code was actually used, so an email that
+				// carries the tag reads cleanly for everybody else.
+				'discount_note'       => ( '' !== $code && $discount > 0 )
+					? sprintf(
+						/* translators: 1: the code, 2: the amount off. */
+						__( 'Discount code %1$s: %2$s off', 'law' ),
+						$code,
+						law_events_format_pence( $discount )
+					)
+					: '',
+				// Both names resolve to the same thing: {card_label} is the
+				// original and may be sitting in an email an admin has already
+				// customised, {payment_method} is the honest one now that
+				// Checkout can save more than a card.
+				'card_label'          => law_booking_payment_method_label( $booking_id ),
+				'payment_method'      => law_booking_payment_method_label( $booking_id ),
+				'update_payment_link' => law_booking_manage_url( $booking_id ),
+			)
+		),
+	);
+}
+
+/**
+ * Create a law_event post the module manages itself when it is missing, so a
+ * git deploy alone is enough: there is code for the flagship and the
+ * receptions, but the records they edit are database state.
+ *
+ * Idempotent by SLUG, and called from three places that may run in any order
+ * and more than once — migration step 10, the ?setup-account-pages trigger and
+ * the dashboard's first open.
+ *
+ * @param string $slug  Post slug; also what makes this idempotent.
+ * @param string $title Post title for a new record.
+ * @param array  $meta  Meta to write on creation only. An existing post is
+ *                      never re-stamped: the committee edits these.
+ * @param bool   $dry   Report what would happen, change nothing.
+ * @return array{id:int, created:bool, message:string}
+ */
+function law_event_ensure_managed_post( $slug, $title, array $meta = array(), $dry = false ) {
+	$slug     = sanitize_title( $slug );
+	$existing = $slug ? get_page_by_path( $slug, OBJECT, LAW_EVENT_CPT ) : null;
+
+	if ( $existing instanceof WP_Post ) {
+		return array(
+			'id'      => (int) $existing->ID,
+			'created' => false,
+			'message' => sprintf( '"%s" exists (post %d, %s).', $existing->post_title, (int) $existing->ID, get_permalink( $existing ) ?: '/events/' . $slug . '/' ),
+		);
+	}
+
+	if ( $dry ) {
+		return array(
+			'id'      => 0,
+			'created' => false,
+			'message' => sprintf( 'Would create "%s" (law-draft, /events/%s/).', $title, $slug ),
+		);
+	}
+
+	$id = wp_insert_post(
+		wp_slash(
+			array(
+				'post_type'    => LAW_EVENT_CPT,
+				'post_status'  => 'law-draft',
+				'post_title'   => $title,
+				'post_name'    => $slug,
+				'post_author'  => get_current_user_id(),
+				'post_content' => '',
+			)
+		),
+		true
+	);
+	if ( is_wp_error( $id ) || ! $id ) {
+		return array(
+			'id'      => 0,
+			'created' => false,
+			'message' => sprintf( 'ERROR could not create "%s": %s', $title, is_wp_error( $id ) ? $id->get_error_message() : 'unknown error' ),
+		);
+	}
+
+	$id = (int) $id;
+	foreach ( $meta as $key => $value ) {
+		law_event_update_meta( $id, $key, $value );
+	}
+
+	// The programme-year term keeps a 2026 event from re-filing into 2027 and
+	// is what the admin list's year filter reads.
+	$year = (string) law_events_setting( 'year', 2026 );
+	if ( '' !== $year ) {
+		wp_set_object_terms( $id, $year, 'law_year', false );
+	}
+
+	$post    = get_post( $id );
+	$message = sprintf( 'Created "%s" (post %d, %s).', $title, $id, get_permalink( $id ) );
+	if ( $post && $slug !== $post->post_name ) {
+		$message .= sprintf( ' Note: the slug is "%s", because another event already held "%s".', $post->post_name, $slug );
+	}
+
+	return array( 'id' => $id, 'created' => true, 'message' => $message );
+}
+
 /* Mutations __________________________________________________________________ */
 
 /**
@@ -1006,12 +1834,16 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
 			'press'       => false,
 			'owner_row'   => array(),
 			'status'      => 'publish',
+			// The committee's register-on-behalf may write a complimentary
+			// place at a PRICED reception; nothing else may
+			// (law_booking_guard_form_open()).
+			'allow_priced' => false,
 		),
 		$args
 	);
 	$actor_id = (int) $args['actor'] ?: $booker_id;
 
-	$open = law_booking_guard_open( $event_id );
+	$open = law_booking_guard_form_open( $event_id, array( 'allow_priced' => ! empty( $args['allow_priced'] ) ) );
 	if ( is_wp_error( $open ) ) {
 		return law_booking_log_refusal( $event_id, 0, $open, $actor_id );
 	}
@@ -1101,8 +1933,9 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
 	// Re-read the event itself, not just the seats: a committee cancel can
 	// complete while this request waits for the lock, and its sweep has
 	// already passed, so a booking inserted now would sit on a dead event with
-	// nothing left to correct it.
-	$open = law_booking_guard_open( $event_id );
+	// nothing left to correct it. A price or an invitation-only switch thrown
+	// meanwhile is caught here too.
+	$open = law_booking_guard_form_open( $event_id, array( 'allow_priced' => ! empty( $args['allow_priced'] ) ) );
 	if ( is_wp_error( $open ) ) {
 		return $refuse( $open );
 	}
@@ -1355,7 +2188,11 @@ function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, 
 
 	// Fast-fail on the common refusals before any account is created. All of
 	// these run again inside the event lock in law_booking_create().
-	$open = law_booking_guard_open( $event_id );
+	//
+	// allow_priced: the committee registering somebody onto a PAID reception is
+	// giving them a complimentary place, which is a decision it may take. The
+	// place is written at price 0 below, so nothing is ever billed for it.
+	$open = law_booking_guard_form_open( $event_id, array( 'allow_priced' => true ) );
 	if ( is_wp_error( $open ) ) {
 		return law_booking_log_refusal( $event_id, 0, $open, $actor_id );
 	}
@@ -1394,6 +2231,7 @@ function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, 
 			'new_account' => $created,
 			'press'       => $press,
 			'owner_row'   => $row,
+			'allow_priced' => true,
 		)
 	);
 
@@ -1404,6 +2242,16 @@ function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, 
 			law_booking_delete_created_users( array( (int) $user->ID => true ), $event_id, $actor_id );
 		}
 		return $ids;
+	}
+
+	// A place the committee gave at a PRICED event is complimentary, and says
+	// so on the booking rather than being inferred from a zero price: the
+	// manage view, the payment column and the exports all read the status.
+	if ( law_event_is_priced( $event_id ) ) {
+		law_event_update_meta( (int) $ids[0], '_law_price_pence', 0 );
+		law_event_update_meta( (int) $ids[0], '_law_vat', 0 );
+		law_event_update_meta( (int) $ids[0], '_law_is_complimentary', 1 );
+		law_event_update_meta( (int) $ids[0], '_law_payment_status', 'complimentary' );
 	}
 
 	// Country, accessibility and dietary, once the place is actually theirs.
@@ -1455,7 +2303,10 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
 	$booker_id = (int) $booker_id;
 	$actor_id  = (int) $actor_id ?: $booker_id;
 
-	$open = law_booking_guard_open( $event_id );
+	// The form guard, so "Add a colleague" never renders — and never writes —
+	// on a priced or invitation-only reception. One place per checkout is the
+	// settled rule there (RECEPTIONS.md §0.2).
+	$open = law_booking_guard_form_open( $event_id );
 	if ( is_wp_error( $open ) ) {
 		return law_booking_log_refusal( $event_id, 0, $open, $actor_id );
 	}
@@ -1528,7 +2379,7 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
 
 	// See law_booking_create(): the event can stop being open while this
 	// request queues for the lock.
-	$open = law_booking_guard_open( $event_id );
+	$open = law_booking_guard_form_open( $event_id );
 	if ( is_wp_error( $open ) ) {
 		return $refuse( $open );
 	}
@@ -1615,7 +2466,10 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
  *                           'host_reject' (host or committee, with a reason),
  *                           'event_cancelled' (the event-cancel sweep),
  *                           'account_deleted' (their account is gone, so there
- *                           is nobody to email).
+ *                           is nobody to email),
+ *                           'included_revoked' (a free reception place taken
+ *                           back with the flagship ticket that granted it; the
+ *                           caller sends its own email).
  * @param array  $args       Optional: reason (host_reject).
  * @return true|WP_Error
  */
@@ -1629,6 +2483,25 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	}
 	$event_id    = (int) $booking->post_parent;
 	$waitlisted  = 'law-waitlisted' === $booking->post_status;
+	$payment     = (string) law_event_meta( $booking->ID, '_law_payment_status' );
+
+	// A place somebody has PAID for is not theirs to cancel: refunds are
+	// manual, and self-service cancellation would free the place while leaving
+	// the money with LAW and nobody told (RECEPTIONS.md §0.3). Enforced here
+	// rather than only in the UI, because hiding a button is not a control.
+	// The committee still can, through the host_reject context, which alerts
+	// and refunds nothing.
+	// The GROSS, not the status: a place a 100% discount code made free is
+	// marked `paid` and had nothing taken for it, so there is nothing to refund
+	// and no reason to stand between the delegate and giving the place back
+	// (browser pass, 14 September 2026).
+	if ( 'paid' === $payment && law_booking_price( (int) $booking->ID )['gross'] > 0
+		&& in_array( $context, array( 'self', 'booker' ), true ) ) {
+		return new WP_Error(
+			'law_booking_paid_place',
+			__( 'This place has been paid for, so it cannot be cancelled here. Contact us and we will sort it out.', 'law' )
+		);
+	}
 
 	// Under the event lock like every other mutation. NOTE: GET_LOCK does not
 	// nest — a second acquire on a name this session already holds returns
@@ -1652,8 +2525,30 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		law_waitlist_renumber( $event_id );
 	}
 
+	// A discount code's use goes back with the place, but only while the money
+	// has not arrived: a paid place that the committee cancels KEEPS the use,
+	// because the code really was spent (RECEPTIONS.md §2.7). The key is
+	// deleted on release, which is what makes a second release — the webhook's
+	// expiry and the sweep both reaching this booking — a no-op rather than a
+	// theft of somebody else's live claim.
+	$discount_id = (int) law_event_meta( $booking->ID, '_law_discount_id' );
+	if ( $discount_id && 'paid' !== $payment && function_exists( 'law_discount_release' ) ) {
+		law_discount_release( $discount_id, (int) $booking->ID );
+		delete_post_meta( $booking->ID, '_law_discount_id' );
+	}
+
 	$sold = law_event_recount_attendees( $event_id );
 	law_booking_unlock( $event_id );
+
+	// A queue entry leaving takes its saved payment method with it: nothing is
+	// ever going to charge it now, and keeping somebody's method on file
+	// without a reason is not ours to do. After the unlock, because it is a
+	// Stripe round trip.
+	if ( '' !== (string) law_event_meta( $booking->ID, '_law_stripe_payment_method_id' )
+		&& 'paid' !== $payment
+		&& function_exists( 'law_stripe_detach_payment_method' ) ) {
+		law_stripe_detach_payment_method( (int) $booking->ID, (int) $actor_id );
+	}
 
 	$number  = (int) law_event_meta( $booking->ID, '_law_booking_number' );
 	$person  = law_booking_attendee( $booking );
@@ -1669,6 +2564,11 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		'host_reject'     => 'cancelled by the committee',
 		'event_cancelled' => 'cancelled because the event was cancelled',
 		'account_deleted' => 'cancelled because the account was deleted',
+		// A reception place that came free with a flagship ticket, taken back
+		// because that ticket was refunded (RECEPTIONS.md §2.6). It sends no
+		// email from here: law_reception_revoke_included() sends its own, which
+		// says WHY, and the generic "the event was cancelled" would be untrue.
+		'included_revoked' => 'withdrawn: the flagship place it came with is no longer confirmed',
 	);
 	law_event_log(
 		$event_id,
@@ -1721,6 +2621,18 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 					)
 				),
 			)
+		);
+	}
+
+	// The committee cancelling a place somebody PAID for is a refund decision
+	// nothing here can make, so it alerts rather than acting: the money is
+	// still LAW's and only a human can decide what happens to it
+	// (RECEPTIONS.md §0.3).
+	if ( 'paid' === $payment && 'host_reject' === $context ) {
+		law_events_send(
+			'committee_reception_paid_cancelled',
+			$event_id,
+			array( 'placeholders' => law_booking_email_extra( (int) $booking->ID )['placeholders'] )
 		);
 	}
 
@@ -2411,7 +3323,12 @@ function law_booking_export_rows( $event_id ) {
 		: 'date to be confirmed';
 
 	// -1 like the recount: a truncated export would silently lose attendees.
-	$bookings = law_bookings_for_event( $event_id, 'publish', -1 );
+	//
+	// On a PRICED event the holds come too: somebody standing on Stripe's page
+	// is counted in "Bookings (N)", so an export of N-1 rows under that
+	// heading would read as a bug rather than as a hold (RECEPTIONS.md §1.3).
+	$priced   = law_event_is_priced( $event_id );
+	$bookings = law_bookings_for_event( $event_id, $priced ? array( 'publish', 'law-pending-payment' ) : 'publish', -1 );
 
 	// One users + one usermeta query for the whole export instead of two per
 	// attendee (performance review, 7 September 2026).
@@ -2454,11 +3371,26 @@ function law_booking_export_rows( $event_id ) {
 			law_booking_profile_requirements( $profile, 'accessibility' ),
 			law_booking_profile_requirements( $profile, 'dietary' ),
 		);
+		if ( $priced ) {
+			$payment  = (string) law_event_meta( $booking->ID, '_law_payment_status' );
+			$price    = law_booking_price( (int) $booking->ID );
+			$last_row = count( $rows ) - 1;
+
+			$rows[ $last_row ][] = law_booking_payment_states()[ $payment ] ?? $payment;
+			$rows[ $last_row ][] = in_array( $payment, array( 'paid', 'refunded' ), true ) ? law_events_format_pence( $price['gross'] ) : '';
+			$rows[ $last_row ][] = (string) law_event_meta( $booking->ID, '_law_discount_code' );
+			$rows[ $last_row ][] = (string) law_event_meta( $booking->ID, '_law_stripe_invoice_url' );
+		}
+	}
+
+	$columns = array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' );
+	if ( $priced ) {
+		$columns = array_merge( $columns, array( 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ) );
 	}
 
 	return array(
 		'title'   => sprintf( 'Attendees for %s, %s', get_the_title( $event_id ), $when ),
-		'columns' => array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' ),
+		'columns' => $columns,
 		'rows'    => $rows,
 	);
 }

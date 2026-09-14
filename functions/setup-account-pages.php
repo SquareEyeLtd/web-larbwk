@@ -57,6 +57,9 @@ function law_setup_account_pages() {
 		// The committee's Manage Speakers view (functions/events/speakers-dashboard.php).
 		$setup['account/dashboard/speakers'] = 'templates/account-speakers-dashboard.php';
 		$setup['account/dashboard/flagship'] = 'templates/account-dashboard-flagship.php';
+		// The committee's Manage receptions screen
+		// (functions/events/receptions-dashboard.php).
+		$setup['account/dashboard/receptions'] = 'templates/account-dashboard-receptions.php';
 		// The flagship's applications and payments, its own page rather than
 		// a section of Manage bookings
 		// (functions/events/flagship-bookings-dashboard.php).
@@ -138,6 +141,7 @@ function law_setup_account_pages() {
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/flagship/ committee restriction: ' . law_setup_flagship_dashboard_access();
+	$report[] = 'ACCESS   /account/dashboard/receptions/ committee restriction: ' . law_setup_receptions_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/flagship-bookings/ committee restriction: ' . law_setup_flagship_bookings_access();
 	$report[] = 'ACCESS   /account/dashboard/discounts/ committee restriction: ' . law_setup_discounts_dashboard_access();
 
@@ -149,6 +153,17 @@ function law_setup_account_pages() {
 	if ( function_exists( 'law_flagship_ensure_post' ) ) {
 		$flagship = law_flagship_ensure_post();
 		$report[] = ( $flagship['created'] ? 'CREATED  ' : 'OK       ' ) . '/events/flagship/ ' . $flagship['message'];
+	}
+
+	// The three drinks receptions, for the same reason and in the same way:
+	// law_event posts rather than pages, so a git deploy carries the code but
+	// not the records. Seeded as drafts with no price, because the prices are
+	// LAW's to confirm (RECEPTIONS.md §8.1).
+	if ( function_exists( 'law_reception_ensure_posts' ) ) {
+		$receptions = law_reception_ensure_posts();
+		foreach ( $receptions['messages'] as $reception_message ) {
+			$report[] = ( 0 === strpos( $reception_message, 'Created' ) ? 'CREATED  ' : 'OK       ' ) . 'reception: ' . $reception_message;
+		}
 	}
 
 	// The per-booking host and committee emails, retired 10 September 2026. The
@@ -451,6 +466,17 @@ function law_setup_flagship_dashboard_access() {
 /** The discount-code catalogue's Members restriction. */
 function law_setup_discounts_dashboard_access() {
 	return law_setup_child_page_access( 'account/dashboard/discounts' );
+}
+
+/**
+ * Manage receptions' Members restriction.
+ *
+ * A committee child page, so its rows come from /account/dashboard/ and it is
+ * deliberately NOT in law_setup_account_subscriber_access()'s list: that list
+ * is the four pages a plain subscriber needs (RECEPTIONS.md §0.4).
+ */
+function law_setup_receptions_dashboard_access() {
+	return law_setup_child_page_access( 'account/dashboard/receptions' );
 }
 
 /**

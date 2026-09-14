@@ -223,6 +223,19 @@ function law_booking_notice_text( $key ) {
 		'waitlist-promoted'  => array( 'ok', __( 'The entry has been promoted and the attendee emailed their confirmation.', 'law' ) ),
 		'waitlist-failed'    => array( 'error', __( 'Sorry, that waitlist change could not be made.', 'law' ) ),
 	);
+
+	/**
+	 * Filter the notice map, so a flow with its own outcomes can register them
+	 * here rather than stacking a third _notice_render() on the template.
+	 *
+	 * The receptions use it (functions/events/receptions.php): a paid place,
+	 * an abandoned payment, an expired hold and an included place are all
+	 * things only they can say, and none of them belongs in the list above.
+	 *
+	 * @param array<string,array{0:string,1:string}> $map key => [ ok|error, message ].
+	 */
+	$map = (array) apply_filters( 'law_booking_notice_text', $map );
+
 	return $map[ $key ] ?? null;
 }
 
@@ -236,9 +249,10 @@ function law_booking_notice_text( $key ) {
  */
 function law_booking_card_badge( $status ) {
 	$badges = array(
-		'law-waitlisted'     => array( 'label' => __( 'Waitlisted', 'law' ), 'slug' => 'waitlisted' ),
-		'law-applied'        => array( 'label' => __( 'Awaiting review', 'law' ), 'slug' => 'applied' ),
-		'law-payment-failed' => array( 'label' => __( 'Payment needed', 'law' ), 'slug' => 'payment-failed' ),
+		'law-waitlisted'      => array( 'label' => __( 'Waitlisted', 'law' ), 'slug' => 'waitlisted' ),
+		'law-applied'         => array( 'label' => __( 'Awaiting review', 'law' ), 'slug' => 'applied' ),
+		'law-payment-failed'  => array( 'label' => __( 'Payment needed', 'law' ), 'slug' => 'payment-failed' ),
+		'law-pending-payment' => array( 'label' => __( 'Awaiting payment', 'law' ), 'slug' => 'pending-payment' ),
 	);
 
 	return $badges[ (string) $status ] ?? array();
@@ -260,12 +274,15 @@ function law_booking_card_badge( $status ) {
  */
 function law_booking_status_badge_class( $status ) {
 	$map = array(
-		'law-applied'        => 'law-cal-card__badge--applied',
-		'law-waitlisted'     => 'law-cal-card__badge--waitlisted',
-		'law-payment-failed' => 'law-cal-card__badge--payment-failed',
-		'law-declined'       => 'law-cal-card__badge--cancelled',
-		'law-cancelled'      => 'law-cal-card__badge--cancelled',
-		'publish'            => 'law-cal-card__badge--confirmed',
+		'law-applied'         => 'law-cal-card__badge--applied',
+		'law-waitlisted'      => 'law-cal-card__badge--waitlisted',
+		'law-payment-failed'  => 'law-cal-card__badge--payment-failed',
+		// Awaiting payment reads like awaiting review: something is happening
+		// and nothing is wrong, which is exactly what a held place is.
+		'law-pending-payment' => 'law-cal-card__badge--applied',
+		'law-declined'        => 'law-cal-card__badge--cancelled',
+		'law-cancelled'       => 'law-cal-card__badge--cancelled',
+		'publish'             => 'law-cal-card__badge--confirmed',
 	);
 
 	return $map[ (string) $status ] ?? '';
@@ -289,8 +306,20 @@ function law_booking_notice_render() {
  * "Bookings (12)", and "Bookings (12) · Waitlist (3)" once anyone is waiting.
  */
 function law_booking_counts_label( $event_id ) {
-	$label    = sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $event_id ) ) );
-	$waiting  = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $event_id ) : 0;
+	$label   = sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $event_id ) ) );
+	// On a priced event that total INCLUDES the places held while somebody is
+	// on Stripe's page, so the hold count is stated separately rather than
+	// leaving the number to disagree with the list behind it
+	// (RECEPTIONS.md §1.3).
+	$pending = function_exists( 'law_booking_pending_payment_count' ) ? law_booking_pending_payment_count( $event_id ) : 0;
+	if ( $pending ) {
+		$label .= ' · ' . sprintf(
+			/* translators: %s: number of places held while a payment finishes. */
+			__( '%s awaiting payment', 'law' ),
+			number_format_i18n( $pending )
+		);
+	}
+	$waiting = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $event_id ) : 0;
 	if ( $waiting ) {
 		$label .= ' · ' . sprintf( __( 'Waitlist (%s)', 'law' ), number_format_i18n( $waiting ) );
 	}
@@ -385,13 +414,26 @@ function law_booking_tone( array $state ) {
 	switch ( $state['state'] ) {
 		case 'booked':
 		case 'waitlisted':
+		// The receptions' own "yours" states: a payment part-way through and a
+		// queue entry that still needs payment details are both the viewer's
+		// own business, so the panel stays neutral rather than urgent.
+		case 'pending-payment':
+		case 'waitlist-needs-card':
 			return 'mine';
 		case 'closed':
+		// Invitation only: there is nothing to press and nothing to hurry for,
+		// so it paints like a closed event rather than like an offer.
+		case 'invitation':
 			return 'closed';
 		case 'full':
+		case 'buy-full':
+		// A failed payment is the one state that should look like a problem,
+		// because it is one.
+		case 'payment-failed':
 			return 'full';
 		case 'not-open':
 		case 'flagship':
+		case 'included':
 			return 'open';
 	}
 
@@ -423,6 +465,11 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		'colleagues' => 0,
 		'mode'       => 'book',
 		'tone'       => 'open',
+		// The receptions (RECEPTIONS.md §4.1). A priced event is bought rather
+		// than booked, so the surfaces need to know which this is without
+		// asking the meta again.
+		'reception'  => function_exists( 'law_reception_is' ) && law_reception_is( $event_id ),
+		'price'      => function_exists( 'law_event_price_pence' ) ? law_event_price_pence( $event_id ) : 0,
 	);
 
 	// The flagship is applied for, not booked. Returned as a state rather than
@@ -439,6 +486,15 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		return null;
 	}
 
+	// Invitation only outranks everything but the flagship: LAW invites people
+	// itself, and nothing about the viewer changes that. It is not a refusal
+	// the viewer's own booking should be able to hide, because somebody LAW
+	// has invited still needs the page to explain what this event is.
+	if ( function_exists( 'law_event_is_invitation_only' ) && law_event_is_invitation_only( $event_id ) ) {
+		$state['state'] = 'invitation';
+		return $state;
+	}
+
 	if ( $user_id > 0 ) {
 		// One request-wide map, not a query per event: the programme renders
 		// this for every card on the page.
@@ -453,9 +509,25 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		$state['colleagues'] = count( $colleagues );
 
 		if ( $state['booking'] ) {
-			$state['state']      = 'law-waitlisted' === $state['booking']->post_status ? 'waitlisted' : 'booked';
-			$state['invited_by'] = law_booking_invited_by_label( $state['booking'] );
-			$state['manage_url'] = law_booking_manage_url( (int) $state['booking']->ID );
+			$own                 = $state['booking'];
+			$payment             = (string) law_event_meta( (int) $own->ID, '_law_payment_status' );
+			$state['invited_by'] = law_booking_invited_by_label( $own );
+			$state['manage_url'] = law_booking_manage_url( (int) $own->ID );
+
+			// The priced states, in the order they matter to the person
+			// looking at them: money part-way through, money refused, a queue
+			// entry that cannot be honoured yet, then the ordinary two.
+			if ( 'law-pending-payment' === $own->post_status ) {
+				$state['state'] = 'pending-payment';
+			} elseif ( 'law-payment-failed' === $own->post_status ) {
+				$state['state'] = 'payment-failed';
+			} elseif ( 'law-waitlisted' === $own->post_status
+				&& in_array( $payment, array( 'pending_setup' ), true )
+				&& $state['reception'] ) {
+				$state['state'] = 'waitlist-needs-card';
+			} else {
+				$state['state'] = 'law-waitlisted' === $own->post_status ? 'waitlisted' : 'booked';
+			}
 			return $state;
 		}
 		if ( $colleagues ) {
@@ -472,6 +544,22 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' !== $start && strtotime( $start ) <= current_time( 'timestamp' ) ) {
 		$state['state'] = 'closed';
+		return $state;
+	}
+
+	// A PRICED event is bought, not booked: an included place first (it costs
+	// the viewer nothing, so offering the paid route instead would be worse
+	// than useless), then the waitlist, then the buy button.
+	if ( $state['price'] > 0 ) {
+		if ( $user_id > 0
+			&& function_exists( 'law_reception_confirmed_flagship' )
+			&& law_event_meta( $event_id, '_law_flagship_included' )
+			&& law_reception_confirmed_flagship( $user_id ) ) {
+			$state['state'] = 'included';
+			return $state;
+		}
+		$state['state'] = 0 === $state['remaining'] ? 'buy-full' : 'buy';
+		$state['mode']  = 0 === $state['remaining'] ? 'waitlist' : 'book';
 		return $state;
 	}
 
@@ -607,7 +695,9 @@ function law_booking_panel( $tone, $text, $action = '', $form = '', $status = ''
  * @param array $state law_booking_state().
  */
 function law_booking_panel_status( array $state ) {
-	if ( 'bookable' !== $state['state'] ) {
+	// 'buy' is the receptions' version of the same state: a count and a
+	// button, with no heading to repeat.
+	if ( ! in_array( $state['state'], array( 'bookable', 'buy' ), true ) ) {
 		return '';
 	}
 	return 'low' === $state['tone'] ? __( 'Almost full', 'law' ) : __( 'Booking open', 'law' );
@@ -636,7 +726,82 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 	// State: this person already has a place, or is waiting for one. Their own
 	// booking decides; colleagues they brought are managed from the same view
 	// but do not make the control say "you're booked".
+	// Invitation only: nothing about the viewer changes it, and there is
+	// nothing to press. It reads before every per-viewer state for that
+	// reason (RECEPTIONS.md §4.1).
+	if ( 'invitation' === $state['state'] ) {
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html__( 'Invitation only', 'law' ),
+			esc_html__( 'Places at this reception are by invitation from LAW. If you have been invited, LAW will be in touch directly.', 'law' )
+		);
+		return law_booking_action_parts();
+	}
+
 	$booking = $state['booking'];
+
+	// A payment part-way through: the place is HELD, so the honest thing is to
+	// say so and offer the way to finish it. "Continue to payment" is a POST
+	// form, never a link: a browser's hover prefetch must not open Stripe
+	// sessions nobody asked for.
+	if ( $booking && 'pending-payment' === $state['state'] ) {
+		$processing = 'processing' === (string) law_event_meta( (int) $booking->ID, '_law_payment_status' );
+		if ( $processing ) {
+			printf(
+				'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+				esc_html__( 'Your payment is being processed.', 'law' ),
+				esc_html__( 'Your place is held. We will email you as soon as it clears.', 'law' )
+			);
+			return law_booking_action_parts(
+				sprintf(
+					'<a class="button orange" href="%s">%s</a>',
+					esc_url( $state['manage_url'] ),
+					esc_html__( 'View booking', 'law' )
+				)
+			);
+		}
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html__( 'Finish paying for your place.', 'law' ),
+			esc_html__( 'Your place is held while you pay. If you do not finish, it goes back on sale.', 'law' )
+		);
+		return law_booking_action_parts( law_reception_continue_button( (int) $booking->ID ) );
+	}
+
+	// A payment that was refused. The one state that should look like a
+	// problem, because it is one.
+	if ( $booking && 'payment-failed' === $state['state'] ) {
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html__( 'Your payment needs attention', 'law' ),
+			esc_html( (string) law_event_meta( (int) $booking->ID, '_law_payment_error' ) ?: __( 'We could not take your payment.', 'law' ) )
+		);
+		return law_booking_action_parts(
+			sprintf(
+				'<a class="button orange" href="%s">%s</a>',
+				esc_url( $state['manage_url'] ),
+				esc_html__( 'Sort out my payment', 'law' )
+			)
+		);
+	}
+
+	// A queue entry with nothing saved to charge. It cannot be promoted, so
+	// saying "you're on the waitlist" and stopping there would be a lie.
+	if ( $booking && 'waitlist-needs-card' === $state['state'] ) {
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html__( 'Your place in the queue needs your payment details.', 'law' ),
+			esc_html__( 'Add them to keep your place on the waitlist.', 'law' )
+		);
+		return law_booking_action_parts(
+			sprintf(
+				'<a class="button orange" href="%s">%s</a>',
+				esc_url( $state['manage_url'] ),
+				esc_html__( 'Add payment details', 'law' )
+			)
+		);
+	}
+
 	if ( $booking ) {
 		$waitlisted = 'waitlisted' === $state['state'];
 		$invited_by = $state['invited_by'];
@@ -700,6 +865,60 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 		return law_booking_action_parts( $law_bk_manage );
 	}
 
+	// State: this reception is included with a flagship place the viewer
+	// already holds, so it costs them nothing. Offered ahead of the paid route,
+	// because paying for something you have already been given is the worst
+	// outcome the page could produce.
+	if ( 'included' === $state['state'] ) {
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html__( 'Included with your flagship place', 'law' ),
+			esc_html__( 'Add this reception to your bookings at no cost.', 'law' )
+		);
+		return law_booking_action_parts( law_reception_include_button( (int) $state['event_id'] ) );
+	}
+
+	// State: a priced reception with no places left. Joining means saving a
+	// payment method, so the copy says exactly what would be charged and when.
+	if ( 'buy-full' === $state['state'] ) {
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html__( 'This reception is fully booked.', 'law' ),
+			esc_html__( 'Join the waitlist and save a payment method. If a place opens up we will charge it and confirm your place automatically. You can leave the waitlist at any time before then.', 'law' )
+		);
+		return law_booking_opener_parts( $event, 'waitlist', $preview, $law_bk_manage );
+	}
+
+	// State: a priced reception with places. The count only, as below: the
+	// pill above it already says "Booking open".
+	if ( 'buy' === $state['state'] ) {
+		$law_bk_left = (int) $state['remaining'];
+		printf(
+			'<p class="law-booking-panel__count">%s</p>',
+			esc_html(
+				'low' === $state['tone']
+					/* translators: %s: number of places. */
+					? sprintf( _n( 'Only %s place left', 'Only %s places left', $law_bk_left, 'law' ), number_format_i18n( $law_bk_left ) )
+					/* translators: %s: number of places. */
+					: sprintf( _n( '%s place left', '%s places left', $law_bk_left, 'law' ), number_format_i18n( $law_bk_left ) )
+			)
+		);
+		// A live but UNCONFIRMED flagship application: worth saying, because
+		// paying for something that may be about to become free is exactly the
+		// mistake this line prevents.
+		if ( law_event_meta( (int) $state['event_id'], '_law_flagship_included' )
+			&& function_exists( 'law_flagship_application_for_user' )
+			&& get_current_user_id()
+			&& law_flagship_application_for_user( get_current_user_id() ) ) {
+			printf(
+				'<p class="law-booking-substate">%s</p>',
+				esc_html__( 'If your flagship application is approved, this reception is included at no cost.', 'law' )
+			);
+		}
+
+		return law_booking_opener_parts( $event, 'book', $preview, $law_bk_manage );
+	}
+
 	// State: sold out — the waitlist. Every entry is one place, promoted
 	// automatically in turn as places open up.
 	if ( 'full' === $state['state'] ) {
@@ -752,11 +971,13 @@ function law_booking_action_parts( $action = '', $form = '' ) {
  *                       colleagues-only state, which offers both.
  */
 function law_booking_opener_parts( array $event, $mode, $preview, $before = '' ) {
+	$reception = function_exists( 'law_reception_is' ) && law_reception_is( (int) ( $event['id'] ?? 0 ) );
+
 	ob_start();
 	law_booking_render_opener( $event, $mode, $preview );
 	$opener = trim( (string) ob_get_clean() );
 
-	if ( law_booking_opener_is_form( $mode, $preview ) ) {
+	if ( law_booking_opener_is_form( $mode, $preview, $reception ) ) {
 		return law_booking_action_parts( $before, $opener );
 	}
 	return law_booking_action_parts( trim( $before . $opener ) );
@@ -769,9 +990,74 @@ function law_booking_opener_parts( array $event, $mode, $preview, $before = '' )
  * One function, so the opener and the panel that places its output cannot come
  * to different conclusions about which of the two it is.
  */
-function law_booking_opener_is_form( $mode = 'book', $preview = false ) {
-	$param = 'waitlist' === $mode ? 'law_waitlist' : 'law_book';
+function law_booking_opener_is_form( $mode = 'book', $preview = false, $reception = false ) {
+	$param = law_booking_opener_param( $mode, $reception );
 	return ! $preview && ! empty( $_GET[ $param ] );
+}
+
+/**
+ * The query var the no-JS opener uses, which is also what booking-form.js
+ * reads off the link to decide which dialog it is fetching.
+ *
+ * A reception has its own two, so a card rendered for a reception can never
+ * open the free booking form and a stale link can never post to the wrong
+ * handler.
+ */
+function law_booking_opener_param( $mode = 'book', $reception = false ) {
+	if ( $reception ) {
+		return 'waitlist' === $mode ? 'law_reception_waitlist' : 'law_reception_checkout';
+	}
+	return 'waitlist' === $mode ? 'law_waitlist' : 'law_book';
+}
+
+/**
+ * "Continue to payment" for a hold that is waiting on one.
+ *
+ * A POST FORM, never a GET link, and deliberately so: a browser's hover
+ * prefetch would otherwise open Stripe sessions nobody asked for.
+ */
+function law_reception_continue_button( $booking_id ) {
+	ob_start();
+	?>
+	<form class="law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<input type="hidden" name="action" value="law_reception_continue">
+		<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) (int) $booking_id ); ?>">
+		<?php wp_nonce_field( 'law_reception_continue' ); ?>
+		<?php law_events_honeypot_field(); ?>
+		<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Taking you to Stripe…', 'law' ); ?>">
+			<?php esc_html_e( 'Continue to payment', 'law' ); ?>
+		</button>
+	</form>
+	<?php
+	return (string) ob_get_clean();
+}
+
+/**
+ * "Add to my bookings" for a reception a confirmed flagship place includes.
+ *
+ * The same dialog the My bookings banner opens, with this reception pre-ticked,
+ * rendered inside the form it confirms.
+ */
+function law_reception_include_button( $event_id ) {
+	ob_start();
+	?>
+	<form class="law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+		<input type="hidden" name="action" value="law_reception_add_included">
+		<?php wp_nonce_field( 'law_reception_add_included' ); ?>
+		<?php law_events_honeypot_field(); ?>
+		<button type="button" class="button orange" data-law-modal-open="law-reception-include">
+			<?php esc_html_e( 'Add to my bookings', 'law' ); ?>
+		</button>
+		<?php
+		get_template_part(
+			'parts/events/reception-include-modal',
+			null,
+			array( 'user_id' => get_current_user_id(), 'preselect' => (int) $event_id )
+		);
+		?>
+	</form>
+	<?php
+	return (string) ob_get_clean();
 }
 
 /**
@@ -805,6 +1091,11 @@ function law_booking_render_action_buttons( $event, $preview = false ) {
 		return;
 	}
 
+	// Invitation only: the hero has explained, and there is nothing to press.
+	if ( 'invitation' === $state['state'] ) {
+		return;
+	}
+
 	// Their own place: the one link they need, worded as at the top.
 	if ( $state['booking'] ) {
 		printf(
@@ -812,6 +1103,13 @@ function law_booking_render_action_buttons( $event, $preview = false ) {
 			esc_url( $state['manage_url'] ),
 			esc_html( law_booking_manage_label( $state ) )
 		);
+		return;
+	}
+
+	// A reception their flagship place includes: the free route, not the paid
+	// one. The dialog lives with the button, as it does at the top.
+	if ( 'included' === $state['state'] ) {
+		echo law_reception_include_button( (int) $state['event_id'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
 		return;
 	}
 
@@ -827,7 +1125,7 @@ function law_booking_render_action_buttons( $event, $preview = false ) {
 
 	// Nothing to press when places are not released or the event has been; the
 	// hero has already said so, and an empty row is the honest answer.
-	if ( ! in_array( $state['state'], array( 'bookable', 'full' ), true ) ) {
+	if ( ! in_array( $state['state'], array( 'bookable', 'full', 'buy', 'buy-full' ), true ) ) {
 		return;
 	}
 
@@ -836,7 +1134,8 @@ function law_booking_render_action_buttons( $event, $preview = false ) {
 	// two copies of the same form, with the same field names and a duplicated
 	// id, on one page. The form is already open above; there is nothing to
 	// repeat.
-	if ( ! empty( $_GET['law_book'] ) || ! empty( $_GET['law_waitlist'] ) ) {
+	if ( ! empty( $_GET['law_book'] ) || ! empty( $_GET['law_waitlist'] )
+		|| ! empty( $_GET['law_reception_checkout'] ) || ! empty( $_GET['law_reception_waitlist'] ) ) {
 		return;
 	}
 	law_booking_render_opener( $event, $state['mode'], $preview );
@@ -852,8 +1151,17 @@ function law_booking_render_action_buttons( $event, $preview = false ) {
  */
 function law_booking_manage_label( array $state ) {
 	$is_mine = '' === $state['invited_by'];
-	if ( 'waitlisted' === $state['state'] ) {
-		return $is_mine ? __( 'Manage waitlist entry', 'law' ) : __( 'View waitlist entry', 'law' );
+	switch ( $state['state'] ) {
+		case 'waitlisted':
+			return $is_mine ? __( 'Manage waitlist entry', 'law' ) : __( 'View waitlist entry', 'law' );
+		// The receptions' own three: each names the thing there is to do, so
+		// the card and the page cannot offer the same booking under two names.
+		case 'waitlist-needs-card':
+			return __( 'Add payment details', 'law' );
+		case 'pending-payment':
+			return __( 'Finish paying', 'law' );
+		case 'payment-failed':
+			return __( 'Sort out my payment', 'law' );
 	}
 	return $is_mine ? __( 'Manage booking', 'law' ) : __( 'View booking', 'law' );
 }
@@ -899,7 +1207,16 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 		return null;
 	}
 
-	if ( in_array( $state['state'], array( 'booked', 'waitlisted' ), true ) ) {
+	// Invitation only: LAW is in touch directly, so a button would be a route
+	// into something the submit would refuse.
+	if ( 'invitation' === $state['state'] ) {
+		return null;
+	}
+
+	// The viewer's own place, however it is standing. The manage view is where
+	// a payment is finished, a failure is sorted out or details are added, so
+	// the card offers the one link that covers all of them.
+	if ( in_array( $state['state'], array( 'booked', 'waitlisted', 'pending-payment', 'payment-failed', 'waitlist-needs-card' ), true ) ) {
 		if ( 'full' !== $scope || '' === $state['manage_url'] ) {
 			return null;
 		}
@@ -909,17 +1226,37 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 		);
 	}
 
+	// A reception the viewer's confirmed flagship place already includes: the
+	// card offers the free route, not the paid one.
+	if ( 'included' === $state['state'] ) {
+		return array(
+			'label'    => __( 'Add to my bookings', 'law' ),
+			// Its own query var, so the skeleton dialog that opens on the press
+			// carries the right heading and the event page's no-JS fallback
+			// lands on the include control rather than the checkout form.
+			'url'      => add_query_arg( 'law_reception_include', 1, get_permalink( (int) $state['event_id'] ) ),
+			'class'    => 'orange law-event-card__button--book',
+			/* translators: %s: event title. */
+			'sr_label' => sprintf( __( 'Add %s to my bookings', 'law' ), (string) ( $event['title'] ?? '' ) ),
+			'dialog'   => (int) $state['event_id'],
+		);
+	}
+
 	// Nothing to offer: the places are not released, or the event has been and
 	// gone. The card says so by having no second button, and Event details
 	// still leads to the full explanation.
-	if ( ! in_array( $state['state'], array( 'bookable', 'full' ), true ) ) {
+	if ( ! in_array( $state['state'], array( 'bookable', 'full', 'buy', 'buy-full' ), true ) ) {
 		return null;
 	}
 
-	$waitlist = 'waitlist' === $state['mode'];
+	$waitlist  = 'waitlist' === $state['mode'];
+	$reception = ! empty( $state['reception'] );
+	$label     = $waitlist
+		? __( 'Join waitlist', 'law' )
+		: ( $reception ? __( 'Book now', 'law' ) : __( 'Register', 'law' ) );
 	return array(
-		'label'    => $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' ),
-		'url'      => add_query_arg( $waitlist ? 'law_waitlist' : 'law_book', 1, get_permalink( (int) $state['event_id'] ) ),
+		'label'    => $label,
+		'url'      => add_query_arg( law_booking_opener_param( $state['mode'], $reception ), 1, get_permalink( (int) $state['event_id'] ) ),
 		'class'    => 'orange law-event-card__button--book',
 		// The accessible name has to say WHICH event: fifty buttons all called
 		// "Register" is a useless list to a screen reader user.
@@ -927,8 +1264,11 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 			$waitlist
 				/* translators: %s: event title. */
 				? __( 'Join the waitlist for %s', 'law' )
-				/* translators: %s: event title. */
-				: __( 'Register for %s', 'law' ),
+				: ( $reception
+					/* translators: %s: event title. */
+					? __( 'Book a place at %s', 'law' )
+					/* translators: %s: event title. */
+					: __( 'Register for %s', 'law' ) ),
 			(string) ( $event['title'] ?? '' )
 		),
 		'dialog'   => (int) $state['event_id'],
@@ -945,10 +1285,17 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
  *                        and defer no dialogs.
  */
 function law_booking_render_opener( array $event, $mode = 'book', $preview = false ) {
-	$event_id = (int) $event['id'];
-	$waitlist = 'waitlist' === $mode;
-	$param    = $waitlist ? 'law_waitlist' : 'law_book';
-	$label    = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' );
+	$event_id  = (int) $event['id'];
+	$waitlist  = 'waitlist' === $mode;
+	$reception = function_exists( 'law_reception_is' ) && law_reception_is( $event_id );
+	$param     = law_booking_opener_param( $mode, $reception );
+	// "Book now" rather than "Register" on a priced reception: the word has to
+	// say that money is about to change hands (EVENTS_4.2_SPECS.md §3.4).
+	if ( $reception ) {
+		$label = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Book now', 'law' );
+	} else {
+		$label = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' );
+	}
 
 	// The preview shows the button exactly where the attendee will find it, but
 	// it must never be actuable from a page whose event may not even be
@@ -971,7 +1318,15 @@ function law_booking_render_opener( array $event, $mode = 'book', $preview = fal
 	// stacking context (position:relative, z-index 4, app.css) that would clamp
 	// it to level 4 and paint it under the fixed header (.nav z-index 99,
 	// .affix z-index 9999). So it is deferred to wp_footer, at body level.
-	if ( law_booking_opener_is_form( $mode, $preview ) ) {
+	if ( law_booking_opener_is_form( $mode, $preview, $reception ) ) {
+		if ( $reception ) {
+			get_template_part(
+				'parts/events/reception-checkout-modal',
+				null,
+				array( 'event' => $event, 'context' => 'inline', 'mode' => $waitlist ? 'waitlist' : 'checkout' )
+			);
+			return;
+		}
 		law_booking_footer_modal( $event, 'success', $mode );
 		get_template_part( 'parts/events/booking-modal', null, array( 'event' => $event, 'context' => 'inline', 'mode' => $mode ) );
 		return;
@@ -1061,6 +1416,64 @@ function law_booking_render_flagship_dialog( $event_id ) {
 }
 
 /**
+ * The reception half of law_booking_maybe_render_dialog(): the checkout, the
+ * waitlist and the include dialogs, as an HTML fragment.
+ *
+ * Its own guard, law_reception_guard_open(), which is what the handlers apply
+ * — so, as on the hosted events, a dialog can never be served for something
+ * the submit would refuse. An invitation-only reception therefore always 404s
+ * here, whatever link was followed.
+ *
+ * WHICH dialog is decided here, not by the caller: a card rendered an hour ago
+ * may ask for the checkout form on a reception that has since sold out, and
+ * the answer should be the waitlist form rather than one the handler would
+ * refuse. A viewer whose confirmed flagship place includes this reception gets
+ * the include dialog, because paying for something you have already been given
+ * is the worst outcome the page could produce.
+ *
+ * Called with the response still unsent; the caller exits.
+ */
+function law_booking_render_reception_dialog( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( is_wp_error( law_reception_guard_open( $event_id ) ) ) {
+		status_header( 404 );
+		return;
+	}
+	$event = law_events_map_post( get_post( $event_id ) );
+	if ( ! $event ) {
+		status_header( 404 );
+		return;
+	}
+
+	$user_id = get_current_user_id();
+	$state   = law_booking_state( $event_id, array( 'user_id' => $user_id ) );
+	$which   = 'checkout';
+	if ( $state && 'included' === $state['state'] ) {
+		$which = 'include';
+	} elseif ( 0 === (int) law_event_tickets_remaining( $event_id ) ) {
+		$which = 'waitlist';
+	}
+
+	status_header( 200 );
+	header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
+	header( 'X-Robots-Tag: noindex' );
+	nocache_headers();
+
+	if ( 'include' === $which ) {
+		// The include dialog lives inside the form it confirms, so the button
+		// helper renders both.
+		echo law_reception_include_button( $event_id ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
+		return;
+	}
+
+	get_template_part(
+		'parts/events/reception-checkout-modal',
+		null,
+		array( 'event' => $event, 'context' => 'modal', 'mode' => $which )
+	);
+}
+
+/**
  * The placeholder dialog every surface with a fetched booking dialog needs once:
  * the button opens it at the moment of the press, and the fetched dialog
  * replaces it. See parts/events/booking-loading-modal.php.
@@ -1121,12 +1534,22 @@ function law_booking_maybe_render_dialog() {
 		exit;
 	}
 
-	// law_booking_guard_open() rather than a re-derived set of conditions: it is
-	// the SAME predicate law_booking_create_handler() applies, covering the
-	// source, the post type, publish status, the flagship refusal, places not
-	// released and an event that has started. A dialog can therefore never be
-	// served for something the submit would then refuse.
-	if ( is_wp_error( law_booking_guard_open( $event_id ) ) ) {
+	// A reception is BOUGHT, and the form guard refuses a priced event
+	// outright, so it branches off here with its own gate and its own three
+	// dialogs. law_reception_guard_open() refuses an invitation-only reception,
+	// so that one always answers 404 however the link was reached.
+	if ( function_exists( 'law_reception_is' ) && law_reception_is( $event_id ) ) {
+		law_booking_render_reception_dialog( $event_id );
+		exit;
+	}
+
+	// law_booking_guard_form_open() rather than a re-derived set of conditions:
+	// it is the SAME predicate law_booking_create_handler() applies, covering
+	// the source, the post type, publish status, the flagship refusal, places
+	// not released, an event that has started, and — since the receptions —
+	// invitation-only and priced. A dialog can therefore never be served for
+	// something the submit would then refuse.
+	if ( is_wp_error( law_booking_guard_form_open( $event_id ) ) ) {
 		status_header( 404 );
 		exit;
 	}
@@ -1170,6 +1593,20 @@ add_action( 'wp_enqueue_scripts', function () {
 	$booking_script = function () {
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), filemtime( get_theme_file_path( 'assets/js/booking-form.js' ) ), true );
+		// The live discount quote posts to its own action with its own nonce,
+		// so the checkout form's nonce is no use to it (RECEPTIONS.md §5.2).
+		// Signed-in only: the endpoint refuses anybody else, and a nonce in a
+		// signed-out page's markup would only be a cache key to get wrong.
+		if ( is_user_logged_in() ) {
+			wp_localize_script(
+				'law-booking-form',
+				'lawReceptionQuote',
+				array(
+					'url'   => admin_url( 'admin-post.php' ),
+					'nonce' => wp_create_nonce( 'law_reception_quote' ),
+				)
+			);
+		}
 	};
 
 	if ( law_booking_is_event_view() ) {
@@ -1198,8 +1635,13 @@ add_action( 'wp_enqueue_scripts', function () {
 	// templates via submission-form.php's closure). They are on different
 	// pages since the My bookings split: the manage view is the attendee's,
 	// the per-event list is the host's.
-	if ( is_page_template( 'templates/account-bookings.php' ) ) {
-		if ( ! empty( $_GET['law_booking'] ) ) {
+	// My bookings and the Account hub both render the receptions banner, whose
+	// "Add receptions" button opens a dialog: the modal component and the fetch
+	// layer have to be there for it (RECEPTIONS.md §7.3). The manage view needs
+	// them for its own dialogs.
+	if ( is_page_template( array( 'templates/account-bookings.php', 'templates/account-hub.php' ) ) ) {
+		if ( ! empty( $_GET['law_booking'] )
+			|| ( function_exists( 'law_reception_banner_state' ) && law_reception_banner_state( get_current_user_id() ) ) ) {
 			$booking_script();
 		}
 		return;

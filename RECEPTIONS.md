@@ -1,6 +1,10 @@
 # Receptions: paid, invitation-only and included-with-flagship reception events
 
-> **Status: specified 14 September 2026, not yet built.** This document is the
+> **Status: specified and BUILT, 14 September 2026.** Everything below is in
+> the working tree and the suite is green (601 tests). Read §16, "Deviations
+> from this specification", before trusting a line reference or a name here:
+> the code is the record now, `EVENTS_FUNC.md` is the living description of it,
+> and this document is what was asked for. This document is the
 > self-contained build contract, in the manner of `FLAGSHIP_PAYMENTS.md`,
 > `FLAGSHIP_UI.md` and `WAITLIST.md`. An agent starting cold should be able to
 > build everything below from this document plus the code. `EVENTS_FUNC.md` is
@@ -1293,3 +1297,233 @@ merge into staging, push staging, switch back).
 - A colleague-booking (quantity > 1) checkout was ruled out for now (§0.2);
   if it returns, it needs N holds created under one lock and released
   together, and the quote applied across the party.
+
+---
+
+## 16. Deviations from this specification
+
+Everything in §1-§14 was built. These are the places where the code differs
+from the letter of the document, and why.
+
+1. **`law_booking_payment_states()` is shared, with a flagship overlay.** §1.5
+   said the flagship's map moves wholesale into `bookings.php` with `included`
+   added, leaving `law_flagship_payment_states()` a one-line wrapper. Doing
+   that would have changed three words on the Flagship bookings screen:
+   "Payment method saved, awaiting review" → "Payment details saved",
+   "Awaiting the delegate's bank" → "Bank confirmation needed", and "No charge"
+   → "Complimentary". Those three carry the flagship's REVIEW semantics, which
+   a reception has none of. So the shared map holds the generic wording and the
+   flagship's wrapper lays its three over it: one map of states, two sets of
+   words for three of them, rather than two maps that could come to hold
+   different states.
+
+2. **The charge latch is `_law_charge_claim`, not `_law_charge_claimed_at`.**
+   §1.2 named a new key. The flagship's existing latch already works, is
+   already claimed atomically, and renaming it would have stranded any claim
+   held across the deploy — a five-minute window in which a booking could have
+   been charged twice. The key stays, and stays outside
+   `law_booking_meta_schema()` with the other one-shot latches, because a
+   sanitiser between the claim and the row it depends on is one more thing able
+   to turn a winning INSERT into a losing one. `_law_paid_at` was added to the
+   schema instead, which is what the sweep reads to decide when a confirmation
+   has waited long enough for its invoice (`post_modified` moves for any edit,
+   so it could not be that).
+
+3. **`law_booking_create()`'s insert loop was left alone.** §1.5 listed it as a
+   third copy of `law_booking_insert()`. It is not quite: it claims N
+   consecutive booking numbers in ONE atomic step
+   (`law_bookings_next_numbers( $count )`), so a party booked together reads as
+   a block in the committee's list. `law_booking_insert()` claims one. Rewriting
+   the loop around it would have broken that contract for no gain, since no
+   priced flow books a party.
+
+4. **The venue is one field, not "the address parts".** §8.1 read as though a
+   reception took a structured address. The `law_event` schema has no venue
+   address: `_law_venue` is a single free-text "Venue (name and/or address)",
+   which is what the host form, the flagship screen and the event page all use.
+   The reception form matches them. `law_events_address_parts()` is the INVOICE
+   address and belongs to the host fee.
+
+5. **Invitation-only disables the price and places server-side, with no live
+   toggle.** §8.1 asks for the controls to be disabled rather than hidden, and
+   they are — from the STORED value, so ticking the box and saving disables
+   them. There is no JavaScript that disables them the moment the box is
+   ticked: the theme's existing conditional-field helper hides rather than
+   disables, and it is not enqueued on this screen. The rendered state is
+   correct and the saver leaves a key it was not sent alone, so the stored price
+   survives either way.
+
+6. **The `included` card and dialog use `?law_reception_include=1`.** §4.2 has
+   the include control on the checkout query var. Its own var is what gives the
+   skeleton dialog the right heading ("Add to my bookings", not "Book your
+   place") and sends the no-JS fallback to the include control rather than to a
+   checkout form the handler would refuse.
+
+7. **The events export gained "Awaiting payment", not the four booking
+   columns.** §8.3 lists `export.php:80` alongside the two booking export
+   builders. That line is the EVENTS export, one row per event: "Discount code"
+   and "Invoice URL" have no meaning on it. It gained the column that does — the
+   count of places held while somebody pays, beside "Bookings", so the two
+   numbers cannot silently disagree. The two BOOKING exports gained all four.
+
+8. **The two unsure Stripe items in §3.1 were settled from the documentation,
+   not the CLI**, by the `stripe-specialist` review on 14 September 2026:
+   - `invoice_creation[invoice_data][rendering_options][template]` **is** a
+     real field, added in API version `2025-07-30.basil`, which this client's
+     pinned `2025-09-30.clover` postdates, and it takes the same
+     `inrtem_…` Invoice Rendering Template id the host-fee invoices already
+     use. It **is now sent**, so a reception invoice carries LAW's branding
+     like every other one — but only when the setting holds a template id,
+     because an unrecognised one would refuse the whole session.
+   - `invoice.paid` **does** fire for a Checkout-generated invoice and **does**
+     carry `invoice_data.metadata`, so `law_stripe_resolve_booking_id()`
+     resolves it. The code still does not depend on it:
+     `law_reception_mark_paid()` reads the `invoice` id off the Checkout
+     session and GETs it, the `invoice.paid` branch stays as an idempotent
+     second path, and the sweep is the third.
+
+   **Denis should still run `stripe listen` against a real test payment before
+   go-live**, with the replacement list in §3.3, and confirm that one
+   confirmation email arrives with the invoice link in it.
+
+10. **`complete` is not `paid`** (found by the same review, and fixed). Two
+    paths — `law_reception_release_hold()` and `law_reception_continue()` —
+    read a Checkout session Stripe refused to expire and treated
+    `status === 'complete'` as money in the bank. Stripe's own words are "the
+    checkout session is complete; payment processing may still be in
+    progress", and a bank debit comes back complete and `unpaid`. Confirming
+    there would have published a place nobody had paid for AND locked out the
+    correction, because a confirmed paid booking is exactly what
+    `law_reception_mark_payment_failed()` refuses to touch. Both now go through
+    `law_reception_settle_completed_session()`, which branches on
+    `payment_status` the way the webhook router and the browser return already
+    did. Pinned by
+    `ReceptionsTest::test_a_completed_but_unsettled_session_holds_rather_than_confirms()`.
+
+11. **A configuration error is not shown to the delegate.** The
+    `security-specialist` review found that a refused checkout quoted the
+    engine's message verbatim, including "no Stripe tax rate ID is configured
+    in LAW → Events settings" — which tells somebody trying to buy a drink
+    where our admin menu is and that our payment setup is broken.
+    `law_reception_refusal_payload()` now substitutes a generic sentence for
+    anything `law_booking_is_configuration_error()` claims as ours; every other
+    refusal is still quoted verbatim, because "that code has expired" is the
+    whole point. The detail stays in the activity log.
+
+12. **The Stripe-calling return handler is throttled.** It carries no nonce by
+    design (nothing is decided from the URL; the session's own metadata is the
+    guard), but it called Stripe on every request. It now shares the module's
+    rate-limit posture: 30 per user per ten minutes, and past that it simply
+    shows the booking without the round trip, which is the page they were
+    going to get anyway. The flagship's `law_flagship_handle_setup_return()`
+    has the same gap and was left alone as out of scope; worth closing next
+    time that file is open.
+
+13. **The discount-code oracle is a recorded trade-off, not an oversight.**
+    `law_discount_validate()` gives one message for "no such code" and "that
+    code is disabled", so the field cannot be used to enumerate the catalogue,
+    but `wrong event`, `expired`, `not yet` and `used up` are distinct — which
+    tells a guesser that a code they tried exists somewhere. That is §0.3's
+    decision and the quote endpoint's own rate surface is the answer to it.
+    **It holds only while codes are hard to guess**: `LAW-01` … `LAW-99` would
+    be walkable. Worth a word to Denis before the committee starts inventing
+    codes.
+
+9. **`law_booking_cancel()` gained an `included_revoked` context.** §2.6 said to
+   reuse `event_cancelled` with adapted wording. That context sends
+   `user_booking_event_cancelled`, so the delegate would have had two emails —
+   "the event was cancelled" (untrue) and the revocation notice. The new context
+   logs in its own words and sends nothing, leaving
+   `law_reception_revoke_included()` to send the one email that says why.
+
+14. **Manage receptions has no export.** §8.1 asked for the CSV/Excel/PDF trio.
+    Denis cut it on sight (14 September 2026): there are three receptions and
+    every figure is on the screen, so the trio was furniture — and it kept
+    ~3MB of pdfmake in the page to produce it. The BOOKINGS at a reception do
+    export, from Manage bookings and from the per-event list, which is where
+    somebody wanting a spreadsheet of people actually goes.
+
+15. **The screen needed naming in three stylesheet gates, and was not.** It
+    rendered white on white on first sight, because `calendar.css` (which
+    carries `.law-dashboard`'s text colour, the tables and the controls
+    layout) is gated on a template list in `functions/enqueue.php`,
+    `event-form.css` on another in `submission-form.php`, and `auth.css` on a
+    third. All three now name `templates/account-dashboard-receptions.php`, and
+    `enqueue.php`'s calendar list also gained `templates/account-hub.php`,
+    which renders the receptions banner (`.law-strip`) and could not paint it.
+    Worth knowing for the next account screen: adding a template is three
+    edits, and none of them fails loudly.
+
+16. **Manage receptions' EDITOR is the submission form, not a dashboard**
+    (Denis, 14 September 2026). §8.1 described a committee screen in the
+    flagship dashboard's shape — a white page section with
+    `.law-event-form--light`. Denis asked for the shape of editing an event:
+    the filled navy hero, `.auth-hero`, `.law-event-form`, matching
+    `templates/account-event-form.php`. A reception IS an event, so editing one
+    should look like it. The LIST stays a white dashboard table, because a
+    table of facts belongs on white. The screen therefore borrows nothing from
+    `law-admin.css` or `flagship-dashboard.css` any more.
+
+17. **Denis's pass over the screens, same day.** Each of these was a change
+    on sight, and each is smaller than the reason for it:
+    - the editor's "Opening drinks — status: Confirmed" line went. The
+      submission form prints a status because a host's event moves through a
+      queue; a reception's two statuses mean "on the programme" or "not yet",
+      which is the tick box below it.
+    - Date, Starts and Ends became one row of three (`.law-row-grid--three`,
+      which already existed). They are one decision, and two-up put Ends on a
+      line of its own under a hint belonging to Date.
+    - the list lost its explanatory paragraph, and the **On programme**
+      column. Live is the ordinary case, so badging it made the exception
+      harder to spot; a DRAFT now says so beside the name, which is the rule
+      `law_booking_card_badge()` already follows.
+    - **Included with flagship** became **Free with flagship**: shorter,
+      no abbreviation, and it says what it means.
+    - the **Price** column shows the bare net the committee typed. The VAT
+      arithmetic belongs in the checkout dialog next to the consent to pay it;
+      in a table cell it made the column three lines tall and told the
+      committee nothing it had not just entered.
+    - the include dialog's day moved to its own line under the reception's
+      name, in a colour pitched for a WHITE dialog. It was using
+      `.law-form-hint`, which is tuned for light text on the navy form and
+      washed out to almost nothing.
+    - the banner gained a rule under it (`.law-strip-divider`), because on
+      both surfaces the next thing is a list it is not part of.
+
+18. **Three bugs the browser pass found, all fixed.** A `test-specialist` run
+    through the whole UX on 14 September 2026 — viewing, managing, paying,
+    and the committee's view of the result — passed all five groups and turned
+    up three real defects, every one of them in a path the unit tests did not
+    reach:
+    - **wp-admin's ordinary Update button un-scheduled a reception.** The event
+      screen writes the slot keys on every save, and
+      `law_event_apply_slot_label()` reads an empty label as "clear the dates",
+      so a reception — which holds no programme slot — lost `_law_start` and
+      `_law_end` on any Update at all, dropped off its calendar day and stopped
+      resolving. The flagship already had the guard, with a comment describing
+      this exact failure; the receptions joined that screen and inherited the
+      hazard without it. The predicate is now
+      `law_event_is_managed_by_law()`, and it is deliberately NOT the same
+      variable as the flagship's session-recompute, which must still run for
+      the flagship alone — running it on a reception would blank the dates from
+      the other end. Pinned by
+      `ReceptionsDashboardTest::test_a_bare_wp_admin_update_keeps_a_receptions_dates()`.
+    - **A rejected discount code refused silently.** The message was rendered,
+      in `.law-form-notice`, which `event-form.css` draws as white text for the
+      purple hero — invisible inside the white checkout dialog. The script now
+      scopes the error to the dialog (`.law-modal__error`, already coloured for
+      a light surface), and `law-modal.css` gained the light-mode override for
+      `.law-form-notice` that its sibling `.law-form-error` has had since the
+      same problem was found there.
+    - **A place a 100% code made free sent no confirmation at all.** The
+      confirmation waits for an invoice URL, and a free place has no invoice
+      and never will, so the delegate got a confirmed place and silence: no
+      calendar invitation, and nobody on the committee told. "Nothing to
+      invoice" now counts as "nothing to wait for". The same booking was also
+      refusing self-cancellation as a "paid place"; the refusal now tests the
+      GROSS rather than the status, because there is no refund to protect.
+
+19. **The price block reads like a receipt.** The Price line showed the
+    DISCOUNTED net with the reduction under it, so the discount appeared to
+    have been taken twice. Price is the list price now, Discount is a signed
+    deduction, and price − discount + VAT equals the total.

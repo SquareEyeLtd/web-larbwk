@@ -44,6 +44,18 @@ $law_bm_event_id  = (int) $law_bm_booking->post_parent;
 $law_bm_event     = get_post( $law_bm_event_id );
 $law_bm_cancelled = 'law-cancelled' === $law_bm_booking->post_status;
 
+// A reception place is BOUGHT, so the view gains the money: what was paid,
+// what a code took off, where the invoice is, and the one button that fixes a
+// payment that went wrong. Everything else on this page — the party, the
+// colleague form, "cancel all" — belongs to a free hosted booking and does not
+// apply: one place per checkout, and colleagues buy their own
+// (RECEPTIONS.md §7.5).
+$law_bm_reception = function_exists( 'law_reception_booking_is' ) && law_reception_booking_is( $law_bm_booking );
+// "Paid" means money actually changed hands: a place a 100% code made free is
+// marked paid and had nothing taken, so it stays cancellable.
+$law_bm_paid      = 'paid' === (string) law_event_meta( $law_bm_id, '_law_payment_status' )
+	&& law_booking_price( $law_bm_id )['gross'] > 0;
+
 // The user's live party on this event. A colleague viewing their own booking
 // is not a booker, so their "party" is just themselves.
 $law_bm_party = law_booking_party( $law_bm_event_id, (int) $law_bm_user->ID, law_booking_holding_statuses() );
@@ -66,9 +78,10 @@ $law_bm_invited_by = $law_bm_own ? law_booking_invited_by_label( $law_bm_own ) :
 // full event hides the form rather than inviting a refusal. A waitlisted party
 // cannot grow: joining again is the route, so everyone keeps a fair position.
 $law_bm_can_add = $law_bm_party
+	&& ! $law_bm_reception
 	&& ! $law_bm_waitlisted
 	&& law_booking_colleague_count( $law_bm_event_id, (int) $law_bm_user->ID ) < law_booking_max_additional()
-	&& true === law_booking_guard_open( $law_bm_event_id )
+	&& true === law_booking_guard_form_open( $law_bm_event_id )
 	&& 0 !== law_event_tickets_remaining( $law_bm_event_id );
 
 $law_bm_names = array();
@@ -113,7 +126,20 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 			<?php if ( '' !== $law_bm_venue ) : ?><br><?php echo esc_html( $law_bm_venue ); ?><?php endif; ?>
 		</p>
 
-		<?php if ( $law_bm_waitlisted ) : ?>
+		<?php if ( $law_bm_reception ) : ?>
+			<?php
+			// The money first, because on a bought place it is the thing the
+			// page is for. The shared partial, so the flagship's view and this
+			// one cannot describe the same payment differently.
+			get_template_part( 'parts/events/booking-payment-facts', null, array( 'booking_id' => $law_bm_id ) );
+			?>
+			<?php if ( 'law-pending-payment' === $law_bm_booking->post_status
+				&& 'processing' !== (string) law_event_meta( $law_bm_id, '_law_payment_status' ) ) : ?>
+				<p class="law-booking-manage__action">
+					<?php echo law_reception_continue_button( $law_bm_id ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped. ?>
+				</p>
+			<?php endif; ?>
+		<?php elseif ( $law_bm_waitlisted ) : ?>
 			<p class="law-booking-state"><?php esc_html_e( "You're on the waitlist for this event.", 'law' ); ?></p>
 			<p class="law-booking-substate"><?php esc_html_e( "We'll email you as soon as a place opens up, and your booking is confirmed automatically.", 'law' ); ?></p>
 		<?php elseif ( '' !== $law_bm_invited_by ) : ?>
@@ -163,7 +189,22 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 						<?php endif; ?>
 						<br><?php echo esc_html( $law_bm_person['email'] . ( $law_bm_facts ? ' · ' . implode( ', ', $law_bm_facts ) : '' ) ); ?>
 					</span>
-					<?php if ( ! $law_bm_row_gone ) : ?>
+					<?php if ( $law_bm_reception && $law_bm_paid ) : ?>
+						<?php
+						// A paid place is not the delegate's to cancel: refunds
+						// are manual, and self-service cancellation would free
+						// the place while leaving the money with LAW and nobody
+						// told. The engine refuses it as well (§0.3); this is
+						// the honest way to say so rather than a button that
+						// only ever answers no.
+						//
+						// "us", not "LAW": the delegate is already on LAW's
+						// site, and "Contact LAW" in the middle of a
+						// sentence-case line reads as the word rather than the
+						// organisation (Denis, 14 September 2026).
+						?>
+						<span class="law-booking-manage__note"><?php esc_html_e( 'Contact us to change or cancel a paid booking.', 'law' ); ?></span>
+					<?php elseif ( ! $law_bm_row_gone ) : ?>
 						<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 							<input type="hidden" name="action" value="law_booking_cancel">
 							<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_bm_entry_id ); ?>">
@@ -225,7 +266,7 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 			</form>
 		<?php endif; ?>
 
-		<?php if ( $law_bm_colleagues && count( $law_bm_party ) > 1 ) : ?>
+		<?php if ( ! $law_bm_reception && $law_bm_colleagues && count( $law_bm_party ) > 1 ) : ?>
 			<h3 class="law-booking-manage__subtitle"><?php echo esc_html( $law_bm_waitlisted ? __( 'Leave the waitlist', 'law' ) : __( 'Cancel all bookings', 'law' ) ); ?></h3>
 			<form class="law-booking-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 				<input type="hidden" name="action" value="law_booking_cancel_party">

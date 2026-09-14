@@ -308,7 +308,11 @@
 			var max = option ? option.getAttribute('data-law-max') : '';
 			if (max) {
 				tickets.max = max;
-				if (tickets.value && parseInt(tickets.value, 10) > parseInt(max, 10)) {
+				// Never rewrite a locked field: from submission onwards the
+				// places belong to the committee, the disabled input posts
+				// nothing, and clamping it here would show the host a number
+				// the event does not have. The server refuses the band instead.
+				if (!tickets.disabled && tickets.value && parseInt(tickets.value, 10) > parseInt(max, 10)) {
 					tickets.value = max;
 				}
 			} else {

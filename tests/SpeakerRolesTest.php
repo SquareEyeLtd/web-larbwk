@@ -152,6 +152,65 @@ class SpeakerRolesTest extends LAW_Test_Case {
 		$this->assertSame( array( 'host' ), array_keys( $only_hosting ), 'Empty groups are dropped, so one role means one heading.' );
 	}
 
+	/**
+	 * Cards come back hosts first, then moderators, then the speakers and the
+	 * rows with no role at all, alphabetically by surname inside each group
+	 * (Denis, 14 September 2026). The role is the reader's way into a list of
+	 * faces, so the person hosting and the person chairing lead it rather than
+	 * falling wherever their surname does.
+	 */
+	public function test_cards_are_ordered_by_role_then_by_surname(): void {
+		$event = $this->make_event();
+
+		// Deliberately typed in an order that neither the role rank nor the
+		// alphabet would produce on its own.
+		$people = array(
+			array( 'last' => 'Testzebra',  'role' => 'speaker' ),
+			array( 'last' => 'Testyarrow', 'role' => 'host' ),
+			array( 'last' => 'Testapple',  'role' => '' ),
+			array( 'last' => 'Testwillow', 'role' => 'moderator' ),
+			array( 'last' => 'Testbramble', 'role' => 'host' ),
+			array( 'last' => 'Testcedar',  'role' => 'moderator' ),
+		);
+		$rows = array();
+		foreach ( $people as $i => $person ) {
+			$speaker       = law_speaker_upsert(
+				array( 'first_name' => 'Rolesort', 'last_name' => $person['last'], 'email' => 'rolesort-' . $i . '@example.test' )
+			);
+			$this->posts[] = $speaker;
+			$rows[]        = array( 'speaker_id' => $speaker, 'role' => $person['role'] );
+		}
+		law_event_update_meta( $event, '_law_speakers', $rows );
+
+		$expected = array(
+			'Rolesort Testbramble', // Hosts first, alphabetically between themselves.
+			'Rolesort Testyarrow',
+			'Rolesort Testcedar',   // Then the moderators.
+			'Rolesort Testwillow',
+			'Rolesort Testapple',   // Then the speakers and the rows with no role, together.
+			'Rolesort Testzebra',
+		);
+		$this->assertSame( $expected, wp_list_pluck( law_event_speaker_cards( $event ), 'name' ) );
+
+		// A session's own speakers use the same rule: one ordering for cards,
+		// so the event's list and the timeline cannot drift apart.
+		$session       = wp_insert_post(
+			array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'publish', 'post_parent' => $event, 'post_title' => 'A session' )
+		);
+		$this->posts[] = $session;
+		law_event_update_meta( $session, '_law_speakers', array_reverse( $rows ) );
+
+		$sessions = law_event_session_rows( $event );
+		$this->assertSame( $expected, wp_list_pluck( $sessions[0]['speakers'], 'name' ) );
+
+		// The rank itself, including the values that never reach the meta.
+		$this->assertSame( 0, law_speaker_role_rank( array( 'role' => 'Host' ) ) );
+		$this->assertSame( 1, law_speaker_role_rank( array( 'role' => 'moderator' ) ) );
+		$this->assertSame( 2, law_speaker_role_rank( array( 'role' => 'speaker' ) ) );
+		$this->assertSame( 2, law_speaker_role_rank( array() ), 'No role reads as Speaker and sorts with them.' );
+		$this->assertSame( 2, law_speaker_role_rank( array( 'role' => 'chair' ) ) );
+	}
+
 	public function test_migration_maps_field_9_by_label_and_sessions_copy_the_event_row(): void {
 		// Step 3's mapper is law_speaker_role_key( rgar( $child, '9' ) ): the
 		// live drop down stores the label, a local database has no field 9 at all.

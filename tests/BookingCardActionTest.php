@@ -535,13 +535,24 @@ class BookingCardActionTest extends LAW_Test_Case {
 	}
 
 	public function test_the_dialog_endpoint_refuses_what_the_submit_handler_would_refuse(): void {
-		// One predicate, law_booking_guard_open(), so the two cannot diverge.
-		$this->assertWPError( law_booking_guard_open( $this->bookable_event( array(), 'law-proposed' ) ), 'law_booking_not_bookable' );
-		$this->assertWPError( law_booking_guard_open( $this->bookable_event( array( '_law_tickets_available' => 0 ) ) ), 'law_booking_not_open' );
-		$this->assertWPError( law_booking_guard_open( $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ) ), 'law_booking_closed' );
+		// One predicate, law_booking_guard_form_open(), so the two cannot
+		// diverge. It wraps law_booking_guard_open() (the event-live test the
+		// waitlist's internals still use) and adds the two refusals about how
+		// a place is obtained: invitation-only, and priced.
+		$this->assertWPError( law_booking_guard_form_open( $this->bookable_event( array(), 'law-proposed' ) ), 'law_booking_not_bookable' );
+		$this->assertWPError( law_booking_guard_form_open( $this->bookable_event( array( '_law_tickets_available' => 0 ) ) ), 'law_booking_not_open' );
+		$this->assertWPError( law_booking_guard_form_open( $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ) ), 'law_booking_closed' );
+		$this->assertWPError(
+			law_booking_guard_form_open( $this->bookable_event( array( '_law_registration_state' => 'invitation' ) ) ),
+			'law_booking_invitation_only'
+		);
+		$this->assertWPError(
+			law_booking_guard_form_open( $this->bookable_event( array( '_law_attendee_price_pence' => 7500 ) ) ),
+			'law_booking_priced'
+		);
 
 		$source = file_get_contents( get_theme_file_path( 'functions/account-bookings.php' ) );
-		$this->assertStringContainsString( 'law_booking_guard_open( $event_id )', $source );
+		$this->assertStringContainsString( 'law_booking_guard_form_open( $event_id )', $source );
 	}
 
 	/**
@@ -590,4 +601,159 @@ class BookingCardActionTest extends LAW_Test_Case {
 		wp_set_current_user( $this->make_user() );
 		$this->assertStringContainsString( esc_url( home_url( '/programme/' ) ), $this->render_dialog( $event ) );
 	}
+
+	/* The receptions' control states (RECEPTIONS.md §4.1) ____________________ */
+
+	private function reception( array $meta = array(), $status = 'publish' ): int {
+		return $this->bookable_event(
+			array_merge(
+				array(
+					'_law_is_reception'         => 1,
+					'_law_attendee_price_pence' => 4500,
+					'_law_registration_state'   => 'open',
+				),
+				$meta
+			),
+			$status
+		);
+	}
+
+	/**
+	 * A priced reception is BOUGHT, so the card says so: "Book now", not
+	 * "Register", and the link carries the reception's own query var so the
+	 * dialog that opens can never be the free booking form.
+	 */
+	public function test_a_priced_reception_offers_book_now(): void {
+		$event = $this->reception();
+		$state = law_booking_state( $event, array( 'user_id' => 0 ) );
+
+		$this->assertSame( 'buy', $state['state'] );
+		$this->assertTrue( $state['reception'] );
+		$this->assertSame( 4500, $state['price'] );
+
+		$action = law_booking_card_action( law_events_map_post( get_post( $event ) ) );
+		$this->assertSame( 'Book now', $action['label'] );
+		$this->assertStringContainsString( 'law_reception_checkout=1', $action['url'] );
+		$this->assertSame( $event, $action['dialog'] );
+	}
+
+	/** A full one offers the waitlist, which is where the payment method is saved. */
+	public function test_a_full_priced_reception_offers_the_waitlist(): void {
+		$event = $this->reception( array( '_law_tickets_available' => 1 ) );
+		$held  = law_booking_insert( $event, $this->make_user(), 'publish', array( 'name' => 'A', 'email' => 'a@example.test' ) );
+		$this->posts[] = $held;
+		law_event_recount_attendees( $event );
+
+		$state = law_booking_state( $event, array( 'user_id' => 0 ) );
+		$this->assertSame( 'buy-full', $state['state'] );
+
+		$action = law_booking_card_action( law_events_map_post( get_post( $event ) ) );
+		$this->assertSame( 'Join waitlist', $action['label'] );
+		$this->assertStringContainsString( 'law_reception_waitlist=1', $action['url'] );
+	}
+
+	/**
+	 * Invitation only outranks everything but the flagship, and offers nothing
+	 * to press: LAW is in touch directly.
+	 */
+	public function test_invitation_only_offers_nothing_anywhere(): void {
+		$event = $this->reception( array( '_law_registration_state' => 'invitation' ) );
+
+		$this->assertSame( 'invitation', law_booking_state( $event, array( 'user_id' => 0 ) )['state'] );
+		$this->assertNull( law_booking_card_action( law_events_map_post( get_post( $event ) ) ) );
+
+		// Even for somebody who already holds a place there: nothing about the
+		// viewer changes what this event is.
+		$user_id = $this->make_user();
+		$held    = law_booking_insert( $event, $user_id, 'publish', array( 'name' => 'A', 'email' => 'a@example.test' ) );
+		$this->posts[] = $held;
+		$this->assertSame( 'invitation', law_booking_state( $event, array( 'user_id' => $user_id ) )['state'] );
+	}
+
+	/** A hold is the viewer's own state, and it says how to finish. */
+	public function test_a_hold_reads_as_awaiting_payment(): void {
+		$event   = $this->reception();
+		$user_id = $this->make_user();
+		$held    = law_booking_insert(
+			$event,
+			$user_id,
+			'law-pending-payment',
+			array( 'name' => 'A', 'email' => 'a@example.test' ),
+			array( '_law_price_pence' => 4500, '_law_vat' => 1, '_law_payment_status' => 'pending_setup' )
+		);
+		$this->posts[] = $held;
+
+		$state = law_booking_state( $event, array( 'user_id' => $user_id ) );
+		$this->assertSame( 'pending-payment', $state['state'] );
+		$this->assertSame( 'mine', $state['tone'] );
+		$this->assertSame( 'Finish paying', law_booking_manage_label( $state ) );
+		$this->assertSame( array( 'label' => 'Awaiting payment', 'slug' => 'pending-payment' ), law_booking_card_badge( 'law-pending-payment' ) );
+
+		// The card resolves for the CURRENT viewer, so sign them in first.
+		wp_set_current_user( $user_id );
+		$action = law_booking_card_action( law_events_map_post( get_post( $event ) ) );
+		$this->assertSame( 'Finish paying', $action['label'] );
+		wp_set_current_user( 0 );
+	}
+
+	/** A queue entry with nothing saved to charge says what it needs. */
+	public function test_a_queue_entry_without_a_method_asks_for_one(): void {
+		$event   = $this->reception( array( '_law_tickets_available' => 1 ) );
+		$taken   = law_booking_insert( $event, $this->make_user(), 'publish', array( 'name' => 'A', 'email' => 'a@example.test' ) );
+		$this->posts[] = $taken;
+		law_event_recount_attendees( $event );
+
+		$user_id = $this->make_user();
+		$entry   = law_booking_insert(
+			$event,
+			$user_id,
+			'law-waitlisted',
+			array( 'name' => 'B', 'email' => 'b@example.test' ),
+			array( '_law_price_pence' => 4500, '_law_vat' => 1, '_law_payment_status' => 'pending_setup' )
+		);
+		$this->posts[] = $entry;
+
+		$state = law_booking_state( $event, array( 'user_id' => $user_id ) );
+		$this->assertSame( 'waitlist-needs-card', $state['state'] );
+		$this->assertSame( 'Add payment details', law_booking_manage_label( $state ) );
+
+		// Once a method is saved it is an ordinary queue entry again.
+		law_event_update_meta( $entry, '_law_payment_status', 'ready' );
+		$this->assertSame( 'waitlisted', law_booking_state( $event, array( 'user_id' => $user_id ) )['state'] );
+	}
+
+	/** A failed payment is the one state that should look like a problem. */
+	public function test_a_failed_payment_reads_as_one(): void {
+		$event   = $this->reception();
+		$user_id = $this->make_user();
+		$failed  = law_booking_insert(
+			$event,
+			$user_id,
+			'law-payment-failed',
+			array( 'name' => 'A', 'email' => 'a@example.test' ),
+			array( '_law_price_pence' => 4500, '_law_vat' => 1, '_law_payment_status' => 'failed' )
+		);
+		$this->posts[] = $failed;
+
+		$state = law_booking_state( $event, array( 'user_id' => $user_id ) );
+		$this->assertSame( 'payment-failed', $state['state'] );
+		$this->assertSame( 'full', $state['tone'], 'It paints like a problem, because it is one.' );
+		$this->assertSame( 'Sort out my payment', law_booking_manage_label( $state ) );
+	}
+
+	/**
+	 * A free hosted event is untouched by any of it: the same six states, the
+	 * same words, the same link.
+	 */
+	public function test_a_hosted_event_still_says_register(): void {
+		$event  = $this->bookable_event();
+		$state  = law_booking_state( $event, array( 'user_id' => 0 ) );
+		$action = law_booking_card_action( law_events_map_post( get_post( $event ) ) );
+
+		$this->assertSame( 'bookable', $state['state'] );
+		$this->assertFalse( $state['reception'] );
+		$this->assertSame( 'Register', $action['label'] );
+		$this->assertStringContainsString( 'law_book=1', $action['url'] );
+	}
+
 }

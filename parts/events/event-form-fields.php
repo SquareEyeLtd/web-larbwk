@@ -272,6 +272,18 @@ $law_show_venue = law_events_venue_details_visible( $law_venue_needed );
 // answer, like the hint below.
 $law_venue_star = ( ! law_user_is_committee() || law_events_venue_details_required( $law_venue_needed ) ) ? ' *' : '';
 $law_venue_toggle = law_user_is_committee() ? '' : ' data-law-toggles="law-venue-details" data-law-toggles-keep="1"';
+// A disabled control posts nothing, so on an error re-render
+// law_events_form_values() hands back an empty value for every locked field.
+// The stored one stands in, the same fallback $law_venue_needed uses above.
+$law_locked_value = function ( $field, $meta_key ) use ( $law_locked, $law_post, $law_value ) {
+	return in_array( $field, $law_locked, true ) && $law_post
+		? (string) law_event_meta( $law_post->ID, $meta_key )
+		: (string) $law_value( $field );
+};
+$law_capacity_locked = in_array( 'venue_capacity', $law_locked, true );
+$law_tickets_locked  = in_array( 'tickets_available', $law_locked, true );
+$law_capacity_value  = $law_locked_value( 'venue_capacity', '_law_venue_capacity' );
+$law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_available' );
 ?>
 <fieldset id="law-section-venue">
 	<legend>Venue</legend>
@@ -291,24 +303,26 @@ $law_venue_toggle = law_user_is_committee() ? '' : ' data-law-toggles="law-venue
 		<p class="law-form-field"><label for="law-venue">Venue (name and/or address)<?php echo esc_html( $law_venue_star ); ?></label>
 			<input type="text" id="law-venue" name="venue" value="<?php echo esc_attr( $law_value( 'venue' ) ); ?>">
 			<?php $law_error_message( 'venue' ); ?></p>
-		<p class="law-form-field <?php echo in_array( 'venue_capacity', $law_locked, true ) ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo in_array( 'venue_capacity', $law_locked, true ) ? ' (locked)' : esc_html( $law_venue_star ); ?></label>
-			<select id="law-capacity" name="venue_capacity" data-law-capacity <?php disabled( in_array( 'venue_capacity', $law_locked, true ) ); ?>>
+		<p class="law-form-field <?php echo $law_capacity_locked ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo $law_capacity_locked ? ' (locked)' : esc_html( $law_venue_star ); ?></label>
+			<select id="law-capacity" name="venue_capacity" data-law-capacity <?php disabled( $law_capacity_locked ); ?>>
 				<option value="">Choose…</option>
 				<?php foreach ( law_events_venue_capacity_bands() as $law_choice => $law_band_max ) : ?>
-					<option value="<?php echo esc_attr( $law_choice ); ?>" data-law-max="<?php echo esc_attr( null === $law_band_max ? '' : (string) $law_band_max ); ?>" <?php selected( $law_value( 'venue_capacity' ), $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
+					<option value="<?php echo esc_attr( $law_choice ); ?>" data-law-max="<?php echo esc_attr( null === $law_band_max ? '' : (string) $law_band_max ); ?>" <?php selected( $law_capacity_value, $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
 				<?php endforeach; ?>
 			</select>
+			<?php if ( $law_capacity_locked ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
 			<?php $law_error_message( 'venue_capacity' ); ?></p>
-		<p class="law-form-field">
-			<label for="law-tickets">Places available<?php echo esc_html( $law_venue_star ); ?></label>
+		<p class="law-form-field <?php echo $law_tickets_locked ? 'is-locked' : ''; ?>">
+			<label for="law-tickets">Places available<?php echo $law_tickets_locked ? ' (locked)' : esc_html( $law_venue_star ); ?></label>
 			<?php
 			// max comes from the chosen capacity band and is kept in step by
 			// event-form.js; min is 1, as on form 2 field 54 (Tickets available).
-			$law_capacity_max = law_events_venue_capacity_bands()[ (string) $law_value( 'venue_capacity' ) ] ?? null;
+			$law_capacity_max = law_events_venue_capacity_bands()[ $law_capacity_value ] ?? null;
 			?>
 			<input type="number" id="law-tickets" name="tickets_available" min="1"
 				<?php echo null === $law_capacity_max ? '' : 'max="' . esc_attr( (string) $law_capacity_max ) . '"'; ?>
-				data-law-tickets value="<?php echo esc_attr( $law_value( 'tickets_available' ) ); ?>">
+				data-law-tickets value="<?php echo esc_attr( $law_tickets_value ); ?>" <?php disabled( $law_tickets_locked ); ?>>
+			<?php if ( $law_tickets_locked ) : ?><span class="law-locked-note">Set by the committee once your event is submitted. Reply to any email from us if the number needs to change.</span><?php endif; ?>
 			<?php $law_error_message( 'tickets_available' ); ?>
 		</p>
 	</div>

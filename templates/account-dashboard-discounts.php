@@ -61,11 +61,11 @@ $law_page_url = get_permalink();
 			<h1 class="law-dashboard__title"><?php esc_html_e( 'Discount codes', 'law' ); ?></h1>
 
 			<?php
-			// Honest about the state of things: the catalogue is here so codes
-			// can be prepared, but nothing on the site takes one yet.
+			// Where a code actually bites, said once and here, because it is
+			// the first question anybody creating one has.
 			?>
 			<p class="law-form-notice" role="status">
-				<?php esc_html_e( 'Nothing on the site accepts a discount code yet. Every event in the programme is free to attend, and the flagship conference does not use codes. You can set codes up here ready for when something does.', 'law' ); ?>
+				<?php esc_html_e( "Codes are accepted when booking a paid reception. Leave 'Applies to' empty for a code that works at every paid reception. Hosted events are free to attend, and the flagship conference does not use codes.", 'law' ); ?>
 			</p>
 
 			<div class="law-cal-controls" data-law-cal-controls data-page-url="<?php echo esc_url( $law_page_url ); ?>">

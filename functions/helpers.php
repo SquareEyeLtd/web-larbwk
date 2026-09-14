@@ -48,6 +48,8 @@ function law_icon_paths() {
 		'clipboard'  => '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V2h6v2"/><path d="m9 13 2 2 4-4"/>',
 		'microphone' => '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3M8 21h8"/>',
 		'flag'       => '<path d="M5 21V4"/><path d="M5 4h11l-1.5 3.5L16 11H5"/>',
+		// A raised glass: the drinks receptions (RECEPTIONS.md §0.4).
+		'receptions' => '<path d="M4 4h16l-8 9-8-9Z"/><path d="M12 13v7"/><path d="M8 21h8"/>',
 		'signout'    => '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
 	);
 }

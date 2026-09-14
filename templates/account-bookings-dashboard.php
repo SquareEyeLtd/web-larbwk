@@ -79,9 +79,30 @@ $law_can = law_user_is_committee();
 								<option value=""><?php esc_html_e( 'Confirmed bookings', 'law' ); ?></option>
 								<option value="waitlisted" <?php selected( $law_filters['status'], 'waitlisted' ); ?>><?php esc_html_e( 'Waitlist entries', 'law' ); ?></option>
 								<option value="cancelled" <?php selected( $law_filters['status'], 'cancelled' ); ?>><?php esc_html_e( 'Cancelled bookings', 'law' ); ?></option>
+								<?php if ( law_bookings_dashboard_has_priced() ) : ?>
+									<option value="pending" <?php selected( $law_filters['status'], 'pending' ); ?>><?php esc_html_e( 'Awaiting or failed payment', 'law' ); ?></option>
+								<?php endif; ?>
 								<option value="all" <?php selected( $law_filters['status'], 'all' ); ?>><?php esc_html_e( 'All bookings', 'law' ); ?></option>
 							</select>
 						</p>
+
+						<?php
+						// Only where the programme charges for something. On a
+						// week with no paid reception this select would offer a
+						// choice between nine states nothing can be in
+						// (RECEPTIONS.md §8.3).
+						?>
+						<?php if ( law_bookings_dashboard_has_priced() ) : ?>
+							<p class="law-cal-filter-form__field">
+								<label class="show-for-sr" for="law-bd-payment"><?php esc_html_e( 'Payment', 'law' ); ?></label>
+								<select id="law-bd-payment" name="law_payment">
+									<option value=""><?php esc_html_e( 'Any payment state', 'law' ); ?></option>
+									<?php foreach ( law_booking_payment_states() as $law_pay_key => $law_pay_label ) : ?>
+										<option value="<?php echo esc_attr( $law_pay_key ); ?>" <?php selected( $law_filters['payment'], $law_pay_key ); ?>><?php echo esc_html( $law_pay_label ); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</p>
+						<?php endif; ?>
 
 						<p class="law-cal-filter-form__field">
 							<label class="show-for-sr" for="law-bd-press"><?php esc_html_e( 'Attendee type', 'law' ); ?></label>
@@ -121,6 +142,7 @@ $law_can = law_user_is_committee();
 					'law_kw'      => $law_filters['kw'],
 					'law_event'   => $law_filters['event'],
 					'law_bstatus' => $law_filters['status'],
+					'law_payment' => $law_filters['payment'],
 					'law_press'   => $law_filters['press'] ? '1' : '',
 					'law_year'    => $law_filters['year'],
 				)

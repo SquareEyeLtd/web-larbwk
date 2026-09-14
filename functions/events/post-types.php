@@ -133,12 +133,11 @@ function law_events_register_post_types() {
 
 	// Discount codes (functions/events/discounts.php).
 	//
-	// Built and kept, but deliberately NOT wired to anything yet: Denis
-	// confirmed on 10 September 2026 that codes are wanted in future and are
-	// not wanted on the flagship, so the catalogue exists and the committee
-	// can fill it, and the first priced booking flow that should honour a
-	// code opts in by calling law_discount_validate(). Nothing charges a
-	// discounted amount today.
+	// Honoured by the paid receptions (RECEPTIONS.md §8.4) and by nothing
+	// else: Denis confirmed on 10 September 2026 that codes are not wanted on
+	// the flagship, whose price is the committee's decision at approval
+	// rather than the delegate's at checkout. A flow opts in by calling
+	// law_discount_validate() and law_discount_claim().
 	//
 	// A first-class post type rather than rows in an option: a code needs its
 	// own usage counter incremented atomically, its own activity trail and a

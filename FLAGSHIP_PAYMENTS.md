@@ -48,7 +48,7 @@ places, and the brief wins.
 | §4.4: automatic promotion when a place opens | **No automatic promotion.** Approval is a committee judgement, so a freed place is offered by the committee approving the next applicant |
 | §4.3: after a failed charge the place goes to the next applicant | The retry window expiring raises a **committee alert**. It never auto-declines and never reassigns, matching the module's standing "a human decides" posture |
 | §7.6: Stripe's standard receipt | A Stripe **invoice**: VAT line, LAW's VAT number, hosted URL and PDF |
-| §3.4: "Register" | The control reads **"Apply"**. Spec §3.4 itself reserves "Register" for free events, and this button does not book a place |
+| §3.4: "Register" | The control reads **"Apply"**. Spec §3.4 itself reserves "Register" for free events, and this button does not book a place. Denis asked for "Register" on 14 September 2026 and reverted the change the same day, so "Apply" stands |
 
 Also settled:
 
@@ -916,12 +916,18 @@ Cases worth naming, each with a comment saying which bug it guards:
 
 ## 12. Recorded follow-ups, not built here
 
-- **Receptions** (spec §2, §6.1): the Wednesday reception checkbox on flagship
-  approval, the £25 flagship-only Monday price and the priority sales window.
-  Deferred on 8 September 2026 and still blocked on LAW confirming prices. The
-  price snapshot and the discount catalogue (§13) are both generic, so
-  receptions reuse them, and flagship approval is the flag those rules will
-  read.
+- ~~**Receptions**~~ — **BUILT, 14 September 2026** (RECEPTIONS.md). Denis's
+  brief of that date supersedes spec §2.3 and §6.1: there is **no** £25
+  flagship-only Monday price and **no** priority sales window; Monday and
+  Wednesday are simply free to a confirmed flagship delegate, and Friday is
+  invitation only. The receptions ticked on the application are stored as
+  `_law_reception_choices` and granted by `law_flagship_confirm()`, so the
+  "Wednesday reception checkbox on flagship approval" is now the checkbox on
+  the apply dialog and the grant at confirmation. Prices are still LAW's to
+  confirm: they are fields the committee edits on Manage receptions,
+  defaulting to 0 ("not on sale"). The price snapshot and the discount
+  catalogue (§13) were both generic, as intended, and the receptions reuse
+  them unchanged.
 - **Refunds**: no automated flow (spec §2). The invoice link on the booking is
   the deliverable.
 - **HubSpot**: deferred for 4.2.
@@ -933,22 +939,37 @@ Cases worth naming, each with a comment saying which bug it guards:
   system cron it would sit unresumed with only a log line to say so. A
   "N applications still queued" banner reading `wp_next_scheduled()` would
   close it if cron reliability ever bites (security review, P3).
-- **Discount refusal messages distinguish expired, not-yet-started and used-up
-  from unknown.** Harmless while nothing calls `law_discount_validate()`;
-  whoever wires the first priced flow should decide consciously whether code
-  secrecy matters enough to collapse them, rather than inheriting today's
-  wording (security review, info).
+- ~~**Discount refusal messages distinguish expired, not-yet-started and
+  used-up from unknown.**~~ **DECIDED, 14 September 2026** (RECEPTIONS.md
+  §0.3), by the first priced flow to wire the catalogue in. The distinct
+  messages STAY: "that code has expired" and "that code has been used the
+  maximum number of times" are what a real delegate holding a real code needs
+  to hear, and collapsing them into "not recognised" would send that person to
+  the committee instead. "No such code" and "that code is disabled" still share
+  one message, so the field cannot be used to enumerate the catalogue. The
+  enumeration risk is answered where it belongs instead: the quote endpoint has
+  its own rate surface (`discount_quote`, 20 per user and 60 per IP per ten
+  minutes), so the field cannot be walked.
 - **£550 / £600 is not in any LAW-signed document.** `EVENTS_4.2_SPECS.md` §2
   says £500 + VAT flat, with no early-bird tier. Worth confirming with Emily
   before go-live.
 
 ---
 
-## 13. The discount catalogue (built, and deliberately not used here)
+## 13. The discount catalogue (not used here, and now used by the receptions)
 
 `functions/events/discounts.php` and its committee catalogue at
 `/account/dashboard/discounts/` are part of this round's work, but they are
-**not part of the flagship flow** and must not be wired into it.
+**not part of the flagship flow** and must not be wired into it. A flagship
+place is priced by the committee at approval, not by the delegate at checkout,
+which is why Denis ruled codes out here on 10 September 2026 and why
+`tests/DiscountsTest.php` fails if anybody wires one in.
+
+**The catalogue got its first consumer on 14 September 2026**: the paid
+receptions (RECEPTIONS.md §8.4). Nothing in `discounts.php` changed to allow
+it, which was the point of building it generically — `receptions.php` calls
+`law_discount_validate()` / `_apply()` / `_claim()` and registers every priced
+reception through the `law_discount_scope_events` filter.
 
 - **What exists**: a `law_discount` post type (code as the title, its
   normalised form as the slug, publish/draft for active/disabled), the meta in
@@ -958,15 +979,20 @@ Cases worth naming, each with a comment saying which bug it guards:
   `law_discount_claim()` / `_release()` (an atomic conditional UPDATE, so a
   limited code cannot be over-claimed by two people at once) and
   `law_discount_log()`.
-- **What does not exist**: any caller. No price on the site is reduced by
-  anything in that file. The catalogue screen says so in as many words, rather
-  than implying the codes are live.
-- **How a future flow opts in**: call `law_discount_validate( $code, [
+- **Who calls it**: the paid receptions, and nothing else. The catalogue
+  screen says where a code bites rather than implying it works everywhere.
+- **How a flow opts in**: call `law_discount_validate( $code, [
   'event_id', 'user_id', 'price_pence' ] )`, then `law_discount_apply()` for
   the numbers and `law_discount_claim()` under its own lock, releasing on any
   refusal or cancellation. Add the event to the `law_discount_scope_events`
   filter so the committee can limit a code to it. `discounts.php` deliberately
-  knows nothing about the flagship or receptions, so it needs no changes.
+  knows nothing about the flagship or the receptions, so it needed no changes.
+- **The claim and the release belong to the flow.** A reception claims BEFORE
+  the booking exists — a conditional `UPDATE` decides a last use, and losing
+  means refusing with nothing written — and deletes `_law_discount_id` on
+  release, which is what makes a double release a no-op rather than a theft of
+  somebody else's live claim. A PAID place that the committee cancels keeps
+  the use, because the code really was spent.
 
 ---
 

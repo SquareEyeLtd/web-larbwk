@@ -109,6 +109,34 @@ $law_fa_fields = static function ( $law_fa_prefix, $law_fa_show_other = false ) 
 		</label>
 		<span class="law-form-hint"><?php esc_html_e( 'Marks the row and the exports, for the on-site team.', 'law' ); ?></span>
 	</p>
+
+	<?php
+	// A comp place gets the drinks its paid equivalent would (RECEPTIONS.md
+	// §0.3): the same "Included receptions" tick the application form offers,
+	// granted at once here because this place is confirmed the moment it is
+	// made. The field name is law_receptions[], flat rather than nested, so
+	// the two copies of this form on the page post the same thing and the
+	// handler reads one key. Hidden when there are no included receptions.
+	$law_fa_receptions = function_exists( 'law_reception_included_ids' ) ? law_reception_included_ids() : array();
+	?>
+	<?php if ( $law_fa_receptions ) : ?>
+		<fieldset class="law-flagship-receptions">
+			<legend><?php esc_html_e( 'Included receptions', 'law' ); ?></legend>
+			<p class="law-form-hint"><?php esc_html_e( 'Tick the receptions to add at no cost. They can add them later themselves from My bookings.', 'law' ); ?></p>
+			<?php foreach ( $law_fa_receptions as $law_fa_reception ) : ?>
+				<p class="law-form-field">
+					<label>
+						<input type="checkbox" name="law_receptions[]" value="<?php echo esc_attr( (string) $law_fa_reception ); ?>">
+						<strong><?php echo esc_html( get_the_title( $law_fa_reception ) ); ?></strong>
+						<?php $law_fa_when = law_reception_when_label( $law_fa_reception ); ?>
+						<?php if ( '' !== $law_fa_when ) : ?>
+							<span class="law-form-hint"><?php echo esc_html( $law_fa_when ); ?></span>
+						<?php endif; ?>
+					</label>
+				</p>
+			<?php endforeach; ?>
+		</fieldset>
+	<?php endif; ?>
 	<?php
 };
 

@@ -518,6 +518,99 @@
   color: #a85400;
 }
 
+/* The flagship as an ordinary row (parts/loop/event.php): the speaker
+   profile's role lists, My bookings, My events. Same structure as every other
+   row, but wearing the programme block's colours -- brand navy fill, white
+   text, orange accents -- so the conference is recognisable as the conference
+   wherever it is listed (Denis, 14 September 2026). Navy and white and navy
+   and orange both clear AA, the same pairing the block and the strip use.
+   The programme's own day lists never reach this: the flagship is lifted out
+   of them and rendered as parts/events/flagship-card.php instead. */
+.law-event-card--flagship {
+  background: #292459;
+  border-left-color: #ef7d05;
+  border-bottom-color: #292459;
+  padding-right: 0.85rem;
+}
+
+.law-event-card--flagship .law-event-card__title,
+.law-event-card--flagship .law-event-card__title a {
+  color: #fff;
+}
+
+.law-event-card--flagship .law-event-card__title a:hover,
+.law-event-card--flagship .law-event-card__title a:focus {
+  color: #ef7d05;
+}
+
+.law-event-card--flagship .law-event-card__time {
+  color: #ef7d05;
+}
+
+/* The muted grey of an ordinary row would sink into the navy, so the meta
+   lines go white and lean on opacity for the step down in weight, as the
+   block's own meta line does. */
+.law-event-card--flagship .law-event-card__meta {
+  color: #fff;
+  opacity: 0.9;
+}
+
+.law-event-card--flagship .law-event-card__meta + .law-event-card__meta::before {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* The identity pill, matching the block's and the strip's: an orange outline,
+   never a fill, so it cannot be mistaken for a status badge. */
+.law-event-card__flagship-badge {
+  display: inline-block;
+  margin: 0 0 0.4rem;
+  padding: 3px 8px;
+  border: 1px solid #ef7d05;
+  border-radius: 10px;
+  color: #ef7d05;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The committee's status badge, which is navy-on-navy in its --confirmed form
+   and unreadable on this fill. White pill, navy text, for every status. */
+.law-event-card--flagship .law-cal-card__badge {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
+/* Buttons invert, exactly as they do on the programme block: white by default,
+   the orange primary action swapping to white on hover. Navy on orange rather
+   than white on orange, for contrast. */
+.law-event-card--flagship .button {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
+.law-event-card--flagship .button:hover,
+.law-event-card--flagship .button:focus {
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #292459;
+}
+
+.law-event-card--flagship .button.orange {
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #292459;
+}
+
+.law-event-card--flagship .button.orange:hover,
+.law-event-card--flagship .button.orange:focus {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
 .law-event-card__body {
   min-width: 0;
   flex: 1 1 auto;
@@ -638,6 +731,18 @@
    orange on navy both clear AA, so the tag is an orange outline pill and the
    link is orange text. */
 
+/* --- The filled navy strip (.law-strip) ----------------------------------
+   One component, three callers: the flagship's signpost at the top of the
+   programme (.law-flagship-strip), the "you have no events yet" panel on My
+   events (.law-account-events__empty) and the receptions' "your ticket
+   includes a drink" banner (.law-reception-strip) on My bookings and the
+   Account hub.
+
+   They were three near-copies of the same thing, which is three places for a
+   navy to drift. Brand navy, white words on the left, the action on the right,
+   stacking on a phone. The old class names stay as aliases, because they are
+   in markup and in tests. */
+.law-strip,
 .law-flagship-strip {
   display: flex;
   align-items: center;
@@ -650,6 +755,7 @@
   color: #fff;
 }
 
+.law-strip__badge,
 .law-flagship-strip__badge {
   flex: 0 0 auto;
   padding: 3px 8px;
@@ -660,6 +766,50 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* The strip's words: title on its own line, the rest under it. Its flex basis
+   is what keeps the action button on the same row down to the phone breakpoint,
+   where the whole thing becomes a stack. */
+.law-strip__text {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.law-strip__text p {
+  margin: 0;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.law-strip__title {
+  margin: 0 0 0.35rem !important;
+  font-family: poppins, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* The action sits at the right, vertically centred with the words. A <form>
+   wrapper rather than a bare button on the receptions' banner, because the
+   dialog it opens posts; the form must not take a row of its own. */
+.law-strip__action {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+/* .law-cal sets its own link colour, which would repaint the button's label
+   (the same reason .law-cal .law-flagship-strip__link exists). Bigger than the
+   theme's base button too: it is the only action in the panel. */
+.law-cal .law-strip__cta,
+.law-cal .law-strip__cta:hover,
+.law-cal .law-strip__cta:focus {
+  width: auto;
+  margin: 0;
+  padding: 0.85rem 1.75rem;
+  font-size: 1rem;
+  color: #292459;
 }
 
 /* .law-cal a inherits colour; these need white and orange on navy. */
@@ -718,10 +868,17 @@
    above the title, then date · time · venue, then the link. The link's 16rem
    flex basis must go, or in a column it would become a 16rem height. */
 @media (max-width: 47.9375em) {
+  .law-strip,
   .law-flagship-strip {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.4rem;
+  }
+
+  .law-strip__action,
+  .law-cal .law-strip__cta {
+    width: 100%;
+    text-align: center;
   }
 
   .law-cal .law-flagship-strip__link {
@@ -770,7 +927,9 @@
 
 .law-timeline__item {
   position: relative;
-  padding: 0 0 1.75rem var(--law-tl-gap);
+  /* Wider than the space above a session's speaker cards, so the cards stay
+     visibly part of the session above them (see .law-timeline__speakers). */
+  padding: 0 0 2.75rem var(--law-tl-gap);
 }
 
 .law-timeline__item:last-child {
@@ -831,10 +990,10 @@
 }
 
 .law-timeline__body {
-  /* A measure on the prose, not on the list: an item with no speakers beside
-     it would otherwise run the full width of the article, which on an ordinary
-     event is the whole large-12 column. */
-  max-width: 65ch;
+  /* Full width of the column. The title and the description used to share the
+     row with a speakers column and carried a 65ch measure besides; both are
+     gone (Denis, 14 September 2026), because the speakers now sit under the
+     prose and the session is one block reading top to bottom. */
   color: #333;
 }
 
@@ -844,40 +1003,6 @@
 
 .law-timeline__body p:last-child {
   margin-bottom: 0;
-}
-
-/* The speaker cards already carry their own grid; inside a timeline item they
-   only need separating from the description above them. */
-.law-timeline__speakers {
-  margin-top: 0.9rem;
-}
-
-/* Two columns from 64em: everything the session SAYS -- its title and its description -- takes the left column, and
-   the people speaking at it take the right, starting level with the title
-   (Denis, 11 September 2026). An earlier version ran the title across both
-   columns, which left the speaker cards hanging below it and broke the reading
-   line between a session's name and its blurb. Set on the content block only
-   when the item has both (parts/events/session-timeline.php). */
-@media screen and (min-width: 64em) {
-  .law-timeline__content--split {
-    display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
-    gap: 0 2.5rem;
-    align-items: start;
-  }
-
-  .law-timeline__content--split > .law-timeline__title,
-  .law-timeline__content--split > .law-timeline__body {
-    grid-column: 1;
-  }
-
-  /* Spanning both rows rather than sitting in one, so a long description
-     cannot push the cards down the page away from the title they belong to. */
-  .law-timeline__content--split > .law-timeline__speakers {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    margin-top: 0;
-  }
 }
 
 @media screen and (min-width: 48em) {
@@ -1201,21 +1326,22 @@
    action is a filled navy panel, with every word in one block on the left and
    the button on the right, so that is what this is. Same 4px orange top rule
    and square, shadowless shape as .law-booking-panel. */
+/* My events' empty state is the same component under an older name, so it is
+   an ALIAS rather than a fourth copy (RECEPTIONS.md §0.4 item 10). The two
+   modifiers it differs in — a top rule rather than a left edge, and roomier
+   padding, because it is a panel rather than a one-liner — ride on
+   .law-strip--panel, which the receptions' banner also uses. */
+.law-strip--panel,
 .law-account-events__empty {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem 1.5rem;
   margin: 0 0 2rem;
   padding: 1.5rem 2rem;
-  background-color: #292459;
+  border-left: 0;
   border-top: 4px solid #ef7d05;
-  color: #fff;
 }
 
 .law-account-events__empty-text {
   flex: 1 1 20rem;
+  min-width: 0;
 }
 
 .law-account-events__empty p {
@@ -1233,9 +1359,6 @@
   line-height: 1.3;
 }
 
-/* .law-cal sets its own link colour, which would repaint the button's label
-   (the same reason .law-cal .law-flagship-strip__link exists). Bigger than the
-   theme's base button too: it is the only action in the panel. */
 .law-cal .law-account-events__empty-cta,
 .law-cal .law-account-events__empty-cta:hover,
 .law-cal .law-account-events__empty-cta:focus {
@@ -1248,6 +1371,7 @@
 }
 
 @media screen and (max-width: 39.9375em) {
+  .law-strip--panel,
   .law-account-events__empty {
     padding: 1.25rem;
   }
@@ -1256,6 +1380,90 @@
     width: 100%;
     text-align: center;
   }
+}
+
+/* The note that replaces the cancel button on a paid place: an inline aside,
+   not a button that only ever answers no. */
+.law-booking-manage__note {
+  display: block;
+  color: #5d5a70;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* The rule under the receptions banner. It is the page's, not the component's:
+   on both surfaces the next thing is a list the banner is not part of, and
+   without it the navy panel and the first row read as one block. */
+.law-strip-divider {
+  height: 0;
+  margin: 0 0 2rem;
+  border: 0;
+  border-top: 1px solid #d5d2de;
+}
+
+/* --- The reception checkout dialog's price block -------------------------
+   Four ruled lines that have to be readable at a glance and swappable in
+   place: the Apply button replaces the figures, and nothing may move when it
+   does, or pressing Apply would feel like the page had reloaded. Hence fixed
+   rows rather than a table, and the total set apart by weight and a rule
+   rather than by a colour the dialog does not otherwise use. */
+
+.law-reception-price {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  background: #f5f4f8;
+  border-left: 4px solid #292459;
+}
+
+.law-reception-price__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.35rem !important;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.law-reception-price__row--discount {
+  color: #1c6b3a;
+}
+
+.law-reception-price__row--total {
+  margin: 0.5rem 0 0 !important;
+  padding-top: 0.5rem;
+  border-top: 1px solid #d5d2de;
+  font-size: 1.05rem;
+}
+
+/* The code field and its Apply button share a row: the button is part of the
+   field, not a second decision below it. align-items: stretch, so the button
+   takes the input's height rather than its own padding's — the two read as one
+   control, and a short button beside a tall input reads as a mistake. */
+.law-reception-code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.5rem;
+}
+
+.law-reception-code label {
+  flex: 1 1 100%;
+}
+
+.law-reception-code input {
+  flex: 1 1 12rem;
+  margin: 0 !important;
+}
+
+.law-reception-code .button {
+  flex: 0 0 auto;
+  /* Vertical padding would fight the stretch; the horizontal keeps the label
+     off the edges. */
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
 }
 
 /* --- Loading skeleton ----------------------------------------------------- */
@@ -1919,12 +2127,31 @@
   margin-top: 0.5rem;
 }
 
-/* One card per row wherever a session lists its speakers: beside the
-   description it is a third-width column, and stacked below 64em the cards
-   read better in a single file under the text they belong to than two abreast.
-   Same reasoning as the speakers sidebar above. */
+/* A session's speakers sit UNDER its description, at the full width of the
+   column, so they are a grid rather than a single file (Denis, 14 September
+   2026): two abreast on a desktop, and one card per row below 64em. The
+   single file at tablet width is deliberate and overrides the two-per-row
+   .law-cal-speakers--cards gets from 48em, because a card at half of a tablet
+   is not wide enough for the photo and the name to sit side by side.
+
+   The space above the cards has to be set HERE and not up with the rest of the
+   timeline rules, because .law-cal-speakers' `margin: 0` shorthand is further
+   down the file at the same specificity and silently wins over any earlier
+   margin-top. About 1.85rem of air in total once .law-cal-speakers--cards' own
+   0.35rem of padding-top is counted: enough that the cards read as the next
+   thing in the session rather than as the last paragraph of its description,
+   and still less than the gap .law-timeline__item leaves between one session
+   and the next, which has to stay the larger of the two or a session's
+   speakers begin to read as the opening of the session below them. */
 .law-timeline__speakers {
   grid-template-columns: minmax(0, 1fr);
+  margin-top: 1.5rem;
+}
+
+@media screen and (min-width: 64em) {
+  .law-timeline__speakers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 #pages .hero .law-cal-banner-title {

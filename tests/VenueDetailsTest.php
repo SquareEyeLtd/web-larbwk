@@ -138,7 +138,10 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
-		$event_id = $this->make_event( array(), 'law-proposed', $host );
+		// law-draft, not law-proposed: places available lock for a host the
+		// moment the event is submitted (Denis, 14 September 2026), so their
+		// own unsubmitted draft is the last door they can set all three at.
+		$event_id = $this->make_event( array(), 'law-draft', $host );
 
 		$result = law_events_form_save(
 			$this->valid_input(
@@ -147,6 +150,9 @@ class VenueDetailsTest extends LAW_Test_Case {
 					'venue'             => 'Their own offices',
 					'venue_capacity'    => 'Under 50',
 					'tickets_available' => '40',
+					// A law-draft save is the submission as far as validation
+					// is concerned, so the terms tick is asked for.
+					'terms'             => 1,
 				)
 			),
 			array(),
@@ -162,7 +168,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
-		$event_id = $this->make_event( array(), 'law-proposed', $host );
+		$event_id = $this->make_event( array(), 'law-draft', $host );
 
 		$result = law_events_form_save(
 			$this->valid_input(
@@ -209,7 +215,8 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
-		$event_id = $this->make_event( array(), 'law-proposed', $host );
+		// On the host's own draft, where all three are still on their form.
+		$event_id = $this->make_event( array(), 'law-draft', $host );
 
 		// The venue typed, but neither the band nor the places (Denis,
 		// 11 September 2026): all three go together on that answer.
@@ -239,6 +246,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 						'venue'             => 'Their own offices',
 						'venue_capacity'    => 'TBC',
 						'tickets_available' => '40',
+						'terms'             => 1,
 					)
 				),
 				array(),
@@ -334,9 +342,172 @@ class VenueDetailsTest extends LAW_Test_Case {
 		);
 		$this->assertSame( $event_id, $result );
 
-		// Venue and places stay the host's post-approval; the band does not.
-		$this->assert_venue_values( $event_id, 'A different hall, EC1', '101-150', 90, 'After a post-approval host edit:' );
+		// The venue name stays the host's post-approval; the band and the
+		// places do not, so the stored 120 survives their posted 90.
+		$this->assert_venue_values( $event_id, 'A different hall, EC1', '101-150', 120, 'After a post-approval host edit:' );
 		$this->assertSame( self::HAS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ) );
+	}
+
+	/* Places available, locked for a host from submission (14 September 2026) */
+
+	public function test_places_lock_for_a_host_from_submission_onwards(): void {
+		$host      = $this->make_user();
+		$committee = $this->make_committee_user();
+
+		// The host's own draft is the create form reopened, so it stays theirs.
+		$draft = get_post( $this->make_event( array(), 'law-draft', $host ) );
+		$this->assertNotContains( 'tickets_available', law_events_locked_fields( $draft, $host ) );
+
+		foreach ( array( 'law-proposed', 'law-sent-back', 'law-approved', 'publish' ) as $status ) {
+			$event = get_post( $this->make_event( array(), $status, $host ) );
+			$this->assertContains(
+				'tickets_available',
+				law_events_locked_fields( $event, $host ),
+				"Host on $status"
+			);
+			$this->assertNotContains(
+				'tickets_available',
+				law_events_locked_fields( $event, $committee ),
+				"Committee on $status"
+			);
+		}
+
+		// The band is the other half of the pair and moves the other way: still
+		// the host's while the event is under review, locked at approval.
+		$under_review = get_post( $this->make_event( array(), 'law-proposed', $host ) );
+		$this->assertNotContains( 'venue_capacity', law_events_locked_fields( $under_review, $host ) );
+		$approved = get_post( $this->make_event( array(), 'law-approved', $host ) );
+		$this->assertContains( 'venue_capacity', law_events_locked_fields( $approved, $host ) );
+	}
+
+	public function test_a_host_under_review_cannot_change_the_places(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		$event_id = $this->make_event(
+			array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ),
+			'law-proposed',
+			$host
+		);
+
+		// The disabled number input posts nothing; a crafted post is ignored,
+		// and the stored places are neither cleared nor overwritten. Clearing
+		// them would take the booking and waitlist capacity with them.
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'      => self::HAS_VENUE,
+					'venue'             => 'Guildhall, EC2V 7HH',
+					'venue_capacity'    => '101-150',
+					'tickets_available' => '900',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+		$this->assertSame( $event_id, $result );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '101-150', 120, 'After a host save under review:' );
+
+		// And an absent value is not read as a cleared one either.
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'   => self::HAS_VENUE,
+					'venue'          => 'Guildhall, EC2V 7HH',
+					'venue_capacity' => '101-150',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+		$this->assertSame( $event_id, $result );
+		$this->assertSame( 120, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
+	}
+
+	public function test_a_host_under_review_may_still_change_the_band(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		$event_id = $this->make_event(
+			array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ),
+			'law-proposed',
+			$host
+		);
+
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'   => self::HAS_VENUE,
+					'venue'          => 'Guildhall, EC2V 7HH',
+					'venue_capacity' => '151-250',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+		$this->assertSame( $event_id, $result );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '151-250', 120, 'After a band change under review:' );
+	}
+
+	public function test_a_band_below_the_stored_places_is_refused_on_the_band(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		$event_id = $this->make_event(
+			array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ),
+			'law-proposed',
+			$host
+		);
+
+		// 120 places are already released, so "Under 50" cannot be right. The
+		// refusal lands on the band, the only half of the pair this host can
+		// move, rather than on a field they cannot reach.
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'   => self::HAS_VENUE,
+					'venue'          => 'Guildhall, EC2V 7HH',
+					'venue_capacity' => 'Under 50',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( '', $result->get_error_message( 'tickets_available' ) );
+		$this->assertStringContainsString( '120 places', $result->get_error_message( 'venue_capacity' ) );
+
+		// Nothing was written: the check runs before the writes.
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '101-150', 120, 'After a refused band change:' );
+	}
+
+	public function test_the_places_are_not_required_of_a_host_who_cannot_set_them(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		// A host with their own venue and no places stored yet: the field is
+		// locked, so requiring it would make every save impossible.
+		$event_id = $this->make_event( array( '_law_venue_needed' => self::HAS_VENUE ), 'law-proposed', $host );
+
+		$this->assertSame(
+			$event_id,
+			law_events_form_save(
+				$this->valid_input(
+					array(
+						'venue_needed'   => self::HAS_VENUE,
+						'venue'          => 'Their own offices',
+						'venue_capacity' => 'Under 50',
+					)
+				),
+				array(),
+				get_post( $event_id ),
+				$host
+			)
+		);
 	}
 
 	/* The committee dashboard panel ________________________________________ */

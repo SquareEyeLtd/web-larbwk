@@ -35,6 +35,7 @@ function law_committee_export_columns() {
 		'Venue capacity',
 		'Tickets available',
 		'Bookings',
+		'Awaiting payment',
 		'Places left',
 		'Venue',
 	);
@@ -78,6 +79,11 @@ function law_committee_export_row( WP_Post $post ) {
 		// The same two figures the dashboard table shows: places taken, and
 		// places left (blank until capacity is set, i.e. not open for booking).
 		law_event_attendee_total( $id ),
+		// On a priced event the total above includes places held while
+		// somebody pays, so the hold count is stated separately rather than
+		// leaving the two numbers to disagree with the bookings list
+		// (RECEPTIONS.md §1.3).
+		law_booking_pending_payment_count( $id ) ?: '',
 		null === law_event_tickets_remaining( $id ) ? '' : law_event_tickets_remaining( $id ),
 		(string) law_event_meta( $id, '_law_venue' ),
 	);

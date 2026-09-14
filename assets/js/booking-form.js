@@ -210,6 +210,12 @@
 	function bookKind(button) {
 		var href = button.getAttribute('href') || '';
 		if (href.indexOf('law_flagship_apply=') !== -1) { return 'apply'; }
+		/* The receptions' own two, plus the free place a confirmed flagship
+		   ticket includes. Read off the link, like the rest: the URL already
+		   says which of the three it is. */
+		if (href.indexOf('law_reception_include=') !== -1) { return 'include'; }
+		if (href.indexOf('law_reception_waitlist=') !== -1) { return 'waitlist'; }
+		if (href.indexOf('law_reception_checkout=') !== -1) { return 'book'; }
 		if (href.indexOf('law_waitlist=') !== -1) { return 'waitlist'; }
 		return 'book';
 	}
@@ -594,6 +600,208 @@
 	/* The committee's tables arrive over &law_partial=1; re-evaluate when one
 	   lands, since the new boxes are all unticked. */
 	document.addEventListener('law:partial-rendered', syncAllBulkButtons);
+
+
+	/* 5. The live discount quote on a reception's checkout dialog.
+
+	   Nothing here computes money. The Apply button asks the server
+	   (law_reception_quote_handler()) what one place costs with this code, and
+	   all this does is swap the four figures it is handed. That is the whole
+	   contract: the client can never send its own price, and the submit posts
+	   back the gross it was SHOWING so the server can refuse rather than
+	   reprice under somebody.
+
+	   While a quote is in flight the SUBMIT is disabled as well as the Apply
+	   button. A submit mid-quote would post the old price_shown against the new
+	   total and be refused with "the price changed" — which is true of the
+	   form and untrue of the world, and reads as a bug. */
+
+	var quoteToken = 0;
+
+	function quoteForm(node) {
+		return node && node.closest ? node.closest('[data-law-reception-quote]') : null;
+	}
+
+	function quoteField(form) {
+		return form.querySelector('[data-law-quote-code]');
+	}
+
+	function quoteStatus(form, message) {
+		var line = form.querySelector('[data-law-quote-status]');
+		if (line) { line.textContent = message || ''; }
+		return line;
+	}
+
+	function quoteBusy(form, on) {
+		var apply = form.querySelector('[data-law-quote]');
+		var submit = form.querySelector('[type="submit"]');
+		if (apply) {
+			if (on) {
+				if (!apply.hasAttribute('data-law-quote-label')) {
+					apply.setAttribute('data-law-quote-label', apply.textContent);
+				}
+				apply.textContent = 'Checking…';
+			} else {
+				apply.textContent = apply.getAttribute('data-law-quote-label') || apply.textContent;
+			}
+			apply.disabled = on;
+		}
+		if (submit) { submit.disabled = on; }
+	}
+
+	/* Swap the four lines, the two hidden fields and the submit's wording. */
+	function quoteApply(form, data) {
+		['net', 'discount', 'vat', 'gross'].forEach(function (key) {
+			var cell = form.querySelector('[data-law-price="' + key + '"]');
+			if (!cell || typeof data[key] !== 'string') { return; }
+			/* The discount is a deduction, and reads as one. */
+			cell.textContent = ('discount' === key ? '\u2212' : '') + data[key];
+		});
+
+		var row = form.querySelector('[data-law-price-discount-row]');
+		if (row) { row.hidden = !data.code; }
+
+		var shown = form.querySelector('[data-law-price-shown]');
+		if (shown && typeof data.pence === 'number') { shown.value = String(data.pence); }
+		var applied = form.querySelector('[data-law-applied-code]');
+		if (applied) { applied.value = data.code || ''; }
+
+		/* A free quote has nothing to pay and nowhere to send them, so the
+		   button says what will actually happen and the Stripe line goes. */
+		var submit = form.querySelector('[type="submit"]');
+		if (submit) {
+			var label = data.free ? submit.getAttribute('data-law-submit-free') : submit.getAttribute('data-law-submit-default');
+			var busy = data.free ? submit.getAttribute('data-law-submit-busy-free') : submit.getAttribute('data-law-submit-busy-default');
+			if (label) { submit.textContent = label; }
+			if (busy) { submit.setAttribute('data-law-modal-busy', busy); }
+		}
+		var note = form.querySelector('[data-law-stripe-note]');
+		if (note) { note.hidden = !!data.free; }
+	}
+
+	/* Ask the server. Resolves with the payload, rejects with a message. */
+	function quoteFetch(form, code) {
+		var data = new FormData();
+		data.append('action', 'law_reception_quote');
+		data.append('event_id', form.getAttribute('data-law-reception-quote'));
+		data.append('law_reception[code]', code);
+		data.append('law_ajax', '1');
+		var nonce = form.querySelector('input[name="_wpnonce"]');
+		/* The quote endpoint has its own nonce action, so the form's nonce is
+		   no use to it: ask for one the server will accept. lawReceptionQuote
+		   is localised beside the script (functions/account-bookings.php). */
+		if (window.lawReceptionQuote && window.lawReceptionQuote.nonce) {
+			data.append('_wpnonce', window.lawReceptionQuote.nonce);
+		} else if (nonce) {
+			data.append('_wpnonce', nonce.value);
+		}
+
+		var token = ++quoteToken;
+		return fetch((window.lawReceptionQuote && window.lawReceptionQuote.url) || form.getAttribute('action'), {
+			method: 'POST',
+			body: data,
+			credentials: 'same-origin'
+		})
+			.then(function (response) { return response.json(); })
+			.then(function (response) {
+				/* A later press won: discard this answer rather than painting
+				   a price the delegate has already moved on from. */
+				if (token !== quoteToken) { return null; }
+				if (!response.success) {
+					var payload = response.data || {};
+					var error = new Error(payload.message || 'That discount code was not recognised.');
+					error.field = payload.field || 'law_discount_code';
+					throw error;
+				}
+				return response.data || {};
+			});
+	}
+
+	/* Apply (or Remove, which is the same request with an empty code). */
+	function quoteRun(form, code) {
+		clearErrors(form, form);
+		quoteBusy(form, true);
+
+		return quoteFetch(form, code).then(
+			function (data) {
+				quoteBusy(form, false);
+				if (!data) { return null; }
+				quoteApply(form, data);
+				var line = quoteStatus(form, data.label || '');
+				/* "Remove" is offered only when there IS something to remove,
+				   and it is a button rather than a link: it changes the form,
+				   it does not go anywhere. */
+				if (line && data.code) {
+					var remove = document.createElement('button');
+					remove.type = 'button';
+					remove.className = 'law-linkish';
+					remove.textContent = 'Remove';
+					remove.addEventListener('click', function () {
+						var field = quoteField(form);
+						if (field) { field.value = ''; }
+						quoteRun(form, '');
+					});
+					line.appendChild(document.createTextNode(' '));
+					line.appendChild(remove);
+				}
+				return data;
+			},
+			function (error) {
+				quoteBusy(form, false);
+				quoteStatus(form, '');
+				/* scopeFor(), not the form: inside a dialog this renders as
+				   .law-modal__error, which is coloured for a WHITE surface.
+				   Handed the form instead it rendered .law-form-notice, drawn
+				   for the purple hero -- white text on a translucent white
+				   strip -- so a rejected code refused SILENTLY and the delegate
+				   saw nothing at all (browser pass, 14 September 2026). */
+				showError(form, scopeFor(form), error && error.message ? error.message : 'We could not check that code. Please try again.');
+				if (error && error.field) { markFlatField(form, error.field); }
+				throw error;
+			}
+		);
+	}
+
+	document.addEventListener('click', function (event) {
+		var apply = event.target.closest ? event.target.closest('[data-law-quote]') : null;
+		var form = quoteForm(apply);
+		if (!apply || !form || !window.fetch) { return; }
+		event.preventDefault();
+		var field = quoteField(form);
+		quoteRun(form, field ? field.value.trim() : '').catch(function () {});
+	});
+
+	/* Enter inside the code field means Apply, not submit: pressing it to
+	   check a code and being taken to Stripe instead is the worst possible
+	   reading of that keystroke. */
+	document.addEventListener('keydown', function (event) {
+		if ('Enter' !== event.key) { return; }
+		var field = event.target.closest ? event.target.closest('[data-law-quote-code]') : null;
+		var form = quoteForm(field);
+		if (!field || !form || !window.fetch) { return; }
+		event.preventDefault();
+		quoteRun(form, field.value.trim()).catch(function () {});
+	});
+
+	/* A code typed and never applied: quote it first, then submit, so the
+	   delegate gets the discount they typed rather than a refusal. */
+	document.addEventListener('submit', function (event) {
+		var form = event.target;
+		if (!form || !form.hasAttribute || !form.hasAttribute('data-law-reception-quote') || !window.fetch) { return; }
+		var field = quoteField(form);
+		var applied = form.querySelector('[data-law-applied-code]');
+		if (!field || !applied) { return; }
+		if (field.value.trim().toUpperCase() === (applied.value || '').toUpperCase()) { return; }
+
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		quoteRun(form, field.value.trim()).then(
+			function () {
+				if (form.requestSubmit) { form.requestSubmit(); } else { form.submit(); }
+			},
+			function () {}
+		);
+	}, true);
 
 	/* event.submitter's fallback for older Safari: click fires before submit,
 	   and law-modal.js can preventDefault an invalid click before any submit

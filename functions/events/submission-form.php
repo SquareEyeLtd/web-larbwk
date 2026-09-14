@@ -34,24 +34,40 @@ function law_events_form_event_id() {
  * Fields locked once the event is approved/published, per the 4.2 §4.2
  * rules: for hosts, title, date/slots, fees, the approved capacity band and
  * programme-grid facts (type, sectors, host organisations) freeze;
- * description, speakers, venue, agenda, TICKET ALLOCATIONS (within the
- * approved band), contacts and co-owners stay editable. Committee members
- * bypass every lock EXCEPT fees/invoice (Denis, 7 September 2026): fee
- * changes stay in the dashboard override control and wp-admin, so the
- * snapshot machinery has one front-end door fewer. Pre-approval statuses
- * are fully unlocked for everyone — the fee is only snapshotted at
- * approval, and locking the tier earlier would break validation for a
- * committee member submitting their own event.
+ * description, speakers, venue, agenda, contacts and co-owners stay
+ * editable. Committee members bypass every lock EXCEPT fees/invoice (Denis,
+ * 7 September 2026): fee changes stay in the dashboard override control and
+ * wp-admin, so the snapshot machinery has one front-end door fewer.
+ * Pre-approval statuses are otherwise unlocked for everyone — the fee is only
+ * snapshotted at approval, and locking the tier earlier would break
+ * validation for a committee member submitting their own event.
+ *
+ * The one field that freezes earlier is **Places available**, which is
+ * read-only for a host from the moment the event is submitted (Denis,
+ * 14 September 2026), reversing the 4.2 §4.2 rule that had hosts editing the
+ * ticket allocation within the approved band. The number is the booking and
+ * waitlist capacity, so it belongs to the committee once they are reviewing
+ * the event; they set it in the Committee controls panel and in wp-admin.
+ * The host's own unsubmitted draft (law-draft) is exempt, because that is
+ * simply the create form reopened, and the capacity band is exempt too: a
+ * host may still correct the room's size while the event is under review, and
+ * it locks at approval as it always did.
  */
 function law_events_locked_fields( $post, $user_id = 0 ) {
-	if ( ! $post || in_array( $post->post_status, array( 'law-draft', 'law-proposed', 'law-sent-back' ), true ) ) {
+	if ( ! $post ) {
 		return array();
 	}
 	$user_id = $user_id ? (int) $user_id : get_current_user_id();
-	if ( law_user_is_committee( $user_id ) ) {
+	$is_committee = law_user_is_committee( $user_id );
+	if ( in_array( $post->post_status, array( 'law-draft', 'law-proposed', 'law-sent-back' ), true ) ) {
+		return ( ! $is_committee && 'law-draft' !== $post->post_status )
+			? array( 'tickets_available' )
+			: array();
+	}
+	if ( $is_committee ) {
 		return array( 'fee_tier', 'invoice' );
 	}
-	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed' );
+	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed', 'tickets_available' );
 }
 
 
@@ -289,20 +305,33 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 			if ( ! in_array( 'venue_capacity', $locked, true ) && '' === trim( (string) ( $input['venue_capacity'] ?? '' ) ) ) {
 				$errors->add( 'venue_capacity', 'Please choose the venue capacity.' );
 			}
-			if ( '' === trim( (string) ( $input['tickets_available'] ?? '' ) ) ) {
+			// Places available is locked for a host from submission onwards and
+			// a disabled number input posts nothing, so it is re-validated for
+			// exactly the same reason the band is not: what is stored is the
+			// committee's to fix.
+			if ( ! in_array( 'tickets_available', $locked, true ) && '' === trim( (string) ( $input['tickets_available'] ?? '' ) ) ) {
 				$errors->add( 'tickets_available', 'Please give the number of places available.' );
 			}
 		}
-		// Tickets can never exceed the approved venue capacity band. The band
-		// itself is locked after approval (and a disabled <select> posts nothing),
-		// so on an approved event the stored value is the one to check against —
-		// hosts keep editing ticket allocations WITHIN that band. A submitter who
-		// was never asked for places is not judged on them either: their posted
-		// value is ignored on save, so refusing it here would block the rest of
-		// their form over a field they cannot see.
-		$tickets = law_events_venue_details_visible( $venue_answer, $user_id )
-			? trim( (string) ( $input['tickets_available'] ?? '' ) )
-			: '';
+		// Places can never exceed the venue capacity band, and the pair is
+		// checked whichever of the two this submitter is allowed to move.
+		//
+		// - The band is locked after approval and a disabled <select> posts
+		//   nothing, so there the stored band is the one to check against.
+		// - The places are locked for a host from submission onwards, so there
+		//   the stored places are the ones to check — against the band they are
+		//   posting, because under review they may still lower it. The refusal
+		//   then belongs on the band, the only half of the pair they can change.
+		// - A submitter who was never asked for places is not judged on them at
+		//   all: their posted value is ignored on save, so refusing it here
+		//   would block the rest of their form over a field they cannot see.
+		$tickets_locked = in_array( 'tickets_available', $locked, true );
+		$tickets = '';
+		if ( law_events_venue_details_visible( $venue_answer, $user_id ) ) {
+			$tickets = $tickets_locked && $post
+				? trim( (string) law_event_meta( $post->ID, '_law_tickets_available' ) )
+				: trim( (string) ( $input['tickets_available'] ?? '' ) );
+		}
 		if ( '' !== $tickets ) {
 			$capacity = in_array( 'venue_capacity', $locked, true ) && $post
 				? (string) law_event_meta( $post->ID, '_law_venue_capacity' )
@@ -310,15 +339,25 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 			$bands = law_events_venue_capacity_bands();
 			$limit = $bands[ $capacity ] ?? null;
 			if ( (int) $tickets < 1 ) {
-				$errors->add( 'tickets_available', 'Tickets available must be at least 1.' );
+				// Only ever the posted value: a stored 0 is the committee's to
+				// fix, and refusing it would trap a host on their own form.
+				if ( ! $tickets_locked ) {
+					$errors->add( 'tickets_available', 'Tickets available must be at least 1.' );
+				}
 			} elseif ( null !== $limit && (int) $tickets > $limit ) {
 				$errors->add(
-					'tickets_available',
-					sprintf(
-						'Tickets available cannot exceed the venue capacity you chose (%1$s allows at most %2$d).',
-						$capacity,
-						$limit
-					)
+					$tickets_locked ? 'venue_capacity' : 'tickets_available',
+					$tickets_locked
+						? sprintf(
+							'%1$s is below the %2$d places already released for this event. Please choose a band that covers them, or ask us to lower the places first.',
+							$capacity,
+							(int) $tickets
+						)
+						: sprintf(
+							'Tickets available cannot exceed the venue capacity you chose (%1$s allows at most %2$d).',
+							$capacity,
+							$limit
+						)
 				);
 			}
 		}
@@ -476,8 +515,14 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 	// leave all three exactly as they are. Judged with the same predicate the
 	// form template renders by, so the two cannot disagree about what was asked.
 	if ( law_events_venue_details_visible( law_events_venue_needed_value( $post, $locked, $input ), $user_id ) ) {
-		$writes['_law_venue']             = $input['venue'] ?? '';
-		$writes['_law_tickets_available'] = $input['tickets_available'] ?? '';
+		$writes['_law_venue'] = $input['venue'] ?? '';
+		// Both of these are skipped when locked for the same reason: a disabled
+		// control posts nothing, so writing the posted value would clear the
+		// stored one -- and clearing the places takes the booking and waitlist
+		// capacity with it.
+		if ( ! in_array( 'tickets_available', $locked, true ) ) {
+			$writes['_law_tickets_available'] = $input['tickets_available'] ?? '';
+		}
 		if ( ! in_array( 'venue_capacity', $locked, true ) ) {
 			$writes['_law_venue_capacity'] = $input['venue_capacity'] ?? '';
 		}
@@ -1276,6 +1321,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-dashboard-flagship.php' )
 		|| is_page_template( 'templates/account-dashboard-flagship-bookings.php' )
 		|| is_page_template( 'templates/account-dashboard-discounts.php' )
+		|| is_page_template( 'templates/account-dashboard-receptions.php' )
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-bookings.php' )
 		|| is_page_template( 'templates/account-profile.php' )

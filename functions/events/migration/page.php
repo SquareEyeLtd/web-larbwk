@@ -183,6 +183,8 @@ function law_migration_admin_page() {
 			</tbody>
 		</table>
 
+		<?php law_events_reference_panel(); ?>
+
 		<?php law_events_repair_owner_panel(); ?>
 
 		<?php law_events_backfill_agenda_panel(); ?>
