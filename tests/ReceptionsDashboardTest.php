@@ -72,6 +72,10 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 	}
 
 	public function test_seeding_is_idempotent_and_creates_drafts_with_no_price(): void {
+		// This environment may already hold the three real records, with real
+		// dates and prices the committee has typed. So the seeded-state
+		// assertions below apply only to what THIS run created; everything
+		// else here is about idempotence, which holds either way.
 		$first = law_reception_ensure_posts();
 		foreach ( law_reception_ids() as $id ) {
 			$this->posts[] = $id;
@@ -83,17 +87,20 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 		$this->assertSame( 0, $second['created'], 'A second run must create nothing.' );
 		$this->assertSame( $before, law_reception_ids(), 'And find exactly the same records.' );
 
+		$fresh = 0 < $first['created'];
 		foreach ( law_reception_seed_map() as $slug => $config ) {
 			$post = get_page_by_path( $slug, OBJECT, LAW_EVENT_CPT );
 			$this->assertInstanceOf( WP_Post::class, $post, "The {$slug} record is missing." );
-			$this->assertSame( 0, law_event_price_pence( $post->ID ), 'A seeded reception is not on sale: the prices are LAW to confirm.' );
 			$this->assertTrue( law_reception_is( $post->ID ) );
-			if ( 'law-draft' === $post->post_status ) {
-				$this->assertNotSame( 'publish', $post->post_status, 'Nothing goes on the programme until the committee ticks the box.' );
+			if ( $fresh ) {
+				$this->assertSame( 0, law_event_price_pence( $post->ID ), 'A seeded reception is not on sale: the prices are LAW to confirm.' );
+				$this->assertSame( 'law-draft', $post->post_status, 'Nothing goes on the programme until the committee ticks the box.' );
 			}
 		}
 
 		// Friday is the invitation-only one; Monday and Wednesday are included.
+		// True of the seed and true of the records the committee then edits, so
+		// this is asserted either way.
 		$friday = get_page_by_path( 'friday-reception', OBJECT, LAW_EVENT_CPT );
 		$this->assertTrue( law_event_is_invitation_only( $friday->ID ) );
 		$monday = get_page_by_path( 'opening-drinks', OBJECT, LAW_EVENT_CPT );

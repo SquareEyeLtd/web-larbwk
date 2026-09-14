@@ -2409,8 +2409,13 @@ function law_reception_checkout_handler() {
 
 	if ( is_wp_error( $result ) ) {
 		law_booking_log_refusal( $input['event_id'], 0, $result, get_current_user_id(), 'receptions' );
-		$payload = law_booking_error_payload( $result );
-		law_events_respond( $is_ajax, false, $payload, 'reception-checkout-failed' );
+		// The no-JS path answers with a redirect and a notice KEY, which on its
+		// own would turn "that discount code has expired" into "sorry, that
+		// could not be started" — the one wording a delegate holding a real
+		// code cannot act on. So the engine's own message rides a one-shot
+		// transient and the notice reads it back (law_reception_form_state()).
+		law_reception_store_form_state( $result );
+		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'reception-checkout-failed' );
 	}
 
 	law_events_respond(
@@ -2486,7 +2491,8 @@ function law_reception_waitlist_join_handler() {
 
 	if ( is_wp_error( $result ) ) {
 		law_booking_log_refusal( $input['event_id'], 0, $result, get_current_user_id(), 'receptions' );
-		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'waitlist-failed' );
+		law_reception_store_form_state( $result );
+		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'reception-checkout-failed' );
 	}
 
 	law_events_respond(
@@ -2915,6 +2921,38 @@ add_action(
 /* Notices ____________________________________________________________________ */
 
 /**
+ * Keep a refused submission's own message for exactly one read.
+ *
+ * The no-JS path answers with a redirect, and a redirect carries a notice KEY,
+ * not a sentence. Without this every refusal would read "sorry, that booking
+ * could not be started" — including "that discount code has expired", which is
+ * the one a delegate holding a real code can actually act on. The same
+ * one-shot-transient pattern as law_flagship_form_state().
+ */
+function law_reception_store_form_state( WP_Error $error ) {
+	if ( ! get_current_user_id() ) {
+		return;
+	}
+	set_transient(
+		'law_reception_state_msg_' . get_current_user_id(),
+		(string) $error->get_error_message(),
+		10 * MINUTE_IN_SECONDS
+	);
+}
+
+/** Read it back, once. '' when there is none. */
+function law_reception_form_state() {
+	$key     = 'law_reception_state_msg_' . get_current_user_id();
+	$message = get_transient( $key );
+	if ( ! is_string( $message ) || '' === $message ) {
+		return '';
+	}
+	delete_transient( $key );
+
+	return $message;
+}
+
+/**
  * The outcomes only a reception can report, registered through the shared
  * notice map rather than stacked as a third renderer on My bookings
  * (RECEPTIONS.md §2.10).
@@ -2937,7 +2975,14 @@ add_filter(
 				'reception-included-added'   => array( 'ok', __( 'Your bookings are up to date.', 'law' ) ),
 				'reception-included-none'    => array( 'error', __( 'Tick at least one reception to add.', 'law' ) ),
 				'reception-included-denied'  => array( 'error', __( 'Receptions are included only once your flagship place is confirmed.', 'law' ) ),
-				'reception-checkout-failed'  => array( 'error', __( 'Sorry, that booking could not be started. Please try again.', 'law' ) ),
+				// The engine's own words where there are any: read ONCE, and
+				// only on the request that is actually showing this notice, so
+				// asking the map for a different key cannot consume it.
+				'reception-checkout-failed'  => array(
+					'error',
+					( 'reception-checkout-failed' === sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) ) ? law_reception_form_state() : '' )
+						?: __( 'Sorry, that booking could not be started. Please try again.', 'law' ),
+				),
 			)
 		);
 	}

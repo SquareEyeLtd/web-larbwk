@@ -258,15 +258,22 @@ class ReceptionInclusionTest extends LAW_Test_Case {
 		$reception = $this->make_reception();
 		$user_id   = $this->make_delegate();
 
-		// No ticket: nothing to offer.
+		// No ticket: nothing to offer, whatever else is on the programme.
 		$this->assertSame( array(), law_reception_banner_state( $user_id ) );
 
+		// Containment, not equality: this environment may hold the three real
+		// receptions as well as the fixture, and the banner offers all of them.
 		$ticket = $this->make_ticket( $user_id );
-		$this->assertSame( array( $reception ), law_reception_banner_state( $user_id ) );
+		$this->assertContains( $reception, law_reception_banner_state( $user_id ) );
 		$this->assertNotSame( '', law_reception_banner( $user_id ) );
 
-		$granted       = law_reception_grant_included( $reception, $user_id, $ticket, 0, 'test' );
-		$this->posts[] = $granted;
+		// Claim every one it offers; the banner goes when none is left.
+		foreach ( law_reception_banner_state( $user_id ) as $offered ) {
+			$granted = law_reception_grant_included( $offered, $user_id, $ticket, 0, 'test' );
+			if ( ! is_wp_error( $granted ) && $granted ) {
+				$this->posts[] = $granted;
+			}
+		}
 
 		$this->assertSame( array(), law_reception_banner_state( $user_id ), 'The banner goes once every included reception is held.' );
 		$this->assertSame( '', law_reception_banner( $user_id ) );
