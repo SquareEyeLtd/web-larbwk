@@ -306,8 +306,20 @@ function law_booking_notice_render() {
  * "Bookings (12)", and "Bookings (12) · Waitlist (3)" once anyone is waiting.
  */
 function law_booking_counts_label( $event_id ) {
-	$label    = sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $event_id ) ) );
-	$waiting  = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $event_id ) : 0;
+	$label   = sprintf( __( 'Bookings (%s)', 'law' ), number_format_i18n( law_event_attendee_total( $event_id ) ) );
+	// On a priced event that total INCLUDES the places held while somebody is
+	// on Stripe's page, so the hold count is stated separately rather than
+	// leaving the number to disagree with the list behind it
+	// (RECEPTIONS.md §1.3).
+	$pending = function_exists( 'law_booking_pending_payment_count' ) ? law_booking_pending_payment_count( $event_id ) : 0;
+	if ( $pending ) {
+		$label .= ' · ' . sprintf(
+			/* translators: %s: number of places held while a payment finishes. */
+			__( '%s awaiting payment', 'law' ),
+			number_format_i18n( $pending )
+		);
+	}
+	$waiting = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $event_id ) : 0;
 	if ( $waiting ) {
 		$label .= ' · ' . sprintf( __( 'Waitlist (%s)', 'law' ), number_format_i18n( $waiting ) );
 	}

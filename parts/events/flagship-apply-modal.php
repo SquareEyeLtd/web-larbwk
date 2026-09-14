@@ -159,6 +159,37 @@ else :
 			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your application we take the payment and confirm your place; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
 		</p>
 
+		<?php
+		// The receptions a confirmed place includes (RECEPTIONS.md §7.1). Asked
+		// HERE rather than later because it is one tick at the moment somebody
+		// is already deciding to come, and because the answer has somewhere to
+		// live: it rides on the application as _law_reception_choices and is
+		// granted when the place is confirmed. Unticked by default — a place
+		// nobody asked for is a place somebody else could have had — and the
+		// line says they can add them later, so nothing is lost by leaving
+		// them alone. Hidden entirely when there are no included receptions.
+		$law_fa_receptions = function_exists( 'law_reception_included_ids' ) ? law_reception_included_ids() : array();
+		?>
+		<?php if ( $law_fa_receptions ) : ?>
+			<fieldset class="law-flagship-receptions">
+				<legend><?php esc_html_e( 'Included receptions', 'law' ); ?></legend>
+				<p class="law-form-hint"><?php esc_html_e( 'Tick the receptions you would like to attend. You can add them later from My bookings.', 'law' ); ?></p>
+				<?php foreach ( $law_fa_receptions as $law_fa_reception ) : ?>
+					<p class="law-form-field">
+						<label>
+							<input type="checkbox" name="law_flagship_apply[receptions][]" value="<?php echo esc_attr( (string) $law_fa_reception ); ?>">
+							<strong><?php echo esc_html( get_the_title( $law_fa_reception ) ); ?></strong>
+							<?php $law_fa_when = law_reception_when_label( $law_fa_reception ); ?>
+							<?php if ( '' !== $law_fa_when ) : ?>
+								<span class="law-form-hint"><?php echo esc_html( $law_fa_when ); ?></span>
+							<?php endif; ?>
+							<span class="law-form-hint"><?php esc_html_e( 'Included at no cost', 'law' ); ?></span>
+						</label>
+					</p>
+				<?php endforeach; ?>
+			</fieldset>
+		<?php endif; ?>
+
 		<p class="law-form-field">
 			<label>
 				<input type="checkbox" name="law_flagship_apply[consent]" value="1" data-law-field="law_consent" aria-required="true">
