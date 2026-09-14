@@ -133,7 +133,7 @@ function law_setup_account_pages() {
 	$report[] = 'ACCESS   /account/bookings/ role rows: ' . law_setup_my_bookings_access();
 	// After my_bookings on purpose: that helper copies /account/'s rows onto a
 	// page that has none, so the subscriber pass must see the copied rows.
-	$report[] = 'ACCESS   subscriber role on account pages: ' . law_setup_account_subscriber_access();
+	$report[] = 'ACCESS   account page roles: ' . law_setup_account_page_roles();
 	$report[] = 'EMAILS   registration emails, Roles line: ' . law_setup_strip_user_roles_from_emails();
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
@@ -184,34 +184,45 @@ function law_setup_account_pages() {
 }
 
 /**
- * Every account page a plain subscriber needs must admit the subscriber role in
- * its Members restriction.
+ * Every account page a signed-in person needs must admit every role a
+ * signed-in person can hold.
  *
- * This is the load-bearing half of the 14 September 2026 role retirement. From
- * the moment that code ships, every new registrant is a subscriber, and these
- * restrictions are DATABASE state a git deploy cannot carry: an environment
- * whose /account/ rows still name only event_host, sponsor and attendee locks
- * every new user out of their own account, and the refusal comes from the
- * Members plugin, not from anything in this theme. Both provisioning routes
- * call this (the ?setup-account-pages trigger and migration step 10), and step
- * 11 runs after step 10 for the same reason.
+ * This is the load-bearing half of the 14 September 2026 role retirement. These
+ * restrictions are DATABASE state a git deploy cannot carry, and the refusal
+ * they produce comes from the Members plugin rather than from anything in this
+ * theme, so nothing in the code can compensate for getting them wrong.
+ *
+ * Two directions, both needed:
+ *
+ *  - **subscriber**, because from the moment the code ships every new
+ *    registrant is one. An environment whose rows still name only event_host,
+ *    sponsor and attendee locks every new user out of their own account.
+ *  - **the three retired roles**, because of the window between the deploy and
+ *    migration step 11, during which everybody who has not yet been converted
+ *    still holds one. Page 294 (Submit an event) is the real case: it never
+ *    admitted `attendee`, since attendees could not submit, so an un-migrated
+ *    attendee would be told by the code that they may submit and refused the
+ *    page by the plugin. Nothing in the theme could see that happening.
+ *
+ * After step 11 the legacy rows are inert. They are left in place deliberately,
+ * as the roles themselves are: it keeps a rollback to a code revert, and an
+ * inert row costs nothing.
  *
  * Pages with NO restriction rows are left alone: the plugin reads none as
- * public, and adding a row would restrict a page that was open. The legacy role
- * rows are never removed either: the roles stay defined, so leaving the rows
- * keeps a rollback to a code revert.
+ * public, and adding a row would restrict a page that was open.
  *
  * Replaced law_setup_account_events_attendee_access(), which added the attendee
  * row to /account/events/ for the same reason in the other direction.
  *
  * @return string 'ok', or the named lists, e.g.
- *                'updated: /account/events/; missing: /account/bookings/'.
+ *                'updated: /account/events/submit/ (attendee)'.
  */
-function law_setup_account_subscriber_access() {
-	$paths     = array( 'account', 'account/events', 'account/bookings', 'account/events/submit' );
-	$updated   = array();
-	$missing   = array();
-	$open      = array();
+function law_setup_account_page_roles() {
+	$paths   = array( 'account', 'account/events', 'account/bookings', 'account/events/submit' );
+	$needed  = array_merge( array( 'subscriber' ), function_exists( 'law_registration_legacy_roles' ) ? law_registration_legacy_roles() : array( 'event_host', 'sponsor', 'attendee' ) );
+	$updated = array();
+	$missing = array();
+	$open    = array();
 
 	foreach ( $paths as $path ) {
 		$page = get_page_by_path( $path );
@@ -224,11 +235,17 @@ function law_setup_account_subscriber_access() {
 			$open[] = '/' . $path . '/'; // No Members restriction on this environment.
 			continue;
 		}
-		if ( in_array( 'subscriber', $roles, true ) ) {
-			continue;
+		$added = array();
+		foreach ( $needed as $role ) {
+			if ( in_array( $role, $roles, true ) ) {
+				continue;
+			}
+			add_post_meta( $page->ID, '_members_access_role', $role );
+			$added[] = $role;
 		}
-		add_post_meta( $page->ID, '_members_access_role', 'subscriber' );
-		$updated[] = '/' . $path . '/';
+		if ( $added ) {
+			$updated[] = '/' . $path . '/ (' . implode( ', ', $added ) . ')';
+		}
 	}
 
 	$parts = array();

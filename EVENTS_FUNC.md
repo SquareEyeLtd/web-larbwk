@@ -2962,16 +2962,21 @@ event status by the rebuild) plus "Reference".
   `law_setup_account_page_content()` (which replaced
   `law_setup_account_page_audience()`) strips the `[user-content]` blocks from
   the `/account/` body, leaving the `[action-message]` paragraph the hub
-  template needs; and `law_setup_account_subscriber_access()` (which replaced
-  `law_setup_account_events_attendee_access()`) adds a `subscriber` row to the
-  Members restriction on `/account/`, `/account/events/`, `/account/bookings/`
-  and `/account/events/submit/`. That second one is load-bearing and is why step
-  11 runs after step 10: strip somebody's `event_host` before the subscriber row
-  exists and the Members plugin locks them out of their own account, with a
-  refusal that comes from the plugin rather than from anything in this theme.
+  template needs; and `law_setup_account_page_roles()` (which replaced
+  `law_setup_account_events_attendee_access()`) makes `/account/`,
+  `/account/events/`, `/account/bookings/` and `/account/events/submit/` admit
+  every role a signed-in person can hold. That second one is load-bearing, in
+  both directions. **`subscriber`** is why step 11 runs after step 10: strip
+  somebody's `event_host` before that row exists and the Members plugin locks
+  them out of their own account, with a refusal that comes from the plugin
+  rather than from anything in this theme. **The three retired roles** cover the
+  window before step 11 runs, and page 294 (Submit an event) is the case that
+  proves it was needed: it never admitted `attendee`, because attendees could
+  not submit, so from the deploy until the step ran an un-migrated attendee was
+  told by the code that they could submit an event and refused the page by the
+  plugin. Nothing in the theme could have detected that.
   Pages with no restriction rows are left alone (the plugin reads none as
-  public) and the legacy role rows are never removed, so a rollback stays a
-  code revert.
+  public) and no role row is ever removed, so a rollback stays a code revert.
 - **Step 11 (`law_migration_run_retire_roles()`, 14 September 2026)** — the
   role retirement itself: every account holding `event_host`, `sponsor` or
   `attendee` becomes a plain `subscriber`, with its hosting/sponsor intent
@@ -4586,7 +4591,7 @@ into it rather than being copied.
   (`law_auth_default_redirect()`), because the committee's shortcut is expressed
   as a comparison against it. Two copies, and the shortcut stops firing with
   nothing visibly wrong.
-- **The `subscriber` Members rows** (`law_setup_account_subscriber_access()`,
+- **The account-page Members rows** (`law_setup_account_page_roles()`,
   run by both provisioning routes, and by step 10 before step 11). Without them
   the retirement locks every user out of their own account, and the refusal
   comes from the Members plugin rather than from any code here. On production:

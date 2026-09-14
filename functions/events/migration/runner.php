@@ -1838,12 +1838,13 @@ function law_migration_run_pages( $dry ) {
 	if ( ! $dry && function_exists( 'law_setup_my_bookings_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/bookings/', 'Members restriction: ' . law_setup_my_bookings_access() . '.' );
 	}
-	// Every account page a plain subscriber needs must admit the subscriber
-	// role, because step 11 below is about to make everybody one. After the
-	// my_bookings helper, which copies /account/'s rows onto a page that has
-	// none. Shared helper with the setup-account-pages trigger.
-	if ( ! $dry && function_exists( 'law_setup_account_subscriber_access' ) ) {
-		law_migration_log( 'pages', 'created', 'account pages', 'Subscriber role access: ' . law_setup_account_subscriber_access() . '.' );
+	// Every account page must admit every role a signed-in person can hold:
+	// subscriber, because step 11 below is about to make everybody one, and the
+	// three retired roles, for the window before it runs. After the my_bookings
+	// helper, which copies /account/'s rows onto a page that has none. Shared
+	// helper with the setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_account_page_roles' ) ) {
+		law_migration_log( 'pages', 'created', 'account pages', 'Account page roles: ' . law_setup_account_page_roles() . '.' );
 	}
 	// The Bookings dashboard is a child of the events dashboard and inherits
 	// its committee-only Members restriction (a freshly created page has none).
@@ -1932,6 +1933,17 @@ function law_migration_run_pages( $dry ) {
  * event_host becomes the hosting tick, sponsor becomes the sponsor tick, and
  * attendee becomes nothing at all, because "attendee" was what everybody was.
  *
+ * Every account also keeps a verbatim copy of the roles it held, in the
+ * law_previous_roles meta key (Denis, 14 September 2026: "just in case we need
+ * it"). That is the rollback record. The activity log lines say the same thing
+ * in prose, but prose has to be parsed and a log can be pruned; this is the
+ * machine-readable copy, it sits on the account it describes, and restoring
+ * from it is a loop over get_users() rather than an archaeology exercise. It
+ * records ALL the roles held, not just the ones removed, so a restore does not
+ * have to reason about what else was there. Written once and never overwritten,
+ * for the same reason as the intent: a second run must not record the
+ * post-migration state as though it were the original.
+ *
  * @param WP_User $user The account.
  * @param bool    $dry  Report only.
  * @return array{status:string,removed:string[],kept:string[],intents:string[],seeded:bool,added_subscriber:bool}
@@ -1961,6 +1973,7 @@ function law_migration_retire_user_roles( WP_User $user, $dry ) {
 	) ) );
 	$seed    = ! metadata_exists( 'user', $user->ID, 'law_intent' );
 	$add_sub = ! in_array( 'subscriber', $roles, true );
+	$record  = ! metadata_exists( 'user', $user->ID, 'law_previous_roles' );
 
 	$result = array(
 		'status'           => $dry ? 'dry-run' : 'created',
@@ -1969,11 +1982,18 @@ function law_migration_retire_user_roles( WP_User $user, $dry ) {
 		'intents'          => $intents,
 		'seeded'           => $seed,
 		'added_subscriber' => $add_sub,
+		'recorded'         => $record,
+		'previous_roles'   => array_values( $roles ),
 	);
 	if ( $dry ) {
 		return $result;
 	}
 
+	// The rollback record first: if anything below fails, the account is still
+	// describable.
+	if ( $record ) {
+		update_user_meta( $user->ID, 'law_previous_roles', array_values( $roles ) );
+	}
 	if ( $seed ) {
 		law_registration_write_intent( $user->ID, $intents );
 	}
@@ -2005,6 +2025,11 @@ function law_migration_retire_roles_message( array $result ) {
 		$parts[] = 'Intent seeded: ' . implode( ', ', $result['intents'] ) . '.';
 	} else {
 		$parts[] = 'Intent seeded: none.';
+	}
+	if ( $result['recorded'] ) {
+		$parts[] = 'Previous roles recorded: ' . implode( ', ', $result['previous_roles'] ) . '.';
+	} else {
+		$parts[] = 'Previous roles already recorded.';
 	}
 	return implode( ' ', $parts );
 }

@@ -179,6 +179,49 @@ class RoleRetirementTest extends LAW_Test_Case {
 		$this->assertNotEmpty( (array) ( new WP_User( $user_id ) )->roles );
 	}
 
+	/**
+	 * The rollback record. Denis asked for the roles to be kept "just in case",
+	 * and the log lines alone are prose on a table that can be pruned; this is
+	 * the machine-readable copy on the account itself. It records everything
+	 * the account held, not just what was removed, so a restore does not have
+	 * to reason about what else was there.
+	 */
+	public function test_the_roles_held_are_recorded_before_they_are_removed(): void {
+		list( $admin ) = $this->make_account( array( 'administrator', 'event_host', 'attendee' ) );
+		$before        = array_values( (array) ( new WP_User( $admin ) )->roles );
+
+		$result = law_migration_retire_user_roles( new WP_User( $admin ), false );
+
+		$this->assertTrue( $result['recorded'] );
+		$this->assertSame( $before, (array) get_user_meta( $admin, 'law_previous_roles', true ) );
+		// Restoring is a loop over this meta, so it has to name every role.
+		$this->assertContains( 'administrator', (array) get_user_meta( $admin, 'law_previous_roles', true ) );
+	}
+
+	public function test_a_dry_run_records_nothing(): void {
+		list( $user_id ) = $this->make_account( array( 'event_host' ) );
+
+		law_migration_retire_user_roles( new WP_User( $user_id ), true );
+
+		$this->assertFalse( metadata_exists( 'user', $user_id, 'law_previous_roles' ) );
+	}
+
+	/**
+	 * A re-run must not overwrite the record with the post-migration state,
+	 * which would turn the rollback data into a description of the damage.
+	 */
+	public function test_the_record_is_never_overwritten(): void {
+		list( $user_id ) = $this->make_account( array( 'sponsor' ) );
+		law_migration_retire_user_roles( new WP_User( $user_id ), false );
+
+		// Put the role back by hand, as a restore would, and run again.
+		( new WP_User( $user_id ) )->add_role( 'sponsor' );
+		$again = law_migration_retire_user_roles( new WP_User( $user_id ), false );
+
+		$this->assertFalse( $again['recorded'] );
+		$this->assertSame( array( 'sponsor' ), (array) get_user_meta( $user_id, 'law_previous_roles', true ) );
+	}
+
 	public function test_a_second_pass_finds_nothing_to_do(): void {
 		list( $user_id ) = $this->make_account( array( 'event_host' ) );
 		law_migration_retire_user_roles( new WP_User( $user_id ), false );
@@ -243,15 +286,21 @@ class RoleRetirementTest extends LAW_Test_Case {
 	 * Without this, step 11 locks people out of their own account: the roles
 	 * come off, and the Members plugin refuses a page whose restriction names
 	 * only the roles they no longer hold.
+	 *
+	 * The legacy roles are asserted too, for the window between the deploy and
+	 * step 11. Page 294 (Submit an event) is the case that caught us: it never
+	 * admitted `attendee`, so an un-migrated attendee was told by the code that
+	 * they could submit and refused the page by the plugin.
 	 */
-	public function test_every_account_page_admits_subscribers(): void {
+	public function test_every_account_page_admits_every_signed_in_role(): void {
 		if ( ! get_page_by_path( 'account' ) instanceof WP_Post ) {
 			$this->markTestSkipped( 'No /account/ page on this environment.' );
 		}
 
-		$result = law_setup_account_subscriber_access();
+		$result = law_setup_account_page_roles();
 		$this->assertTrue( 'ok' === $result || str_contains( $result, 'updated' ), "Unexpected result: {$result}" );
 
+		$expected = array_merge( array( 'subscriber' ), law_registration_legacy_roles() );
 		foreach ( array( 'account', 'account/events', 'account/bookings', 'account/events/submit' ) as $path ) {
 			$page = get_page_by_path( $path );
 			if ( ! $page instanceof WP_Post ) {
@@ -261,9 +310,44 @@ class RoleRetirementTest extends LAW_Test_Case {
 			if ( ! $roles ) {
 				continue; // Unrestricted pages are public; nothing to add.
 			}
-			$this->assertContains( 'subscriber', $roles, "/{$path}/ would refuse a subscriber." );
+			foreach ( $expected as $role ) {
+				$this->assertContains( $role, $roles, "/{$path}/ would refuse a {$role}." );
+			}
 		}
 
-		$this->assertSame( 'ok', law_setup_account_subscriber_access(), 'The helper must be idempotent.' );
+		$this->assertSame( 'ok', law_setup_account_page_roles(), 'The helper must be idempotent.' );
+	}
+
+	/**
+	 * The end-to-end version: whatever the header bar offers somebody must be a
+	 * page that somebody can actually open, whichever role they hold during the
+	 * migration window. This is the assertion that would have caught the
+	 * attendee gap on its own.
+	 */
+	public function test_a_legacy_role_is_offered_nothing_it_cannot_open(): void {
+		if ( ! function_exists( 'members_can_user_view_post' ) ) {
+			$this->markTestSkipped( 'The Members plugin is not active.' );
+		}
+		law_setup_account_page_roles();
+
+		foreach ( array_merge( array( 'subscriber' ), law_registration_legacy_roles() ) as $role ) {
+			$user_id = $this->make_user( $role );
+			wp_set_current_user( $user_id );
+			law_account_events_reset_cache();
+
+			$items = law_header_nav()['account']['items'];
+			$this->assertContains( 'submit', wp_list_pluck( $items, 'key' ), "A {$role} may submit an event, so the link must be offered." );
+
+			foreach ( $items as $item ) {
+				$page_id = 'signout' === $item['key'] ? 0 : law_account_page_id( $item['key'] );
+				if ( ! $page_id ) {
+					continue;
+				}
+				$this->assertTrue(
+					members_can_user_view_post( $user_id, $page_id ),
+					"A {$role} is offered '{$item['key']}' but cannot open page {$page_id}."
+				);
+			}
+		}
 	}
 }
