@@ -121,7 +121,10 @@ function law_stripe_booking_metadata( $booking_id ) {
  * those three journeys cannot drift apart.
  *
  * @param int    $booking_id law_booking post ID.
- * @param string $reason     apply | replace | retry.
+ * @param string $reason     apply | replace | retry | waitlist. 'waitlist' is
+ *                           a reception queue entry saving the method that will
+ *                           be charged automatically on promotion
+ *                           (RECEPTIONS.md §6.1).
  * @return string|WP_Error The URL to send the delegate to.
  */
 function law_stripe_create_setup_session( $booking_id, $reason = 'apply' ) {
@@ -130,7 +133,7 @@ function law_stripe_create_setup_session( $booking_id, $reason = 'apply' ) {
 		return new WP_Error( 'law_booking_missing', 'That booking could not be found.' );
 	}
 	$booking_id = (int) $booking->ID;
-	$reason     = in_array( $reason, array( 'apply', 'replace', 'retry' ), true ) ? $reason : 'apply';
+	$reason     = in_array( $reason, array( 'apply', 'replace', 'retry', 'waitlist' ), true ) ? $reason : 'apply';
 
 	$customer_id = law_stripe_user_customer_id( (int) $booking->post_author );
 	if ( is_wp_error( $customer_id ) ) {

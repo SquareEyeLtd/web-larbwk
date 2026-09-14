@@ -68,7 +68,7 @@ $law_bm_invited_by = $law_bm_own ? law_booking_invited_by_label( $law_bm_own ) :
 $law_bm_can_add = $law_bm_party
 	&& ! $law_bm_waitlisted
 	&& law_booking_colleague_count( $law_bm_event_id, (int) $law_bm_user->ID ) < law_booking_max_additional()
-	&& true === law_booking_guard_open( $law_bm_event_id )
+	&& true === law_booking_guard_form_open( $law_bm_event_id )
 	&& 0 !== law_event_tickets_remaining( $law_bm_event_id );
 
 $law_bm_names = array();

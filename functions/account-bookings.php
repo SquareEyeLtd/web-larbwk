@@ -1121,12 +1121,13 @@ function law_booking_maybe_render_dialog() {
 		exit;
 	}
 
-	// law_booking_guard_open() rather than a re-derived set of conditions: it is
-	// the SAME predicate law_booking_create_handler() applies, covering the
-	// source, the post type, publish status, the flagship refusal, places not
-	// released and an event that has started. A dialog can therefore never be
-	// served for something the submit would then refuse.
-	if ( is_wp_error( law_booking_guard_open( $event_id ) ) ) {
+	// law_booking_guard_form_open() rather than a re-derived set of conditions:
+	// it is the SAME predicate law_booking_create_handler() applies, covering
+	// the source, the post type, publish status, the flagship refusal, places
+	// not released, an event that has started, and — since the receptions —
+	// invitation-only and priced. A dialog can therefore never be served for
+	// something the submit would then refuse.
+	if ( is_wp_error( law_booking_guard_form_open( $event_id ) ) ) {
 		status_header( 404 );
 		exit;
 	}

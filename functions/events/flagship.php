@@ -345,64 +345,28 @@ function law_flagship_ensure_post( $dry = false ) {
 		);
 	}
 
-	// A law_event already holding the slug would push the new post to
-	// /events/flagship-2/, which is worth saying out loud rather than leaving
-	// someone to find the odd URL later.
-	$clash = get_page_by_path( LAW_FLAGSHIP_SLUG, OBJECT, LAW_EVENT_CPT );
-
-	if ( $dry ) {
-		return array(
-			'id'      => 0,
-			'created' => false,
-			'message' => $clash
-				? sprintf( 'Would create the flagship event; post %d already holds the slug, so it would land on /events/flagship-2/.', (int) $clash->ID )
-				: 'Would create the flagship event "Flagship conference" (law-draft, /events/flagship/).',
-		);
-	}
-
-	$id = wp_insert_post(
-		wp_slash(
-			array(
-				'post_type'    => LAW_EVENT_CPT,
-				'post_status'  => 'law-draft',
-				'post_title'   => 'Flagship conference',
-				'post_name'    => LAW_FLAGSHIP_SLUG,
-				'post_author'  => get_current_user_id(),
-				'post_content' => '',
-			)
+	// The shared provisioner (law_event_ensure_managed_post(), bookings.php),
+	// which the receptions use too: idempotent by slug, law-draft, with the
+	// programme-year term. Only the two flagship meta keys and the cache reset
+	// are this event's own.
+	$result = law_event_ensure_managed_post(
+		LAW_FLAGSHIP_SLUG,
+		'Flagship conference',
+		array(
+			'_law_is_flagship'   => 1,
+			'_law_flagship_date' => law_flagship_default_date(),
 		),
-		true
+		$dry
 	);
 
-	if ( is_wp_error( $id ) ) {
-		return array(
-			'id'      => 0,
-			'created' => false,
-			'message' => 'ERROR could not create the flagship event: ' . $id->get_error_message(),
-		);
-	}
-
-	$id = (int) $id;
-	law_event_update_meta( $id, '_law_is_flagship', 1 );
-	law_event_update_meta( $id, '_law_flagship_date', law_flagship_default_date() );
-
-	// The programme-year term keeps a 2026 event from re-filing into 2027 and is
-	// what the admin list's year filter reads.
-	$year = (string) law_events_setting( 'year', 2026 );
-	if ( '' !== $year ) {
-		wp_set_object_terms( $id, $year, 'law_year', false );
+	if ( ! $result['created'] ) {
+		return $result;
 	}
 
 	law_flagship_event_id( true );
-	law_event_log( $id, 'Flagship event created.', array( 'action' => 'flagship_created', 'source' => 'setup' ) );
+	law_event_log( (int) $result['id'], 'Flagship event created.', array( 'action' => 'flagship_created', 'source' => 'setup' ) );
 
-	$post    = get_post( $id );
-	$message = sprintf( 'Created the flagship event (post %d, %s).', $id, get_permalink( $id ) );
-	if ( $post && LAW_FLAGSHIP_SLUG !== $post->post_name ) {
-		$message .= sprintf( ' Note: the slug is "%s", not "flagship", because another event already held it.', $post->post_name );
-	}
-
-	return array( 'id' => $id, 'created' => true, 'message' => $message );
+	return $result;
 }
 
 /**

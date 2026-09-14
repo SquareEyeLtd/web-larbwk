@@ -40,6 +40,11 @@ require_once __DIR__ . '/flagship-form.php';
 require_once __DIR__ . '/flagship-dashboard.php';
 require_once __DIR__ . '/flagship-bookings.php';
 require_once __DIR__ . '/flagship-bookings-dashboard.php';
+// The receptions (RECEPTIONS.md). After flagship-bookings.php, because the
+// included places are granted from a confirmed flagship booking, and before
+// the dashboards, which render their lists.
+require_once __DIR__ . '/receptions.php';
+require_once __DIR__ . '/receptions-dashboard.php';
 require_once __DIR__ . '/source.php';
 require_once __DIR__ . '/edit-lock.php';
 require_once __DIR__ . '/submission-form.php';

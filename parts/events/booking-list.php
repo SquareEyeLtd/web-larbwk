@@ -80,7 +80,11 @@ $law_bl_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_bookin
 // offered while the event is open with places left; the engine refuses
 // otherwise, so a full or started event just hides the form. The press flag
 // is committee-only (spec §6.4: press passes are issued by LAW admin).
-$law_bl_can_register = true === law_booking_guard_open( $law_bl_event_id ) && 0 !== law_event_tickets_remaining( $law_bl_event_id );
+// allow_priced: registering somebody onto a PAID reception from this list is
+// the committee giving a complimentary place, which it may do
+// (law_booking_register_by_manager(), RECEPTIONS.md §2.1).
+$law_bl_can_register = true === law_booking_guard_form_open( $law_bl_event_id, array( 'allow_priced' => true ) )
+	&& 0 !== law_event_tickets_remaining( $law_bl_event_id );
 $law_bl_is_committee = law_user_is_committee();
 $law_bl_form_state   = law_booking_form_state();
 $law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );

@@ -70,6 +70,24 @@ function law_event_meta_schema() {
 		// both the programme block and the hero on the flagship page.
 		'_law_is_flagship'          => 'flag',
 		'_law_flagship_date'        => 'date',
+		// The drinks receptions (RECEPTIONS.md §1.1). A reception is an
+		// ordinary law_event carrying _law_is_reception, so it gets the
+		// programme, the event page, the .ics, the bookings engine, capacity,
+		// the per-event list and the exports for free; these three are the
+		// only things about it that are new.
+		//
+		// _law_attendee_price_pence is NET of VAT, in pence, and 0 means "not
+		// on sale". It is named to sit beside _law_fee_pence (the HOST fee)
+		// and _law_flagship_price_pence rather than reusing _law_price_pence,
+		// which is the BOOKING's price snapshot and must not be shadowed by an
+		// event key of the same name.
+		//
+		// _law_flagship_included: a confirmed flagship delegate gets a place
+		// here at no cost (RECEPTIONS.md §2.6). Invitation-only is not a flag
+		// of its own: it is _law_registration_state = 'invitation' below.
+		'_law_is_reception'         => 'flag',
+		'_law_attendee_price_pence' => 'int',
+		'_law_flagship_included'    => 'flag',
 		'_law_hero_image_id'        => 'int',
 		// Flagship pricing (FLAGSHIP_PAYMENTS.md §2.2). Both prices are NET of
 		// VAT, in pence, and the switch is a site-local 'Y-m-d H:i' compared
@@ -187,6 +205,31 @@ function law_booking_meta_schema() {
 		'_law_reviewed_by'            => 'int',
 		'_law_decline_reason'         => 'multiline',
 		'_law_is_complimentary'       => 'flag',
+		// The receptions (RECEPTIONS.md §1.2).
+		//
+		// _law_discount_id is the CLAIMED code and is DELETED on release, which
+		// is what makes releasing idempotent per booking: a second release
+		// finds no key and takes nobody else's live claim. The code and the
+		// amount stay behind afterwards, because the record of what was
+		// allowed is worth keeping once the claim is gone.
+		'_law_discount_id'            => 'int',
+		'_law_discount_code'          => 'text',
+		'_law_discount_pence'         => 'int',
+		// The flagship booking a free included place was granted from.
+		'_law_included_with'          => 'int',
+		// On a FLAGSHIP application: the receptions ticked at apply time,
+		// granted when the place is confirmed.
+		'_law_reception_choices'      => 'int_array',
+		// The live Checkout session in payment mode. Every checkout.session.*
+		// handler ignores a session whose id differs from this one, so a late
+		// event for a superseded session cannot release a live hold.
+		'_law_stripe_checkout_session_id' => 'text',
+		'_law_checkout_expires_at'    => 'datetime',
+		// The charge latch (_law_charge_claim) and the one-shot email latches
+		// are deliberately NOT here: they are claimed with
+		// add_post_meta( …, $unique = true ), which is one INSERT and therefore
+		// one winner, and registering them would invite a sanitiser between the
+		// claim and the row it depends on.
 	);
 }
 
@@ -305,10 +348,13 @@ function law_events_sanitize_value( $value, $type ) {
 			// saved but nothing charged yet, a charge the bank wants
 			// authenticating, a charge still settling because the delegate
 			// did not pay by card). Unknown values fall back to
-			// pending_setup, the state that grants nothing.
+			// pending_setup, the state that grants nothing. 'included' is the
+			// receptions' free place granted with a confirmed flagship ticket:
+			// a real place that was never charged, which 'complimentary'
+			// (the committee gave it) would mis-describe.
 			return in_array(
 				$value,
-				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary' ),
+				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary', 'included' ),
 				true
 			) ? $value : 'pending_setup';
 		case 'registration_state':

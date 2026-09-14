@@ -68,15 +68,19 @@ function law_flagship_bookings_filters( ?array $source = null ) {
 
 /** The payment states the filter offers, in the order they happen. */
 function law_flagship_payment_states() {
-	return array(
-		'pending_setup'   => 'Awaiting payment details',
-		'ready'           => 'Payment method saved, awaiting review',
-		'processing'      => 'Payment in progress',
-		'paid'            => 'Paid',
-		'failed'          => 'Payment failed',
-		'action_required' => 'Awaiting the delegate\'s bank',
-		'refunded'        => 'Refunded',
-		'complimentary'   => 'No charge',
+	// The shared vocabulary (law_booking_payment_states(), bookings.php), with
+	// the three states an APPLICATION reads differently laid over it: on this
+	// screen a saved method means "ready for the committee", and a
+	// complimentary place is a decision the committee made rather than a price
+	// of zero. One map of states, two sets of words for three of them, rather
+	// than two maps that could come to hold different states.
+	return array_merge(
+		law_booking_payment_states(),
+		array(
+			'ready'           => 'Payment method saved, awaiting review',
+			'action_required' => 'Awaiting the delegate\'s bank',
+			'complimentary'   => 'No charge',
+		)
 	);
 }
 

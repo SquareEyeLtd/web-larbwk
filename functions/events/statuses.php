@@ -43,12 +43,19 @@ function law_event_statuses() {
  */
 function law_booking_statuses() {
 	return array(
-		'publish'            => 'Confirmed',
-		'law-applied'        => 'Awaiting review',
-		'law-waitlisted'     => 'Waitlisted',
-		'law-payment-failed' => 'Payment failed',
-		'law-declined'       => 'Declined',
-		'law-cancelled'      => 'Cancelled',
+		'publish'             => 'Confirmed',
+		'law-applied'         => 'Awaiting review',
+		// A priced reception's place while the delegate is on Stripe's hosted
+		// page (RECEPTIONS.md §1.3). It HOLDS the place — it is in
+		// law_booking_holding_statuses() and, on a priced event only, in the
+		// recount — so two people cannot buy the last one at once. The hold is
+		// released by checkout.session.expired, by the cancel return, or by the
+		// hourly sweep ten minutes past the session's own expiry.
+		'law-pending-payment' => 'Awaiting payment',
+		'law-waitlisted'      => 'Waitlisted',
+		'law-payment-failed'  => 'Payment failed',
+		'law-declined'        => 'Declined',
+		'law-cancelled'       => 'Cancelled',
 	);
 }
 

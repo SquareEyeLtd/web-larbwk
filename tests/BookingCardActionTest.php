@@ -535,13 +535,24 @@ class BookingCardActionTest extends LAW_Test_Case {
 	}
 
 	public function test_the_dialog_endpoint_refuses_what_the_submit_handler_would_refuse(): void {
-		// One predicate, law_booking_guard_open(), so the two cannot diverge.
-		$this->assertWPError( law_booking_guard_open( $this->bookable_event( array(), 'law-proposed' ) ), 'law_booking_not_bookable' );
-		$this->assertWPError( law_booking_guard_open( $this->bookable_event( array( '_law_tickets_available' => 0 ) ) ), 'law_booking_not_open' );
-		$this->assertWPError( law_booking_guard_open( $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ) ), 'law_booking_closed' );
+		// One predicate, law_booking_guard_form_open(), so the two cannot
+		// diverge. It wraps law_booking_guard_open() (the event-live test the
+		// waitlist's internals still use) and adds the two refusals about how
+		// a place is obtained: invitation-only, and priced.
+		$this->assertWPError( law_booking_guard_form_open( $this->bookable_event( array(), 'law-proposed' ) ), 'law_booking_not_bookable' );
+		$this->assertWPError( law_booking_guard_form_open( $this->bookable_event( array( '_law_tickets_available' => 0 ) ) ), 'law_booking_not_open' );
+		$this->assertWPError( law_booking_guard_form_open( $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ) ), 'law_booking_closed' );
+		$this->assertWPError(
+			law_booking_guard_form_open( $this->bookable_event( array( '_law_registration_state' => 'invitation' ) ) ),
+			'law_booking_invitation_only'
+		);
+		$this->assertWPError(
+			law_booking_guard_form_open( $this->bookable_event( array( '_law_attendee_price_pence' => 7500 ) ) ),
+			'law_booking_priced'
+		);
 
 		$source = file_get_contents( get_theme_file_path( 'functions/account-bookings.php' ) );
-		$this->assertStringContainsString( 'law_booking_guard_open( $event_id )', $source );
+		$this->assertStringContainsString( 'law_booking_guard_form_open( $event_id )', $source );
 	}
 
 	/**
