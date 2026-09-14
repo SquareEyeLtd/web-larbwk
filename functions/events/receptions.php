@@ -3036,3 +3036,34 @@ function law_reception_banner( $user_id ) {
 
 	return (string) ob_get_clean();
 }
+
+/* The discount catalogue _____________________________________________________ */
+
+/**
+ * Every priced reception, as a scope the committee can tick when creating a
+ * code (RECEPTIONS.md §8.4).
+ *
+ * The catalogue was built on 10 September 2026 against "a priced booking",
+ * deliberately unwired because nothing charged yet. This is what wires it: the
+ * checkboxes on the code editor appear, and the list's "Applies to" column
+ * prints real names.
+ *
+ * Only PRICED ones. A free reception has nothing to discount, and offering it
+ * as a scope would let the committee build a code that can never apply.
+ */
+add_filter(
+	'law_discount_scope_events',
+	function ( $events ) {
+		foreach ( law_reception_ids() as $event_id ) {
+			if ( ! law_event_is_priced( $event_id ) ) {
+				continue;
+			}
+			$start = (string) law_event_meta( $event_id, '_law_start' );
+			$when  = '' !== $start && strtotime( $start ) ? wp_date( 'D j M', strtotime( $start ) ) : '';
+
+			$events[ (int) $event_id ] = trim( get_the_title( $event_id ) . ( '' !== $when ? ', ' . $when : '' ) );
+		}
+
+		return $events;
+	}
+);

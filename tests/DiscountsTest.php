@@ -241,19 +241,47 @@ class DiscountsTest extends LAW_Test_Case {
 		$this->assertWPError( $refused, 'expires' );
 	}
 
-	/* The deliberate absence of a consumer __________________________________ */
+	/* Who honours a code, and who deliberately does not ______________________ */
 
 	/**
-	 * Denis, 10 September 2026: codes are kept for future use and are not
-	 * used on the flagship. If this ever fails, someone has wired a code into
-	 * a flow without asking, which is a pricing decision, not a refactor.
+	 * Denis, 10 September 2026: codes are NOT used on the flagship, whose
+	 * price is the committee's decision at approval rather than the delegate's
+	 * at checkout. If the source grep ever fails, someone has wired a code
+	 * into that flow without asking, which is a pricing decision, not a
+	 * refactor.
+	 *
+	 * The scope list is the other half of the same rule: the paid receptions
+	 * opt in (RECEPTIONS.md §8.4) and the flagship must never appear there,
+	 * because a scope the committee can tick is an invitation to try.
 	 */
-	public function test_nothing_applies_a_code_yet(): void {
-		$this->assertSame( array(), law_discount_scope_events(), 'No priced flow has opted in.' );
-
+	public function test_the_flagship_takes_no_code_and_a_priced_reception_does(): void {
 		$engine = file_get_contents( get_theme_file_path( 'functions/events/flagship-bookings.php' ) );
 		$this->assertStringNotContainsString( 'law_discount_validate', $engine );
 		$this->assertStringNotContainsString( 'law_discount_claim', $engine );
+
+		$flagship = $this->make_event(
+			array( '_law_is_flagship' => 1, '_law_flagship_price_pence' => 55000 ),
+			'publish'
+		);
+		$this->assertArrayNotHasKey( $flagship, law_discount_scope_events(), 'The flagship is never a scope.' );
+
+		$reception = $this->make_event(
+			array(
+				'_law_is_reception'         => 1,
+				'_law_attendee_price_pence' => 4500,
+				'_law_start'                => '2026-11-30 18:30',
+			),
+			'publish'
+		);
+		$scope = law_discount_scope_events();
+		$this->assertArrayHasKey( $reception, $scope, 'A priced reception is.' );
+		$this->assertStringContainsString( get_the_title( $reception ), $scope[ $reception ] );
+
+		$free = $this->make_event(
+			array( '_law_is_reception' => 1, '_law_attendee_price_pence' => 0 ),
+			'publish'
+		);
+		$this->assertArrayNotHasKey( $free, law_discount_scope_events(), 'A free reception has nothing to discount.' );
 	}
 
 	/**

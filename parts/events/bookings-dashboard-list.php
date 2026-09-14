@@ -49,6 +49,17 @@ $law_bd_rows    = $law_bd_data['rows'];
 				<th><?php esc_html_e( 'Job title', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Country', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Status', 'law' ); ?></th>
+				<?php
+				// The money, only where the programme has any: on a week with
+				// no paid reception these would be three empty columns on an
+				// already wide table (RECEPTIONS.md §8.3).
+				$law_bd_priced = function_exists( 'law_bookings_dashboard_has_priced' ) && law_bookings_dashboard_has_priced();
+				?>
+				<?php if ( $law_bd_priced ) : ?>
+					<th><?php esc_html_e( 'Payment', 'law' ); ?></th>
+					<th><?php esc_html_e( 'Code', 'law' ); ?></th>
+					<th><?php esc_html_e( 'Invoice', 'law' ); ?></th>
+				<?php endif; ?>
 				<th><?php esc_html_e( 'Booked', 'law' ); ?></th>
 			</tr></thead>
 			<tbody>
@@ -83,10 +94,26 @@ $law_bd_rows    = $law_bd_data['rows'];
 							<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
 						<?php elseif ( 'waitlisted' === $law_bd_row['status'] ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--waitlisted"><?php esc_html_e( 'Waitlisted', 'law' ); ?></span>
+						<?php elseif ( 'pending-payment' === $law_bd_row['status'] ) : ?>
+							<span class="law-cal-card__badge law-cal-card__badge--applied"><?php esc_html_e( 'Awaiting payment', 'law' ); ?></span>
+						<?php elseif ( 'payment-failed' === $law_bd_row['status'] ) : ?>
+							<span class="law-cal-card__badge law-cal-card__badge--payment-failed"><?php esc_html_e( 'Payment failed', 'law' ); ?></span>
 						<?php else : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php esc_html_e( 'Confirmed', 'law' ); ?></span>
 						<?php endif; ?>
 					</td>
+					<?php if ( $law_bd_priced ) : ?>
+						<td>
+							<?php echo esc_html( $law_bd_row['payment_label'] ?: '—' ); ?>
+							<?php if ( in_array( (string) $law_bd_row['payment'], array( 'paid', 'refunded' ), true ) && (int) $law_bd_row['amount'] > 0 ) : ?>
+								<span class="law-booking-table__sub"><?php echo esc_html( law_events_format_pence( (int) $law_bd_row['amount'] ) ); ?></span>
+							<?php endif; ?>
+						</td>
+						<td><?php echo '' !== (string) $law_bd_row['discount_code'] ? '<code>' . esc_html( (string) $law_bd_row['discount_code'] ) . '</code>' : '—'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above. ?></td>
+						<td><?php if ( '' !== (string) $law_bd_row['invoice_url'] ) : ?>
+							<a href="<?php echo esc_url( (string) $law_bd_row['invoice_url'] ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'View', 'law' ); ?></a>
+						<?php else : ?>—<?php endif; ?></td>
+					<?php endif; ?>
 					<td class="law-booking-table__booked"><?php echo esc_html( mysql2date( 'j M Y', $law_bd_row['booked'] ) ); ?><br><small><?php echo esc_html( mysql2date( 'H:i', $law_bd_row['booked'] ) ); ?></small></td>
 				</tr>
 			<?php endforeach; ?>

@@ -7,8 +7,9 @@
  * reason the events queue, Bookings, Manage speakers and Manage flagship are:
  * a member holding only events_committee should not have to learn wp-admin.
  *
- * Nothing honours a code yet — see the note at the top of discounts.php — so
- * this screen says so rather than implying the codes are live.
+ * Codes are honoured by the paid receptions and by nothing else — see the note
+ * at the top of discounts.php — and this screen says so, because "where does
+ * this apply" is the first question anybody creating one has.
  *
  * Module convention: this domain file owns its save handler, its export
  * endpoint and its asset gating. The rules live in discounts.php, which knows

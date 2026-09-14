@@ -161,7 +161,11 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$data = law_bookings_dashboard_export_rows( $this->filters( array( 'law_event' => $f['event_a'] ) ) );
 
 		$this->assertSame(
-			array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
+			// The four money columns are always in the export, even on a free
+			// programme: a spreadsheet with four empty columns is cheaper to
+			// read than two exports whose columns depend on what happened to
+			// be booked that week (RECEPTIONS.md §8.3).
+			array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary', 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ),
 			$data['columns']
 		);
 		$this->assertStringContainsString( get_the_title( $f['event_a'] ), $data['title'] );

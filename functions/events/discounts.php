@@ -2,12 +2,16 @@
 /**
  * Discount codes: the catalogue and the rules.
  *
- * **Nothing honours a code yet, on purpose.** Denis settled two things on
- * 10 September 2026: codes are wanted in future, and they are NOT wanted on
- * the flagship conference. So the catalogue is built and the committee can
- * fill it, and the first priced booking flow that should accept a code opts
- * in by calling law_discount_validate() and law_discount_claim(). Until then
- * no price anywhere is reduced by anything in here.
+ * The PAID RECEPTIONS honour a code (RECEPTIONS.md §8.4): it is typed in the
+ * checkout dialog, the total recalculates in place, and the committee can
+ * scope a code to one reception. Nothing else does, and the flagship
+ * deliberately does not — Denis settled that on 10 September 2026, because a
+ * flagship place is priced by the committee at approval rather than by the
+ * delegate at checkout.
+ *
+ * A flow opts in by calling law_discount_validate() and law_discount_claim(),
+ * and by adding itself to the law_discount_scope_events filter. This file
+ * knows about none of them.
  *
  * Written against "a priced booking" rather than any one event: an empty
  * `_law_discount_events` means the code works wherever a price is charged.

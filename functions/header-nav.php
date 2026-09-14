@@ -411,9 +411,11 @@ function law_header_nav() {
 			'icon'        => 'price',
 			'description' => __( 'Applications and payments for the flagship', 'law' ),
 		);
-		// The discount-code catalogue (functions/events/discounts.php).
-		// Nothing accepts a code yet; the screen says so. It is here so the
-		// committee can prepare codes for whatever starts charging first.
+		// The discount-code catalogue (functions/events/discounts.php). Codes
+		// are accepted when booking a paid reception (RECEPTIONS.md §8.4);
+		// the flagship deliberately takes none, because its price is the
+		// committee's decision at approval rather than the delegate's at
+		// checkout.
 		$items[] = array(
 			'key'         => 'discounts',
 			'label'       => __( 'Discount codes', 'law' ),

@@ -27,18 +27,50 @@ const LAW_BOOKINGS_DASHBOARD_SCREEN_CAP = 2000;
  * and tests) and normalised.
  *
  * @param array|null $source Defaults to $_GET.
- * @return array{kw:string,event:int,status:string,year:string,press:bool}
+ * @return array{kw:string,event:int,status:string,year:string,press:bool,payment:string}
  */
 function law_bookings_dashboard_filters( ?array $source = null ) {
-	$source = null === $source ? $_GET : $source;
-	$status = sanitize_key( (string) ( $source['law_bstatus'] ?? '' ) );
+	$source  = null === $source ? $_GET : $source;
+	$status  = sanitize_key( (string) ( $source['law_bstatus'] ?? '' ) );
+	$payment = sanitize_key( (string) ( $source['law_payment'] ?? '' ) );
+
 	return array(
 		'kw'     => sanitize_text_field( wp_unslash( (string) ( $source['law_kw'] ?? '' ) ) ),
 		'event'  => absint( $source['law_event'] ?? 0 ),
-		'status' => in_array( $status, array( 'cancelled', 'waitlisted', 'all' ), true ) ? $status : '',
+		'status' => in_array( $status, array( 'cancelled', 'waitlisted', 'pending', 'all' ), true ) ? $status : '',
 		'year'   => sanitize_key( (string) ( $source['law_year'] ?? '' ) ),
 		'press'  => ! empty( $source['law_press'] ),
+		// The receptions: a place can be paid, held, included, complimentary
+		// or refused, and the committee needs to be able to ask for one of
+		// them. Only offered when something on the site actually charges
+		// (law_bookings_dashboard_has_priced()).
+		'payment' => array_key_exists( $payment, law_booking_payment_states() ) ? $payment : '',
 	);
+}
+
+/**
+ * Does any event in this view charge for a place?
+ *
+ * What decides whether the Payment filter and the three money columns are
+ * rendered at all: on a programme with no paid reception they would be three
+ * empty columns and a select with nothing to choose.
+ */
+function law_bookings_dashboard_has_priced() {
+	static $has = null;
+	if ( null !== $has ) {
+		return $has;
+	}
+	$has = false;
+	if ( function_exists( 'law_reception_ids' ) ) {
+		foreach ( law_reception_ids() as $event_id ) {
+			if ( law_event_is_priced( $event_id ) ) {
+				$has = true;
+				break;
+			}
+		}
+	}
+
+	return $has;
 }
 
 /**
@@ -137,7 +169,11 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 		''           => array( 'publish' ),
 		'cancelled'  => array( 'law-cancelled' ),
 		'waitlisted' => array( 'law-waitlisted' ),
-		'all'        => array( 'publish', 'law-waitlisted', 'law-cancelled' ),
+		// A place held while somebody pays, and one whose payment was refused:
+		// both are real people the committee may need to find, and neither is
+		// a confirmed booking (RECEPTIONS.md §8.3).
+		'pending'    => array( 'law-pending-payment', 'law-payment-failed' ),
+		'all'        => array( 'publish', 'law-waitlisted', 'law-pending-payment', 'law-payment-failed', 'law-cancelled' ),
 	);
 	$query    = array(
 		'post_type'      => LAW_BOOKING_CPT,
@@ -215,7 +251,19 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			}
 		}
 
-		$statuses = array( 'publish' => 'active', 'law-waitlisted' => 'waitlisted', 'law-cancelled' => 'cancelled' );
+		$payment = (string) law_event_meta( $booking->ID, '_law_payment_status' );
+		if ( '' !== $filters['payment'] && $payment !== $filters['payment'] ) {
+			continue;
+		}
+
+		$statuses = array(
+			'publish'             => 'active',
+			'law-waitlisted'      => 'waitlisted',
+			'law-pending-payment' => 'pending-payment',
+			'law-payment-failed'  => 'payment-failed',
+			'law-cancelled'       => 'cancelled',
+		);
+		$price    = law_booking_price( (int) $booking->ID );
 		$rows[]   = array(
 			'booking_id'    => (int) $booking->ID,
 			'number'        => $number,
@@ -235,6 +283,14 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			'is_press'      => (bool) law_event_meta( $booking->ID, '_law_is_press' ),
 			'accessibility' => law_booking_profile_requirements( $profile, 'accessibility' ),
 			'dietary'       => law_booking_profile_requirements( $profile, 'dietary' ),
+			// The money, on any event that charges for a place. Blank
+			// everywhere else, so the columns drop out on their own.
+			'priced'        => law_event_is_priced( $event_id ),
+			'payment'       => $payment,
+			'payment_label' => $payment ? ( law_booking_payment_states()[ $payment ] ?? $payment ) : '',
+			'amount'        => $price['gross'],
+			'discount_code' => (string) law_event_meta( $booking->ID, '_law_discount_code' ),
+			'invoice_url'   => (string) law_event_meta( $booking->ID, '_law_stripe_invoice_url' ),
 		);
 		$seen_b[ (int) $booking->ID ] = true;
 		$seen_e[ $event_id ]          = true;
@@ -281,10 +337,27 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 			$row['country'],
 			$row['is_press'] ? 'Yes' : '',
 			// The label the rest of the site uses, not the internal key.
-			law_booking_status_label( array( 'active' => 'publish', 'waitlisted' => 'law-waitlisted', 'cancelled' => 'law-cancelled' )[ $row['status'] ] ?? 'publish' ),
+			law_booking_status_label(
+				array(
+					'active'          => 'publish',
+					'waitlisted'      => 'law-waitlisted',
+					'pending-payment' => 'law-pending-payment',
+					'payment-failed'  => 'law-payment-failed',
+					'cancelled'       => 'law-cancelled',
+				)[ $row['status'] ] ?? 'publish'
+			),
 			substr( $row['booked'], 0, 16 ),
 			$row['accessibility'],
 			$row['dietary'],
+			// The money. Always in the export, even on a free programme: a
+			// spreadsheet with four empty columns is cheaper to read than two
+			// exports whose columns depend on what was booked that week.
+			$row['payment_label'],
+			$row['priced'] && in_array( $row['payment'], array( 'paid', 'refunded' ), true )
+				? law_events_format_pence( (int) $row['amount'] )
+				: '',
+			$row['discount_code'],
+			$row['invoice_url'],
 		);
 	}
 
@@ -295,7 +368,16 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 	if ( '' !== $filters['year'] ) {
 		$scope[] = $filters['year'];
 	}
-	$scope[] = array( '' => 'confirmed bookings', 'cancelled' => 'cancelled bookings', 'waitlisted' => 'waitlist entries', 'all' => 'all bookings' )[ $filters['status'] ];
+	$scope[] = array(
+		''           => 'confirmed bookings',
+		'cancelled'  => 'cancelled bookings',
+		'waitlisted' => 'waitlist entries',
+		'pending'    => 'bookings awaiting or missing a payment',
+		'all'        => 'all bookings',
+	)[ $filters['status'] ];
+	if ( '' !== $filters['payment'] ) {
+		$scope[] = strtolower( law_booking_payment_states()[ $filters['payment'] ] ?? $filters['payment'] );
+	}
 	if ( $filters['press'] ) {
 		$scope[] = 'press only';
 	}
@@ -305,7 +387,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 
 	return array(
 		'title'   => 'Bookings: ' . implode( ', ', $scope ),
-		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary' ),
+		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary', 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ),
 		'rows'    => $rows,
 	);
 }

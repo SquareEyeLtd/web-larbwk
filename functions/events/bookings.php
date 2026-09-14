@@ -2619,6 +2619,18 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		);
 	}
 
+	// The committee cancelling a place somebody PAID for is a refund decision
+	// nothing here can make, so it alerts rather than acting: the money is
+	// still LAW's and only a human can decide what happens to it
+	// (RECEPTIONS.md §0.3).
+	if ( 'paid' === $payment && 'host_reject' === $context ) {
+		law_events_send(
+			'committee_reception_paid_cancelled',
+			$event_id,
+			array( 'placeholders' => law_booking_email_extra( (int) $booking->ID )['placeholders'] )
+		);
+	}
+
 	// A place just opened: offer it to the waitlist. Not during the sweep,
 	// where the event itself is going away.
 	if ( 'event_cancelled' !== $context && ! $waitlisted && function_exists( 'law_waitlist_process' ) ) {
@@ -3306,7 +3318,12 @@ function law_booking_export_rows( $event_id ) {
 		: 'date to be confirmed';
 
 	// -1 like the recount: a truncated export would silently lose attendees.
-	$bookings = law_bookings_for_event( $event_id, 'publish', -1 );
+	//
+	// On a PRICED event the holds come too: somebody standing on Stripe's page
+	// is counted in "Bookings (N)", so an export of N-1 rows under that
+	// heading would read as a bug rather than as a hold (RECEPTIONS.md §1.3).
+	$priced   = law_event_is_priced( $event_id );
+	$bookings = law_bookings_for_event( $event_id, $priced ? array( 'publish', 'law-pending-payment' ) : 'publish', -1 );
 
 	// One users + one usermeta query for the whole export instead of two per
 	// attendee (performance review, 7 September 2026).
@@ -3349,11 +3366,26 @@ function law_booking_export_rows( $event_id ) {
 			law_booking_profile_requirements( $profile, 'accessibility' ),
 			law_booking_profile_requirements( $profile, 'dietary' ),
 		);
+		if ( $priced ) {
+			$payment  = (string) law_event_meta( $booking->ID, '_law_payment_status' );
+			$price    = law_booking_price( (int) $booking->ID );
+			$last_row = count( $rows ) - 1;
+
+			$rows[ $last_row ][] = law_booking_payment_states()[ $payment ] ?? $payment;
+			$rows[ $last_row ][] = in_array( $payment, array( 'paid', 'refunded' ), true ) ? law_events_format_pence( $price['gross'] ) : '';
+			$rows[ $last_row ][] = (string) law_event_meta( $booking->ID, '_law_discount_code' );
+			$rows[ $last_row ][] = (string) law_event_meta( $booking->ID, '_law_stripe_invoice_url' );
+		}
+	}
+
+	$columns = array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' );
+	if ( $priced ) {
+		$columns = array_merge( $columns, array( 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ) );
 	}
 
 	return array(
 		'title'   => sprintf( 'Attendees for %s, %s', get_the_title( $event_id ), $when ),
-		'columns' => array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' ),
+		'columns' => $columns,
 		'rows'    => $rows,
 	);
 }

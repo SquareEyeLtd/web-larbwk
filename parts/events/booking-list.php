@@ -53,7 +53,14 @@ if ( ! $law_bl_event || LAW_EVENT_CPT !== $law_bl_event->post_type
 	return;
 }
 
-$law_bl_active    = law_bookings_for_event( $law_bl_event_id );
+// On a PRICED event the held places come with the confirmed ones: the count in
+// the heading includes them, so a table of N-1 rows under "Bookings (N)" would
+// read as a bug rather than as somebody standing on Stripe's page
+// (RECEPTIONS.md §1.3). A payment that was refused shows too, because that
+// person is waiting on something the committee may need to know about.
+$law_bl_active    = law_event_is_priced( $law_bl_event_id )
+	? law_bookings_for_event( $law_bl_event_id, array( 'publish', 'law-pending-payment', 'law-payment-failed' ) )
+	: law_bookings_for_event( $law_bl_event_id );
 $law_bl_wait_cap  = 200;
 $law_bl_waitlist  = function_exists( 'law_waitlist_for_event' ) ? law_waitlist_for_event( $law_bl_event_id, $law_bl_wait_cap ) : array();
 $law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled' );
@@ -166,6 +173,9 @@ $law_bl_register_hidden = function () use ( $law_bl_event_id ) {
  */
 $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl_waiting = false ) use ( $law_bl_event_id, $law_bl_is_committee ) {
 	$law_bl_last = count( $law_bl_set ) - 1;
+	// The money, only where there is any: on a free event these three would be
+	// three empty columns on an already wide table (RECEPTIONS.md §8.3).
+	$law_bl_priced = law_event_is_priced( $law_bl_event_id );
 	// Cancel is committee only; Promote now is not, so the waitlist keeps its
 	// actions column for a host while the active table drops it entirely.
 	$law_bl_can_cancel  = $law_bl_actionable && $law_bl_is_committee;
@@ -183,6 +193,11 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				<th><?php esc_html_e( 'Country', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Accessibility', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Dietary', 'law' ); ?></th>
+				<?php if ( $law_bl_priced ) : ?>
+					<th><?php esc_html_e( 'Payment', 'law' ); ?></th>
+					<th><?php esc_html_e( 'Code', 'law' ); ?></th>
+					<th><?php esc_html_e( 'Invoice', 'law' ); ?></th>
+				<?php endif; ?>
 				<?php if ( $law_bl_has_actions ) : ?><th></th><?php endif; ?>
 			</tr></thead>
 			<tbody<?php echo $law_bl_waiting ? ' data-law-waitlist' : ''; ?>>
@@ -247,6 +262,26 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					<td><?php echo esc_html( (string) ( $law_bl_profile['country'] ?? '' ) ?: '—' ); ?></td>
 					<td class="law-booking-table__req"><?php echo esc_html( $law_bl_access ?: '—' ); ?></td>
 					<td class="law-booking-table__req"><?php echo esc_html( $law_bl_diet ?: '—' ); ?></td>
+					<?php if ( $law_bl_priced ) : ?>
+						<?php
+						$law_bl_pay   = (string) law_event_meta( $law_bl_booking->ID, '_law_payment_status' );
+						$law_bl_price = law_booking_price( (int) $law_bl_booking->ID );
+						$law_bl_inv   = (string) law_event_meta( $law_bl_booking->ID, '_law_stripe_invoice_url' );
+						?>
+						<td>
+							<?php echo esc_html( law_booking_payment_states()[ $law_bl_pay ] ?? '—' ); ?>
+							<?php if ( in_array( $law_bl_pay, array( 'paid', 'refunded' ), true ) && $law_bl_price['gross'] > 0 ) : ?>
+								<span class="law-booking-table__sub"><?php echo esc_html( law_events_format_pence( $law_bl_price['gross'] ) ); ?></span>
+							<?php endif; ?>
+						</td>
+						<td><?php
+							$law_bl_code = (string) law_event_meta( $law_bl_booking->ID, '_law_discount_code' );
+							echo '' !== $law_bl_code ? '<code>' . esc_html( $law_bl_code ) . '</code>' : '—';
+						?></td>
+						<td><?php if ( '' !== $law_bl_inv ) : ?>
+							<a href="<?php echo esc_url( $law_bl_inv ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'View', 'law' ); ?></a>
+						<?php else : ?>—<?php endif; ?></td>
+					<?php endif; ?>
 					<?php if ( $law_bl_has_actions ) : ?>
 						<td class="law-dashboard__row-actions">
 							<?php if ( $law_bl_waiting ) :
