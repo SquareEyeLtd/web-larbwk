@@ -282,6 +282,14 @@ function law_stripe_create_checkout_session( $booking_id ) {
 		$line['tax_rates'] = array( $tax_rate );
 	}
 
+	// LAW's own branded invoice template, the same Invoice Rendering Template
+	// the host-fee invoices use (stripe/service.php). Available on Checkout
+	// since API version 2025-07-30.basil, which this client's pinned
+	// 2025-09-30.clover postdates. Sent only when one is configured: an
+	// unrecognised template id would refuse the whole session, and the account
+	// default renders a perfectly good invoice.
+	$rendering_template = (string) law_events_setting( 'rendering_template_id', '' );
+
 	// 1800 seconds is Stripe's minimum, and exactly 1800 is refused when our
 	// clock runs a second behind theirs, so the minute of slack is not
 	// decoration. law_reception_release_hold() adds ten more minutes on top
@@ -298,7 +306,9 @@ function law_stripe_create_checkout_session( $booking_id ) {
 		'line_items'                 => array( $line ),
 		'invoice_creation'           => array(
 			'enabled'      => 'true',
-			'invoice_data' => array( 'metadata' => $metadata ),
+			'invoice_data' => '' !== $rendering_template
+				? array( 'metadata' => $metadata, 'rendering_options' => array( 'template' => $rendering_template ) )
+				: array( 'metadata' => $metadata ),
 		),
 		// Repeated onto the PaymentIntent, which a Charge inherits, so a later
 		// charge.refunded resolves back to this booking through the webhook's

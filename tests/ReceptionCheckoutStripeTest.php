@@ -89,6 +89,11 @@ class ReceptionCheckoutStripeTest extends LAW_Test_Case {
 		$this->assertSame( array( 'txr_test_unit' ), $line['tax_rates'] );
 
 		$this->assertSame( 'true', $body['invoice_creation']['enabled'] );
+		$this->assertSame(
+			'inrtem_test_unit',
+			$body['invoice_creation']['invoice_data']['rendering_options']['template'],
+			"LAW's own branded invoice template, the same one the host-fee invoices use."
+		);
 		$this->assertSame( (string) $booking, $body['invoice_creation']['invoice_data']['metadata']['law_booking_id'] );
 		$this->assertSame( (string) $booking, $body['payment_intent_data']['metadata']['law_booking_id'], 'A Charge inherits this, so a refund can resolve back.' );
 		$this->assertSame( (string) $booking, $body['metadata']['law_booking_id'] );
@@ -100,6 +105,25 @@ class ReceptionCheckoutStripeTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'law_checkout=cancelled', $body['cancel_url'] );
 		$this->assertSame( 'cs_test', (string) law_event_meta( $booking, '_law_stripe_checkout_session_id' ) );
 		$this->assertNotSame( '', (string) law_event_meta( $booking, '_law_checkout_expires_at' ) );
+	}
+
+	/**
+	 * An unrecognised template id refuses the whole session, so a site with
+	 * none configured must simply not send the field and let Stripe render the
+	 * account default.
+	 */
+	public function test_no_rendering_template_configured_sends_no_rendering_options(): void {
+		$this->isolate_option( LAW_EVENTS_SETTINGS_OPTION, array( 'rendering_template_id' => '' ) );
+		$event_id = $this->make_reception();
+		$booking  = $this->make_hold( $event_id );
+		$GLOBALS['law_test_stripe_queue'] = array(
+			array( 'id' => 'cus_test', 'object' => 'customer' ),
+			array( 'id' => 'cs_test', 'object' => 'checkout.session', 'url' => 'https://checkout.stripe.test/cs_test', 'expires_at' => time() + 1860 ),
+		);
+
+		law_stripe_create_checkout_session( $booking );
+
+		$this->assertArrayNotHasKey( 'rendering_options', $this->session_body()['invoice_creation']['invoice_data'] );
 	}
 
 	public function test_a_vatable_place_with_no_tax_rate_refuses_rather_than_billing_the_net(): void {

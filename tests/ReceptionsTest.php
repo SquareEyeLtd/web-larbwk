@@ -357,6 +357,44 @@ class ReceptionsTest extends LAW_Test_Case {
 		$this->assertSame( 'paid', (string) law_event_meta( $result['booking'], '_law_payment_status' ) );
 	}
 
+	/**
+	 * `complete` is NOT `paid`. Stripe's own words: "the checkout session is
+	 * complete; payment processing may still be in progress." A bank debit
+	 * comes back complete and unpaid, and confirming it would publish a place
+	 * nobody has paid for AND lock out the correction, because a confirmed
+	 * paid booking is exactly what mark_payment_failed() refuses to touch.
+	 */
+	public function test_a_completed_but_unsettled_session_holds_rather_than_confirms(): void {
+		$event_id = $this->make_reception();
+		$user_id  = $this->make_delegate();
+		$this->queue_checkout_session();
+		$result        = law_reception_checkout( $user_id, array( 'event_id' => $event_id, 'terms' => 1, 'price_shown' => 5400, 'ajax' => true ) );
+		$booking_id    = (int) $result['booking'];
+		$this->posts[] = $booking_id;
+
+		$GLOBALS['law_test_stripe_queue'] = array(
+			new WP_Error( 'law_stripe_api_error', 'You cannot expire a completed session.' ),
+			array(
+				'id'             => 'cs_test',
+				'object'         => 'checkout.session',
+				'status'         => 'complete',
+				// The money has been accepted but has NOT settled.
+				'payment_status' => 'unpaid',
+				'amount_total'   => 5400,
+			),
+		);
+
+		$this->assertFalse( law_reception_release_hold( $booking_id, 'cancelled' ) );
+		$this->assertSame( 'law-pending-payment', get_post_status( $booking_id ), 'The place stays held: the money is on its way.' );
+		$this->assertSame( 'processing', (string) law_event_meta( $booking_id, '_law_payment_status' ) );
+		$this->assertSame( '', (string) law_event_meta( $booking_id, '_law_checkout_expires_at' ), 'And the sweep must never release it.' );
+
+		// And the correction still works, which it would not have done had the
+		// place been marked paid.
+		$this->assertTrue( law_reception_mark_payment_failed( $booking_id, 'The debit was returned.' ) );
+		$this->assertSame( 'failed', (string) law_event_meta( $booking_id, '_law_payment_status' ) );
+	}
+
 	public function test_a_stale_session_id_is_ignored(): void {
 		$event_id = $this->make_reception();
 		$user_id  = $this->make_delegate();

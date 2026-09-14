@@ -1366,19 +1366,68 @@ from the letter of the document, and why.
    count of places held while somebody pays, beside "Bookings", so the two
    numbers cannot silently disagree. The two BOOKING exports gained all four.
 
-8. **The two unsure Stripe items in §3.1 were not verified with the CLI**, and
-   the code is written so that neither answer matters:
-   - `invoice_creation[invoice_data][rendering_options]` is **not sent**. The
-     invoice renders with the account default, which §3.1 said was acceptable.
-   - `invoice.paid` is not depended on. `law_reception_mark_paid()` reads the
-     `invoice` id off the Checkout session and GETs it, so the confirmation
-     carries the VAT invoice even on an account where that webhook never
-     arrives; the `invoice.paid` branch stays, and is idempotent; and the sweep
-     is the third fallback.
+8. **The two unsure Stripe items in §3.1 were settled from the documentation,
+   not the CLI**, by the `stripe-specialist` review on 14 September 2026:
+   - `invoice_creation[invoice_data][rendering_options][template]` **is** a
+     real field, added in API version `2025-07-30.basil`, which this client's
+     pinned `2025-09-30.clover` postdates, and it takes the same
+     `inrtem_…` Invoice Rendering Template id the host-fee invoices already
+     use. It **is now sent**, so a reception invoice carries LAW's branding
+     like every other one — but only when the setting holds a template id,
+     because an unrecognised one would refuse the whole session.
+   - `invoice.paid` **does** fire for a Checkout-generated invoice and **does**
+     carry `invoice_data.metadata`, so `law_stripe_resolve_booking_id()`
+     resolves it. The code still does not depend on it:
+     `law_reception_mark_paid()` reads the `invoice` id off the Checkout
+     session and GETs it, the `invoice.paid` branch stays as an idempotent
+     second path, and the sweep is the third.
 
    **Denis should still run `stripe listen` against a real test payment before
    go-live**, with the replacement list in §3.3, and confirm that one
    confirmation email arrives with the invoice link in it.
+
+10. **`complete` is not `paid`** (found by the same review, and fixed). Two
+    paths — `law_reception_release_hold()` and `law_reception_continue()` —
+    read a Checkout session Stripe refused to expire and treated
+    `status === 'complete'` as money in the bank. Stripe's own words are "the
+    checkout session is complete; payment processing may still be in
+    progress", and a bank debit comes back complete and `unpaid`. Confirming
+    there would have published a place nobody had paid for AND locked out the
+    correction, because a confirmed paid booking is exactly what
+    `law_reception_mark_payment_failed()` refuses to touch. Both now go through
+    `law_reception_settle_completed_session()`, which branches on
+    `payment_status` the way the webhook router and the browser return already
+    did. Pinned by
+    `ReceptionsTest::test_a_completed_but_unsettled_session_holds_rather_than_confirms()`.
+
+11. **A configuration error is not shown to the delegate.** The
+    `security-specialist` review found that a refused checkout quoted the
+    engine's message verbatim, including "no Stripe tax rate ID is configured
+    in LAW → Events settings" — which tells somebody trying to buy a drink
+    where our admin menu is and that our payment setup is broken.
+    `law_reception_refusal_payload()` now substitutes a generic sentence for
+    anything `law_booking_is_configuration_error()` claims as ours; every other
+    refusal is still quoted verbatim, because "that code has expired" is the
+    whole point. The detail stays in the activity log.
+
+12. **The Stripe-calling return handler is throttled.** It carries no nonce by
+    design (nothing is decided from the URL; the session's own metadata is the
+    guard), but it called Stripe on every request. It now shares the module's
+    rate-limit posture: 30 per user per ten minutes, and past that it simply
+    shows the booking without the round trip, which is the page they were
+    going to get anyway. The flagship's `law_flagship_handle_setup_return()`
+    has the same gap and was left alone as out of scope; worth closing next
+    time that file is open.
+
+13. **The discount-code oracle is a recorded trade-off, not an oversight.**
+    `law_discount_validate()` gives one message for "no such code" and "that
+    code is disabled", so the field cannot be used to enumerate the catalogue,
+    but `wrong event`, `expired`, `not yet` and `used up` are distinct — which
+    tells a guesser that a code they tried exists somewhere. That is §0.3's
+    decision and the quote endpoint's own rate surface is the answer to it.
+    **It holds only while codes are hard to guess**: `LAW-01` … `LAW-99` would
+    be walkable. Worth a word to Denis before the committee starts inventing
+    codes.
 
 9. **`law_booking_cancel()` gained an `included_revoked` context.** §2.6 said to
    reuse `event_cancelled` with adapted wording. That context sends

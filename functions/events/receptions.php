@@ -951,10 +951,11 @@ function law_reception_continue( $booking_id, $actor_id = 0 ) {
 
 	if ( '' !== $session ) {
 		// Expire the old one before opening a new one. If Stripe answers that
-		// it is already complete, the money has landed: confirm instead.
+		// it is already complete, something happened on that page and this must
+		// not open a second one.
 		$expired = law_stripe_expire_checkout_session( $session );
 		if ( ! is_wp_error( $expired ) && 'complete' === (string) ( $expired['status'] ?? '' ) ) {
-			law_reception_mark_paid( $booking_id, $expired, '', (int) $actor_id );
+			law_reception_settle_completed_session( $booking_id, $expired, (int) $actor_id );
 			return law_booking_manage_url( $booking_id );
 		}
 	}
@@ -1351,6 +1352,35 @@ function law_reception_mark_payment_failed( $booking_id, $message, $status = 'fa
 }
 
 /**
+ * A Checkout session Stripe reports as `complete`: work out what that actually
+ * means and act on it.
+ *
+ * **`complete` is not `paid`.** Stripe's own words: "The checkout session is
+ * complete. Payment processing may still be in progress." A session paid by an
+ * asynchronous method — a bank debit — is `complete` with `payment_status`
+ * still `unpaid`, and treating that as money in the bank would publish a place
+ * nobody has paid for AND lock out the correction: a confirmed, paid booking is
+ * exactly what law_reception_mark_payment_failed() refuses to touch, so the
+ * later async_payment_failed webhook would be ignored and the place would
+ * stand.
+ *
+ * So the payment status decides, the way it does everywhere else this codebase
+ * reads a session (the webhook router, the browser return). Either way the
+ * caller must stop: a completed session's place is not ours to take back.
+ */
+function law_reception_settle_completed_session( $booking_id, array $session, $actor_id = 0 ) {
+	$payment = (string) ( $session['payment_status'] ?? '' );
+
+	if ( in_array( $payment, array( 'paid', 'no_payment_required' ), true ) ) {
+		return law_reception_mark_paid( $booking_id, $session, '', (int) $actor_id );
+	}
+
+	// Accepted but not settled. The place stays held and the async webhooks
+	// finish the job.
+	return law_reception_mark_processing( $booking_id );
+}
+
+/**
  * Give a held place back: the delegate left Stripe's page, the session expired,
  * or opening it failed.
  *
@@ -1384,13 +1414,12 @@ function law_reception_release_hold( $booking_id, $why = 'expired' ) {
 	$session = (string) law_event_meta( $booking_id, '_law_stripe_checkout_session_id' );
 	if ( '' !== $session && 'stripe_error' !== $why ) {
 		$expired = law_stripe_expire_checkout_session( $session );
-		if ( ! is_wp_error( $expired ) ) {
-			$status = (string) ( $expired['status'] ?? '' );
-			if ( 'complete' === $status ) {
-				// The delegate paid while this was deciding to release. Confirm.
-				law_reception_mark_paid( $booking_id, $expired );
-				return false;
-			}
+		if ( ! is_wp_error( $expired ) && 'complete' === (string) ( $expired['status'] ?? '' ) ) {
+			// The delegate got through the page while this was deciding to
+			// release. Whatever state the payment is in, the place is not ours
+			// to take back.
+			law_reception_settle_completed_session( $booking_id, $expired );
+			return false;
 		}
 	}
 
@@ -2301,6 +2330,29 @@ function law_reception_require_own_booking( $is_ajax, array $statuses = array() 
 	return $booking;
 }
 
+/**
+ * What a refused submission may SAY to the person who made it.
+ *
+ * Most refusals here are the delegate's to act on and are quoted verbatim:
+ * "that code has expired", "please accept the terms", "the price changed". A
+ * CONFIGURATION error is not — "no Stripe tax rate ID is configured in LAW →
+ * Events settings" tells somebody trying to buy a drink where our admin menu
+ * is, and that our payment setup is currently broken. The detail stays in the
+ * activity log, which is where somebody who can fix it is looking.
+ *
+ * @return array The law_events_respond() payload.
+ */
+function law_reception_refusal_payload( WP_Error $error ) {
+	if ( ! law_booking_is_configuration_error( $error ) ) {
+		return law_booking_error_payload( $error );
+	}
+
+	return array(
+		'message' => __( 'Sorry, this booking could not be started just now. Please try again shortly, or contact LAW if it keeps happening.', 'law' ),
+		'status'  => 502,
+	);
+}
+
 /** The reception fields one of these forms posted, cleaned. */
 function law_reception_input_from_request() {
 	$raw = isset( $_POST['law_reception'] ) ? wp_unslash( (array) $_POST['law_reception'] ) : array();
@@ -2414,8 +2466,9 @@ function law_reception_checkout_handler() {
 		// could not be started" — the one wording a delegate holding a real
 		// code cannot act on. So the engine's own message rides a one-shot
 		// transient and the notice reads it back (law_reception_form_state()).
-		law_reception_store_form_state( $result );
-		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'reception-checkout-failed' );
+		$payload = law_reception_refusal_payload( $result );
+		law_reception_store_form_state( new WP_Error( $result->get_error_code(), (string) $payload['message'] ) );
+		law_events_respond( $is_ajax, false, $payload, 'reception-checkout-failed' );
 	}
 
 	law_events_respond(
@@ -2491,8 +2544,9 @@ function law_reception_waitlist_join_handler() {
 
 	if ( is_wp_error( $result ) ) {
 		law_booking_log_refusal( $input['event_id'], 0, $result, get_current_user_id(), 'receptions' );
-		law_reception_store_form_state( $result );
-		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'reception-checkout-failed' );
+		$payload = law_reception_refusal_payload( $result );
+		law_reception_store_form_state( new WP_Error( $result->get_error_code(), (string) $payload['message'] ) );
+		law_events_respond( $is_ajax, false, $payload, 'reception-checkout-failed' );
 	}
 
 	law_events_respond(
@@ -2593,6 +2647,16 @@ function law_reception_handle_checkout_return() {
 	}
 	if ( (int) $booking->post_author !== get_current_user_id() ) {
 		return;
+	}
+
+	// This handler calls Stripe, and it has no nonce by design, so it needs the
+	// throttle every admin-post handler in the module has. Generous, because
+	// the honest case is somebody refreshing the page their payment landed on:
+	// past the budget it simply shows them the booking without the round trip,
+	// which is the same page they were going to get anyway.
+	if ( ! law_events_rate_limit_ok( 'checkout_return', get_current_user_id(), 30, 600, 120 ) ) {
+		wp_safe_redirect( law_booking_manage_url( $booking_id ) );
+		exit;
 	}
 
 	$session_id = sanitize_text_field( wp_unslash( (string) $_GET['law_checkout_session'] ) );
