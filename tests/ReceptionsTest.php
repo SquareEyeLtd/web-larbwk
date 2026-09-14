@@ -62,10 +62,28 @@ class ReceptionsTest extends LAW_Test_Case {
 		return $user_id;
 	}
 
-	/** A discount code, as the catalogue stores one. */
-	private function make_code( array $meta = array(), $code = 'LAW25' ): int {
+	/**
+	 * A discount code, as the catalogue stores one.
+	 *
+	 * The code string is made UNIQUE per run, and the slug set explicitly to
+	 * its normalised form. Both matter on a live install: law_discount_find()
+	 * looks a code up by slug, and WordPress appends "-2" to a duplicate — so a
+	 * fixture called LAW25 on a site where the committee has already created
+	 * LAW25 becomes unfindable, and the lookup answers with THEIR code, scoped
+	 * to THEIR event. That is not a hypothetical; it is what happened on
+	 * 14 September 2026.
+	 *
+	 * @return array{id:int,code:string}
+	 */
+	private function make_code( array $meta = array(), $prefix = 'LAWTEST' ): array {
+		$code    = $prefix . strtoupper( wp_generate_password( 6, false ) );
 		$post_id = wp_insert_post(
-			array( 'post_type' => LAW_DISCOUNT_CPT, 'post_status' => 'publish', 'post_title' => $code )
+			array(
+				'post_type'   => LAW_DISCOUNT_CPT,
+				'post_status' => 'publish',
+				'post_title'  => $code,
+				'post_name'   => law_discount_match_key( $code ),
+			)
 		);
 		$this->posts[] = $post_id;
 		foreach ( array_merge( array( '_law_discount_type' => 'percent', '_law_discount_value' => 25 ), $meta ) as $key => $value ) {
@@ -73,7 +91,7 @@ class ReceptionsTest extends LAW_Test_Case {
 		}
 		add_post_meta( $post_id, '_law_discount_used', 0, true );
 
-		return (int) $post_id;
+		return array( 'id' => (int) $post_id, 'code' => $code );
 	}
 
 	/** The Stripe responses one payment-mode Checkout session needs. */
@@ -192,27 +210,29 @@ class ReceptionsTest extends LAW_Test_Case {
 		$this->assertSame( 5400, $plain['gross'] );
 		$this->assertFalse( $plain['free'] );
 
-		$this->make_code();
-		$percent = law_reception_quote( $event_id, 'law25' );
+		$quarter = $this->make_code();
+		// Lower case on purpose: a code printed "LAW-25" gets typed "law 25",
+		// and the lookup normalises both.
+		$percent = law_reception_quote( $event_id, strtolower( $quarter['code'] ) );
 		$this->assertSame( 1125, $percent['discount'] );
 		$this->assertSame( 3375, $percent['net'] );
 		$this->assertSame( 4050, $percent['gross'] );
 
-		$this->make_code( array( '_law_discount_type' => 'fixed', '_law_discount_value' => 1000 ), 'TENOFF' );
-		$fixed = law_reception_quote( $event_id, 'TENOFF' );
+		$tenner = $this->make_code( array( '_law_discount_type' => 'fixed', '_law_discount_value' => 1000 ) );
+		$fixed  = law_reception_quote( $event_id, $tenner['code'] );
 		$this->assertSame( 1000, $fixed['discount'] );
 		$this->assertSame( 3500, $fixed['net'] );
 
-		$this->make_code( array( '_law_discount_value' => 100 ), 'FREE100' );
-		$whole = law_reception_quote( $event_id, 'FREE100' );
+		$all   = $this->make_code( array( '_law_discount_value' => 100 ) );
+		$whole = law_reception_quote( $event_id, $all['code'] );
 		$this->assertTrue( $whole['free'] );
 		$this->assertSame( 0, $whole['gross'] );
 		$this->assertSame( 0, $whole['vat'], 'Nothing to pay is nothing to add VAT to.' );
 
-		$other = $this->make_reception();
-		$this->make_code( array( '_law_discount_events' => array( $other ) ), 'ELSEWHERE' );
-		$this->assertWPError( law_reception_quote( $event_id, 'ELSEWHERE' ), 'law_discount_wrong_event' );
-		$this->assertWPError( law_reception_quote( $event_id, 'NOSUCHCODE' ), 'law_discount_unknown' );
+		$other     = $this->make_reception();
+		$elsewhere = $this->make_code( array( '_law_discount_events' => array( $other ) ) );
+		$this->assertWPError( law_reception_quote( $event_id, $elsewhere['code'] ), 'law_discount_wrong_event' );
+		$this->assertWPError( law_reception_quote( $event_id, 'NOSUCHCODEANYWHERE' ), 'law_discount_unknown' );
 	}
 
 	/* Checkout _______________________________________________________________ */
@@ -225,7 +245,7 @@ class ReceptionsTest extends LAW_Test_Case {
 
 		$result = law_reception_checkout(
 			$user_id,
-			array( 'event_id' => $event_id, 'code' => 'LAW25', 'applied_code' => 'LAW25', 'terms' => 1, 'price_shown' => 4050, 'ajax' => true )
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'applied_code' => $code['code'], 'terms' => 1, 'price_shown' => 4050, 'ajax' => true )
 		);
 		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
 		$this->posts[] = $result['booking'];
@@ -234,8 +254,8 @@ class ReceptionsTest extends LAW_Test_Case {
 		$this->assertSame( 'law-pending-payment', $booking->post_status );
 		$this->assertSame( 3375, (int) law_event_meta( $booking->ID, '_law_price_pence' ), 'The DISCOUNTED net is the snapshot Stripe bills from.' );
 		$this->assertSame( 1125, (int) law_event_meta( $booking->ID, '_law_discount_pence' ) );
-		$this->assertSame( $code, (int) law_event_meta( $booking->ID, '_law_discount_id' ) );
-		$this->assertSame( 1, (int) get_post_meta( $code, '_law_discount_used', true ), 'The use is claimed before the booking exists.' );
+		$this->assertSame( $code['id'], (int) law_event_meta( $booking->ID, '_law_discount_id' ) );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ), 'The use is claimed before the booking exists.' );
 		$this->assertSame( 'https://checkout.stripe.test/cs_test', $result['redirect'] );
 		$this->assertSame( 'cs_test', (string) law_event_meta( $booking->ID, '_law_stripe_checkout_session_id' ) );
 		$this->assertSame( 1, law_event_attendee_total( $event_id ), 'The hold takes a place.' );
@@ -244,11 +264,11 @@ class ReceptionsTest extends LAW_Test_Case {
 	public function test_a_typed_but_unapplied_code_asks_for_the_press_rather_than_repricing(): void {
 		$event_id = $this->make_reception();
 		$user_id  = $this->make_delegate();
-		$this->make_code();
+		$code = $this->make_code();
 
 		$result = law_reception_checkout(
 			$user_id,
-			array( 'event_id' => $event_id, 'code' => 'LAW25', 'applied_code' => '', 'terms' => 1, 'price_shown' => 5400, 'ajax' => true )
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'applied_code' => '', 'terms' => 1, 'price_shown' => 5400, 'ajax' => true )
 		);
 		$this->assertWPError( $result, 'law_reception_code_unapplied' );
 	}
@@ -268,14 +288,14 @@ class ReceptionsTest extends LAW_Test_Case {
 	public function test_a_hundred_per_cent_code_confirms_with_no_stripe_call(): void {
 		$event_id = $this->make_reception();
 		$user_id  = $this->make_delegate();
-		$this->make_code( array( '_law_discount_value' => 100 ), 'FREE100' );
+		$code = $this->make_code( array( '_law_discount_value' => 100 ) );
 		// No queue at all: an unmocked Stripe call fails loudly, which is the
 		// assertion.
 		$GLOBALS['law_test_stripe_queue'] = array();
 
 		$result = law_reception_checkout(
 			$user_id,
-			array( 'event_id' => $event_id, 'code' => 'FREE100', 'applied_code' => 'FREE100', 'terms' => 1, 'price_shown' => 0, 'ajax' => true )
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'applied_code' => $code['code'], 'terms' => 1, 'price_shown' => 0, 'ajax' => true )
 		);
 		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
 		$this->posts[] = $result['booking'];
@@ -297,11 +317,11 @@ class ReceptionsTest extends LAW_Test_Case {
 
 		$result = law_reception_checkout(
 			$user_id,
-			array( 'event_id' => $event_id, 'code' => 'LAW25', 'applied_code' => 'LAW25', 'terms' => 1, 'price_shown' => 4050, 'ajax' => true )
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'applied_code' => $code['code'], 'terms' => 1, 'price_shown' => 4050, 'ajax' => true )
 		);
 		$this->assertWPError( $result, 'law_stripe_api_error' );
 		$this->assertSame( 0, law_event_attendee_total( $event_id ), 'The hold is given back.' );
-		$this->assertSame( 0, (int) get_post_meta( $code, '_law_discount_used', true ), 'And so is the code.' );
+		$this->assertSame( 0, (int) get_post_meta( $code['id'], '_law_discount_used', true ), 'And so is the code.' );
 	}
 
 	/* Releasing a hold _______________________________________________________ */
@@ -314,7 +334,7 @@ class ReceptionsTest extends LAW_Test_Case {
 
 		$result = law_reception_checkout(
 			$user_id,
-			array( 'event_id' => $event_id, 'code' => 'LAW25', 'applied_code' => 'LAW25', 'terms' => 1, 'price_shown' => 4050, 'ajax' => true )
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'applied_code' => $code['code'], 'terms' => 1, 'price_shown' => 4050, 'ajax' => true )
 		);
 		$this->posts[] = $result['booking'];
 
@@ -324,12 +344,12 @@ class ReceptionsTest extends LAW_Test_Case {
 
 		$this->assertSame( 'law-cancelled', get_post_status( $result['booking'] ) );
 		$this->assertSame( 0, law_event_attendee_total( $event_id ) );
-		$this->assertSame( 0, (int) get_post_meta( $code, '_law_discount_used', true ) );
+		$this->assertSame( 0, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
 
 		// A second release is a no-op and must not take somebody else's use.
-		law_discount_claim( $code );
+		law_discount_claim( $code['id'] );
 		$this->assertFalse( law_reception_release_hold( $result['booking'], 'sweep' ) );
-		$this->assertSame( 1, (int) get_post_meta( $code, '_law_discount_used', true ), "A double release must never take another buyer's claim." );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ), "A double release must never take another buyer's claim." );
 	}
 
 	public function test_releasing_a_hold_detects_a_payment_that_landed_in_the_race(): void {
@@ -490,10 +510,10 @@ class ReceptionsTest extends LAW_Test_Case {
 			$user_id,
 			'publish',
 			array( 'name' => 'Jane Smith', 'email' => 'jane@example.test' ),
-			array( '_law_price_pence' => 3375, '_law_vat' => 1, '_law_payment_status' => 'paid', '_law_discount_id' => $code )
+			array( '_law_price_pence' => 3375, '_law_vat' => 1, '_law_payment_status' => 'paid', '_law_discount_id' => $code['id'] )
 		);
 		$this->posts[] = $booking_id;
-		law_discount_claim( $code );
+		law_discount_claim( $code['id'] );
 
 		$this->assertWPError( law_booking_cancel( $booking_id, $user_id, 'self' ), 'law_booking_paid_place' );
 		$this->assertWPError( law_booking_cancel( $booking_id, $user_id, 'booker' ), 'law_booking_paid_place' );
@@ -503,7 +523,7 @@ class ReceptionsTest extends LAW_Test_Case {
 		// separate, manual decision.
 		$this->assertTrue( law_booking_cancel( $booking_id, $this->make_committee_user(), 'host_reject' ) );
 		$this->assertSame( 'law-cancelled', get_post_status( $booking_id ) );
-		$this->assertSame( 1, (int) get_post_meta( $code, '_law_discount_used', true ) );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
 	}
 
 	public function test_an_included_place_can_be_cancelled_and_frees_the_place(): void {

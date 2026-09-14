@@ -194,8 +194,13 @@ $law_bm_venue = (string) law_event_meta( $law_bm_event_id, '_law_venue' );
 						// told. The engine refuses it as well (§0.3); this is
 						// the honest way to say so rather than a button that
 						// only ever answers no.
+						//
+						// "us", not "LAW": the delegate is already on LAW's
+						// site, and "Contact LAW" in the middle of a
+						// sentence-case line reads as the word rather than the
+						// organisation (Denis, 14 September 2026).
 						?>
-						<span class="law-booking-manage__note"><?php esc_html_e( 'Contact LAW to change a paid booking.', 'law' ); ?></span>
+						<span class="law-booking-manage__note"><?php esc_html_e( 'Contact us to change or cancel a paid booking.', 'law' ); ?></span>
 					<?php elseif ( ! $law_bm_row_gone ) : ?>
 						<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 							<input type="hidden" name="action" value="law_booking_cancel">

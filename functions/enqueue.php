@@ -41,8 +41,11 @@ add_action( 'wp_enqueue_scripts', function () {
 
 	// Speaker profiles and both events dashboards (host and committee) reuse
 	// the calendar's banner title, event cards and status badges.
+	// The account hub is on this list for one component: the receptions banner
+	// (.law-strip), which My bookings renders from the same helper. One
+	// function, two surfaces, and the second one has to be able to paint it.
 	if ( law_calendar_is_calendar_page() || law_speakers_is_single() || law_account_events_is_template()
-		|| is_page_template( array( 'templates/account-bookings.php', 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php', 'templates/account-dashboard-flagship.php', 'templates/account-dashboard-flagship-bookings.php', 'templates/account-dashboard-discounts.php' ) ) ) {
+		|| is_page_template( array( 'templates/account-bookings.php', 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php', 'templates/account-dashboard-flagship.php', 'templates/account-dashboard-flagship-bookings.php', 'templates/account-dashboard-discounts.php', 'templates/account-dashboard-receptions.php', 'templates/account-hub.php' ) ) ) {
 		wp_enqueue_style(
 			'law-calendar',
 			get_theme_file_uri( '/assets/css/calendar.css' ),
@@ -53,7 +56,10 @@ add_action( 'wp_enqueue_scripts', function () {
 
 	// Account pages: login/forgot/reset, register and the account landing,
 	// all rendered inside the hero.
-	if ( is_page_template( array( 'templates/login.php', 'templates/register.php', 'templates/account.php', 'templates/account-profile.php', 'templates/account-event-form.php' ) ) ) {
+	// Manage receptions' EDITOR renders in the submission form's own navy hero
+	// (.auth-hero), so it needs these too; its LIST view is an ordinary white
+	// dashboard and simply does not use them.
+	if ( is_page_template( array( 'templates/login.php', 'templates/register.php', 'templates/account.php', 'templates/account-profile.php', 'templates/account-event-form.php', 'templates/account-dashboard-receptions.php' ) ) ) {
 		wp_enqueue_style(
 			'law-auth',
 			get_theme_file_uri( '/assets/css/auth.css' ),

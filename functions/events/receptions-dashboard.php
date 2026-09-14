@@ -11,8 +11,12 @@
  * edits the SAME posts, through the SAME code, as the wp-admin Reception box:
  * reading a submission, validating it and writing it are
  * functions/events/receptions.php, shared with admin/event-screen.php. This
- * file is the route, the capability gate, the POST handler, the export and the
- * assets.
+ * file is the route, the capability gate, the POST handler and the assets.
+ *
+ * NO export, unlike every sibling dashboard (Denis, 14 September 2026): there
+ * are three receptions and every figure is on the screen already. The BOOKINGS
+ * at a reception do export, from Manage bookings and from the per-event list,
+ * which is where somebody wanting a spreadsheet of people actually goes.
  *
  * Access is committee, editor or administrator (law_user_is_committee()),
  * checked in three independent places, because each can be reached on its own:
@@ -109,11 +113,10 @@ function law_receptions_dashboard_notices() {
 	);
 }
 
-/* The rows the table and the exports both read ______________________________ */
+/* The rows the table reads ___________________________________________________ */
 
 /**
- * One flat row per reception: what the committee needs to see at a glance,
- * and the same figures the exports carry.
+ * One flat row per reception: what the committee needs to see at a glance.
  */
 function law_receptions_dashboard_rows() {
 	$rows = array();
@@ -138,7 +141,13 @@ function law_receptions_dashboard_rows() {
 			'pending'    => law_booking_pending_payment_count( $event_id ),
 			'remaining'  => null === $remaining ? null : (int) $remaining,
 			'price'      => $price,
-			'price_label' => $price > 0 ? law_events_price_label( $price ) : __( 'Not on sale', 'law' ),
+			// The bare figure the committee typed, which is the NET, and the
+			// same number the event page and the cards quote (Denis, 14
+			// September 2026). The VAT arithmetic belongs in the checkout
+			// dialog next to the consent to pay it; spelling it out in a table
+			// cell made the column three lines tall and told the committee
+			// nothing it had not just entered.
+			'price_label' => $price > 0 ? law_events_format_pence( $price ) : __( 'Not on sale', 'law' ),
 			'included'   => (bool) law_event_meta( $event_id, '_law_flagship_included' ),
 			'invitation' => law_event_is_invitation_only( $event_id ),
 			'edit_url'   => law_receptions_dashboard_url( $event_id ),
@@ -147,44 +156,6 @@ function law_receptions_dashboard_rows() {
 	}
 
 	return $rows;
-}
-
-/** Columns, rows and title for the export trio. */
-function law_receptions_dashboard_export_rows() {
-	$rows = array();
-	foreach ( law_receptions_dashboard_rows() as $row ) {
-		$rows[] = array(
-			$row['title'],
-			law_event_status_label( get_post( $row['id'] ) ),
-			$row['when'],
-			$row['venue'],
-			$row['available'] > 0 ? (string) $row['available'] : '',
-			(string) $row['confirmed'],
-			(string) $row['pending'],
-			null === $row['remaining'] ? '' : (string) $row['remaining'],
-			$row['price'] > 0 ? law_events_format_pence( $row['price'] ) : 'Not on sale',
-			$row['included'] ? 'Yes' : '',
-			$row['invitation'] ? 'Yes' : '',
-		);
-	}
-
-	return array(
-		'columns' => array(
-			'Reception',
-			'Status',
-			'Day and time',
-			'Venue',
-			'Places available',
-			'Confirmed',
-			'Awaiting payment',
-			'Places left',
-			'Price excluding VAT',
-			'Included with flagship',
-			'Invitation only',
-		),
-		'rows'    => $rows,
-		'title'   => 'Receptions, ' . wp_date( 'j F Y' ),
-	);
 }
 
 /* The save handler __________________________________________________________ */
@@ -264,53 +235,6 @@ function law_reception_manage_handler() {
 	);
 }
 
-/* The export ________________________________________________________________ */
-
-add_action( 'admin_post_law_receptions_dashboard_export', 'law_receptions_dashboard_export_handler' );
-function law_receptions_dashboard_export_handler() {
-	nocache_headers();
-	$format = sanitize_key( $_GET['format'] ?? 'csv' );
-
-	// check_admin_referer() would die with an HTML page the PDF fetch cannot
-	// parse, so the json branch verifies the nonce itself and answers JSON.
-	if ( 'json' === $format && ! wp_verify_nonce( (string) ( $_GET['_wpnonce'] ?? '' ), 'law_receptions_dashboard_export' ) ) {
-		wp_send_json_error( array( 'message' => 'Your session has changed since this page was opened. Please reload the page and try again.' ), 403 );
-	}
-	check_admin_referer( 'law_receptions_dashboard_export' );
-
-	if ( ! law_user_is_committee() ) {
-		if ( 'json' === $format ) {
-			wp_send_json_error( array( 'message' => 'Sorry, this export is for the committee.' ), 403 );
-		}
-		wp_die( 'Sorry, this export is for the committee.' );
-	}
-
-	if ( ! law_events_rate_limit_ok( 'receptions_export', get_current_user_id(), 40, 600 ) ) {
-		if ( 'json' === $format ) {
-			wp_send_json_error( array( 'message' => 'Too many exports in a short time; please wait a moment and try again.' ), 429 );
-		}
-		wp_die( 'Too many exports in a short time; please wait a moment and try again.', '', array( 'response' => 429 ) );
-	}
-
-	$data     = law_receptions_dashboard_export_rows();
-	$basename = 'receptions-' . gmdate( 'Ymd-His' );
-
-	if ( 'xlsx' === $format ) {
-		law_events_send_xlsx( $data['columns'], $data['rows'], $basename . '.xlsx', $data['title'] );
-	}
-	if ( 'json' === $format ) {
-		wp_send_json_success(
-			array(
-				'title'    => $data['title'],
-				'filename' => $basename . '.pdf',
-				'columns'  => $data['columns'],
-				'rows'     => $data['rows'],
-			)
-		);
-	}
-	law_events_send_csv( $data['columns'], $data['rows'], $basename . '.csv', $data['title'] );
-}
-
 /* Assets ____________________________________________________________________ */
 
 add_action(
@@ -328,23 +252,20 @@ add_action(
 		// The description is the same rich-text field the flagship screen uses,
 		// so it comes from the same place rather than a second implementation.
 		law_rich_text_enqueue();
-		wp_enqueue_style( 'law-events-admin', get_theme_file_uri( 'assets/css/law-admin.css' ), array(), '1.6' );
-		// The flagship dashboard's stylesheet, scoped by that screen's own
-		// class, which this screen also carries: the two are the same form
-		// vocabulary, and a second near-identical stylesheet would drift.
-		wp_enqueue_style( 'law-flagship-dashboard', get_theme_file_uri( 'assets/css/flagship-dashboard.css' ), array( 'law-events-admin' ), $mtime( 'assets/css/flagship-dashboard.css' ) );
 
+		// Nothing else: the form's whole vocabulary — .law-row-grid,
+		// .law-form-field, .law-form-hint, .law-form-buttons — is
+		// event-form.css, which submission-form.php enqueues for this template,
+		// and the list's table is calendar.css, which enqueue.php does. This
+		// screen borrowed law-admin.css and flagship-dashboard.css while it
+		// looked like the flagship's dashboard; it looks like the submission
+		// form now (Denis, 14 September 2026) and needs neither.
+		//
 		// The shared fetch layer: the edit form is a .law-booking-form, so it
 		// submits in the background and falls back to a plain POST without it.
+		// No pdfmake and no export-buttons.js either, because this screen has
+		// no export and must not serve ~3MB of PDF library to show three rows.
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
-
-		// The export trio, list view only (pdfmake is ~3MB, footer-loaded).
-		if ( law_receptions_dashboard_requested() ) {
-			return;
-		}
-		wp_enqueue_script( 'law-pdfmake', get_theme_file_uri( 'assets/js/vendor/pdfmake.min.js' ), array(), $mtime( 'assets/js/vendor/pdfmake.min.js' ), true );
-		wp_enqueue_script( 'law-pdfmake-fonts', get_theme_file_uri( 'assets/js/vendor/vfs_fonts.js' ), array( 'law-pdfmake' ), $mtime( 'assets/js/vendor/vfs_fonts.js' ), true );
-		wp_enqueue_script( 'law-export-buttons', get_theme_file_uri( 'assets/js/export-buttons.js' ), array( 'law-pdfmake-fonts' ), $mtime( 'assets/js/export-buttons.js' ), true );
 	}
 );

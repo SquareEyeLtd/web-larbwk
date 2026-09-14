@@ -53,18 +53,28 @@ law_modal_enqueue();
 					: __( 'Already booked', 'law' );
 			}
 			?>
-			<p class="law-form-field">
+			<?php
+			// The name on one line and the day under it, not both on one:
+			// "Opening drinks Monday 30 November, 18:30" reads as one long
+			// string and the date is the part somebody is actually choosing
+			// between. Its own class rather than .law-form-hint, which is
+			// pitched for light text on the navy form and washes out to almost
+			// nothing on this white dialog (Denis, 14 September 2026).
+			?>
+			<p class="law-reception-include__row">
 				<label>
 					<input type="checkbox" name="law_receptions[]" value="<?php echo esc_attr( (string) $law_ri_id ); ?>"
 						<?php checked( $law_ri_held instanceof WP_Post || $law_ri_id === $law_ri_pre ); ?>
 						<?php disabled( $law_ri_held instanceof WP_Post ); ?>>
-					<strong><?php echo esc_html( get_the_title( $law_ri_id ) ); ?></strong>
-					<?php if ( '' !== $law_ri_when ) : ?>
-						<span class="law-form-hint"><?php echo esc_html( $law_ri_when ); ?></span>
-					<?php endif; ?>
-					<?php if ( '' !== $law_ri_tag ) : ?>
-						<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php echo esc_html( $law_ri_tag ); ?></span>
-					<?php endif; ?>
+					<span class="law-reception-include__text">
+						<span class="law-reception-include__name"><?php echo esc_html( get_the_title( $law_ri_id ) ); ?></span>
+						<?php if ( '' !== $law_ri_when ) : ?>
+							<span class="law-reception-include__when"><?php echo esc_html( $law_ri_when ); ?></span>
+						<?php endif; ?>
+						<?php if ( '' !== $law_ri_tag ) : ?>
+							<span class="law-cal-card__badge law-cal-card__badge--confirmed"><?php echo esc_html( $law_ri_tag ); ?></span>
+						<?php endif; ?>
+					</span>
 				</label>
 			</p>
 		<?php endforeach; ?>

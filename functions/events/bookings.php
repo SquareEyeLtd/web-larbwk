@@ -2494,7 +2494,7 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	if ( 'paid' === $payment && in_array( $context, array( 'self', 'booker' ), true ) ) {
 		return new WP_Error(
 			'law_booking_paid_place',
-			__( 'This place has been paid for, so it cannot be cancelled here. Contact LAW and we will sort it out.', 'law' )
+			__( 'This place has been paid for, so it cannot be cancelled here. Contact us and we will sort it out.', 'law' )
 		);
 	}
 

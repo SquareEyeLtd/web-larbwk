@@ -3142,6 +3142,12 @@ function law_reception_banner( $user_id ) {
 		</form>
 	</div>
 	<?php
+	// A rule under it, because on both surfaces the next thing is a list the
+	// banner is not part of: the bookings on My bookings, the tiles on the hub
+	// (Denis, 14 September 2026).
+	?>
+	<hr class="law-strip-divider">
+	<?php
 
 	return (string) ob_get_clean();
 }

@@ -1435,3 +1435,57 @@ from the letter of the document, and why.
    "the event was cancelled" (untrue) and the revocation notice. The new context
    logs in its own words and sends nothing, leaving
    `law_reception_revoke_included()` to send the one email that says why.
+
+14. **Manage receptions has no export.** §8.1 asked for the CSV/Excel/PDF trio.
+    Denis cut it on sight (14 September 2026): there are three receptions and
+    every figure is on the screen, so the trio was furniture — and it kept
+    ~3MB of pdfmake in the page to produce it. The BOOKINGS at a reception do
+    export, from Manage bookings and from the per-event list, which is where
+    somebody wanting a spreadsheet of people actually goes.
+
+15. **The screen needed naming in three stylesheet gates, and was not.** It
+    rendered white on white on first sight, because `calendar.css` (which
+    carries `.law-dashboard`'s text colour, the tables and the controls
+    layout) is gated on a template list in `functions/enqueue.php`,
+    `event-form.css` on another in `submission-form.php`, and `auth.css` on a
+    third. All three now name `templates/account-dashboard-receptions.php`, and
+    `enqueue.php`'s calendar list also gained `templates/account-hub.php`,
+    which renders the receptions banner (`.law-strip`) and could not paint it.
+    Worth knowing for the next account screen: adding a template is three
+    edits, and none of them fails loudly.
+
+16. **Manage receptions' EDITOR is the submission form, not a dashboard**
+    (Denis, 14 September 2026). §8.1 described a committee screen in the
+    flagship dashboard's shape — a white page section with
+    `.law-event-form--light`. Denis asked for the shape of editing an event:
+    the filled navy hero, `.auth-hero`, `.law-event-form`, matching
+    `templates/account-event-form.php`. A reception IS an event, so editing one
+    should look like it. The LIST stays a white dashboard table, because a
+    table of facts belongs on white. The screen therefore borrows nothing from
+    `law-admin.css` or `flagship-dashboard.css` any more.
+
+17. **Denis's pass over the screens, same day.** Each of these was a change
+    on sight, and each is smaller than the reason for it:
+    - the editor's "Opening drinks — status: Confirmed" line went. The
+      submission form prints a status because a host's event moves through a
+      queue; a reception's two statuses mean "on the programme" or "not yet",
+      which is the tick box below it.
+    - Date, Starts and Ends became one row of three (`.law-row-grid--three`,
+      which already existed). They are one decision, and two-up put Ends on a
+      line of its own under a hint belonging to Date.
+    - the list lost its explanatory paragraph, and the **On programme**
+      column. Live is the ordinary case, so badging it made the exception
+      harder to spot; a DRAFT now says so beside the name, which is the rule
+      `law_booking_card_badge()` already follows.
+    - **Included with flagship** became **Free with flagship**: shorter,
+      no abbreviation, and it says what it means.
+    - the **Price** column shows the bare net the committee typed. The VAT
+      arithmetic belongs in the checkout dialog next to the consent to pay it;
+      in a table cell it made the column three lines tall and told the
+      committee nothing it had not just entered.
+    - the include dialog's day moved to its own line under the reception's
+      name, in a colour pitched for a WHITE dialog. It was using
+      `.law-form-hint`, which is tuned for light text on the navy form and
+      washed out to almost nothing.
+    - the banner gained a rule under it (`.law-strip-divider`), because on
+      both surfaces the next thing is a list it is not part of.

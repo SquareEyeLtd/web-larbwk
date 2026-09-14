@@ -299,7 +299,16 @@ class ReceptionWaitlistTest extends LAW_Test_Case {
 		$this->fill( $event_id );
 		$entry = $this->join( $event_id )['booking'];
 
-		$code = wp_insert_post( array( 'post_type' => LAW_DISCOUNT_CPT, 'post_status' => 'publish', 'post_title' => 'QUEUE10' ) );
+		// Unique per run: law_discount_find() looks a code up by slug, and a
+		// fixture whose title collides with a real code in the catalogue gets
+		// "-2" appended and becomes unfindable.
+		$code = wp_insert_post(
+			array(
+				'post_type'   => LAW_DISCOUNT_CPT,
+				'post_status' => 'publish',
+				'post_title'  => 'QUEUE' . strtoupper( wp_generate_password( 6, false ) ),
+			)
+		);
 		$this->posts[] = $code;
 		add_post_meta( $code, '_law_discount_used', 1, true );
 		law_event_update_meta( $entry, '_law_discount_id', $code );

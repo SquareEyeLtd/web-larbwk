@@ -518,6 +518,99 @@
   color: #a85400;
 }
 
+/* The flagship as an ordinary row (parts/loop/event.php): the speaker
+   profile's role lists, My bookings, My events. Same structure as every other
+   row, but wearing the programme block's colours -- brand navy fill, white
+   text, orange accents -- so the conference is recognisable as the conference
+   wherever it is listed (Denis, 14 September 2026). Navy and white and navy
+   and orange both clear AA, the same pairing the block and the strip use.
+   The programme's own day lists never reach this: the flagship is lifted out
+   of them and rendered as parts/events/flagship-card.php instead. */
+.law-event-card--flagship {
+  background: #292459;
+  border-left-color: #ef7d05;
+  border-bottom-color: #292459;
+  padding-right: 0.85rem;
+}
+
+.law-event-card--flagship .law-event-card__title,
+.law-event-card--flagship .law-event-card__title a {
+  color: #fff;
+}
+
+.law-event-card--flagship .law-event-card__title a:hover,
+.law-event-card--flagship .law-event-card__title a:focus {
+  color: #ef7d05;
+}
+
+.law-event-card--flagship .law-event-card__time {
+  color: #ef7d05;
+}
+
+/* The muted grey of an ordinary row would sink into the navy, so the meta
+   lines go white and lean on opacity for the step down in weight, as the
+   block's own meta line does. */
+.law-event-card--flagship .law-event-card__meta {
+  color: #fff;
+  opacity: 0.9;
+}
+
+.law-event-card--flagship .law-event-card__meta + .law-event-card__meta::before {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* The identity pill, matching the block's and the strip's: an orange outline,
+   never a fill, so it cannot be mistaken for a status badge. */
+.law-event-card__flagship-badge {
+  display: inline-block;
+  margin: 0 0 0.4rem;
+  padding: 3px 8px;
+  border: 1px solid #ef7d05;
+  border-radius: 10px;
+  color: #ef7d05;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The committee's status badge, which is navy-on-navy in its --confirmed form
+   and unreadable on this fill. White pill, navy text, for every status. */
+.law-event-card--flagship .law-cal-card__badge {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
+/* Buttons invert, exactly as they do on the programme block: white by default,
+   the orange primary action swapping to white on hover. Navy on orange rather
+   than white on orange, for contrast. */
+.law-event-card--flagship .button {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
+.law-event-card--flagship .button:hover,
+.law-event-card--flagship .button:focus {
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #292459;
+}
+
+.law-event-card--flagship .button.orange {
+  background: #ef7d05;
+  border-color: #ef7d05;
+  color: #292459;
+}
+
+.law-event-card--flagship .button.orange:hover,
+.law-event-card--flagship .button.orange:focus {
+  background: #fff;
+  border-color: #fff;
+  color: #292459;
+}
+
 .law-event-card__body {
   min-width: 0;
   flex: 1 1 auto;
@@ -834,7 +927,9 @@
 
 .law-timeline__item {
   position: relative;
-  padding: 0 0 1.75rem var(--law-tl-gap);
+  /* Wider than the space above a session's speaker cards, so the cards stay
+     visibly part of the session above them (see .law-timeline__speakers). */
+  padding: 0 0 2.75rem var(--law-tl-gap);
 }
 
 .law-timeline__item:last-child {
@@ -908,13 +1003,6 @@
 
 .law-timeline__body p:last-child {
   margin-bottom: 0;
-}
-
-/* The speaker cards already carry their own grid; inside a timeline item they
-   only need separating from the description above them. The columns that grid
-   resolves to are further down the file, with the rest of the card rules. */
-.law-timeline__speakers {
-  margin-top: 1.1rem;
 }
 
 @media screen and (min-width: 48em) {
@@ -1303,6 +1391,16 @@
   line-height: 1.4;
 }
 
+/* The rule under the receptions banner. It is the page's, not the component's:
+   on both surfaces the next thing is a list the banner is not part of, and
+   without it the navy panel and the first row read as one block. */
+.law-strip-divider {
+  height: 0;
+  margin: 0 0 2rem;
+  border: 0;
+  border-top: 1px solid #d5d2de;
+}
+
 /* --- The reception checkout dialog's price block -------------------------
    Four ruled lines that have to be readable at a glance and swappable in
    place: the Apply button replaces the figures, and nothing may move when it
@@ -1339,11 +1437,13 @@
 }
 
 /* The code field and its Apply button share a row: the button is part of the
-   field, not a second decision below it. */
+   field, not a second decision below it. align-items: stretch, so the button
+   takes the input's height rather than its own padding's — the two read as one
+   control, and a short button beside a tall input reads as a mistake. */
 .law-reception-code {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 0.5rem;
 }
 
@@ -1358,7 +1458,12 @@
 
 .law-reception-code .button {
   flex: 0 0 auto;
+  /* Vertical padding would fight the stretch; the horizontal keeps the label
+     off the edges. */
   margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 1;
 }
 
 /* --- Loading skeleton ----------------------------------------------------- */
@@ -2024,13 +2129,28 @@
 
 /* A session's speakers sit UNDER its description, at the full width of the
    column, so they are a grid rather than a single file (Denis, 14 September
-   2026): three abreast on a desktop, two from 48em (which .law-cal-speakers--cards
-   already gives them) and one on a phone. Three is what the card was drawn for
-   -- photo, name, role, two lines of biography -- and it keeps a session with
-   six speakers to two rows instead of a column six cards deep. */
+   2026): two abreast on a desktop, and one card per row below 64em. The
+   single file at tablet width is deliberate and overrides the two-per-row
+   .law-cal-speakers--cards gets from 48em, because a card at half of a tablet
+   is not wide enough for the photo and the name to sit side by side.
+
+   The space above the cards has to be set HERE and not up with the rest of the
+   timeline rules, because .law-cal-speakers' `margin: 0` shorthand is further
+   down the file at the same specificity and silently wins over any earlier
+   margin-top. About 1.85rem of air in total once .law-cal-speakers--cards' own
+   0.35rem of padding-top is counted: enough that the cards read as the next
+   thing in the session rather than as the last paragraph of its description,
+   and still less than the gap .law-timeline__item leaves between one session
+   and the next, which has to stay the larger of the two or a session's
+   speakers begin to read as the opening of the session below them. */
+.law-timeline__speakers {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 1.5rem;
+}
+
 @media screen and (min-width: 64em) {
   .law-timeline__speakers {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

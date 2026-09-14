@@ -34,9 +34,8 @@ $law_rl_rows = law_receptions_dashboard_rows();
 				<th><?php esc_html_e( 'Venue', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Places', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Price', 'law' ); ?></th>
-				<th><?php esc_html_e( 'Included with flagship', 'law' ); ?></th>
+				<th><?php esc_html_e( 'Free with flagship', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Invitation only', 'law' ); ?></th>
-				<th><?php esc_html_e( 'On programme', 'law' ); ?></th>
 				<th class="law-dashboard__row-actions"><span class="show-for-sr"><?php esc_html_e( 'Actions', 'law' ); ?></span></th>
 			</tr></thead>
 			<tbody>
@@ -44,7 +43,16 @@ $law_rl_rows = law_receptions_dashboard_rows();
 				<tr>
 					<td>
 						<strong><?php echo esc_html( $law_rl_row['title'] ); ?></strong>
-						<?php if ( $law_rl_row['shown'] && $law_rl_row['view_url'] ) : ?>
+						<?php
+						// No "On programme" column (Denis, 14 September 2026).
+						// Live is the ordinary case and badging it would make
+						// the exception harder to spot, not easier — the rule
+						// law_booking_card_badge() already follows. A DRAFT is
+						// the exception, and it says so here, beside the name.
+						?>
+						<?php if ( ! $law_rl_row['shown'] ) : ?>
+							<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Draft', 'law' ); ?></span>
+						<?php elseif ( $law_rl_row['view_url'] ) : ?>
 							<span class="law-booking-table__sub">
 								<a href="<?php echo esc_url( $law_rl_row['view_url'] ); ?>"><?php esc_html_e( 'View the page', 'law' ); ?></a>
 							</span>
@@ -95,11 +103,6 @@ $law_rl_rows = law_receptions_dashboard_rows();
 					<td><?php echo esc_html( $law_rl_row['price_label'] ); ?></td>
 					<td><?php echo $law_rl_row['included'] ? esc_html__( 'Yes', 'law' ) : '<span aria-hidden="true">—</span><span class="show-for-sr">' . esc_html__( 'No', 'law' ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above. ?></td>
 					<td><?php echo $law_rl_row['invitation'] ? esc_html__( 'Yes', 'law' ) : '<span aria-hidden="true">—</span><span class="show-for-sr">' . esc_html__( 'No', 'law' ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above. ?></td>
-					<td>
-						<span class="law-cal-card__badge <?php echo $law_rl_row['shown'] ? 'law-cal-card__badge--confirmed' : 'law-cal-card__badge--cancelled'; ?>">
-							<?php echo esc_html( $law_rl_row['shown'] ? __( 'Live', 'law' ) : __( 'Draft', 'law' ) ); ?>
-						</span>
-					</td>
 					<td class="law-dashboard__row-actions">
 						<a class="button second" href="<?php echo esc_url( $law_rl_row['edit_url'] ); ?>">
 							<?php esc_html_e( 'Edit', 'law' ); ?>
