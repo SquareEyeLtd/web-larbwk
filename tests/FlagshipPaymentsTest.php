@@ -62,7 +62,7 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 
 	/** A signed-up delegate with a filled-in profile. */
 	private function make_delegate(): int {
-		$user_id = $this->make_user( 'attendee' );
+		$user_id = $this->make_user();
 		wp_update_user( array( 'ID' => $user_id, 'first_name' => 'Jane', 'last_name' => 'Smith' ) );
 		update_user_meta( $user_id, 'organisation', 'Test Chambers' );
 		update_user_meta( $user_id, 'job_title', 'Arbitrator' );
@@ -725,7 +725,7 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 	 */
 	public function test_an_incomplete_profile_cannot_apply(): void {
 		$this->make_flagship();
-		$user_id = $this->make_user( 'attendee' );  // No profile at all.
+		$user_id = $this->make_user();  // No profile at all.
 
 		$this->assertSame( array( 'first name', 'surname' ), law_flagship_profile_gaps( $user_id ) );
 

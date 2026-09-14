@@ -110,11 +110,12 @@ get_header();
 							law_booking_notice_render();
 						}
 
-						// The host section is now the whole page: a person's own bookings
-						// moved to /account/bookings/ on 10 September 2026, and a
-						// signed-in user with no events of their own is redirected there
-						// by account-events.php, so everyone who reaches this listing
-						// either runs events or is host-like.
+						// The host section is the whole page: a person's own bookings
+						// moved to /account/bookings/ on 10 September 2026. Anybody
+						// signed in can reach this listing now (14 September 2026,
+						// with the roles), including people who have never submitted
+						// anything, so the empty state below has to be an invitation
+						// rather than a dead end.
 						$law_is_committee = function_exists( 'law_user_is_committee' ) && law_user_is_committee();
 						// With no events to list, the submit call to action lives in the empty-state sentence instead.
 						$law_show_submit_button = $law_submit_url && $law_items;
@@ -132,19 +133,16 @@ get_header();
 
 						<?php if ( ! $law_items ) : ?>
 
-							<p class="law-cal__empty">
-								<?php
-								if ( $law_submit_url ) {
-									printf(
-										/* translators: %s: link to the submit an event form. */
-										esc_html__( 'You have not submitted any events yet. %s', 'law' ),
-										'<a href="' . esc_url( $law_submit_url ) . '">' . esc_html__( 'Submit an event', 'law' ) . '</a>'
-									);
-								} else {
-									esc_html_e( 'You have not submitted any events yet.', 'law' );
-								}
-								?>
-							</p>
+							<?php // A filled panel rather than a grey sentence: this is the page's call to action now, not a footnote on an empty list. ?>
+							<div class="law-account-events__empty">
+								<div class="law-account-events__empty-text">
+									<p class="law-account-events__empty-title"><?php esc_html_e( 'You have not submitted any events yet.', 'law' ); ?></p>
+									<p><?php esc_html_e( 'Anyone with an account can propose an event for London Arbitration Week. Drafts are saved here until you submit them.', 'law' ); ?></p>
+								</div>
+								<?php if ( $law_submit_url ) : ?>
+									<a class="button orange law-account-events__empty-cta" href="<?php echo esc_url( $law_submit_url ); ?>"><?php esc_html_e( 'Submit an event', 'law' ); ?></a>
+								<?php endif; ?>
+							</div>
 
 						<?php else : ?>
 

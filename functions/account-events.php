@@ -26,20 +26,20 @@ function law_account_events_is_template() {
  * response is on its way out; unread.php sets the precedent for a hook gated
  * on this template.
  *
- * 1. ?law_booking= is forwarded to the same argument on the bookings page.
- *    Every confirmation email already sent carries a /account/events/ link, and
- *    so does every "Manage booking" button in someone's history, so the old
- *    address has to keep working. It also catches the no-JS booking handlers,
- *    which redirect to the REFERER (law_events_redirect_back()) rather than to
- *    any URL this code controls.
+ * One job now: ?law_booking= is forwarded to the same argument on the bookings
+ * page. Every confirmation email already sent carries a /account/events/ link,
+ * and so does every "Manage booking" button in someone's history, so the old
+ * address has to keep working. It also catches the no-JS booking handlers,
+ * which redirect to the REFERER (law_events_redirect_back()) rather than to any
+ * URL this code controls.
  *
- * 2. Someone with no events of their own has nothing to do here, so they go to
- *    their bookings. The events check is not belt and braces:
- *    law_account_user_is_host_like() is role-only, but a co-owner reaches their
- *    event through the _law_co_owner meta row whatever their role, and only an
- *    account the module CREATES is given event_host -- an existing attendee
- *    linked as a co-owner keeps the role they had. Redirecting on the role
- *    alone would take their own event away from them.
+ * There used to be a second redirect, sending anybody with no events of their
+ * own to /account/bookings/. It went on 14 September 2026 with the roles: when
+ * only hosts and sponsors could submit, this page genuinely had nothing for
+ * anybody else and the redirect saved them a dead end. Now that any signed-in
+ * person can submit, the page always has a job, and its empty state is the
+ * invitation to do it. A redirect would take that away from exactly the people
+ * it is meant for.
  */
 add_action( 'template_redirect', function () {
 	if ( ! law_account_events_is_template() || 'cpt' !== law_events_source() ) {
@@ -63,28 +63,6 @@ add_action( 'template_redirect', function () {
 		wp_safe_redirect( add_query_arg( $args, $bookings_url ), 302 );
 		exit;
 	}
-
-	if ( ! is_user_logged_in() ) {
-		return;
-	}
-	// Any sub-view is a page of its own; only the bare listing redirects.
-	if ( ! empty( $_GET['law_thread'] ) || ! empty( $_GET['law_event_bookings'] )
-		|| law_account_events_in_entry_context() ) {
-		return;
-	}
-	$host_like = function_exists( 'law_account_user_is_host_like' ) && law_account_user_is_host_like();
-	if ( $host_like || law_account_events() ) {
-		return;
-	}
-	// A notice travels with them rather than being swallowed: the booking half
-	// of the notice map renders on the bookings page, and the event half cannot
-	// reach someone who has no events.
-	$notice = sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) );
-	if ( '' !== $notice ) {
-		$bookings_url = add_query_arg( 'law_notice', $notice, $bookings_url );
-	}
-	wp_safe_redirect( $bookings_url, 302 );
-	exit;
 } );
 
 /**
@@ -103,15 +81,24 @@ function law_account_events_in_entry_context() {
  *
  * @return array<int, array{event: array, entry: array}>
  */
-function law_account_events() {
-	static $items = null;
-	if ( null !== $items ) {
-		return $items;
+function law_account_events( $reset = false ) {
+	static $cache = array();
+	if ( $reset ) {
+		$cache = array();
 	}
 
-	$items   = array();
 	$user_id = get_current_user_id();
+	// Keyed by user rather than a bare static: production renders one user per
+	// request, but the tests switch users mid-request and would otherwise read
+	// the previous user's events (the same reason law_calendar_reset_caches()
+	// exists).
+	if ( array_key_exists( $user_id, $cache ) ) {
+		return $cache[ $user_id ];
+	}
+
+	$items = array();
 	if ( $user_id < 1 ) {
+		$cache[ $user_id ] = $items;
 		return $items;
 	}
 
@@ -139,10 +126,12 @@ function law_account_events() {
 			);
 		}
 		usort( $items, fn( $a, $b ) => strcmp( $a['event']['sort'], $b['event']['sort'] ) );
+		$cache[ $user_id ] = $items;
 		return $items;
 	}
 
 	if ( ! class_exists( 'GFAPI' ) ) {
+		$cache[ $user_id ] = $items;
 		return $items;
 	}
 
@@ -163,6 +152,7 @@ function law_account_events() {
 	);
 
 	if ( is_wp_error( $entries ) || ! is_array( $entries ) ) {
+		$cache[ $user_id ] = $items;
 		return $items;
 	}
 
@@ -183,7 +173,68 @@ function law_account_events() {
 		}
 	);
 
+	$cache[ $user_id ] = $items;
 	return $items;
+}
+
+/**
+ * Whether a user runs anything: owns or co-owns at least one event.
+ *
+ * This is what decides whether "My events" appears, in the header bar and on
+ * the account hub alike (Denis, 14 September 2026). It replaced the role test:
+ * with event_host and sponsor retired, "is this person a host" can only mean
+ * "does this person have an event", and offering everybody a link to an empty
+ * page would be noise. The same rule applies to the committee, who reach every
+ * event through Manage events and need the personal link only for their own.
+ *
+ * Memoised per user because the header renders twice per page (the desktop and
+ * mobile bars in parts/layout/top-nav.php) and the hub asks a third time.
+ *
+ * law_events_owned_event_ids() rather than law_account_events(): the latter
+ * hydrates every event through law_events_map_post(), which is the expensive
+ * part and pointless for a yes/no.
+ */
+function law_account_user_has_events( $user_id = 0, $reset = false ) {
+	static $cache = array();
+	if ( $reset ) {
+		$cache = array();
+	}
+
+	$user_id = $user_id ? (int) $user_id : get_current_user_id();
+	if ( $user_id < 1 ) {
+		return false;
+	}
+	if ( array_key_exists( $user_id, $cache ) ) {
+		return $cache[ $user_id ];
+	}
+
+	if ( 'cpt' === law_events_source() && function_exists( 'law_events_owned_event_ids' ) ) {
+		$ids = law_events_owned_event_ids( $user_id );
+		// The flagship is LAW's own event and its author is whoever ran the
+		// setup trigger, so without this an administrator would be offered a
+		// My events link to a page that filters it straight back out
+		// (law_account_events() excludes it too).
+		if ( function_exists( 'law_flagship_is' ) ) {
+			$ids = array_filter( $ids, static fn( $id ) => ! law_flagship_is( $id ) );
+		}
+		$cache[ $user_id ] = (bool) $ids;
+	} else {
+		// Legacy source: the entry query is current-user only, so this answers
+		// for the current user alone. Nothing asks it for another user there.
+		$cache[ $user_id ] = (bool) law_account_events();
+	}
+
+	return $cache[ $user_id ];
+}
+
+/**
+ * Drop both memoised results, the way law_calendar_reset_caches() does for the
+ * calendar's. For the tests, which create events and switch users inside a
+ * single request; production renders one user per request.
+ */
+function law_account_events_reset_cache() {
+	law_account_events( true );
+	law_account_user_has_events( 0, true );
 }
 
 /**

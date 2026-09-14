@@ -1,18 +1,29 @@
 <?php
 /**
  * Shared registration/profile fields (name, email, organisation, job title,
- * country, roles, accessibility, dietary), rendered inside the auth-hero.
+ * country, accessibility, dietary), rendered inside the auth-hero.
  *
  * Args: values (array), errors (array of field => [messages]), registration
- * (bool), locked_role (a law_registration_roles() key — the Role section is
- * hidden and the caller posts the role via a hidden input; the booking modal's
- * register link uses it to pre-select attendee).
+ * (bool).
+ *
+ * The Role checkboxes went on 14 September 2026, and with them the locked_role
+ * arg the booking modal used to pass: there are no self-service roles left to
+ * choose or to lock. The optional "I plan to host an event" tick that briefly
+ * replaced them came off the same day (Denis): neither form asks anything
+ * about what somebody intends to do, because nothing about the site depends on
+ * the answer any more.
+ *
+ * The law_intent storage behind that tick is intact and still holds what
+ * migration step 11 read out of the old roles; see
+ * functions/events/registration.php. Nothing writes it while no form offers
+ * it, and a save through these fields deliberately leaves it alone.
  */
 
 $law_values = (array) ( $args['values'] ?? array() );
 $law_errors = (array) ( $args['errors'] ?? array() );
-// Registration mirrors form 1's required set (organisation, job title,
-// country, role); the profile requires only country, like form 3.
+// Registration mirrors form 1 (User registration)'s required set (organisation,
+// job title, country); the profile requires only country, like form 3 (User
+// profile). The intent ticks are optional on both.
 $law_registration_mode = ! empty( $args['registration'] );
 
 $law_pf_error = function ( $field ) use ( $law_errors ) {
@@ -65,22 +76,6 @@ $law_countries = law_registration_country_choices();
 		<?php endif; ?>
 		<?php $law_pf_error( 'country' ); ?></p>
 </div>
-
-<?php if ( empty( $args['locked_role'] ) ) : ?>
-<div class="law-form-field<?php echo esc_attr( $law_pf_class( 'roles' ) ); ?>">
-	<span class="law-form-label">Role<?php echo $law_registration_mode ? ' *' : ''; ?></span>
-	<div class="law-choices">
-		<?php
-		$law_chosen_roles = (array) $law_pf_value( 'roles', array() );
-		foreach ( law_registration_roles() as $law_role_slug => $law_role_label ) :
-			?>
-			<label><input type="checkbox" name="roles[]" value="<?php echo esc_attr( $law_role_slug ); ?>" <?php checked( in_array( $law_role_slug, $law_chosen_roles, true ) ); ?>>
-				<?php echo esc_html( $law_role_label ); ?></label>
-		<?php endforeach; ?>
-	</div>
-	<?php $law_pf_error( 'roles' ); ?>
-</div>
-<?php endif; ?>
 
 <fieldset>
 	<legend>Requirements</legend>

@@ -849,8 +849,10 @@ function law_booking_unlock( $event_id ) {
 
 /**
  * Resolve one attendee row to a user account: link an existing account by
- * email (granting the attendee role if missing), or create a new attendee
- * account. Sends NOTHING — the booking does not exist yet when this runs, so
+ * email, or create a new one. Booking grants nothing: any signed-in person may
+ * book, and since 14 September 2026 there is no attendee role to grant, so a
+ * linked account keeps exactly the roles it had. Sends NOTHING — the booking
+ * does not exist yet when this runs, so
  * its number is not known; law_booking_notify_attendee() does the email once
  * the booking is written.
  *
@@ -877,7 +879,7 @@ function law_booking_resolve_attendee_user( array $row, $event_id, $actor ) {
 		$email,
 		$row['name'],
 		$row['organisation'],
-		array( 'role' => 'attendee', 'job_title' => $row['job_title'] )
+		array( 'job_title' => $row['job_title'] )
 	);
 	if ( is_wp_error( $user_id ) ) {
 		law_event_log(
@@ -900,24 +902,6 @@ function law_booking_resolve_attendee_user( array $row, $event_id, $actor ) {
 		array( 'user_id' => (int) $actor )
 	);
 	return array( 'user_id' => (int) $user_id, 'created' => true );
-}
-
-/**
- * Grant the attendee role to a user who lacks it. Any signed-in person may
- * book: the role is granted, never required (settled).
- */
-function law_booking_grant_attendee_role( $user_id, $event_id, $actor_id ) {
-	$user = get_user_by( 'id', (int) $user_id );
-	if ( ! $user || in_array( 'attendee', (array) $user->roles, true ) ) {
-		return;
-	}
-	$user->add_role( 'attendee' );
-	law_event_log(
-		$event_id,
-		sprintf( 'Attendee role granted to %s (%s) on booking.', $user->display_name, $user->user_email ),
-		array( 'action' => 'booking_role_granted', 'user' => (int) $user->ID, 'source' => 'bookings' ),
-		array( 'user_id' => (int) $actor_id )
-	);
 }
 
 /**
@@ -1201,10 +1185,6 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
 
 	$sold = law_event_recount_attendees( $event_id );
 	law_booking_unlock( $event_id );
-
-	foreach ( $people as $person ) {
-		law_booking_grant_attendee_role( (int) $person['user_id'], $event_id, $actor_id );
-	}
 
 	$actor = $actor_id !== $booker_id ? get_user_by( 'id', $actor_id ) : null;
 	foreach ( $ids as $i => $booking_id ) {
@@ -1591,8 +1571,6 @@ function law_booking_add_attendee( $event_id, $booker_id, array $raw_row, $actor
 
 	$sold = law_event_recount_attendees( $event_id );
 	law_booking_unlock( $event_id );
-
-	law_booking_grant_attendee_role( (int) $row['user_id'], $event_id, $actor_id );
 
 	$booker = get_user_by( 'id', $booker_id );
 	law_event_log(

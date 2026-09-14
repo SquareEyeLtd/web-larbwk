@@ -114,7 +114,7 @@ class EventFlagsTest extends LAW_Test_Case {
 	/* The save guard: the data-loss regression this exists to prevent ________ */
 
 	public function test_a_save_without_the_section_leaves_sessions_untouched(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event( array(), 'law-proposed', $host );
 		law_event_update_meta( $event, '_law_session_agenda', 1 );
 		law_events_form_save_sessions( $event, array( $this->session_row( array( 'title' => 'Keep me' ) ) ) );
@@ -132,7 +132,7 @@ class EventFlagsTest extends LAW_Test_Case {
 	}
 
 	public function test_a_forged_sentinel_cannot_create_sessions_on_a_gated_event(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event( array(), 'law-proposed', $host );
 		$this->assertFalse( law_event_has_session_agenda( $event ) );
 
@@ -155,7 +155,7 @@ class EventFlagsTest extends LAW_Test_Case {
 	}
 
 	public function test_discarded_rows_are_logged_rather_than_dropped_silently(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event( array(), 'law-proposed', $host );
 
 		law_events_form_save(
@@ -185,7 +185,7 @@ class EventFlagsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_section_still_saves_when_the_gate_is_open(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event( array(), 'law-proposed', $host );
 		law_event_update_meta( $event, '_law_session_agenda', 1 );
 

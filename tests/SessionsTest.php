@@ -213,7 +213,7 @@ class SessionsTest extends LAW_Test_Case {
 	}
 
 	public function test_clearing_a_sessions_fields_deletes_it_without_a_validation_error(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event( array(), 'law-proposed', $host );
 		law_event_update_meta( $event, '_law_session_agenda', 1 );
 		law_events_form_save_sessions( $event, array( $this->row( array( 'title' => 'To be cleared' ) ) ) );

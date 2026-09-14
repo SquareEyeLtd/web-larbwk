@@ -41,7 +41,7 @@ class FlagshipBookingsDashboardTest extends LAW_Test_Case {
 
 	/** An application, straight to the state under test. */
 	private function make_application( string $status = 'law-applied', string $payment = 'ready' ): int {
-		$user_id = $this->make_user( 'attendee' );
+		$user_id = $this->make_user();
 		wp_update_user( array( 'ID' => $user_id, 'first_name' => 'Ada', 'last_name' => 'Lovelace' ) );
 		update_user_meta( $user_id, 'country', 'United Kingdom' );
 

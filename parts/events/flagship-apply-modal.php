@@ -68,7 +68,7 @@ if ( ! is_user_logged_in() ) :
 	<p class="law-modal__copy"><?php esc_html_e( 'You need an account to apply for a place at the conference. It only takes a minute, and you will come straight back here.', 'law' ); ?></p>
 	<p class="law-modal__actions law-booking-auth">
 		<a class="button second" href="<?php echo esc_url( wp_login_url( $law_fa_permalink ) ); ?>"><?php esc_html_e( 'Sign in', 'law' ); ?></a>
-		<a class="button orange" href="<?php echo esc_url( add_query_arg( array( 'role' => 'attendee', 'redirect_to' => $law_fa_permalink ), home_url( '/register/' ) ) ); ?>"><?php esc_html_e( 'Create an account', 'law' ); ?></a>
+		<a class="button orange" href="<?php echo esc_url( add_query_arg( array( 'redirect_to' => $law_fa_permalink ), home_url( '/register/' ) ) ); ?>"><?php esc_html_e( 'Create an account', 'law' ); ?></a>
 	</p>
 	<?php
 elseif ( $law_fa_missing ) :

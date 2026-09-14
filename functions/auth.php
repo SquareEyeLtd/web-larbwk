@@ -44,25 +44,48 @@ function law_auth_mode() {
 }
 
 /**
+ * Where a sign-in lands when nothing better was asked for: the account hub.
+ *
+ * It was /account/events/ until 14 September 2026, which made sense while only
+ * hosts and sponsors had anything to do on the site. With the self-service
+ * roles retired, everybody gets the same landing page and picks their errand
+ * from its tiles.
+ *
+ * A literal path rather than law_account_url( 'account' ): this file loads with
+ * the shared front-end functions, before header-nav.php, and the login page
+ * renders on environments where the account pages may not be provisioned yet.
+ *
+ * One helper, used by both law_auth_redirect_to() and the committee filter
+ * below, because that filter only overrides a redirect that EQUALS the default.
+ * Change one site and not the other and the committee shortcut silently stops
+ * firing.
+ */
+function law_auth_default_redirect() {
+	return home_url( '/account/' );
+}
+
+/**
  * Where to send users after a successful sign-in. A redirect_to passed to the
  * page (e.g. by auth_redirect() from a protected page) wins over the default.
  */
 function law_auth_redirect_to() {
 	$redirect = isset( $_REQUEST['redirect_to'] ) ? wp_unslash( $_REQUEST['redirect_to'] ) : '';
 	$redirect = wp_validate_redirect( $redirect, '' );
-	return $redirect ? $redirect : home_url( '/account/events/' );
+	return $redirect ? $redirect : law_auth_default_redirect();
 }
 
 /**
- * Committee members land on their review queue, not the host "My events" page.
- * That page is empty for them and there is otherwise no in-app path to the
- * dashboard, so a committee member would have to know the URL. Runs on core's
- * post-authentication redirect, where the WP_User is known.
+ * Committee members land on their review queue rather than the account hub.
+ * The hub would be one extra click on every sign-in for people who sign in to
+ * work the queue (Denis, 14 September 2026: keep the shortcut). Their personal
+ * tiles are still on the hub whenever they want them.
+ *
+ * Runs on core's post-authentication redirect, where the WP_User is known.
  */
 add_filter( 'login_redirect', 'law_auth_committee_redirect', 10, 3 );
 function law_auth_committee_redirect( $redirect_to, $requested, $user ) {
 	if ( $user instanceof WP_User && user_can( $user, 'edit_others_law_events' ) ) {
-		$default = home_url( '/account/events/' );
+		$default = law_auth_default_redirect();
 		if ( '' === (string) $redirect_to || untrailingslashit( $redirect_to ) === untrailingslashit( $default ) ) {
 			return home_url( '/account/dashboard/' );
 		}
@@ -280,7 +303,7 @@ add_shortcode( 'law_login', function () {
 		?>
 		<p>You are signed in.
 			<a href="<?php echo esc_url( home_url( '/account/' ) ); ?>">Go to your account</a> &middot;
-			<a href="<?php echo esc_url( wp_logout_url( law_auth_login_url() ) ); ?>">Log out</a></p>
+			<a href="<?php echo esc_url( wp_logout_url( law_auth_login_url() ) ); ?>">Sign out</a></p>
 		<?php
 	} else {
 		law_auth_render_form();

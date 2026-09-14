@@ -21,7 +21,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_take_and_read_the_lock(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 
@@ -37,7 +37,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_release_frees_the_event_instead_of_waiting_out_the_window(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 
@@ -58,7 +58,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_a_lock_is_only_ever_released_by_the_user_holding_it(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 
@@ -71,7 +71,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_a_stale_release_cannot_clear_a_newer_lock(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 
 		wp_set_current_user( $host );
@@ -86,7 +86,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_heartbeat_refreshes_the_holders_lock(): void {
-		$host     = $this->make_user( 'event_host' );
+		$host     = $this->make_user();
 		$event_id = $this->make_event( array(), 'law-approved', $host );
 
 		wp_set_current_user( $host );
@@ -101,7 +101,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_heartbeat_reports_a_takeover_and_then_hands_the_lock_over(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 
@@ -125,8 +125,8 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_heartbeat_ignores_someone_with_no_access_to_the_event(): void {
-		$host      = $this->make_user( 'event_host' );
-		$stranger  = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
+		$stranger  = $this->make_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 
 		wp_set_current_user( $stranger );
@@ -142,7 +142,7 @@ class EditLockTest extends LAW_Test_Case {
 	}
 
 	public function test_lock_field_takes_the_lock_and_publishes_it_to_the_browser(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		$event_id  = $this->make_event( array(), 'law-approved', $host );
 

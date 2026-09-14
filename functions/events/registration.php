@@ -5,41 +5,119 @@
  * feeds, the GW Auto Login step and the mu-plugin checkbox sync
  * (EVENTS_4.1_REBUILD.md §7 phase D).
  *
- * Carried behaviours: username = email, display name "First Last", the role
- * checkboxes limited to the three self-service roles, user meta keys
- * organisation / job_title / country / accessibility_other / dietary_other,
- * the ACF fields law_role / accessibility / dietary, the HubSpot contact
+ * Carried behaviours: username = email, display name "First Last", user meta
+ * keys organisation / job_title / country / accessibility_other /
+ * dietary_other, the ACF fields accessibility / dietary, the HubSpot contact
  * type tags, auto-login with the /account/?action=registered redirect, and
  * the active "Email to admins > user registration" notification.
+ *
+ * The role checkboxes went on 14 September 2026 (Denis): the three
+ * self-service roles event_host, sponsor and attendee are retired, every
+ * self-service account is a plain subscriber, and any signed-in person may
+ * submit an event or book a place. What the checkboxes used to say about
+ * somebody survives as OPTIONAL user meta, law_intent (see
+ * law_registration_intents()), which chooses the welcome email and the
+ * HubSpot tags and gates nothing at all. ROLES_AND_ACCOUNT_HUB.md is the
+ * contract; migration step 11 converts the existing accounts.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/** Self-service roles (mirrors law_self_service_roles()): slug => label. */
-function law_registration_roles() {
+/**
+ * The law_intent vocabulary: key => the label a form would use.
+ *
+ * **No form renders these today.** They replaced the role checkboxes on
+ * 14 September 2026 and came off the forms the same day (Denis), because
+ * nothing about the site depends on the answer: anyone signed in may submit an
+ * event and book a place whatever is stored here, and nothing in this key may
+ * ever become a gate.
+ *
+ * The vocabulary and its storage stay for two reasons. Migration step 11 seeded
+ * this key for every account it converted, so it holds the only translation of
+ * what the retired roles said about 302 people; and it is what
+ * law_registration_hubspot_tags() reads to produce the "<year> Event Host" and
+ * "<year> Sponsor" tags the client segments on. Both would be lost by deleting
+ * it.
+ *
+ * What follows from nothing rendering it: new registrations store an empty
+ * array (asked nothing, so nothing ticked), and they all get the general
+ * welcome email rather than the hosting one. Put a tick back on a form and both
+ * come back with it.
+ */
+function law_registration_intents() {
 	return array(
-		'sponsor'    => 'LAW sponsor',
-		'event_host' => 'Event host',
-		'attendee'   => 'Event attendee',
+		'host'    => 'I plan to host an event',
+		'sponsor' => 'I represent a LAW sponsor',
 	);
 }
 
 /**
- * Which welcome email a new registration gets. Two templates, one per
- * audience: event host or sponsor wins over attendee, so someone who ticked
- * both is welcomed as a host rather than being asked for dietary and
- * accessibility requirements up front. The floor matches
- * law_registration_sync_roles(): no roles means attendee.
+ * The three retired self-service roles.
  *
- * @param string[] $roles The stored self-service roles.
+ * Kept for exactly two jobs: migration step 11 (law_migration_run_retire_roles()),
+ * which strips them, and the guard in law_registration_apply_attendee_profile(),
+ * which must keep recognising a not-yet-migrated account during the window
+ * between the deploy and the step. Nothing else may read this: the roles are
+ * dead as an access signal.
+ *
+ * They stay DEFINED in wp_user_roles deliberately (the mu-plugin
+ * law-secondary-host-users.php re-registers event_host on every init anyway),
+ * so a rollback is a code revert rather than a data rebuild.
+ */
+function law_registration_legacy_roles() {
+	return array( 'event_host', 'sponsor', 'attendee' );
+}
+
+/**
+ * The stored intents for a user, whitelisted against the current choice list.
+ *
+ * An empty array means "asked, nothing ticked". NO row at all means "never
+ * asked": the accounts the engines create for co-owners and colleagues, and
+ * every account from before migration step 11 ran. Step 11 relies on that
+ * distinction (metadata_exists()) so it never overwrites somebody who edited
+ * their profile between two runs.
+ *
+ * @return string[]
+ */
+function law_registration_read_intent( $user_id ) {
+	return array_values( array_intersect(
+		(array) get_user_meta( (int) $user_id, 'law_intent', true ),
+		array_keys( law_registration_intents() )
+	) );
+}
+
+/**
+ * Store the intents for a user, whitelisted. The single write path.
+ *
+ * @return string[] What was actually stored.
+ */
+function law_registration_write_intent( $user_id, array $intents ) {
+	$intents = array_values( array_intersect(
+		array_map( 'sanitize_key', $intents ),
+		array_keys( law_registration_intents() )
+	) );
+	update_user_meta( (int) $user_id, 'law_intent', $intents );
+	return $intents;
+}
+
+/**
+ * Which welcome email a new registration gets. Two templates, one per
+ * audience: any stored intent means the hosting-side copy, which leads with
+ * {submit_link}, and none means the general copy, which asks for dietary and
+ * accessibility requirements up front.
+ *
+ * Since no form collects an intent, every NEW registration currently takes the
+ * general copy. The hosting template stays in the registry, editable on the
+ * Emails screen and one tick away from being used again; it is also what the
+ * seeded accounts would match if anything ever mailed them.
+ *
+ * @param string[] $intents The stored law_intent values.
  * @return string A law_events_email_registry() slug.
  */
-function law_registration_welcome_slug( array $roles ) {
-	return array_intersect( array( 'event_host', 'sponsor' ), $roles ?: array( 'attendee' ) )
-		? 'user_welcome_registered_host'
-		: 'user_welcome_registered';
+function law_registration_welcome_slug( array $intents ) {
+	return $intents ? 'user_welcome_registered_host' : 'user_welcome_registered';
 }
 
 /**
@@ -116,14 +194,23 @@ function law_registration_validate_country( $country, $required ) {
 	return '';
 }
 
-/** The HubSpot contact type tags (mirrors functions/hubspot.php). */
-function law_registration_hubspot_tags( array $roles ) {
+/**
+ * The HubSpot contact type tags (mirrors functions/hubspot.php).
+ *
+ * Driven by the optional intent ticks since 14 September 2026, not by roles.
+ * The tag STRINGS are deliberately unchanged, so the values already stored in
+ * law_hubspot_contact_type stay comparable and whatever reads them downstream
+ * (Make, outside this codebase) sees the same vocabulary it always has.
+ *
+ * @param string[] $intents The stored law_intent values.
+ */
+function law_registration_hubspot_tags( array $intents ) {
 	$year = (int) law_events_setting( 'year', (int) gmdate( 'Y' ) );
 	$tags = array( $year . ' Registered user' );
-	if ( in_array( 'sponsor', $roles, true ) ) {
+	if ( in_array( 'sponsor', $intents, true ) ) {
 		$tags[] = $year . ' Sponsor';
 	}
-	if ( in_array( 'event_host', $roles, true ) ) {
+	if ( in_array( 'host', $intents, true ) ) {
 		$tags[] = $year . ' Event Host';
 	}
 	return implode( ';', $tags );
@@ -142,39 +229,34 @@ function law_registration_write_profile_meta( $user_id, array $input ) {
 		update_user_meta( $user_id, $key, $value );
 	}
 
-	$roles         = array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) );
+	// law_intent is written ONLY when a form actually offered it. No form does
+	// today (the tick came off on 14 September 2026), and this is the line that
+	// decides whether that is a tidy-up or a data loss: migration step 11 seeded
+	// this key for every account from the roles it was retiring, so blanking it
+	// on an unrelated profile save would quietly destroy the only translation of
+	// those roles, and with it the HubSpot Sponsor and Event Host tags. A form
+	// governs what it shows; it does not get to clear what it never asked about.
+	$intents = array_key_exists( 'law_intent', $input )
+		? law_registration_write_intent( $user_id, (array) $input['law_intent'] )
+		: law_registration_read_intent( $user_id );
+
 	$accessibility = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['accessibility'] ?? array() ) ), array_keys( law_registration_accessibility_choices() ) ) );
 	$dietary       = array_values( array_intersect( array_map( 'sanitize_text_field', (array) ( $input['dietary'] ?? array() ) ), law_registration_dietary_choices() ) );
 
-	// The ACF user fields the old mu-plugin synced (law_role, accessibility,
-	// dietary); update_field keeps ACF's storage format.
+	// The ACF user fields the old mu-plugin synced (accessibility, dietary);
+	// update_field keeps ACF's storage format.
+	//
+	// The third one, law_role, is no longer written (14 September 2026): its
+	// choices are the retired role slugs, so an intent key would be an
+	// off-list value, and writing role slugs would keep a dead vocabulary
+	// alive. Existing values are left exactly as they are; removing the ACF
+	// field and its rows belongs to the post-cutover cleanup ticket.
 	if ( function_exists( 'update_field' ) ) {
-		update_field( 'law_role', $roles, 'user_' . $user_id );
 		update_field( 'accessibility', $accessibility, 'user_' . $user_id );
 		update_field( 'dietary', $dietary, 'user_' . $user_id );
 	}
 
-	return $roles;
-}
-
-/**
- * Apply self-service roles: selected ones added, unselected self-service
- * ones removed; administrator/events_committee and everything else are never
- * touched; a user can never end up role-less (attendee is the floor).
- */
-function law_registration_sync_roles( $user_id, array $selected ) {
-	$user = new WP_User( $user_id );
-	$self = array_keys( law_registration_roles() );
-	foreach ( $self as $role ) {
-		if ( in_array( $role, $selected, true ) ) {
-			$user->add_role( $role );
-		} else {
-			$user->remove_role( $role );
-		}
-	}
-	if ( empty( $user->roles ) ) {
-		$user->add_role( 'attendee' );
-	}
+	return $intents;
 }
 
 /* Profiles filled in on somebody else's behalf _______________________________ */
@@ -241,9 +323,9 @@ function law_registration_validate_attendee_profile( array $clean, $country_requ
  * accessibility and dietary lists are written with their "Other" text or not at
  * all, so free text can never end up attached to a list that was left alone.
  *
- * An account that already existed and holds anything beyond the three
- * self-service roles — an administrator, a committee member — is not written to
- * at all (security review, 11 September 2026). Whoever fills this form chooses
+ * An account that already existed and holds anything beyond subscriber — an
+ * administrator, a committee member — is not written to at all (security
+ * review, 11 September 2026). Whoever fills this form chooses
  * the email address, and the account it lands on is found by that address
  * alone, so a host could otherwise put accessibility or dietary details, which
  * are health-adjacent data, onto a committee member's account simply by knowing
@@ -259,7 +341,12 @@ function law_registration_apply_attendee_profile( $user_id, array $clean, $is_ne
 
 	if ( ! $is_new_account ) {
 		$user = get_user_by( 'id', $user_id );
-		if ( ! $user || array_diff( (array) $user->roles, array_keys( law_registration_roles() ) ) ) {
+		// Subscriber is the self-service role now; the three retired ones are
+		// named as well so an account that has not yet been through migration
+		// step 11 is still recognised as an ordinary person during the window
+		// between the deploy and the step. Get this wrong and the function
+		// returns early for EVERY account, silently, with nothing logged.
+		if ( ! $user || array_diff( (array) $user->roles, array_merge( array( 'subscriber' ), law_registration_legacy_roles() ) ) ) {
 			return $written;
 		}
 	}
@@ -304,14 +391,12 @@ add_action( 'admin_post_law_register', function () {
 function law_registration_handler() {
 	check_admin_referer( 'law_register' );
 
-	// The booking modal's register link arrives with a locked role and a
-	// return destination; both survive the whole round trip, error paths
-	// included, so the new attendee lands back on the event they were booking.
+	// The booking modal's register link arrives with a return destination,
+	// which survives the whole round trip, error paths included, so the new
+	// attendee lands back on the event they were booking. It used to carry a
+	// locked role too; roles went on 14 September 2026 and there is nothing to
+	// lock any more, because everyone signed in may book and submit.
 	$redirect_to = wp_validate_redirect( wp_unslash( (string) ( $_POST['redirect_to'] ?? '' ) ), '' );
-	$locked_role = sanitize_key( (string) ( $_POST['locked_role'] ?? '' ) );
-	if ( ! isset( law_registration_roles()[ $locked_role ] ) ) {
-		$locked_role = '';
-	}
 
 	// Honeypot: pretend success.
 	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
@@ -366,9 +451,6 @@ function law_registration_handler() {
 	if ( $country_error ) {
 		$errors->add( 'country', $country_error );
 	}
-	if ( ! array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) ) {
-		$errors->add( 'roles', 'Please choose at least one role.' );
-	}
 	// Deliberate divergence from form 1 (User registration), which left fields 18
 	// and 20 ("Other: please specify") optional: ticking Other and saying nothing
 	// records a requirement nobody can act on. Form 3 (User profile) already
@@ -385,9 +467,6 @@ function law_registration_handler() {
 		unset( $safe_input['password'], $safe_input['password_confirm'] );
 		law_registration_store_state( array( 'errors' => $errors->errors, 'input' => $safe_input ) );
 		$back = add_query_arg( 'law_form_error', 1, home_url( '/register/' ) );
-		if ( '' !== $locked_role ) {
-			$back = add_query_arg( 'role', $locked_role, $back );
-		}
 		if ( '' !== $redirect_to ) {
 			$back = add_query_arg( 'redirect_to', rawurlencode( $redirect_to ), $back );
 		}
@@ -395,13 +474,10 @@ function law_registration_handler() {
 		exit;
 	}
 
-	$roles = array_values( array_intersect( array_map( 'sanitize_key', (array) ( $input['roles'] ?? array() ) ), array_keys( law_registration_roles() ) ) );
-	// A locked role is enforced, not just hidden (security review, 7 September
-	// 2026): the booking modal's attendee-only entry point must not accept a
-	// tampered roles[] adding event_host/sponsor alongside it.
-	if ( '' !== $locked_role ) {
-		$roles = array( $locked_role );
-	}
+	// Every self-service account is a plain subscriber (14 September 2026).
+	// There is nothing for a tampered request to escalate to any more: the
+	// form posts intents, which are meta, and the role is not taken from
+	// input at all.
 	$user_id = wp_insert_user(
 		array(
 			'user_login'   => $email,
@@ -411,7 +487,7 @@ function law_registration_handler() {
 			'last_name'    => $last,
 			'nickname'     => $first,
 			'display_name' => trim( $first . ' ' . $last ),
-			'role'         => $roles ? $roles[0] : 'attendee',
+			'role'         => 'subscriber',
 		)
 	);
 	if ( is_wp_error( $user_id ) ) {
@@ -422,18 +498,14 @@ function law_registration_handler() {
 		exit;
 	}
 
-	foreach ( array_slice( $roles, 1 ) as $extra_role ) {
-		( new WP_User( $user_id ) )->add_role( $extra_role );
-	}
-	$stored_roles = law_registration_write_profile_meta( $user_id, $input );
-	update_user_meta( $user_id, 'law_hubspot_contact_type', law_registration_hubspot_tags( $stored_roles ) );
+	$stored_intents = law_registration_write_profile_meta( $user_id, $input );
+	update_user_meta( $user_id, 'law_hubspot_contact_type', law_registration_hubspot_tags( $stored_intents ) );
 
 	// The active admins notification (and the inactive Square Eye one).
 	$user = get_user_by( 'id', $user_id );
 	$placeholders = array(
 		'user_name'  => $user->display_name,
 		'user_email' => $user->user_email,
-		'user_roles' => implode( ', ', array_map( fn( $r ) => law_registration_roles()[ $r ] ?? $r, $stored_roles ?: array( 'attendee' ) ) ),
 	);
 	law_events_send( 'admins_user_registered', 0, array( 'placeholders' => $placeholders ) );
 	law_events_send( 'squareeye_user_registered', 0, array( 'placeholders' => $placeholders ) );
@@ -441,10 +513,10 @@ function law_registration_handler() {
 	// admin notices above it has no event, so it is the one send the activity
 	// log cannot record (law_event_log() needs an event to attach to).
 	//
-	// Host/sponsor and attendee get different copy. $stored_roles is the right
-	// input, not law_account_user_is_host_like(), which reads the current user
-	// and folds in committee/administrator/editor.
-	$welcome_slug = law_registration_welcome_slug( $stored_roles );
+	// Hosting-side and attendee copy differ. $stored_intents is the right
+	// input, not law_account_user_is_host_like(), which is now simply "signed
+	// in" and would hand everybody the hosting copy.
+	$welcome_slug = law_registration_welcome_slug( $stored_intents );
 	law_events_send( $welcome_slug, 0, array( 'to' => array( $user->user_email ), 'placeholders' => $placeholders ) );
 
 	// Auto-login (replacing GW Auto Login) + the form 1 confirmation redirect.
@@ -495,7 +567,7 @@ function law_registration_state() {
 function law_profile_store_error_state( $user_id, array $errors, array $input ) {
 	$safe_input = law_events_form_reusable_input( $input );
 	unset( $safe_input['password'], $safe_input['password_confirm'], $safe_input['current_password'] );
-	foreach ( array( 'roles', 'accessibility', 'dietary' ) as $group ) {
+	foreach ( array( 'accessibility', 'dietary' ) as $group ) {
 		$safe_input[ $group ] = (array) ( $input[ $group ] ?? array() );
 	}
 	set_transient( 'law_profile_state_' . $user_id, array( 'errors' => $errors, 'input' => $safe_input ), 10 * MINUTE_IN_SECONDS );
@@ -620,9 +692,8 @@ function law_profile_handler() {
 		);
 	}
 
-	$roles = law_registration_write_profile_meta( $user_id, $input );
-	law_registration_sync_roles( $user_id, $roles );
-	update_user_meta( $user_id, 'law_hubspot_contact_type', law_registration_hubspot_tags( $roles ) );
+	$intents = law_registration_write_profile_meta( $user_id, $input );
+	update_user_meta( $user_id, 'law_hubspot_contact_type', law_registration_hubspot_tags( $intents ) );
 
 	// A password change logs other sessions out; keep this one alive.
 	if ( $change_password ) {
@@ -657,7 +728,7 @@ function law_profile_values( $user_id ) {
 		'organisation'        => (string) get_user_meta( $user_id, 'organisation', true ),
 		'job_title'           => (string) get_user_meta( $user_id, 'job_title', true ),
 		'country'             => (string) get_user_meta( $user_id, 'country', true ),
-		'roles'               => array_values( array_intersect( (array) $user->roles, array_keys( law_registration_roles() ) ) ),
+		'law_intent'          => law_registration_read_intent( $user_id ),
 		'accessibility'       => $acf ? (array) get_field( 'accessibility', 'user_' . $user_id ) : array(),
 		'dietary'             => $acf ? (array) get_field( 'dietary', 'user_' . $user_id ) : array(),
 		'accessibility_other' => (string) get_user_meta( $user_id, 'accessibility_other', true ),

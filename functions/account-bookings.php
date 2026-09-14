@@ -298,19 +298,22 @@ function law_booking_counts_label( $event_id ) {
 }
 
 /**
- * Whether the My events host section (cards, empty state, Submit toolbar)
- * applies to this user at all: pure attendees must not be invited to
- * "Submit an event" under their bookings.
+ * Signed in, which is all "host-like" can mean since the self-service roles
+ * were retired on 14 September 2026: anybody with an account may submit an
+ * event and book a place.
+ *
+ * The name is kept rather than corrected because it is the [user-content
+ * role="host"] audience's seam (functions/shortcodes.php), so editor content
+ * and the documentation both name it; renaming would break page copy for no
+ * behavioural gain. Its other callers went with this change: the header bar
+ * asks law_account_user_has_events() for the My events item, and
+ * /account/events/ no longer redirects anybody.
+ *
+ * Deliberately NOT a wrapper over law_events_user_can_submit(): this file
+ * loads with the shared front-end functions, before the events module.
  */
 function law_account_user_is_host_like() {
-	if ( ! is_user_logged_in() ) {
-		return false;
-	}
-	if ( function_exists( 'law_user_is_committee' ) && law_user_is_committee() ) {
-		return true;
-	}
-	$roles = (array) wp_get_current_user()->roles;
-	return (bool) array_intersect( array( 'event_host', 'sponsor', 'administrator', 'editor' ), $roles );
+	return is_user_logged_in();
 }
 
 /**

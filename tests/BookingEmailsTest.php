@@ -149,7 +149,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 
 	public function test_booking_confirmation_carries_ics_attachment(): void {
 		$event = $this->make_bookable_event();
-		$owner = $this->make_user( 'attendee' );
+		$owner = $this->make_user();
 		$this->make_booking( $event, $owner, array() );
 
 		$to_owner = $this->mail_to( get_userdata( $owner )->user_email );
@@ -162,8 +162,8 @@ class BookingEmailsTest extends LAW_Test_Case {
 
 	public function test_invite_and_added_emails_resolve_per_account_state(): void {
 		$event    = $this->make_bookable_event();
-		$booker   = $this->make_user( 'attendee' );
-		$existing = $this->make_user( 'attendee' );
+		$booker   = $this->make_user();
+		$existing = $this->make_user();
 		$known    = get_userdata( $existing )->user_email;
 		$fresh    = $this->unique_email( 'fresh' );
 		$this->mail = array();
@@ -205,7 +205,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 		// run: make_bookable_event() leaves post_author 0, and get_userdata( 0 )
 		// is false, which used to skip them silently.
 		$this->activate_email( 'host_booking_received' );
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$event     = $this->make_event(
 			array(
 				'_law_tickets_available' => 10,
@@ -220,7 +220,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 		wp_update_user( array( 'ID' => $committee, 'display_name' => 'Casey Committee' ) );
 
 		// Existing account: the plain "registered" template, no password link.
-		$existing = $this->make_user( 'attendee' );
+		$existing = $this->make_user();
 		$email    = get_userdata( $existing )->user_email;
 		$booking  = law_booking_register_by_manager( $event, array( 'name' => 'Ex Isting', 'email' => $email, 'organisation' => 'Test Org', 'job_title' => 'Associate' ), $committee );
 		$this->assertIsInt( $booking );
@@ -255,7 +255,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 
 	public function test_cancel_templates_per_context(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$g1     = $this->unique_email( 'g1' );
 		$g2     = $this->unique_email( 'g2' );
 
@@ -284,7 +284,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 
 	public function test_cancel_party_emails_each_person_with_their_number(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$g1     = $this->unique_email( 'g1' );
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'G One', $g1 ) ) );
 		$this->mail = array();
@@ -304,7 +304,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 	}
 
 	public function test_capacity_warning_mails_host_once(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event(
 			array(
 				'_law_tickets_available' => 6,
@@ -315,8 +315,8 @@ class BookingEmailsTest extends LAW_Test_Case {
 			$host
 		);
 
-		$this->make_booking( $event, $this->make_user( 'attendee' ), array() ); // 5 remain: warn.
-		$this->make_booking( $event, $this->make_user( 'attendee' ), array() ); // 4 remain: latched.
+		$this->make_booking( $event, $this->make_user(), array() ); // 5 remain: warn.
+		$this->make_booking( $event, $this->make_user(), array() ); // 4 remain: latched.
 
 		$host_mail = $this->mail_to( get_userdata( $host )->user_email );
 		$warnings  = array_filter( $host_mail, fn( $m ) => str_contains( $m['subject'], 'nearly full' ) );
@@ -347,7 +347,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 	 * extra.
 	 */
 	public function test_capacity_warning_fires_at_ten_percent_on_a_large_event(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event(
 			array(
 				'_law_tickets_available' => 100,
@@ -374,7 +374,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 	/** Both stages in order, through the engine, on a two-place event. */
 	public function test_full_event_emails_the_host_and_the_assignee_once(): void {
 		law_events_update_settings( array( 'committee_emails' => array( 'committee-list@example.test' ) ) );
-		$host     = $this->make_user( 'event_host' );
+		$host     = $this->make_user();
 		$assignee = $this->make_committee_user();
 		$event    = $this->make_event(
 			array(
@@ -388,11 +388,11 @@ class BookingEmailsTest extends LAW_Test_Case {
 		);
 		$host_email = get_userdata( $host )->user_email;
 
-		$this->make_booking( $event, $this->make_user( 'attendee' ), array() ); // 1 left.
+		$this->make_booking( $event, $this->make_user(), array() ); // 1 left.
 		$this->assertCount( 1, $this->subjects_to( $host_email, 'nearly full' ) );
 		$this->assertEmpty( $this->subjects_to( $host_email, 'fully booked' ), 'Not full yet.' );
 
-		$this->make_booking( $event, $this->make_user( 'attendee' ), array() ); // 0 left.
+		$this->make_booking( $event, $this->make_user(), array() ); // 0 left.
 		$this->assertCount( 1, $this->subjects_to( $host_email, 'fully booked' ), 'The host hears the last place has gone.' );
 		$this->assertCount( 1, $this->subjects_to( $host_email, 'nearly full' ), 'And not a second nearly-full copy.' );
 
@@ -415,7 +415,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 	 * that far, but a multi-promotion waitlist pass can.
 	 */
 	public function test_jump_to_zero_sends_only_the_sold_out_email(): void {
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event(
 			array(
 				'_law_tickets_available' => 100,
@@ -442,7 +442,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 	 */
 	public function test_booking_received_emails_are_off_by_default(): void {
 		law_events_update_settings( array( 'committee_emails' => array( 'committee-list@example.test' ) ) );
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event = $this->make_event(
 			array(
 				'_law_tickets_available' => 10,
@@ -453,7 +453,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 			$host
 		);
 
-		$this->make_booking( $event, $this->make_user( 'attendee' ), array() );
+		$this->make_booking( $event, $this->make_user(), array() );
 
 		$this->assertEmpty( $this->subjects_to( get_userdata( $host )->user_email, 'New booking' ) );
 		$this->assertEmpty( $this->mail_to( 'committee-list@example.test' ) );
@@ -465,7 +465,7 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$assignee = $this->make_committee_user();
 		$event    = $this->make_bookable_event( array( '_law_assignee' => $assignee ) );
 
-		$this->make_booking( $event, $this->make_user( 'attendee' ), array() );
+		$this->make_booking( $event, $this->make_user(), array() );
 
 		$to_assignee = $this->mail_to( get_userdata( $assignee )->user_email );
 		$this->assertNotEmpty( $to_assignee, 'The assignee gets the new-booking email.' );

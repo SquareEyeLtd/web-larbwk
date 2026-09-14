@@ -71,7 +71,7 @@ if ( ! is_user_logged_in() ) :
 	); ?></p>
 	<p class="law-modal__actions law-booking-auth">
 		<a class="button second" href="<?php echo esc_url( wp_login_url( $law_bk_permalink ) ); ?>"><?php esc_html_e( 'Sign in', 'law' ); ?></a>
-		<a class="button orange" href="<?php echo esc_url( add_query_arg( array( 'role' => 'attendee', 'redirect_to' => $law_bk_permalink ), home_url( '/register/' ) ) ); ?>"><?php esc_html_e( 'Create an account', 'law' ); ?></a>
+		<a class="button orange" href="<?php echo esc_url( add_query_arg( array( 'redirect_to' => $law_bk_permalink ), home_url( '/register/' ) ) ); ?>"><?php esc_html_e( 'Create an account', 'law' ); ?></a>
 	</p>
 	<?php
 else :

@@ -15,14 +15,10 @@ $law_reg_state  = function_exists( 'law_registration_state' ) ? law_registration
 $law_reg_errors = (array) $law_reg_state['errors'];
 $law_reg_values = (array) $law_reg_state['input'];
 
-// The booking modal's register link: ?role=attendee locks the role (the Role
-// section is hidden and a hidden input posts it) and ?redirect_to= returns the
-// new user to the event page they came from. Both survive an error round trip
-// (the handler carries them back onto this URL).
-$law_reg_locked_role = sanitize_key( (string) ( $_GET['role'] ?? '' ) );
-if ( ! function_exists( 'law_registration_roles' ) || ! isset( law_registration_roles()[ $law_reg_locked_role ] ) ) {
-	$law_reg_locked_role = '';
-}
+// The booking modal's register link: ?redirect_to= returns the new user to the
+// event page they came from, and survives an error round trip (the handler
+// carries it back onto this URL). It used to carry ?role=attendee as well;
+// roles went on 14 September 2026 and any signed-in person may book.
 $law_reg_redirect = wp_validate_redirect( wp_unslash( (string) ( $_GET['redirect_to'] ?? '' ) ), '' );
 ?>
 
@@ -53,15 +49,11 @@ $law_reg_redirect = wp_validate_redirect( wp_unslash( (string) ( $_GET['redirect
 						<input type="hidden" name="action" value="law_register">
 						<?php wp_nonce_field( 'law_register' ); ?>
 						<?php law_events_honeypot_field(); ?>
-						<?php if ( '' !== $law_reg_locked_role ) : ?>
-							<input type="hidden" name="roles[]" value="<?php echo esc_attr( $law_reg_locked_role ); ?>">
-							<input type="hidden" name="locked_role" value="<?php echo esc_attr( $law_reg_locked_role ); ?>">
-						<?php endif; ?>
 						<?php if ( '' !== $law_reg_redirect ) : ?>
 							<input type="hidden" name="redirect_to" value="<?php echo esc_attr( $law_reg_redirect ); ?>">
 						<?php endif; ?>
 
-						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_reg_values, 'errors' => $law_reg_errors, 'registration' => true, 'locked_role' => $law_reg_locked_role ) ); ?>
+						<?php get_template_part( 'parts/events/profile-fields', null, array( 'values' => $law_reg_values, 'errors' => $law_reg_errors, 'registration' => true ) ); ?>
 
 						<fieldset>
 							<legend>Login details</legend>

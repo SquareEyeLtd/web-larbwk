@@ -35,7 +35,7 @@ class CancelWithdrawTest extends LAW_Test_Case {
 		$this->assertSame( 'law_reason_required', $no_reason->get_error_code() );
 
 		// Committee only.
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 		$their_own = $this->make_event( array(), 'publish', $host );
 		$not_theirs = law_event_workflow_transition( $their_own, 'cancel', array( 'reason' => 'Why.' ) );
@@ -141,7 +141,7 @@ class CancelWithdrawTest extends LAW_Test_Case {
 	}
 
 	public function test_withdraw_owner_only_and_pre_approval_only(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 
 		// The owner can withdraw from all three pre-approval statuses.
 		foreach ( array( 'law-draft', 'law-proposed', 'law-sent-back' ) as $from ) {
@@ -160,7 +160,7 @@ class CancelWithdrawTest extends LAW_Test_Case {
 		}
 
 		// Not someone else's event.
-		$other = $this->make_user( 'event_host' );
+		$other = $this->make_user();
 		wp_set_current_user( $other );
 		$event  = $this->make_event( array(), 'law-proposed', $host );
 		$result = law_event_workflow_transition( $event, 'withdraw' );
@@ -169,7 +169,7 @@ class CancelWithdrawTest extends LAW_Test_Case {
 	}
 
 	public function test_withdraw_emails_the_committee_except_for_drafts(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$proposed = $this->make_event( array(), 'law-proposed', $host );

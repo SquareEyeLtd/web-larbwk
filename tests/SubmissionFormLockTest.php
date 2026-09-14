@@ -40,7 +40,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	}
 
 	public function test_locked_fields_matrix(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 
 		$this->assertSame( array(), law_events_locked_fields( null, $host ) );
@@ -64,7 +64,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	}
 
 	public function test_committee_save_bypasses_locks_except_fees(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
@@ -91,7 +91,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	}
 
 	public function test_host_locks_unchanged_on_approved_event(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id       = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-approved', $host );
@@ -113,7 +113,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	}
 
 	public function test_committee_update_does_not_resubmit_sent_back_event(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
@@ -132,7 +132,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	}
 
 	public function test_host_explicit_submit_still_resubmits_sent_back_event(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-sent-back', $host );
@@ -149,7 +149,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	}
 
 	public function test_committee_edit_is_logged_and_host_edit_alert_suppressed(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
@@ -177,7 +177,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	 * of the save at the same time.
 	 */
 	public function test_committee_save_does_not_steal_ownership_or_reset_the_date(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
@@ -205,7 +205,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 		// The consequences the host would actually notice.
 		$this->assertTrue( law_user_can_manage_event( $host, $event_id ) );
 		$this->assertContains( $event_id, law_events_owned_event_ids( $host ) );
-		$this->assertFalse( law_user_can_manage_event( $this->make_user( 'event_host' ), $event_id ) );
+		$this->assertFalse( law_user_can_manage_event( $this->make_user(), $event_id ) );
 	}
 
 	/**
@@ -213,7 +213,7 @@ class SubmissionFormLockTest extends LAW_Test_Case {
 	 * locked, and law_events_map_post() reads an empty title as "no event".
 	 */
 	public function test_host_save_of_an_approved_event_keeps_the_locked_title(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-approved', $host );

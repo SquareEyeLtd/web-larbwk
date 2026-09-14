@@ -1,0 +1,160 @@
+/* The account hub (/account/, templates/account-hub.php)
+   -----------------------------------------------------------------------------
+
+   A grid of linked boxes, one per thing the signed-in person can do, built from
+   law_header_nav()'s items by parts/layout/account-tiles.php.
+
+   The tiles are filled brand navy with white text, the house treatment for a
+   call to action, and every one of them carries the same weight: the hub does
+   not guess which errand somebody came for, and a tile that was quieter than
+   its neighbours would be guessing. They are square and shadowless, with a 4px
+   orange top rule, matching the panels in calendar.css (.law-booking-panel,
+   .law-flagship-strip) rather than inventing a second card language. */
+
+.law-account-hub__lead {
+	margin: 0 0 2rem;
+	color: #292459;
+	font-size: 1.1rem;
+}
+
+.law-account-hub__heading {
+	margin: 0 0 1rem;
+	color: #292459;
+	font-family: poppins, sans-serif;
+	font-size: 1.25rem;
+	font-weight: 600;
+}
+
+/* Explicit column counts rather than auto-fill: the tiles are few and their
+   labels are short, so auto-fill would leave a lone tile stretched across a
+   desktop row. Same convention as .law-event-details__grid. */
+.law-account-hub__tiles {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 1.25rem;
+	margin: 0 0 2.5rem;
+	padding: 0;
+	list-style: none;
+}
+
+@media screen and (min-width: 40em) {
+	.law-account-hub__tiles {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+@media screen and (min-width: 64em) {
+	.law-account-hub__tiles {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+
+.law-account-hub__tile {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	height: 100%;
+	min-height: 9rem;
+	padding: 1.5rem;
+	background-color: #292459;
+	border-top: 4px solid #ef7d05;
+	border-radius: 0;
+	color: #fff;
+	text-decoration: none;
+	transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+/* The theme's chips and .button.orange swap navy and orange on hover, so the
+   tiles do the same rather than dimming or lifting. White on orange is the one
+   pairing to watch: the label is 600 weight at 1.05rem, which clears WCAG AA
+   for large text, and the description sits on the same fill at full opacity
+   rather than the 85% it uses on navy. */
+.law-account-hub__tile:hover,
+.law-account-hub__tile:focus {
+	background-color: #ef7d05;
+	border-top-color: #292459;
+	color: #fff;
+	text-decoration: none;
+}
+
+.law-account-hub__tile:focus-visible {
+	outline: 2px solid #292459;
+	outline-offset: 2px;
+}
+
+.law-account-hub__icon {
+	width: 32px;
+	height: 32px;
+	color: #ef7d05;
+	transition: color 0.25s ease;
+}
+
+.law-account-hub__tile:hover .law-account-hub__icon,
+.law-account-hub__tile:focus .law-account-hub__icon {
+	color: #fff;
+}
+
+.law-account-hub__label {
+	font-family: poppins, sans-serif;
+	font-size: 1.05rem;
+	font-weight: 600;
+	line-height: 1.3;
+	color: #fff;
+}
+
+.law-account-hub__desc {
+	font-size: 0.9rem;
+	line-height: 1.4;
+	color: rgba(255, 255, 255, 0.85);
+}
+
+.law-account-hub__tile:hover .law-account-hub__desc,
+.law-account-hub__tile:focus .law-account-hub__desc {
+	color: #fff;
+}
+
+/* The [action-message] callout, e.g. after registration. Foundation's default
+   .callout is a pale tint on a pale page, which reads as decoration rather than
+   as a message; this is the auth hero's treatment (auth.css) inverted for a
+   white page. */
+.law-account-hub .callout {
+	margin: 0 0 2rem;
+	padding: 0.85rem 1rem;
+	background-color: #292459;
+	border: none;
+	border-left: 4px solid #ef7d05;
+	color: #fff;
+}
+
+.law-account-hub .callout h2 {
+	margin: 0 0 0.35rem;
+	color: #fff;
+	font-family: poppins, sans-serif;
+	font-size: 1.05rem;
+	font-weight: 600;
+	line-height: 1.35;
+}
+
+.law-account-hub .callout p {
+	margin: 0;
+	color: #fff;
+	font-size: 0.95rem;
+	line-height: 1.45;
+}
+
+.law-account-hub .callout p a {
+	color: #ffcc02;
+}
+
+.law-account-hub .callout.success {
+	border-left-color: #2e7d32;
+}
+
+.law-account-hub .callout.warning {
+	border-left-color: #ef7d05;
+}
+
+.law-account-hub .callout.alert,
+.law-account-hub .callout.error {
+	border-left-color: #c02b0a;
+}

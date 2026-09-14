@@ -97,7 +97,16 @@ function law_migration_admin_page() {
 		<table class="widefat striped">
 			<thead><tr><th>Step</th><th>Last run</th><th style="width:220px">Run</th></tr></thead>
 			<tbody>
-			<?php foreach ( law_migration_steps() as $step => $config ) :
+			<?php
+			// Per-step warnings. A step lands here when re-running it is not
+			// simply a no-op, so whoever presses the button knows what they are
+			// about to do before they do it.
+			$law_step_warnings = array(
+				'counters'      => 'Re-running OVERWRITES admin edits made since (slots/recipients or email wording).',
+				'notifications' => 'Re-running OVERWRITES admin edits made since (slots/recipients or email wording).',
+				'retire_roles'  => 'Removes event_host, sponsor and attendee from every account that holds them (subscriber is added first, and the hosting/sponsor ticks are seeded from the roles). Run step 10 first, so the subscriber row exists in the Members restriction on the account pages. Each log line records the roles removed.',
+			);
+			foreach ( law_migration_steps() as $step => $config ) :
 				if ( in_array( $step, array( 'snapshot', 'preflight' ), true ) ) {
 					continue;
 				}
@@ -105,8 +114,8 @@ function law_migration_admin_page() {
 				?>
 				<tr>
 					<td><strong><?php echo esc_html( $config['label'] ); ?></strong>
-						<?php if ( in_array( $step, array( 'counters', 'notifications' ), true ) ) : ?>
-							<br><span class="description">Re-running OVERWRITES admin edits made since (slots/recipients or email wording).</span>
+						<?php if ( isset( $law_step_warnings[ $step ] ) ) : ?>
+							<br><span class="description"><?php echo esc_html( $law_step_warnings[ $step ] ); ?></span>
 						<?php endif; ?></td>
 					<td class="law-mig-summary" data-step-summary="<?php echo esc_attr( $step ); ?>">
 						<?php

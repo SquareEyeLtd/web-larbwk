@@ -2,10 +2,14 @@
 /**
  * Template Name: Account
  *
- * The account landing page, styled like the other account pages (login,
- * register): the page content renders inside the full-height purple hero.
- * The [action-message] shortcode in the content shows a status panel for
- * states such as /account/?action=registered.
+ * An account page whose body is editor content, rendered inside the
+ * full-height purple hero. Since 14 September 2026 that means the submission
+ * confirmation at /account/events/submit/done/ ("Event submitted"), which is
+ * the one such page left: /account/ itself is the tile-based Account hub now
+ * (templates/account-hub.php), built in code.
+ *
+ * Kept rather than merged into the hub precisely because of that confirmation
+ * page, whose wording is the editor's to change.
  *
  * @package LAW
  */
@@ -28,9 +32,12 @@ get_header();
 				// block covers gets a heading and nothing else — which is how a
 				// sponsor-only user reached a blank /account/. Buffering the content
 				// and asking whether anything visible came out lets one generic
-				// fallback catch that case; writing the per-audience wording into the
-				// template instead would put a second copy of it next to the
-				// editor's, and the two would drift.
+				// fallback catch that case.
+				//
+				// The fallback is one sentence now, pointing at the hub, rather
+				// than the per-audience link list it used to be: the hub IS that
+				// list, and keeping a second copy here is how the two would
+				// drift apart.
 				ob_start();
 				the_content();
 				$law_account_body = (string) ob_get_clean();
@@ -39,16 +46,8 @@ get_header();
 					echo $law_account_body; // phpcs:ignore WordPress.Security.EscapeOutput -- the_content() output, already filtered.
 				} else {
 					?>
-					<p>Welcome to London Arbitration Week. Your account is ready.</p>
-					<p><?php if ( function_exists( 'law_account_user_is_host_like' ) && law_account_user_is_host_like() ) : ?>
-						<a href="<?php echo esc_url( law_account_url( 'submit' ) ); ?>">Submit an event</a>,
-						<a href="<?php echo esc_url( law_account_url( 'events' ) ); ?>">view your events</a>,
-						<a href="<?php echo esc_url( law_account_url( 'my_bookings' ) ); ?>">view your bookings</a>
-						or <a href="<?php echo esc_url( law_account_url( 'profile' ) ); ?>">update your profile</a>.
-					<?php else : ?>
-						<a href="<?php echo esc_url( law_account_url( 'my_bookings' ) ); ?>">View your bookings</a>
-						or <a href="<?php echo esc_url( law_account_url( 'profile' ) ); ?>">update your profile</a>.
-					<?php endif; ?></p>
+					<p>Welcome to London Arbitration Week.
+						<a href="<?php echo esc_url( law_account_url( 'account' ) ); ?>">Go to your account</a>.</p>
 					<?php
 				}
 				?>

@@ -1,7 +1,7 @@
 <?php
 /**
- * The /account/ page's audience gating (functions/shortcodes.php and the
- * law_setup_account_page_audience() helper in setup-account-pages.php).
+ * The [user-content] audience gating (functions/shortcodes.php) and the
+ * /account/ page's body helper (law_setup_account_page_content()).
  *
  * These exist because the page shipped with copy gated on role names:
  * [user-content role="attendee"] and [user-content role="event_host"]. Someone
@@ -9,9 +9,12 @@
  * the shortcode renders nothing when no audience matches, so they were served
  * a heading with no body. Nothing failed to say so.
  *
- * The audience assertions are per role and exact, because the bug class here is
- * an audience quietly falling through every block rather than an audience
- * seeing one block too many.
+ * That whole class of bug is gone from /account/ itself since 14 September
+ * 2026: the page is the Account hub, whose tiles are built in code, and the
+ * helper strips the [user-content] blocks from its body. The audience
+ * assertions stay because the shortcode still serves copy on OTHER pages, and
+ * because 'host' now means "signed in" and that needs pinning: an audience
+ * quietly covering nobody is exactly the failure this file was written for.
  */
 
 class AccountAudienceTest extends LAW_Test_Case {
@@ -26,19 +29,19 @@ class AccountAudienceTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * Who the 'host' audience covers. Sponsors are the point of the fix; the
-	 * committee, editors and administrators are in because they submit and run
-	 * events of their own (the additive rule the header bar follows), and
-	 * attendees are out because host copy invites them to submit an event.
+	 * Who the 'host' audience covers: everybody signed in, since anybody
+	 * signed in may submit an event. The retired roles are in the table
+	 * because an account that has not yet been through migration step 11 still
+	 * holds one, and must see the same thing.
 	 */
 	public static function host_audience(): array {
 		return array(
-			'event host'      => array( 'event_host', true ),
-			'sponsor'         => array( 'sponsor', true ),
+			'subscriber'       => array( 'subscriber', true ),
 			'events_committee' => array( 'events_committee', true ),
-			'editor'          => array( 'editor', true ),
-			'administrator'   => array( 'administrator', true ),
-			'attendee'        => array( 'attendee', false ),
+			'editor'           => array( 'editor', true ),
+			'administrator'    => array( 'administrator', true ),
+			'legacy event host' => array( 'event_host', true ),
+			'legacy attendee'  => array( 'attendee', true ),
 		);
 	}
 
@@ -49,15 +52,12 @@ class AccountAudienceTest extends LAW_Test_Case {
 		$this->assertSame( $expected, $this->shows( 'host' ), "Wrong 'host' audience result for the {$role} role." );
 	}
 
-	public function test_committee_audience_excludes_plain_hosts_and_sponsors(): void {
+	public function test_committee_audience_excludes_everyone_else(): void {
 		wp_set_current_user( $this->make_user( 'events_committee' ) );
 		$this->assertTrue( $this->shows( 'committee' ) );
 
-		wp_set_current_user( $this->make_user( 'event_host' ) );
-		$this->assertFalse( $this->shows( 'committee' ) );
-
-		wp_set_current_user( $this->make_user( 'sponsor' ) );
-		$this->assertFalse( $this->shows( 'committee' ) );
+		wp_set_current_user( $this->make_user() );
+		$this->assertFalse( $this->shows( 'committee' ), 'A plain subscriber is not the committee.' );
 	}
 
 	/** An audience is not a way in for a logged-out visitor. */
@@ -69,66 +69,62 @@ class AccountAudienceTest extends LAW_Test_Case {
 		$this->assertTrue( $this->shows( 'guest' ) );
 	}
 
-	/** Role names still work: copy really aimed at one role keeps working. */
+	/**
+	 * Role names still match literally, which is what keeps copy written for a
+	 * not-yet-migrated audience working during the window between the deploy
+	 * and migration step 11.
+	 */
 	public function test_role_names_still_match_exactly(): void {
-		wp_set_current_user( $this->make_user( 'sponsor' ) );
+		wp_set_current_user( $this->make_user( 'events_committee' ) );
 
-		$this->assertTrue( $this->shows( 'sponsor' ) );
-		$this->assertFalse( $this->shows( 'event_host' ), 'A sponsor is not the event_host role.' );
-		$this->assertTrue( $this->shows( 'event_host,sponsor' ), 'A comma list must still match either role.' );
+		$this->assertTrue( $this->shows( 'events_committee' ) );
+		$this->assertFalse( $this->shows( 'event_host' ), 'A committee member does not hold the event_host role.' );
+		$this->assertTrue( $this->shows( 'event_host,events_committee' ), 'A comma list must still match either role.' );
 	}
 
 	/**
-	 * The setup helper: after it has run, no block on the /account/ page gates
-	 * copy on the event_host role alone, and a sponsor sees a body.
+	 * The setup helper: after it has run, the /account/ body is the action
+	 * message and nothing else. The [user-content] blocks have to go rather
+	 * than simply being ignored, because the hub renders its own tiles and the
+	 * attendee block names a role that will shortly match nobody.
 	 */
-	public function test_setup_helper_leaves_no_bare_event_host_block(): void {
+	public function test_setup_helper_leaves_only_the_action_message(): void {
 		$page = get_page_by_path( 'account' );
 		if ( ! $page instanceof WP_Post ) {
 			$this->markTestSkipped( 'No /account/ page on this environment.' );
 		}
 
-		$this->assertContains( law_setup_account_page_audience(), array( 'ok', 'updated' ) );
+		$this->assertContains( law_setup_account_page_content(), array( 'ok', 'updated' ) );
 
 		$content = get_post_field( 'post_content', $page->ID );
+		$this->assertStringContainsString( '[action-message]', $content, 'The registration confirmation renders from this shortcode.' );
 		$this->assertDoesNotMatchRegularExpression(
-			'/\[user-content\b[^\]]*\brole=([\'"])event_host\1/',
+			'/\[user-content\b/',
 			$content,
-			'The /account/ page still gates copy on the event_host role alone, so a sponsor-only user gets no body.'
-		);
-
-		wp_set_current_user( $this->make_user( 'sponsor' ) );
-		$this->assertNotSame(
-			'',
-			trim( wp_strip_all_tags( do_shortcode( $content ) ) ),
-			'A sponsor-only user still sees an empty /account/ body.'
+			'The /account/ page still carries audience-gated copy, which the hub template does not render.'
 		);
 	}
 
-	/**
-	 * The one audience the page's copy genuinely does not cover, and the
-	 * reason templates/account.php keeps a fallback: page 290's Members rows
-	 * admit `subscriber`, so a subscriber-only account can open /account/ and
-	 * matches neither the attendee nor the host block. The template's
-	 * "nothing visible came out" branch is what serves them, and this pins the
-	 * condition that branch keys on. A browser pass cannot reach it, because
-	 * every role with copy of its own matches a block first.
-	 */
-	public function test_a_subscriber_gets_no_audience_block_so_the_template_fallback_is_what_serves_them(): void {
-		$page = get_page_by_path( 'account' );
-		if ( ! $page instanceof WP_Post ) {
+	/** The confirmation a new registration lands on still renders. */
+	public function test_the_action_message_still_renders_after_registration(): void {
+		if ( ! get_page_by_path( 'account' ) instanceof WP_Post ) {
 			$this->markTestSkipped( 'No /account/ page on this environment.' );
 		}
+		law_setup_account_page_content();
 
-		wp_set_current_user( $this->make_user( 'subscriber' ) );
+		$previous       = $_GET['action'] ?? null;
+		$_GET['action'] = 'registered';
+		wp_set_current_user( $this->make_user() );
 
-		$rendered = do_shortcode( get_post_field( 'post_content', $page->ID ) );
+		$rendered = do_shortcode( get_post_field( 'post_content', get_page_by_path( 'account' )->ID ) );
 
-		$this->assertSame(
-			'',
-			trim( wp_strip_all_tags( $rendered ) ),
-			'A subscriber now matches an audience block, so templates/account.php no longer needs its fallback for them — revisit the fallback rather than deleting this test.'
-		);
+		if ( null === $previous ) {
+			unset( $_GET['action'] );
+		} else {
+			$_GET['action'] = $previous;
+		}
+
+		$this->assertStringContainsString( 'Registration successful', $rendered );
 	}
 
 	/** Idempotent: a second run reports nothing left to change. */
@@ -137,8 +133,8 @@ class AccountAudienceTest extends LAW_Test_Case {
 			$this->markTestSkipped( 'No /account/ page on this environment.' );
 		}
 
-		law_setup_account_page_audience();
+		law_setup_account_page_content();
 
-		$this->assertSame( 'ok', law_setup_account_page_audience() );
+		$this->assertSame( 'ok', law_setup_account_page_content() );
 	}
 }
