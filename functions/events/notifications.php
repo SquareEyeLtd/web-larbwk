@@ -187,7 +187,7 @@ function law_events_email_registry() {
 			'to'      => array( 'emily.ocallaghan@lbresearch.com', 'marie@londonarbitrationweek.co.uk' ),
 			'active'  => true,
 			'subject' => 'New LAW account registered: {user_name}',
-			'body'    => "A new account has been registered on {site_name}.\n\nName: {user_name}\nEmail: {user_email}\nRoles: {user_roles}",
+			'body'    => "A new account has been registered on {site_name}.\n\nName: {user_name}\nEmail: {user_email}",
 		),
 		'squareeye_user_registered' => array(
 			'name'    => 'Email to Square Eye > user registration',
@@ -195,7 +195,7 @@ function law_events_email_registry() {
 			'to'      => array( 'trevor@squareeye.com' ),
 			'active'  => false,
 			'subject' => 'LAW account registered: {user_name}',
-			'body'    => "New account: {user_name} ({user_email}), roles: {user_roles}.",
+			'body'    => "New account: {user_name} ({user_email}).",
 		),
 		'committee_refund' => array(
 			'name'    => 'Email to committee > payment refunded',
@@ -409,24 +409,31 @@ function law_events_email_registry() {
 			'body'    => "Dear {attendee_name},\n\nA place opened up at {event_title} {event_when} and we tried to book it for you, but could not:\n\n{blocked_reason}\n\nYou are still on the waitlist and keep your place in the queue. If you sort this out, for example by cancelling the booking that overlaps, we will offer you a place as soon as your turn comes round again.\n\nMy bookings: {bookings_link}",
 		),
 
-		// Two welcome templates, picked by the roles ticked at registration
-		// (law_registration_handler()): host or sponsor wins over attendee. The
-		// attendee copy asks for dietary and accessibility requirements, which
-		// reads oddly to someone registering only to submit an event, so the
-		// convention here is one slug per audience (as with
-		// user_attendee_invited / user_attendee_added) rather than a
-		// conditional inside one body.
+		// Two welcome templates, and in practice only the first is sent.
+		//
+		// They used to be picked by role, then briefly by an optional tick at
+		// registration. Nothing collects either any more (14 September 2026),
+		// so law_registration_welcome_slug() sees no intent and every new
+		// account gets user_welcome_registered. That copy therefore has to
+		// cover the whole job: browsing, booking, AND submitting an event,
+		// because anybody signed in may do all three (Denis).
+		//
+		// The hosting variant stays in the registry, editable on the Emails
+		// screen and reachable again the moment anything sets an intent. It is
+		// the same reason law_registration_intents() is still here. Neither
+		// body may describe what the reader is ALLOWED to do, because everybody
+		// signed in can do everything: they differ only in what they lead with.
 		'user_welcome_registered' => array(
-			'name'    => 'Email to attendee > welcome after registration',
-			'trigger' => 'user registration (attendee only)',
+			'name'    => 'Email to new user > welcome after registration',
+			'trigger' => 'user registration (no hosting or sponsor tick)',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
-			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nThe events you book live here, under My bookings: {bookings_link}",
+			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nThe events you book live here, under My bookings: {bookings_link}\n\nYou can also submit an event of your own for the programme, and follow it through review to publication: {submit_link}",
 		),
 		'user_welcome_registered_host' => array(
 			'name'    => 'Email to host or sponsor > welcome after registration',
-			'trigger' => 'user registration (event host or sponsor)',
+			'trigger' => 'user registration (ticked host or sponsor)',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
@@ -618,6 +625,12 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		// User-registration emails (filled via the send call's placeholders).
 		'{user_name}'        => '',
 		'{user_email}'       => '',
+		// Nothing produces this any more: the roles it named are retired and no
+		// body in the registry mentions it. It stays mapped to '' as a safety
+		// net, because a stored override on the Emails screen can still carry
+		// the token, and an unmapped placeholder would print literally. The
+		// two known overrides have the whole line stripped by
+		// law_setup_strip_user_roles_from_emails().
 		'{user_roles}'       => '',
 		// Additional-host emails (filled via the send call's placeholders).
 		'{co_owner_name}'    => '',

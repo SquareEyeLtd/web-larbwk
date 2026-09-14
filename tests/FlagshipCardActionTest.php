@@ -107,7 +107,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_an_application_awaiting_payment_details_asks_for_them(): void {
 		$event = $this->make_flagship();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'law-applied', 'pending_setup' );
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
@@ -117,7 +117,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_an_application_with_a_card_saved_is_in_review(): void {
 		$event = $this->make_flagship();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'law-applied', 'ready' );
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
@@ -127,7 +127,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_a_failed_charge_offers_to_sort_the_payment_out(): void {
 		$event = $this->make_flagship();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'law-payment-failed', 'action_required' );
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
@@ -137,7 +137,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_a_confirmed_place_links_to_the_booking(): void {
 		$event = $this->make_flagship();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'publish' );
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
@@ -151,7 +151,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_a_delegate_who_attended_still_reaches_their_receipt(): void {
 		$event = $this->make_flagship( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-2 days' ) ) ) );
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'publish' );
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
@@ -166,7 +166,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_an_undecided_application_on_a_past_conference_offers_nothing(): void {
 		$event = $this->make_flagship( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-2 days' ) ) ) );
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'law-applied', 'ready' );
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
@@ -198,7 +198,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_the_card_carries_apply_with_the_dialog_hook_for_a_signed_in_viewer(): void {
 		$event = $this->make_flagship();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		$action = $this->card( $event );
 		$this->assertSame( 'Apply', $action['label'] );
@@ -224,7 +224,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_account_states_are_plain_links_with_no_dialog(): void {
 		$event = $this->make_flagship();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'publish' );
 		wp_set_current_user( $user );
 
@@ -241,7 +241,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		// Created unpublished rather than demoted: the events module's status
 		// guard reverts a status flip that did not come from the workflow.
 		$event = $this->make_flagship( array(), 'law-draft' );
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		$this->assertSame( 'law-draft', get_post_status( $event ) );
 		$this->assertNull( $this->card( $event ) );
@@ -282,7 +282,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_conference_page_opener_is_a_fetch_link_with_no_dialog(): void {
 		$event = $this->make_flagship();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		law_flagship_render_opener( law_events_map_post( get_post( $event ) ) );
@@ -309,7 +309,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_the_foot_of_the_conference_page_repeats_apply(): void {
 		$event = $this->make_flagship();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		law_flagship_render_action_buttons( law_events_map_post( get_post( $event ) ) );
@@ -322,7 +322,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_the_foot_of_the_conference_page_links_an_existing_application(): void {
 		$event = $this->make_flagship();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_application( $event, $user, 'law-payment-failed', 'action_required' );
 		wp_set_current_user( $user );
 
@@ -336,7 +336,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	public function test_the_foot_of_the_conference_page_does_not_repeat_the_inline_no_js_form(): void {
 		$event = $this->make_flagship();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		$_GET['law_flagship_apply'] = '1';
 		ob_start();
@@ -350,7 +350,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 	/** One call site at the foot of the page, routing the flagship like the top. */
 	public function test_the_hosted_button_renderer_routes_the_flagship_here(): void {
 		$event = $this->make_flagship();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		law_booking_render_action_buttons( law_events_map_post( get_post( $event ) ) );

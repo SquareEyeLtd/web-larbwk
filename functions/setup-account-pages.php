@@ -32,7 +32,11 @@ function law_setup_account_pages() {
 		// path => template
 		'login'                 => 'templates/login.php',
 		'register'              => 'templates/register.php',
-		'account'               => 'templates/account.php',
+		// The account hub. Note the neighbours below that still use
+		// templates/account.php: it renders editor content in the hero, which
+		// is exactly what the submission confirmation needs and exactly what
+		// the hub does not.
+		'account'               => 'templates/account-hub.php',
 		'account/profile'       => 'templates/account.php',
 		// The host dashboard: theme-owned listing; the page keeps its
 		// [gravityview] shortcode in the content because the template renders
@@ -125,9 +129,12 @@ function law_setup_account_pages() {
 	// renders the sign-in / forgot / reset forms itself; the shortcode would
 	// only render an empty string there, but removing it keeps the editor
 	// content honest.
-	$report[] = 'CONTENT  /account/ audience blocks: ' . law_setup_account_page_audience();
-	$report[] = 'ACCESS   /account/events/ attendee role: ' . law_setup_account_events_attendee_access();
+	$report[] = 'CONTENT  /account/ body: ' . law_setup_account_page_content();
 	$report[] = 'ACCESS   /account/bookings/ role rows: ' . law_setup_my_bookings_access();
+	// After my_bookings on purpose: that helper copies /account/'s rows onto a
+	// page that has none, so the subscriber pass must see the copied rows.
+	$report[] = 'ACCESS   subscriber role on account pages: ' . law_setup_account_subscriber_access();
+	$report[] = 'EMAILS   registration emails, Roles line: ' . law_setup_strip_user_roles_from_emails();
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/flagship/ committee restriction: ' . law_setup_flagship_dashboard_access();
@@ -177,66 +184,126 @@ function law_setup_account_pages() {
 }
 
 /**
- * The bookings build (EVENTS_BOOKINGS.md): /account/events/ used to host the
- * "Your bookings" section, and its Members restriction predates the attendee
- * audience. The bookings moved to /account/bookings/ on 10 September 2026, but
- * the attendee row stays: every confirmation email already sent links to
- * /account/events/, and account-events.php can only redirect a visitor the
- * Members plugin lets through the door. The restriction is database state, so
- * both this setup helper and migration step 10 apply it on every environment;
- * nothing is scripted only as a local click.
+ * Every account page a plain subscriber needs must admit the subscriber role in
+ * its Members restriction.
  *
- * @return string ok | updated | unrestricted | missing.
+ * This is the load-bearing half of the 14 September 2026 role retirement. From
+ * the moment that code ships, every new registrant is a subscriber, and these
+ * restrictions are DATABASE state a git deploy cannot carry: an environment
+ * whose /account/ rows still name only event_host, sponsor and attendee locks
+ * every new user out of their own account, and the refusal comes from the
+ * Members plugin, not from anything in this theme. Both provisioning routes
+ * call this (the ?setup-account-pages trigger and migration step 10), and step
+ * 11 runs after step 10 for the same reason.
+ *
+ * Pages with NO restriction rows are left alone: the plugin reads none as
+ * public, and adding a row would restrict a page that was open. The legacy role
+ * rows are never removed either: the roles stay defined, so leaving the rows
+ * keeps a rollback to a code revert.
+ *
+ * Replaced law_setup_account_events_attendee_access(), which added the attendee
+ * row to /account/events/ for the same reason in the other direction.
+ *
+ * @return string 'ok', or the named lists, e.g.
+ *                'updated: /account/events/; missing: /account/bookings/'.
  */
-function law_setup_account_events_attendee_access() {
-	$page = get_page_by_path( 'account/events' );
-	if ( ! $page instanceof WP_Post ) {
-		return 'missing';
+function law_setup_account_subscriber_access() {
+	$paths     = array( 'account', 'account/events', 'account/bookings', 'account/events/submit' );
+	$updated   = array();
+	$missing   = array();
+	$open      = array();
+
+	foreach ( $paths as $path ) {
+		$page = get_page_by_path( $path );
+		if ( ! $page instanceof WP_Post ) {
+			$missing[] = '/' . $path . '/';
+			continue;
+		}
+		$roles = get_post_meta( $page->ID, '_members_access_role' );
+		if ( ! $roles ) {
+			$open[] = '/' . $path . '/'; // No Members restriction on this environment.
+			continue;
+		}
+		if ( in_array( 'subscriber', $roles, true ) ) {
+			continue;
+		}
+		add_post_meta( $page->ID, '_members_access_role', 'subscriber' );
+		$updated[] = '/' . $path . '/';
 	}
-	$roles = get_post_meta( $page->ID, '_members_access_role' );
-	if ( ! $roles ) {
-		return 'unrestricted'; // No Members restriction on this environment.
+
+	$parts = array();
+	if ( $updated ) {
+		$parts[] = 'updated: ' . implode( ', ', $updated );
 	}
-	if ( in_array( 'attendee', $roles, true ) ) {
-		return 'ok';
+	if ( $open ) {
+		$parts[] = 'unrestricted: ' . implode( ', ', $open );
 	}
-	add_post_meta( $page->ID, '_members_access_role', 'attendee' );
-	return 'updated';
+	if ( $missing ) {
+		$parts[] = 'missing: ' . implode( ', ', $missing );
+	}
+	return $parts ? implode( '; ', $parts ) : 'ok';
 }
 
 /**
- * The /account/ page's role-gated copy: swap the hardcoded role name for the
- * capability-backed audience.
+ * The /account/ page's body, reduced to the one thing the Account hub template
+ * cannot render for itself.
+ *
+ * /account/ is the hub now (templates/account-hub.php, 14 September 2026): the
+ * tiles are built in code from law_header_nav(), so the audience-gated editor
+ * copy that used to be the whole page is dead weight. Worse than dead: the
+ * [user-content role="attendee"] block names a retired role, so it matches
+ * NOBODY once migration step 11 has run, and the role="host" block would show
+ * its "submit an event or view your events" links to every signed-in person
+ * immediately above tiles that say the same thing.
+ *
+ * What must survive is [action-message]: law_registration_handler() sends a new
+ * account to /account/?action=registered, and that shortcode is what renders
+ * the "Registration successful" callout. So the rule is: strip the
+ * [user-content] blocks, tidy the empty paragraphs they leave behind, and make
+ * sure [action-message] is there.
  *
  * The page body is editor content, so it is database state a git deploy cannot
- * carry, and it shipped with two blocks: [user-content role="attendee"] and
- * [user-content role="event_host"]. A user who registered as "LAW sponsor" and
- * nothing else matched neither, and law_user_content_shortcode() renders
- * nothing when no audience matches, so they got a page with a heading and no
- * body at all. Rewriting the block to role="host" hands it to every audience
- * that can run events (law_account_user_is_host_like(): hosts, sponsors, and
- * the committee, editors and administrators who submit events of their own),
- * and means the next role added to the module does not reopen the same hole.
+ * carry; both provisioning routes call this.
  *
- * Idempotent, and deliberately narrow: only role="event_host" on its own is
- * rewritten. A block someone has already broadened by hand (role="event_host,
- * sponsor", say) is left exactly as it is.
+ * Idempotent by construction: a second pass finds no [user-content] to remove
+ * and the action message already present. Deliberately narrow, like the
+ * audience rewrite it replaces: anything else an editor has added to the page
+ * is left exactly as it is.
  *
  * @return string ok | updated | missing.
  */
-function law_setup_account_page_audience() {
+function law_setup_account_page_content() {
 	$page = get_page_by_path( 'account' );
 	if ( ! $page instanceof WP_Post ) {
 		return 'missing';
 	}
 
-	$content = preg_replace(
-		'/(\[user-content\b[^\]]*\brole=)([\'"])event_host\2/',
-		'$1$2host$2',
-		$page->post_content
+	$content = (string) $page->post_content;
+
+	// Whole block first (comment delimiters and all), then any bare shortcode
+	// pair left outside a block.
+	$content = (string) preg_replace(
+		'/<!--\s*wp:shortcode\s*-->\s*\[user-content\b.*?\[\/user-content\]\s*<!--\s*\/wp:shortcode\s*-->/s',
+		'',
+		$content
+	);
+	$content = (string) preg_replace( '/\[user-content\b[^\]]*\].*?\[\/user-content\]/s', '', $content );
+
+	// The two empty paragraph blocks the page shipped with, plus any the
+	// removals above have stranded.
+	$content = (string) preg_replace(
+		'/<!--\s*wp:paragraph\s*-->\s*<p>\s*<\/p>\s*<!--\s*\/wp:paragraph\s*-->/',
+		'',
+		$content
 	);
 
-	if ( null === $content || $content === $page->post_content ) {
+	if ( false === strpos( $content, '[action-message]' ) ) {
+		$content = "<!-- wp:paragraph -->\n<p>[action-message]</p>\n<!-- /wp:paragraph -->\n\n" . $content;
+	}
+
+	$content = trim( (string) preg_replace( "/\n{3,}/", "\n\n", $content ) );
+
+	if ( $content === trim( (string) $page->post_content ) ) {
 		return 'ok';
 	}
 
@@ -367,6 +434,62 @@ function law_setup_flagship_dashboard_access() {
 /** The discount-code catalogue's Members restriction. */
 function law_setup_discounts_dashboard_access() {
 	return law_setup_child_page_access( 'account/dashboard/discounts' );
+}
+
+/**
+ * Strip the "Roles: {user_roles}" line from the two user-registration emails.
+ *
+ * The registry defaults lost it with the role retirement (14 September 2026),
+ * but the defaults are not what production sends: migration step 9 imported the
+ * legacy Gravity Forms notifications as STORED OVERRIDES, and an override beats
+ * the default. Both registration emails are overridden on every environment
+ * that has run that step, so editing the code alone would leave the committee
+ * still reading "Roles: None ticked" on every new account, which is what Denis
+ * saw. This is the other half of the change, and it has to run on every
+ * environment, which is why both provisioning routes call it.
+ *
+ * Removes the whole LINE rather than the token: blanking the placeholder would
+ * leave a bare "Roles:" behind. Idempotent, and deliberately narrow: only lines
+ * carrying {user_roles} go, and only in these two templates, so an override
+ * somebody has rewritten by hand keeps everything else it says.
+ *
+ * @return string ok | updated.
+ */
+function law_setup_strip_user_roles_from_emails() {
+	if ( ! defined( 'LAW_EVENTS_EMAIL_OVERRIDES_OPTION' ) ) {
+		return 'ok'; // The events module is not loaded on this environment.
+	}
+	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+	if ( ! is_array( $overrides ) ) {
+		return 'ok';
+	}
+
+	$changed = false;
+	foreach ( array( 'admins_user_registered', 'squareeye_user_registered' ) as $slug ) {
+		if ( empty( $overrides[ $slug ]['body'] ) || ! is_string( $overrides[ $slug ]['body'] ) ) {
+			continue;
+		}
+		$body = $overrides[ $slug ]['body'];
+		// Split on either line ending: the imported bodies mix \n and \r\n.
+		$kept = array_filter(
+			preg_split( '/\r\n|\r|\n/', $body ),
+			static function ( $line ) {
+				return false === strpos( $line, '{user_roles}' );
+			}
+		);
+		$clean = implode( "\n", $kept );
+		if ( $clean === $body ) {
+			continue;
+		}
+		$overrides[ $slug ]['body'] = $clean;
+		$changed                    = true;
+	}
+
+	if ( ! $changed ) {
+		return 'ok';
+	}
+	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+	return 'updated';
 }
 
 /**

@@ -11,8 +11,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Walk the stored co-owner rows: link existing users by email, create the
- * rest as event_host, store the IDs in _law_co_owner_ids, log everything.
+ * Walk the stored co-owner rows: link existing users by email, create the rest
+ * as plain subscribers, store the IDs in _law_co_owner_ids, log everything.
+ *
+ * The account's role grants nothing here and never did much: a co-owner's
+ * access comes from the _law_co_owner meta row this writes, which is what
+ * law_user_can_manage_event() reads. Since 14 September 2026 there is no
+ * host-side role to give them at all.
  *
  * Idempotent: already-linked users are kept, not duplicated.
  *
@@ -172,9 +177,34 @@ function law_event_set_co_owner_ids( $event_id, array $ids ) {
 }
 
 /**
- * Create a module user account. Username = email (matching the form 1 feed).
- * Defaults create an event_host (the co-owner path, untouched); the bookings
- * engine passes role => attendee and a job title.
+ * The only roles law_events_create_host_user() will mint.
+ *
+ * Deliberately a list of one: an account created from an email address
+ * somebody typed into a form is a subscriber, full stop. A privileged account
+ * is made in wp-admin, by somebody who already holds the capability to make
+ * one. It is a function rather than an inline array so the rule has a name and
+ * one place to change.
+ */
+function law_events_creatable_roles() {
+	return array( 'subscriber' );
+}
+
+/**
+ * Create a module user account. Username = email (matching the form 1 (User
+ * registration) feed). Every account it creates is a plain subscriber, whether
+ * it is a co-owner, a colleague booked in by somebody else or a migrated
+ * record: the three self-service roles were retired on 14 September 2026 and
+ * access comes from ownership meta and capabilities, never from a role.
+ *
+ * The name is a misnomer now and kept anyway: three callers and the
+ * documentation name it, and renaming it buys nothing this change needs.
+ *
+ * The role arg survives for a caller that genuinely needs another role, but it
+ * is whitelisted: this function's whole job is minting accounts from an email
+ * address somebody typed into a form, so the one thing it must never do is let
+ * a caller's array decide what that account can do. No caller passes a role
+ * today; the guard is there so that a future one passing user input cannot turn
+ * this into an escalation path (security review, 14 September 2026).
  *
  * Deliberately silent: the welcome email is the caller's job, so it can be sent
  * from the module's email registry with the event's context attached (see
@@ -184,11 +214,19 @@ function law_event_set_co_owner_ids( $event_id, array $ids ) {
  * @param string $email        Email address (becomes the username).
  * @param string $name         Full name, split on the first whitespace.
  * @param string $organisation Organisation user meta.
- * @param array  $args         Optional: role (default event_host), job_title.
+ * @param array  $args         Optional: role (default and fallback
+ *                             'subscriber'; only law_events_creatable_roles()
+ *                             are accepted), job_title.
  * @return int|WP_Error User ID.
  */
 function law_events_create_host_user( $email, $name = '', $organisation = '', array $args = array() ) {
-	$args       = array_merge( array( 'role' => 'event_host', 'job_title' => '' ), $args );
+	$args = array_merge( array( 'role' => 'subscriber', 'job_title' => '' ), $args );
+	// Anything unrecognised becomes a subscriber rather than an error: the
+	// caller's intent was to create somebody an account, and the safe reading
+	// of an unknown role is the least privileged one.
+	if ( ! in_array( (string) $args['role'], law_events_creatable_roles(), true ) ) {
+		$args['role'] = 'subscriber';
+	}
 	$name_parts = preg_split( '/\s+/', trim( $name ), 2 );
 	$user_id    = wp_insert_user(
 		array(

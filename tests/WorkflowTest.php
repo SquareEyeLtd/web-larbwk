@@ -23,7 +23,7 @@ class WorkflowTest extends LAW_Test_Case {
 	}
 
 	public function test_committee_actions_refused_for_hosts(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 		$event  = $this->make_event( array(), 'law-proposed', $host );
 		$result = law_event_workflow_transition( $event, 'approve' );
@@ -113,7 +113,7 @@ class WorkflowTest extends LAW_Test_Case {
 		$user = get_user_by( 'email', $email );
 		$this->assertNotFalse( $user, 'The account is created on approval.' );
 		$this->users[] = $user->ID;
-		$this->assertContains( 'event_host', (array) $user->roles );
+		$this->assertContains( 'subscriber', (array) $user->roles, 'Accounts the module creates are plain subscribers; access comes from the co-owner meta below.' );
 		$this->assertContains( (int) $user->ID, array_map( 'intval', law_event_meta( $event, '_law_co_owner_ids' ) ) );
 		$this->assertTrue( law_user_can_manage_event( $user->ID, $event ) );
 	}
@@ -125,7 +125,7 @@ class WorkflowTest extends LAW_Test_Case {
 		$this->assertSame( 'law-rejected', get_post_status( $event ) );
 		$this->assertSame( 'Out of scope.', law_event_meta( $event, '_law_rejection_reason' ) );
 
-		$host  = $this->make_user( 'event_host' );
+		$host  = $this->make_user();
 		$event2 = $this->make_event( array(), 'law-sent-back', $host );
 		wp_set_current_user( $host );
 		$this->assertTrue( law_event_workflow_transition( $event2, 'resubmit' ) );

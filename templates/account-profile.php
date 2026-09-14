@@ -3,8 +3,10 @@
  * Template Name: Profile (custom)
  *
  * Phase D: the custom self-service profile form replacing form 3 (User
- * profile). Renders in the account-pages hero; role changes are limited to
- * the three self-service roles.
+ * profile). Renders in the account-pages hero. There are no role controls: the
+ * three self-service roles were retired on 14 September 2026 and what the form
+ * collects in their place, the law_intent ticks, is optional meta that gates
+ * nothing.
  */
 
 get_header();

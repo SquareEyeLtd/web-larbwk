@@ -51,7 +51,7 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$event_a = $this->make_bookable_event( '2026-12-01 10:00', '2026-12-01 12:00' );
 		$event_b = $this->make_bookable_event( '2026-12-02 10:00', '2026-12-02 12:00' );
 
-		$owner_a = $this->make_user( 'attendee' );
+		$owner_a = $this->make_user();
 		wp_update_user( array( 'ID' => $owner_a, 'first_name' => 'Ada', 'last_name' => 'Owner' ) );
 		update_user_meta( $owner_a, 'country', 'France' );
 		$guest_email = $this->unique_email( 'guest' );
@@ -60,10 +60,10 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$booking_a   = $party_a[0];
 		$guest_a     = $party_a[1];
 
-		$owner_b   = $this->make_user( 'attendee' );
+		$owner_b   = $this->make_user();
 		$booking_b = $this->make_booking( $event_b, $owner_b, array() )[0];
 
-		$owner_c   = $this->make_user( 'attendee' );
+		$owner_c   = $this->make_user();
 		$booking_c = $this->make_booking( $event_b, $owner_c, array() )[0];
 		law_booking_cancel( $booking_c, $owner_c );
 

@@ -10,16 +10,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/** Roles allowed to submit events ("hosts and above", as the Members gate). */
+/**
+ * Who may submit an event: anybody with an account.
+ *
+ * The three self-service roles were retired on 14 September 2026 (Denis, from
+ * the client), and with them the idea that submitting is for a particular kind
+ * of member. This stays a function rather than an inline is_user_logged_in()
+ * for one reason: it is the SINGLE seam. The POST handler, the header bar and
+ * the form template all ask it, so a future narrowing (a verified-host flag,
+ * say) has exactly one place to go.
+ */
 function law_events_user_can_submit( $user_id = 0 ) {
 	$user = $user_id ? get_user_by( 'id', $user_id ) : wp_get_current_user();
-	if ( ! $user || ! $user->exists() ) {
-		return false;
-	}
-	if ( user_can( $user, 'edit_others_law_events' ) ) {
-		return true;
-	}
-	return (bool) array_intersect( array( 'event_host', 'sponsor' ), (array) $user->roles );
+	return (bool) $user && $user->exists();
 }
 
 /** The event being edited on the form page, 0 for a new submission. */

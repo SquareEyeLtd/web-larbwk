@@ -8,12 +8,9 @@
  * with no account link at all and attendees had no route to their bookings,
  * and nothing failed to say so.
  *
- * The sets are asserted EXACTLY rather than with assertContains. A contains
- * assertion passes when an item leaks to a role that should not see it,
- * which is the whole class of bug this file exists to catch. Asserting the
- * exact set also pins the rule that access is additive: committee and
- * administrators keep the personal links alongside the dashboard, and a
- * later "simplification" into an either/or fails here.
+ * The same list now also feeds the account hub's tiles
+ * (parts/layout/account-tiles.php), so what is pinned here is pinned for both
+ * surfaces at once. That is the point of there being one list.
  */
 
 class HeaderNavTest extends LAW_Test_Case {
@@ -30,41 +27,148 @@ class HeaderNavTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * The resolved per-role table from the plan. Committee and admins get the
-	 * dashboard IN ADDITION TO the personal links, never instead of them.
+	 * The item table. Three things decide it now: whether the viewer is
+	 * committee, whether they own or co-own an event, and nothing else.
 	 *
-	 * 'flagship' joined the committee-only group on 9 September 2026 with the
-	 * Manage flagship dashboard (functions/events/flagship-dashboard.php), and
-	 * 'flagship_bookings' and 'discounts' on 10 September 2026, with the
-	 * flagship's own applications and payments page and the discount-code
-	 * catalogue (functions/events/flagship-bookings-dashboard.php,
-	 * functions/events/discounts-dashboard.php).
+	 * It used to be a table of ROLES, and that is the change worth pinning.
+	 * Since 14 September 2026 there are no self-service roles: everybody is a
+	 * subscriber, everybody may submit, and "My events" is offered to whoever
+	 * HAS events. So the same role appears twice below with different
+	 * expectations, which would have been impossible before.
 	 *
-	 * 'my_bookings' joined every role on 10 September 2026, when the personal
-	 * bookings list moved off My events onto /account/bookings/. Note the two
-	 * similar keys: 'bookings' is the COMMITTEE's cross-event dashboard,
-	 * 'my_bookings' is the page anyone signed in gets. Only 'my_bookings' is
-	 * universal, and a host holds BOTH it and 'events' -- hosts, sponsors and
-	 * committee members book places at other firms' events like anyone else.
-	 * An attendee has no 'events' key at all now; they are redirected off that
-	 * page by functions/account-events.php.
+	 * Personal items come first and the committee tools after (Denis), because
+	 * the account hub renders this same list as boxes and somebody arriving
+	 * there wants their own account before the queue they also happen to run.
+	 *
+	 * The sets are asserted EXACTLY. A contains assertion passes when an item
+	 * leaks to somebody who should not see it, which is the whole class of bug
+	 * this file exists to catch, and the exact set also pins the additive rule:
+	 * committee and administrators keep the personal links alongside the
+	 * dashboard, and a later "simplification" into an either/or fails here.
+	 *
+	 * Note the two similar keys: 'bookings' is the COMMITTEE's cross-event
+	 * dashboard, 'my_bookings' is the page anyone signed in gets.
 	 */
-	public static function role_expectations(): array {
+	public static function nav_expectations(): array {
+		$committee = array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' );
+
 		return array(
-			'administrator'    => array( 'administrator', array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
-			'editor'           => array( 'editor', array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
-			'events_committee' => array( 'events_committee', array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
-			'event_host'       => array( 'event_host', array( 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
-			'sponsor'          => array( 'sponsor', array( 'events', 'submit', 'my_bookings', 'profile', 'signout' ) ),
-			'attendee'         => array( 'attendee', array( 'my_bookings', 'profile', 'signout' ) ),
+			'subscriber, no events'   => array(
+				'subscriber',
+				false,
+				array( 'profile', 'my_bookings', 'submit', 'signout' ),
+			),
+			'subscriber, owns one'    => array(
+				'subscriber',
+				true,
+				array( 'profile', 'my_bookings', 'events', 'submit', 'signout' ),
+			),
+			'committee, no events'    => array(
+				'events_committee',
+				false,
+				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
+			),
+			'committee, owns one'     => array(
+				'events_committee',
+				true,
+				array_merge( array( 'profile', 'my_bookings', 'events', 'submit' ), $committee, array( 'signout' ) ),
+			),
+			'administrator'           => array(
+				'administrator',
+				false,
+				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
+			),
+			'editor'                  => array(
+				'editor',
+				false,
+				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
+			),
 		);
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider( 'role_expectations' )]
-	public function test_items_per_role( string $role, array $expected ): void {
-		wp_set_current_user( $this->make_user( $role ) );
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'nav_expectations' )]
+	public function test_items_per_situation( string $role, bool $owns_event, array $expected ): void {
+		$user_id = $this->make_user( $role );
+		if ( $owns_event ) {
+			$this->make_event( array(), 'law-proposed', $user_id );
+		}
+		wp_set_current_user( $user_id );
+		law_account_events_reset_cache();
 
-		$this->assertSame( $expected, $this->keys(), "Wrong top bar items for the {$role} role." );
+		$this->assertSame( $expected, $this->keys(), "Wrong top bar items for: {$role}, owns_event=" . ( $owns_event ? 'yes' : 'no' ) );
+	}
+
+	/**
+	 * A co-owner runs the event too, and reaches it through the _law_co_owner
+	 * meta row rather than through anything about their account. Ownership is
+	 * the whole test now, so this is the case that would break first if
+	 * somebody reached for a simpler one (post_author alone, say).
+	 */
+	public function test_a_co_owner_is_offered_my_events(): void {
+		$owner    = $this->make_user();
+		$event    = $this->make_event( array(), 'law-approved', $owner );
+		$co_owner = $this->make_user();
+		law_event_set_co_owner_ids( $event, array( $co_owner ) );
+
+		wp_set_current_user( $co_owner );
+		law_account_events_reset_cache();
+
+		$this->assertContains( 'events', $this->keys(), 'A co-owner runs an event and must be offered My events.' );
+	}
+
+	/**
+	 * The flagship is LAW's own event and its author is whoever ran the setup
+	 * trigger, so counting it would offer that administrator a My events link
+	 * to a page that filters it straight back out.
+	 */
+	public function test_the_flagship_does_not_count_as_an_owned_event(): void {
+		if ( ! function_exists( 'law_flagship_ensure_post' ) ) {
+			$this->markTestSkipped( 'The flagship module is not loaded.' );
+		}
+		$flagship = law_flagship_ensure_post();
+		if ( empty( $flagship['id'] ) ) {
+			$this->markTestSkipped( 'No flagship event on this environment.' );
+		}
+
+		$user_id = $this->make_user();
+		wp_update_post( array( 'ID' => (int) $flagship['id'], 'post_author' => $user_id ) );
+		wp_set_current_user( $user_id );
+		law_account_events_reset_cache();
+
+		$this->assertFalse( law_account_user_has_events( $user_id ), 'The flagship is not somebody\'s own event.' );
+		$this->assertNotContains( 'events', $this->keys() );
+	}
+
+	/**
+	 * Every item carries what the account hub renders it with. The hub builds
+	 * its boxes from this list and nothing else, so an item added here without
+	 * an icon would appear there as a bare label.
+	 */
+	public function test_every_item_carries_its_hub_fields(): void {
+		wp_set_current_user( $this->make_user( 'events_committee' ) );
+
+		foreach ( law_header_nav()['account']['items'] as $item ) {
+			$this->assertArrayHasKey( 'group', $item );
+			$this->assertContains( $item['group'], array( 'personal', 'committee', 'signout' ), "Unknown group on '{$item['key']}'." );
+			$this->assertNotSame( '', (string) $item['icon'], "No icon for '{$item['key']}'." );
+			$this->assertNotSame( '', law_icon( $item['icon'] ), "law_icon() has no glyph named '{$item['icon']}'." );
+
+			if ( 'signout' === $item['key'] ) {
+				$this->assertSame( 'signout', $item['group'] );
+				continue;
+			}
+			$this->assertNotSame( '', (string) $item['description'], "No description for '{$item['key']}'." );
+		}
+	}
+
+	/** The committee tools are grouped as such, so the hub can head them. */
+	public function test_committee_items_are_grouped_apart(): void {
+		wp_set_current_user( $this->make_user( 'events_committee' ) );
+		$groups = wp_list_pluck( law_header_nav()['account']['items'], 'group', 'key' );
+
+		$this->assertSame( 'committee', $groups['dashboard'] );
+		$this->assertSame( 'personal', $groups['profile'] );
+		$this->assertSame( 'personal', $groups['my_bookings'] );
 	}
 
 	public function test_signed_out_gets_only_the_two_auth_links(): void {
@@ -77,7 +181,7 @@ class HeaderNavTest extends LAW_Test_Case {
 	}
 
 	public function test_signed_in_gets_a_named_dropdown_and_no_auth_links(): void {
-		$user_id = $this->make_user( 'event_host' );
+		$user_id = $this->make_user();
 		wp_update_user( array( 'ID' => $user_id, 'first_name' => 'Ada', 'display_name' => 'Ada Lovelace' ) );
 		wp_set_current_user( $user_id );
 
@@ -92,7 +196,7 @@ class HeaderNavTest extends LAW_Test_Case {
 
 	/** A user with no first name on file still gets a one-word mobile label. */
 	public function test_short_name_falls_back_to_the_first_word_of_the_display_name(): void {
-		$user_id = $this->make_user( 'attendee' );
+		$user_id = $this->make_user();
 		wp_update_user( array( 'ID' => $user_id, 'first_name' => '', 'display_name' => 'Grace Brewster Hopper' ) );
 		wp_set_current_user( $user_id );
 
@@ -110,9 +214,16 @@ class HeaderNavTest extends LAW_Test_Case {
 	 * "Manage bookings" said nothing about which bookings it meant and sat
 	 * three items away from the other kind, which is how you end up looking
 	 * for a flagship applicant in the hosted list.
+	 *
+	 * They FOLLOW the personal links now rather than leading (Denis,
+	 * 14 September 2026): the account hub renders this list as boxes, and
+	 * somebody opening their account wants their own profile and bookings
+	 * before the queue they also happen to run. Their order among themselves
+	 * is unchanged.
 	 */
 	public function test_committee_management_links_are_labelled_and_ordered(): void {
 		wp_set_current_user( $this->make_committee_user() );
+		law_account_events_reset_cache();
 
 		$nav   = law_header_nav();
 		$items = wp_list_pluck( $nav['account']['items'], 'label', 'key' );
@@ -123,35 +234,46 @@ class HeaderNavTest extends LAW_Test_Case {
 		$this->assertSame( 'Hosted bookings', $items['bookings'] );
 		$this->assertSame( 'Flagship bookings', $items['flagship_bookings'] );
 
+		$keys      = array_keys( $items );
+		$committee = array_values( array_intersect( $keys, array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' ) ) );
+
 		$this->assertSame(
 			array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' ),
-			array_slice( array_keys( $items ), 0, 6 ),
-			'The management links lead the dropdown, with the two bookings views adjacent.'
+			$committee,
+			'The management links keep their order, with the two bookings views adjacent.'
 		);
+		$this->assertGreaterThan(
+			array_search( 'profile', $keys, true ),
+			array_search( 'dashboard', $keys, true ),
+			'The personal links come first.'
+		);
+		$this->assertSame( 'signout', end( $keys ), 'Sign out is always last.' );
 	}
 
 	/**
-	 * An attendee's route to their bookings: the personal bookings page, and
-	 * NOT My events, which has nothing for them since the 10 September 2026
-	 * split and redirects them away anyway.
+	 * Somebody who has never submitted anything gets their bookings and the
+	 * invitation to submit, and NOT a link to an empty My events page.
 	 */
-	public function test_attendee_reaches_bookings_and_not_my_events(): void {
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+	public function test_a_user_with_no_events_is_not_offered_my_events(): void {
+		wp_set_current_user( $this->make_user() );
+		law_account_events_reset_cache();
 
-		$nav   = law_header_nav();
-		$items = wp_list_pluck( $nav['account']['items'], 'label', 'key' );
+		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
 
-		$this->assertArrayHasKey( 'my_bookings', $items );
 		$this->assertSame( 'My bookings', $items['my_bookings'] );
+		$this->assertSame( 'Submit an event', $items['submit'], 'Everyone signed in may submit, so the route in is always offered.' );
 		$this->assertArrayNotHasKey( 'events', $items );
 	}
 
 	/**
-	 * A host gets both, because a host runs events AND books places at other
-	 * people's. The two used to be one item under two names.
+	 * Somebody who runs an event gets both, because they run events AND book
+	 * places at other people's. The two used to be one item under two names.
 	 */
-	public function test_host_like_user_sees_both_events_and_bookings(): void {
-		wp_set_current_user( $this->make_user( 'event_host' ) );
+	public function test_an_owner_sees_both_events_and_bookings(): void {
+		$user_id = $this->make_user();
+		$this->make_event( array(), 'law-proposed', $user_id );
+		wp_set_current_user( $user_id );
+		law_account_events_reset_cache();
 
 		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
 
@@ -185,9 +307,11 @@ class HeaderNavTest extends LAW_Test_Case {
 			$this->markTestSkipped( 'The Members plugin is not active.' );
 		}
 
-		foreach ( array_keys( self::role_expectations() ) as $role ) {
+		foreach ( array( 'subscriber', 'events_committee', 'administrator', 'editor' ) as $role ) {
 			$user_id = $this->make_user( $role );
+			$this->make_event( array(), 'law-proposed', $user_id ); // So the 'events' item is offered too.
 			wp_set_current_user( $user_id );
+			law_account_events_reset_cache();
 
 			foreach ( law_header_nav()['account']['items'] as $item ) {
 				if ( 'signout' === $item['key'] ) {
@@ -268,7 +392,7 @@ class HeaderNavTest extends LAW_Test_Case {
 
 	/**
 	 * Nobody signs in to get back to the home page: from there the default
-	 * destination applies (My events, or the dashboard for committee).
+	 * destination applies (the account hub, or the dashboard for committee).
 	 */
 	public function test_sign_in_from_the_home_page_goes_to_the_default_destination(): void {
 		$front = (int) get_option( 'page_on_front' );

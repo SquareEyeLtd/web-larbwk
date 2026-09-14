@@ -14,8 +14,12 @@
  * helpers the rest of the module already uses. Two principles matter:
  *
  *   1. No role-name lists. Ask law_user_is_committee(),
- *      law_account_user_is_host_like() and law_events_user_can_submit()
+ *      law_account_user_has_events() and law_events_user_can_submit()
  *      instead, so this file cannot drift away from the pages it links to.
+ *      (That mattered when there were roles to drift between; since they were
+ *      retired on 14 September 2026 it matters differently, because the
+ *      questions worth asking are now about what somebody HAS, not what they
+ *      are.)
  *   2. Access is additive, never either/or. Committee members and
  *      administrators hold bookings and run events of their own, so the
  *      Manage Events link is added to the personal links rather than
@@ -24,6 +28,12 @@
  * The markup lives in parts/layout/top-nav.php; this file only decides what
  * appears. Keeping it a plain data function is what makes the visibility
  * rules testable (tests/HeaderNavTest.php).
+ *
+ * Every item also carries 'group', 'icon' and 'description'. The top bar
+ * ignores all three; the account hub (parts/layout/account-tiles.php) renders
+ * its boxes from them. The hub is built from THIS function's items, never from
+ * a second list of its own: one list is the whole point of the file, and a
+ * parallel one would drift from it exactly as the old If Menu rules did.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -149,7 +159,7 @@ function law_header_nav_can_view( $key ) {
 /**
  * The current front-end URL, for the sign-in link's redirect_to.
  *
- * Returns '' (so the default destination applies: My events, or the
+ * Returns '' (so the default destination applies: the account hub, or the
  * dashboard for committee) on the login and register pages themselves
  * (bouncing a visitor back to the form they just left is worse than the
  * default), on the home page (nobody signs in to get back to the home page),
@@ -263,25 +273,105 @@ function law_header_nav() {
 
 	$items = array();
 
-	// Committee, editors and administrators: the review queue. Added to the
-	// personal links below, never instead of them.
+	// Personal first, committee tools after (Denis, 14 September 2026). The
+	// account hub renders the same list as boxes, and somebody arriving there
+	// wants their own account before the queue they happen to also run; the
+	// hub and this bar must agree, so the order lives here rather than in the
+	// hub's markup.
+	$items[] = array(
+		'key'         => 'profile',
+		'label'       => __( 'My profile', 'law' ),
+		'group'       => 'personal',
+		'icon'        => 'user',
+		'description' => __( 'Your details and password', 'law' ),
+	);
+
+	// Two pages since 10 September 2026, not one page with two names.
+	// /account/events/ is the host's own events; /account/bookings/ is the
+	// places anyone has booked. Anyone signed in may hold both.
+	//
+	// CPT-only: law_account_bookings() returns nothing on the legacy Gravity
+	// Forms source, so on a 'gf' environment the page would never have content.
+	$has_events = function_exists( 'law_account_user_has_events' ) && law_account_user_has_events();
+	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
+		$items[] = array(
+			'key'         => 'my_bookings',
+			'label'       => __( 'My bookings', 'law' ),
+			'group'       => 'personal',
+			'icon'        => 'ticket',
+			'description' => __( 'Places you have booked', 'law' ),
+		);
+	} elseif ( ! $has_events ) {
+		// Pre-cutover, the old page is still where a booking would be found.
+		$items[] = array(
+			'key'         => 'events',
+			'label'       => __( 'My bookings', 'law' ),
+			'group'       => 'personal',
+			'icon'        => 'ticket',
+			'description' => __( 'Places you have booked', 'law' ),
+		);
+	}
+
+	// My events is offered to whoever HAS events, committee included (Denis,
+	// 14 September 2026). It used to be offered to whoever held a host-side
+	// role; with the roles retired, ownership is the only honest test, and
+	// linking everybody to a page that would be empty for most of them is
+	// noise. A co-owner qualifies through the _law_co_owner meta row, so
+	// somebody who runs an event with a colleague keeps their link.
+	if ( $has_events ) {
+		$items[] = array(
+			'key'         => 'events',
+			'label'       => __( 'My events', 'law' ),
+			'group'       => 'personal',
+			'icon'        => 'date',
+			'description' => __( 'Events you run or co-own', 'law' ),
+		);
+	}
+
+	// Straight after My events, not after My bookings (Denis, 10 September
+	// 2026): submitting an event is what a host does FROM their events, so
+	// the two belong together, and My bookings is a different errand. Offered
+	// to everybody signed in now, so it is also the route in for a first-time
+	// host who has nothing yet.
+	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit() ) {
+		$items[] = array(
+			'key'         => 'submit',
+			'label'       => __( 'Submit an event', 'law' ),
+			'group'       => 'personal',
+			'icon'        => 'plus',
+			'description' => __( 'Propose an event for the week', 'law' ),
+		);
+	}
+
+	// Committee, editors and administrators: the review queue and the rest of
+	// the management screens. Added to the personal links above, never instead
+	// of them.
 	if ( function_exists( 'law_user_is_committee' ) && law_user_is_committee() ) {
 		$items[] = array(
-			'key'   => 'dashboard',
-			'label' => __( 'Manage events', 'law' ),
+			'key'         => 'dashboard',
+			'label'       => __( 'Manage events', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'clipboard',
+			'description' => __( 'Review and manage every submitted event', 'law' ),
 		);
 		// The speaker records behind the programme, and the per-event details
 		// each appearance carries (functions/events/speakers-dashboard.php).
 		$items[] = array(
-			'key'   => 'speakers',
-			'label' => __( 'Manage speakers', 'law' ),
+			'key'         => 'speakers',
+			'label'       => __( 'Manage speakers', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'microphone',
+			'description' => __( 'Speaker records and their appearances', 'law' ),
 		);
 		// The flagship conference is LAW's own event, edited on its own screen
 		// rather than through the review queue, which deliberately excludes it
 		// (functions/events/flagship-dashboard.php).
 		$items[] = array(
-			'key'   => 'flagship',
-			'label' => __( 'Manage flagship', 'law' ),
+			'key'         => 'flagship',
+			'label'       => __( 'Manage flagship', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'flag',
+			'description' => __( 'Edit the flagship conference', 'law' ),
 		);
 		// The two bookings views sit together, and are named for what they
 		// hold rather than for what you do to them (Denis, 10 September
@@ -292,69 +382,34 @@ function law_header_nav() {
 		// no review), EVENTS_BOOKINGS.md §7.6: a child page of the events
 		// dashboard with the same Members restriction.
 		$items[] = array(
-			'key'   => 'bookings',
-			'label' => __( 'Hosted bookings', 'law' ),
+			'key'         => 'bookings',
+			'label'       => __( 'Hosted bookings', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'places',
+			'description' => __( 'Bookings at hosted events', 'law' ),
 		);
 		// The flagship's applications and payments, deliberately a separate
 		// page: a hosted booking is free and instant, a flagship application
 		// is a priced request the committee reviews
 		// (functions/events/flagship-bookings-dashboard.php).
 		$items[] = array(
-			'key'   => 'flagship_bookings',
-			'label' => __( 'Flagship bookings', 'law' ),
+			'key'         => 'flagship_bookings',
+			'label'       => __( 'Flagship bookings', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'price',
+			'description' => __( 'Applications and payments for the flagship', 'law' ),
 		);
 		// The discount-code catalogue (functions/events/discounts.php).
 		// Nothing accepts a code yet; the screen says so. It is here so the
 		// committee can prepare codes for whatever starts charging first.
 		$items[] = array(
-			'key'   => 'discounts',
-			'label' => __( 'Discount codes', 'law' ),
+			'key'         => 'discounts',
+			'label'       => __( 'Discount codes', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'type',
+			'description' => __( 'Prepare and manage discount codes', 'law' ),
 		);
 	}
-
-	// Two pages since 10 September 2026, not one page with two names.
-	// /account/events/ is the host's own events; /account/bookings/ is the
-	// places anyone has booked. A host holds both, so both are offered: hosts,
-	// sponsors and committee members book at other firms' events like everyone
-	// else. Someone who runs nothing gets the bookings item alone, and
-	// account-events.php redirects them if they reach My events anyway.
-	$host_like = function_exists( 'law_account_user_is_host_like' ) && law_account_user_is_host_like();
-	if ( $host_like ) {
-		$items[] = array(
-			'key'   => 'events',
-			'label' => __( 'My events', 'law' ),
-		);
-	}
-
-	// Straight after My events, not after My bookings (Denis, 10 September
-	// 2026): submitting an event is what a host does FROM their events, so
-	// the two belong together, and My bookings is a different errand.
-	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit() ) {
-		$items[] = array(
-			'key'   => 'submit',
-			'label' => __( 'Submit an event', 'law' ),
-		);
-	}
-
-	// CPT-only: law_account_bookings() returns nothing on the legacy Gravity
-	// Forms source, so on a 'gf' environment the page would never have content.
-	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
-		$items[] = array(
-			'key'   => 'my_bookings',
-			'label' => __( 'My bookings', 'law' ),
-		);
-	} elseif ( ! $host_like ) {
-		// Pre-cutover, the old page is still where a booking would be found.
-		$items[] = array(
-			'key'   => 'events',
-			'label' => __( 'My bookings', 'law' ),
-		);
-	}
-
-	$items[] = array(
-		'key'   => 'profile',
-		'label' => __( 'My profile', 'law' ),
-	);
 
 	$queried = (int) get_queried_object_id();
 	$built   = array();
@@ -367,19 +422,26 @@ function law_header_nav() {
 		$page_id = law_account_page_id( $item['key'] );
 
 		$built[] = array(
-			'key'     => $item['key'],
-			'label'   => $item['label'],
-			'url'     => law_account_url( $item['key'] ),
-			'current' => $page_id && $page_id === $queried,
+			'key'         => $item['key'],
+			'label'       => $item['label'],
+			'url'         => law_account_url( $item['key'] ),
+			'current'     => $page_id && $page_id === $queried,
+			// The hub reads these three; the top bar ignores them.
+			'group'       => $item['group'] ?? 'personal',
+			'icon'        => $item['icon'] ?? '',
+			'description' => $item['description'] ?? '',
 		);
 	}
 
 	// Always last, and never subject to the checks above.
 	$built[] = array(
-		'key'     => 'signout',
-		'label'   => __( 'Sign out', 'law' ),
-		'url'     => wp_logout_url( home_url( '/' ) ),
-		'current' => false,
+		'key'         => 'signout',
+		'label'       => __( 'Sign out', 'law' ),
+		'url'         => wp_logout_url( home_url( '/' ) ),
+		'current'     => false,
+		'group'       => 'signout',
+		'icon'        => 'signout',
+		'description' => '',
 	);
 
 	return array(

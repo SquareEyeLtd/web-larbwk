@@ -62,6 +62,16 @@ add_action( 'wp_enqueue_scripts', function () {
 		);
 	}
 
+	// The account hub's tiles (/account/, templates/account-hub.php).
+	if ( is_page_template( 'templates/account-hub.php' ) ) {
+		wp_enqueue_style(
+			'law-account-hub',
+			get_theme_file_uri( '/assets/css/account-hub.css' ),
+			array( 'law-wp' ),
+			filemtime( get_theme_file_path( '/assets/css/account-hub.css' ) )
+		);
+	}
+
 	if ( law_speakers_is_template() ) {
 		wp_enqueue_style(
 			'law-speakers',

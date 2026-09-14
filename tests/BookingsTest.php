@@ -80,7 +80,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_create_makes_one_booking_per_attendee_with_own_numbers(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$guest  = $this->unique_email( 'guest' );
 
 		$ids = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $guest ) ) );
@@ -114,25 +114,31 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertSame( 'Test Org', $person['organisation'] );
 		$this->assertSame( 2, law_event_attendee_total( $event ) );
 		$this->assertSame( 8, law_event_tickets_remaining( $event ) );
-		$this->assertContains( 'attendee', (array) $colleague->roles );
+		// An account created for a colleague is a plain subscriber: booking
+		// grants nothing, and since 14 September 2026 there is no attendee
+		// role to grant.
+		$this->assertSame( array( 'subscriber' ), array_values( (array) $colleague->roles ) );
 	}
 
-	public function test_create_links_existing_account_and_grants_attendee_role(): void {
+	public function test_create_links_existing_account_without_touching_its_roles(): void {
 		$event    = $this->make_bookable_event();
-		$booker   = $this->make_user( 'attendee' );
-		$existing = $this->make_user( 'event_host' ); // No attendee role yet.
+		$booker   = $this->make_user();
+		$existing = $this->make_user( 'events_committee' );
 		$email    = get_userdata( $existing )->user_email;
+		$before   = array_values( (array) get_userdata( $existing )->roles );
 
 		$ids = $this->make_booking( $event, $booker, array( $this->row( 'Existing Person', $email ) ) );
 		$this->assertIsArray( $ids );
 		$this->assertSame( $existing, (int) get_post( $ids[1] )->post_author, 'The existing account is linked, not duplicated.' );
-		$this->assertContains( 'attendee', (array) get_userdata( $existing )->roles );
+		// The invariant this replaced the attendee-role grant with: booking at
+		// an event may never change what an account is.
+		$this->assertSame( $before, array_values( (array) get_userdata( $existing )->roles ) );
 		$this->assertStringContainsString( 'linked to existing account', $this->log_text( $event ) );
 	}
 
 	public function test_party_query_unions_own_and_invited_bookings(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 
 		$party = law_booking_party( $event, $booker );
@@ -145,7 +151,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_duplicate_guards(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$guest  = $this->unique_email( 'guest' );
 		$this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $guest ) ) );
 
@@ -154,7 +160,7 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertWPError( $this->make_booking( $event, (int) $colleague->ID ), 'law_booking_duplicate' );
 
 		// A second booker trying to bring the same colleague.
-		$other = $this->make_user( 'attendee' );
+		$other = $this->make_user();
 		$this->assertWPError( $this->make_booking( $event, $other, array( $this->row( 'Jane Again', $guest ) ) ), 'law_booking_duplicate' );
 
 		// The booker themselves, twice.
@@ -163,12 +169,12 @@ class BookingsTest extends LAW_Test_Case {
 		// The same email twice in one submission.
 		$twice = $this->unique_email( 'twice' );
 		$this->assertWPError(
-			$this->make_booking( $event, $this->make_user( 'attendee' ), array( $this->row( 'A', $twice ), $this->row( 'B', $twice ) ) ),
+			$this->make_booking( $event, $this->make_user(), array( $this->row( 'A', $twice ), $this->row( 'B', $twice ) ) ),
 			'law_booking_duplicate'
 		);
 
 		// A cancelled booking frees the email again.
-		$fresh = $this->make_user( 'attendee' );
+		$fresh = $this->make_user();
 		$one   = $this->make_booking( $event, $fresh );
 		law_booking_cancel( $one[0], $fresh, 'self' );
 		$this->assertIsArray( $this->make_booking( $event, $fresh ), 'A cancelled booking does not block a new one.' );
@@ -176,7 +182,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_attendee_rows_require_organisation_and_job_title(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$guest  = $this->unique_email( 'guest' );
 
 		// All four fields are required on an additional-attendee row (Denis,
@@ -197,20 +203,20 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_capacity_exact_fill_then_full(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 2 ) );
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 
 		$ids = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 		$this->assertIsArray( $ids );
 		$this->assertSame( 0, law_event_tickets_remaining( $event ) );
 
-		$this->assertWPError( $this->make_booking( $event, $this->make_user( 'attendee' ) ), 'law_booking_full' );
+		$this->assertWPError( $this->make_booking( $event, $this->make_user() ), 'law_booking_full' );
 	}
 
 	public function test_capacity_overflow_names_the_shortfall(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 2 ) );
 		$result = $this->make_booking(
 			$event,
-			$this->make_user( 'attendee' ),
+			$this->make_user(),
 			array( $this->row( 'A', $this->unique_email( 'a' ) ), $this->row( 'B', $this->unique_email( 'b' ) ) )
 		);
 		$this->assertWPError( $result, 'law_booking_full' );
@@ -222,7 +228,7 @@ class BookingsTest extends LAW_Test_Case {
 		$email  = $this->unique_email( 'never' );
 		$before = law_event_attendee_total( $event );
 
-		$result = $this->make_booking( $event, $this->make_user( 'attendee' ), array( $this->row( 'Never Booked', $email ) ) );
+		$result = $this->make_booking( $event, $this->make_user(), array( $this->row( 'Never Booked', $email ) ) );
 		$this->assertWPError( $result, 'law_booking_full' );
 		$this->assertSame( $before, law_event_attendee_total( $event ), 'A refused submission seats nobody.' );
 		$this->assertCount( 0, law_bookings_for_event( $event, array( 'publish', 'law-cancelled' ), -1 ) );
@@ -231,7 +237,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_partial_insert_failure_rolls_the_whole_submission_back(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$guest  = $this->unique_email( 'guest' );
 
 		// Fail the colleague's insert, the second of the two.
@@ -256,7 +262,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_account_failure_refuses_the_whole_submission(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$first  = $this->unique_email( 'first' );
 		$second = $this->unique_email( 'second' );
 
@@ -290,7 +296,7 @@ class BookingsTest extends LAW_Test_Case {
 	}
 
 	public function test_open_guard_states(): void {
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 
 		$no_tickets = $this->make_bookable_event( array( '_law_tickets_available' => 0 ) );
 		$this->assertWPError( $this->make_booking( $no_tickets, $booker ), 'law_booking_not_open' );
@@ -307,7 +313,7 @@ class BookingsTest extends LAW_Test_Case {
 	}
 
 	public function test_clash_guard_overlap_refused_adjacent_allowed(): void {
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$first  = $this->make_bookable_event( array( '_law_start' => '2026-12-01 10:00', '_law_end' => '2026-12-01 12:00' ) );
 		$this->make_booking( $first, $booker );
 
@@ -321,7 +327,7 @@ class BookingsTest extends LAW_Test_Case {
 	}
 
 	public function test_clash_ignores_cancelled_bookings_and_defaults_missing_end(): void {
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$first  = $this->make_bookable_event( array( '_law_start' => '2026-12-02 10:00', '_law_end' => '2026-12-02 12:00' ) );
 		$ids    = $this->make_booking( $first, $booker );
 		law_booking_cancel( $ids[0], $booker, 'self' );
@@ -330,7 +336,7 @@ class BookingsTest extends LAW_Test_Case {
 		$this->assertIsArray( $this->make_booking( $overlap, $booker ), 'A cancelled booking cannot clash.' );
 
 		// No end: treated as running to 23:59, so a later event the same day clashes.
-		$other    = $this->make_user( 'attendee' );
+		$other    = $this->make_user();
 		$open_end = $this->make_bookable_event( array( '_law_start' => '2026-12-03 18:00', '_law_end' => '' ) );
 		$this->make_booking( $open_end, $other );
 		$evening = $this->make_bookable_event( array( '_law_start' => '2026-12-03 19:00', '_law_end' => '2026-12-03 21:00' ) );
@@ -338,7 +344,7 @@ class BookingsTest extends LAW_Test_Case {
 	}
 
 	public function test_clash_treats_inverted_end_as_open_ended(): void {
-		$user    = $this->make_user( 'attendee' );
+		$user    = $this->make_user();
 		$broken  = $this->make_bookable_event( array( '_law_start' => '2026-12-04 18:00', '_law_end' => '2026-12-04 09:00' ) );
 		$this->make_booking( $broken, $user );
 		$evening = $this->make_bookable_event( array( '_law_start' => '2026-12-04 19:00', '_law_end' => '2026-12-04 21:00' ) );
@@ -349,7 +355,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_add_colleague_caps_and_capacity(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 6 ) );
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$this->make_booking( $event, $booker );
 
 		for ( $i = 0; $i < law_booking_max_additional(); $i++ ) {
@@ -367,14 +373,14 @@ class BookingsTest extends LAW_Test_Case {
 
 		// Someone with no party here cannot add anybody.
 		$this->assertWPError(
-			$this->make_colleague_booking( $event, $this->make_user( 'attendee' ), $this->row( 'Nope', $this->unique_email( 'nope' ) ) ),
+			$this->make_colleague_booking( $event, $this->make_user(), $this->row( 'Nope', $this->unique_email( 'nope' ) ) ),
 			'law_booking_no_party'
 		);
 	}
 
 	public function test_cancel_one_booking_recounts_and_keeps_the_rest(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 
 		$this->assertTrue( law_booking_cancel( $ids[1], $booker, 'booker' ) );
@@ -386,7 +392,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_booker_self_cancel_keeps_colleagues_and_can_rebook(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 
 		$this->assertTrue( law_booking_cancel( $ids[0], $booker, 'self' ) );
@@ -403,7 +409,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_cancel_party_cancels_own_and_invited(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking(
 			$event,
 			$booker,
@@ -425,22 +431,22 @@ class BookingsTest extends LAW_Test_Case {
 	 * which is why this covers the gate and not law_booking_cancel().
 	 */
 	public function test_only_the_committee_may_reject_a_booking(): void {
-		$host     = $this->make_user( 'event_host' );
-		$co_owner = $this->make_user( 'event_host' );
+		$host     = $this->make_user();
+		$co_owner = $this->make_user();
 		$event    = $this->make_event( array( '_law_co_owner_ids' => array( $co_owner ) ), 'publish', $host );
 
 		$this->assertFalse( law_booking_user_can_reject( $host, $event ), 'The host must not cancel bookings.' );
 		$this->assertTrue( law_user_can_manage_event( $host, $event ), 'The host still manages the event itself.' );
 		$this->assertFalse( law_booking_user_can_reject( $co_owner, $event ), 'A co-owner must not cancel bookings either.' );
 		$this->assertTrue( law_user_can_manage_event( $co_owner, $event ) );
-		$this->assertFalse( law_booking_user_can_reject( $this->make_user( 'event_host' ), $event ), 'An unrelated host must not cancel bookings.' );
-		$this->assertFalse( law_booking_user_can_reject( $this->make_user( 'attendee' ), $event ) );
+		$this->assertFalse( law_booking_user_can_reject( $this->make_user(), $event ), 'An unrelated host must not cancel bookings.' );
+		$this->assertFalse( law_booking_user_can_reject( $this->make_user(), $event ) );
 		$this->assertTrue( law_booking_user_can_reject( $this->make_committee_user(), $event ), 'The committee must still cancel bookings.' );
 	}
 
 	public function test_reject_logs_the_reason(): void {
 		$event     = $this->make_bookable_event();
-		$booker    = $this->make_user( 'attendee' );
+		$booker    = $this->make_user();
 		$committee = $this->make_committee_user();
 		$ids       = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 
@@ -452,34 +458,34 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_cancel_frees_places(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 2 ) );
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 		$this->assertSame( 0, law_event_tickets_remaining( $event ) );
 
 		law_bookings_cancel_party( $event, $booker, $booker );
 		$this->assertSame( 2, law_event_tickets_remaining( $event ) );
-		$this->assertIsArray( $this->make_booking( $event, $this->make_user( 'attendee' ) ) );
+		$this->assertIsArray( $this->make_booking( $event, $this->make_user() ) );
 	}
 
 	/* Protection ____________________________________________________________ */
 
 	public function test_status_guard_reverts_non_engine_flips(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker );
 
 		law_booking_cancel( $ids[0], $booker, 'self' );
 		wp_update_post( array( 'ID' => $ids[0], 'post_status' => 'publish' ) );
 		$this->assertSame( 'law-cancelled', get_post_status( $ids[0] ), 'Only the engine may move a booking status.' );
 
-		$live = $this->make_booking( $event, $this->make_user( 'attendee' ) );
+		$live = $this->make_booking( $event, $this->make_user() );
 		wp_update_post( array( 'ID' => $live[0], 'post_status' => 'law-waitlisted' ) );
 		$this->assertSame( 'publish', get_post_status( $live[0] ), 'Nor may quick edit waitlist an active booking.' );
 	}
 
 	public function test_trash_untrash_and_delete_backstops(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 		$this->assertSame( 2, law_event_attendee_total( $event ) );
 
@@ -496,7 +502,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_capacity_warning_latch_fires_once_and_rearms(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 6 ) );
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_warned' ), 'Within 5 places: the host is warned.' );
 
@@ -511,7 +517,7 @@ class BookingsTest extends LAW_Test_Case {
 	 */
 	public function test_capacity_latches_rearm_together_above_the_threshold(): void {
 		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 2 ) );
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 		$this->assertSame( 0, law_event_tickets_remaining( $event ) );
 		$this->assertSame( 1, (int) law_event_meta( $event, '_law_capacity_full_warned' ), 'Full: the sold-out latch is set.' );
@@ -532,7 +538,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_event_trash_sweeps_active_bookings(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker );
 
 		wp_trash_post( $event );
@@ -541,7 +547,7 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_event_cancel_sweep_cancels_bookings(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$ids    = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 
 		law_bookings_cancel_all_for_event( $event, $this->make_committee_user(), 'test' );
@@ -556,12 +562,12 @@ class BookingsTest extends LAW_Test_Case {
 
 	public function test_export_rows_are_one_per_attendee_with_invited_by(): void {
 		$event  = $this->make_bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		wp_update_user( array( 'ID' => $booker, 'first_name' => 'Bo', 'last_name' => 'Oker' ) );
 		$ids = $this->make_booking( $event, $booker, array( $this->row( 'Jane Smith', $this->unique_email( 'guest' ) ) ) );
 
 		// A cancelled booking never reaches the door list.
-		$other = $this->make_user( 'attendee' );
+		$other = $this->make_user();
 		$gone  = $this->make_booking( $event, $other );
 		law_booking_cancel( $gone[0], $other, 'self' );
 
@@ -585,7 +591,7 @@ class BookingsTest extends LAW_Test_Case {
 	public function test_register_by_manager_gives_the_person_their_own_booking(): void {
 		$event     = $this->make_bookable_event();
 		$committee = $this->make_committee_user();
-		$existing  = $this->make_user( 'attendee' );
+		$existing  = $this->make_user();
 		$email     = get_userdata( $existing )->user_email;
 
 		$booking = law_booking_register_by_manager( $event, $this->row( 'VIP Person', $email ), $committee, array( 'press' => true ) );
@@ -662,7 +668,7 @@ class BookingsTest extends LAW_Test_Case {
 	public function test_register_by_manager_never_overwrites_an_existing_profile(): void {
 		$event     = $this->make_bookable_event();
 		$committee = $this->make_committee_user();
-		$existing  = $this->make_user( 'attendee' );
+		$existing  = $this->make_user();
 		$email     = get_userdata( $existing )->user_email;
 
 		update_user_meta( $existing, 'country', 'United Kingdom' );

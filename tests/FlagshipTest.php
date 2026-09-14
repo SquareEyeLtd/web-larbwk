@@ -403,7 +403,7 @@ class FlagshipTest extends LAW_Test_Case {
 	}
 
 	public function test_the_flagship_is_hidden_from_my_events(): void {
-		$host     = $this->make_user( 'event_host' );
+		$host     = $this->make_user();
 		$ordinary = $this->make_event( array(), 'law-proposed', $host );
 		$event_id = $this->make_flagship();
 		wp_update_post( array( 'ID' => $event_id, 'post_author' => $host ) );
@@ -419,7 +419,7 @@ class FlagshipTest extends LAW_Test_Case {
 
 	public function test_the_host_form_cannot_flag_an_event_as_the_flagship(): void {
 		$pinned = $this->make_flagship();
-		$host   = $this->make_user( 'event_host' );
+		$host   = $this->make_user();
 
 		$slot_labels = array_keys( law_events_slot_choices( array() ) );
 		$result      = law_events_form_save(
@@ -532,7 +532,7 @@ class FlagshipTest extends LAW_Test_Case {
 	public function test_the_flagship_cannot_be_booked(): void {
 		$event_id = $this->make_flagship( 'publish' );
 		law_event_update_meta( $event_id, '_law_tickets_available', 100 );
-		$attendee = $this->make_user( 'event_attendee' );
+		$attendee = $this->make_user();
 
 		$result = law_booking_create( $event_id, $attendee, array() );
 		$this->assertInstanceOf( WP_Error::class, $result );

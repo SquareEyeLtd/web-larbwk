@@ -389,7 +389,7 @@ class SpeakerNamesTest extends LAW_Test_Case {
 	}
 
 	public function test_a_started_speaker_row_must_have_both_names(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 		$event = get_post( $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed', $host ) );
 

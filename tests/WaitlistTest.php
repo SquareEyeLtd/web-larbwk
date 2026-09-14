@@ -67,7 +67,7 @@ class WaitlistTest extends LAW_Test_Case {
 				$meta
 			),
 			'publish',
-			$this->make_user( 'event_host' )
+			$this->make_user()
 		);
 	}
 
@@ -80,7 +80,7 @@ class WaitlistTest extends LAW_Test_Case {
 		return $this->make_event(
 			array( '_law_tickets_available' => 5, '_law_start' => '2026-12-01 11:00', '_law_end' => '2026-12-01 13:00' ),
 			'publish',
-			$this->make_user( 'event_host' )
+			$this->make_user()
 		);
 	}
 
@@ -115,7 +115,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$booked = array();
 		$places = (int) law_event_meta( $event_id, '_law_tickets_available' );
 		for ( $i = 0; $i < $places; $i++ ) {
-			$user     = $this->make_user( 'attendee' );
+			$user     = $this->make_user();
 			$ids      = $this->make_booking( $event_id, $user );
 			$this->assertIsArray( $ids, 'Filling the event should succeed.' );
 			$booked[] = array( 'user' => $user, 'booking' => (int) $ids[0] );
@@ -133,7 +133,7 @@ class WaitlistTest extends LAW_Test_Case {
 	public function test_join_refused_while_places_are_free(): void {
 		$event = $this->make_bookable_event();
 		$this->assertWPError(
-			$this->make_waitlist( $event, $this->make_user( 'attendee' ) ),
+			$this->make_waitlist( $event, $this->make_user() ),
 			'law_waitlist_places_available'
 		);
 	}
@@ -142,7 +142,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
 
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$guest  = $this->unique_email( 'guest' );
 		$this->mail = array();
 
@@ -172,7 +172,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$host = $this->host_of( $event );
 		$this->assertNotEmpty( $this->mail_to( $host->user_email ) );
 		$this->mail = array();
-		$this->make_waitlist( $event, $this->make_user( 'attendee' ) );
+		$this->make_waitlist( $event, $this->make_user() );
 		$activation = array_filter(
 			$this->mail_to( $host->user_email ),
 			fn( $m ) => false !== stripos( $m['subject'], 'waitlist has opened' )
@@ -188,7 +188,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertWPError( $this->make_waitlist( $event, $booked[0]['user'] ), 'law_booking_duplicate' );
 
 		// Someone already waiting cannot join twice.
-		$waiter = $this->make_user( 'attendee' );
+		$waiter = $this->make_user();
 		$this->make_waitlist( $event, $waiter );
 		$this->assertWPError( $this->make_waitlist( $event, $waiter ), 'law_booking_duplicate' );
 
@@ -199,10 +199,10 @@ class WaitlistTest extends LAW_Test_Case {
 
 	public function test_join_closed_and_not_open_events(): void {
 		$started = $this->make_bookable_event( array( '_law_start' => '2020-01-01 10:00', '_law_end' => '2020-01-01 12:00' ) );
-		$this->assertWPError( $this->make_waitlist( $started, $this->make_user( 'attendee' ) ), 'law_booking_closed' );
+		$this->assertWPError( $this->make_waitlist( $started, $this->make_user() ), 'law_booking_closed' );
 
 		$no_tickets = $this->make_bookable_event( array( '_law_tickets_available' => 0 ) );
-		$this->assertWPError( $this->make_waitlist( $no_tickets, $this->make_user( 'attendee' ) ), 'law_booking_not_open' );
+		$this->assertWPError( $this->make_waitlist( $no_tickets, $this->make_user() ), 'law_booking_not_open' );
 	}
 
 	/* Promotion _____________________________________________________________ */
@@ -211,8 +211,8 @@ class WaitlistTest extends LAW_Test_Case {
 		$event  = $this->make_bookable_event();
 		$booked = $this->fill( $event );
 
-		$first  = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$second = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$first  = $this->make_waitlist( $event, $this->make_user() )[0];
+		$second = $this->make_waitlist( $event, $this->make_user() )[0];
 		$this->mail = array();
 
 		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
@@ -242,8 +242,8 @@ class WaitlistTest extends LAW_Test_Case {
 		$booked = $this->fill( $event );
 		$host   = (int) get_post_field( 'post_author', $event );
 
-		$first  = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$second = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$first  = $this->make_waitlist( $event, $this->make_user() )[0];
+		$second = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		// A host reject frees a place, which the queue takes.
 		law_booking_cancel( $booked[0]['booking'], $host, 'host_reject', array( 'reason' => 'No show expected' ) );
@@ -259,7 +259,7 @@ class WaitlistTest extends LAW_Test_Case {
 	public function test_lowering_places_promotes_nobody(): void {
 		$event = $this->make_bookable_event( array( '_law_tickets_available' => 4 ) );
 		$this->fill( $event );
-		$entry = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$entry = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		law_event_update_meta( $event, '_law_tickets_available', 2 );
 		law_event_tickets_changed( $event, 4, 2, 0, 'test' );
@@ -273,9 +273,9 @@ class WaitlistTest extends LAW_Test_Case {
 
 		// The head of the queue books an overlapping event while waiting, so
 		// their place cannot be taken up when it comes.
-		$clasher = $this->make_user( 'attendee' );
+		$clasher = $this->make_user();
 		$first   = $this->make_waitlist( $event, $clasher )[0];
-		$second  = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$second  = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		$overlap = $this->make_overlapping_event();
 		$this->make_booking( $overlap, $clasher );
@@ -309,9 +309,9 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->fill( $event );
 		$host = (int) get_post_field( 'post_author', $event );
 
-		$a = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$b = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$c = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$a = $this->make_waitlist( $event, $this->make_user() )[0];
+		$b = $this->make_waitlist( $event, $this->make_user() )[0];
+		$c = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		$result = law_waitlist_reorder( $c, 'top', $host, $this->position( $c ) );
 		$this->assertTrue( $result['moved'] );
@@ -337,9 +337,9 @@ class WaitlistTest extends LAW_Test_Case {
 		$booked = $this->fill( $event );
 		$host   = (int) get_post_field( 'post_author', $event );
 
-		$a = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$b = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$c = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$a = $this->make_waitlist( $event, $this->make_user() )[0];
+		$b = $this->make_waitlist( $event, $this->make_user() )[0];
+		$c = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		// Moving somebody up while the event is full promotes nobody yet.
 		$this->assertTrue( law_waitlist_reorder( $c, 'top', $host, $this->position( $c ) )['moved'] );
@@ -372,7 +372,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
 		$host  = (int) get_post_field( 'post_author', $event );
-		$entry = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$entry = $this->make_waitlist( $event, $this->make_user() )[0];
 		$this->mail = array();
 
 		$result = law_waitlist_promote( $entry, $host );
@@ -388,7 +388,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertEmpty( $warnings );
 
 		// A clash is still a refusal, even by hand.
-		$clasher = $this->make_user( 'attendee' );
+		$clasher = $this->make_user();
 		$blocked = $this->make_waitlist( $event, $clasher )[0];
 		$overlap = $this->make_overlapping_event();
 		$this->make_booking( $overlap, $clasher );
@@ -402,7 +402,7 @@ class WaitlistTest extends LAW_Test_Case {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
 
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$guest  = $this->unique_email( 'guest' );
 		$ids    = $this->make_waitlist( $event, $booker, array( $this->row( 'Jane Smith', $guest ) ) );
 		$this->mail = array();
@@ -421,8 +421,8 @@ class WaitlistTest extends LAW_Test_Case {
 	public function test_status_guard_and_untrash_to_the_back(): void {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
-		$first  = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
-		$second = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$first  = $this->make_waitlist( $event, $this->make_user() )[0];
+		$second = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		// Only the engine may seat a waitlisted booking.
 		wp_update_post( array( 'ID' => $first, 'post_status' => 'publish' ) );
@@ -439,7 +439,7 @@ class WaitlistTest extends LAW_Test_Case {
 	public function test_event_cancel_sweeps_the_waitlist_without_promoting(): void {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
-		$entry = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$entry = $this->make_waitlist( $event, $this->make_user() )[0];
 		$waiter = get_userdata( (int) get_post_field( 'post_author', $entry ) );
 		$this->mail = array();
 
@@ -455,7 +455,7 @@ class WaitlistTest extends LAW_Test_Case {
 	public function test_event_trash_sweeps_the_waitlist_without_promoting(): void {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
-		$entry = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+		$entry = $this->make_waitlist( $event, $this->make_user() )[0];
 
 		wp_trash_post( $event );
 		$this->assertSame( 'law-cancelled', get_post_status( $entry ) );
@@ -465,7 +465,7 @@ class WaitlistTest extends LAW_Test_Case {
 	public function test_waitlisted_entries_are_not_places(): void {
 		$event = $this->make_bookable_event();
 		$this->fill( $event );
-		$waiter = $this->make_user( 'attendee' );
+		$waiter = $this->make_user();
 		$this->make_waitlist( $event, $waiter );
 
 		// Not a clash source: waiting for one event must not block booking another.
@@ -484,7 +484,7 @@ class WaitlistTest extends LAW_Test_Case {
 
 		$entries = array();
 		for ( $i = 0; $i < 12; $i++ ) {
-			$entries[] = $this->make_waitlist( $event, $this->make_user( 'attendee' ) )[0];
+			$entries[] = $this->make_waitlist( $event, $this->make_user() )[0];
 		}
 
 		// Free every place at once, without letting each cancel run a pass.

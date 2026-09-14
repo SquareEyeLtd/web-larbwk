@@ -334,10 +334,8 @@ function law_flagship_apply( $user_id, array $input ) {
 		law_booking_unlock( $event_id );
 	}
 
-	// Everything slow happens after the lock: the attendee role, Stripe, and
-	// the emails, so one applicant is never queued behind another's network.
-	law_booking_grant_attendee_role( $user_id, $event_id, $user_id );
-
+	// Everything slow happens after the lock: Stripe and the emails, so one
+	// applicant is never queued behind another's network.
 	law_event_log(
 		$event_id,
 		sprintf(
@@ -1384,7 +1382,6 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 		law_booking_unlock( $event_id );
 	}
 
-	law_booking_grant_attendee_role( $user_id, $event_id, (int) $actor_id );
 	// Country, accessibility and dietary, once the place is actually theirs.
 	law_booking_apply_attendee_profile( $user_id, $profile, ! empty( $resolved['created'] ), $event_id, (int) $actor_id );
 

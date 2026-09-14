@@ -51,7 +51,7 @@ $law_auth_intros = array(
 						<p>You are signed in.</p>
 						<p>
 							<a href="<?php echo esc_url( home_url( '/account/' ) ); ?>">Go to your account</a><br>
-							<a href="<?php echo esc_url( wp_logout_url( law_auth_login_url() ) ); ?>">Log out</a>
+							<a href="<?php echo esc_url( wp_logout_url( law_auth_login_url() ) ); ?>">Sign out</a>
 						</p>
 					</div>
 				<?php else : ?>

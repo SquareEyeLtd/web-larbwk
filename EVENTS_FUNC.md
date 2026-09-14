@@ -498,11 +498,16 @@ accepted.
 - `law_events_capability_names()`, `law_events_grant_capabilities()` (on `init`
   priority 20, once per caps version): grants the full `law_event`/`law_events`
   capability set to `administrator`, `editor` and `events_committee` only, plus
-  `upload_files` to the committee for speaker photos. **Host-side roles get
-  nothing** — `event_host`, `sponsor` and `attendee` hold only `read`, so hosts
-  never reach the wp-admin event screens; all host access runs through
-  `law_user_can_manage_event()` instead, and the front-end form writes posts
-  and meta through functions that do not check caps.
+  `upload_files` to the committee for speaker photos. **There are no host-side
+  roles** since 14 September 2026: every self-service account is a plain
+  `subscriber`, so nobody but the committee, editors and administrators reaches
+  the wp-admin event screens. All host access runs through
+  `law_user_can_manage_event()` (authorship and the co-owner meta), and the
+  front-end form writes posts and meta through functions that do not check
+  caps. What the old role checkboxes said about somebody survives as `law_intent`
+  user meta, which chooses a welcome email and a HubSpot tag and gates nothing
+  (`registration.php`); the retired role definitions stay in `wp_user_roles`
+  unassigned, so a rollback is a code revert. See ROLES_AND_ACCOUNT_HUB.md.
 - `law_user_can_manage_event()`: the per-event gate — the author, any co-owner
   (`_law_co_owner_ids`), or a committee user. Used by every host-facing handler
   and the edit form. It is a flat OR, so a caller cannot tell host from
@@ -714,8 +719,9 @@ deliberately typed 0 still waives the fee, and the help text says so).
 ### `co-owners.php`: additional owners as real accounts
 
 - `law_event_ensure_co_owner_users()`: on approval (and on host/admin edits of
-  an already-approved event), turns each co-owner row into access — creating an
-  `event_host` account for a new email, or linking an existing account. Every
+  an already-approved event), turns each co-owner row into access — creating a
+  subscriber account for a new email, or linking an existing account. Access
+  comes from the `_law_co_owner` meta row, never from the account's role. Every
   action is logged.
 - `law_event_notify_co_owner_linked()` and
   `law_event_notify_co_owner_created()`: the two additional-host emails, both
@@ -731,9 +737,16 @@ deliberately typed 0 still waives the fee, and the help text says so).
   (what the dashboard's owned-events query matches).
 - `law_events_create_host_user( $email, $name, $organisation, $args )`:
   creates the account (username = email, random password; `$args` carries
-  `role`, default `event_host`, and an optional `job_title` — the bookings
-  engine passes `attendee`) and sends **nothing** — the welcome is
-  the caller's job so it can carry the event's context.
+  `role`, **default `subscriber` since 14 September 2026**, and an optional
+  `job_title`) and sends **nothing** — the welcome is the caller's job so it
+  can carry the event's context. Every account the module creates is a plain
+  subscriber now, co-owners and booked-in colleagues alike; the name is a
+  misnomer kept for its three callers. The `role` arg is **whitelisted against
+  `law_events_creatable_roles()`** (a list of one) and anything else falls back
+  to subscriber: this function mints accounts from an email address somebody
+  typed into a form, so a future caller passing user input must not be able to
+  turn it into an escalation path (security review, 14 September 2026). No
+  caller passes a role today.
   `law_events_password_setup_link( $user, $event_id, $log_action )` mints the
   branded set-password link (with the forgot-password fallback and failure
   log), shared by the co-owner welcome and the bookings invite. It deliberately does
@@ -840,9 +853,11 @@ ONE booking carrying an attendee rows array; that model, its flat
   new account takes everything given; an account that already existed only has
   its blanks filled**, so a host repeating what they remember of a phone call
   can never overwrite what the person stated themselves. An account that
-  already existed and holds anything beyond the three self-service roles (an
-  administrator, a committee member) is **not written to at all** (security
-  review, 11 September 2026): the account is found by the email address
+  already existed and holds anything beyond `subscriber` (an administrator, a
+  committee member) is **not written to at all** (security review, 11 September
+  2026; the guard also still names the three retired roles, so an account that
+  has not yet been through migration step 11 is recognised as an ordinary
+  person): the account is found by the email address
   whoever fills the form typed, so without that guard a host could put
   health-adjacent details onto a committee member's account just by knowing
   their address. **Cancelling an attendee's
@@ -2089,7 +2104,9 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 
 - `law_events_user_can_submit()`, `law_events_form_event_id()`,
   `law_events_locked_fields( $post, $user_id = 0 )`: submission eligibility
-  (committee, or the `event_host`/`sponsor` roles), the edited event ID, and
+  (**anybody signed in**, since 14 September 2026; kept as a function because it
+  is the single seam the POST handler, the header bar and the form template all
+  ask), the edited event ID, and
   the per-status, per-user lock list. For hosts — title, type, preferred
   slots, fee tier, invoice block, sectors, host organisations, venue capacity
   and `venue_needed` all freeze once the event leaves
@@ -2250,20 +2267,52 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 
 ### `registration.php`: the custom registration and profile forms (forms 1 & 3)
 
-- `law_registration_roles()`, `law_registration_accessibility_choices()`,
-  `law_registration_dietary_choices()`, `law_registration_country_choices()`,
-  `law_registration_validate_country()`: the self-service role whitelist
-  (attendee/sponsor/event_host — never admin/committee) and the choice/country
-  lists.
-- `law_registration_hubspot_tags()`, `law_registration_write_profile_meta()`,
-  `law_registration_sync_roles()`: HubSpot role tags and the ACF user meta
-  (role/accessibility/dietary) both forms share.
+- **Neither form asks anything about roles or intent since 14 September 2026.**
+  The role checkbox group first became an optional two-tick group stored as
+  `law_intent` user meta, and then came off the forms entirely the same day
+  (Denis): nothing about the site depends on the answer, because anybody signed
+  in may submit an event and book a place. The register link's `?role=` /
+  `locked_role` path went with it (there is nothing to lock), and the ACF
+  `law_role` user field is no longer written, since its choices are the retired
+  role slugs. See ROLES_AND_ACCOUNT_HUB.md.
+- **`law_intent` survives as storage with no collector.** It still holds what
+  migration step 11 read out of the retired roles for 302 accounts, and it is
+  what `law_registration_hubspot_tags()` derives the `<year> Event Host` and
+  `<year> Sponsor` tags from. Two consequences to hold on to: a save through
+  `law_registration_write_profile_meta()` **leaves the key alone unless the
+  input actually carries it**, so a form that does not ask cannot wipe what the
+  migration seeded; and with nothing setting an intent, every new registration
+  takes the general welcome email. Put a tick back on a form and both come back.
+  Worth knowing when deciding its future: **nothing in this codebase talks to
+  HubSpot.** The tags are written to `law_hubspot_contact_type` user meta and
+  read by nothing here; the Gravity Forms HubSpot feed (feed 15 on form 1, User
+  registration) is authenticated but **inactive**, named "use Make instead", and
+  there are no webhook feeds. Whatever consumes the tags lives outside this
+  repository.
+- `law_registration_intents()`, `law_registration_read_intent()`,
+  `law_registration_write_intent()`: the tick list and its single read/write
+  path, whitelisted. **An empty array means "asked, ticked nothing"; no row at
+  all means "never asked"** — the accounts the engines create, and everybody
+  from before migration step 11. The step reads that distinction
+  (`metadata_exists()`) so it never overwrites a choice somebody has made.
+- `law_registration_legacy_roles()`: the three retired slugs, for exactly two
+  callers — migration step 11, which strips them, and the on-behalf profile
+  guard, which must keep recognising a not-yet-migrated account.
+- `law_registration_accessibility_choices()`, `law_registration_dietary_choices()`,
+  `law_registration_country_choices()`, `law_registration_validate_country()`:
+  the choice and country lists.
+- `law_registration_hubspot_tags()`, `law_registration_write_profile_meta()`:
+  the HubSpot tags (now derived from the intents; **the tag strings are
+  deliberately unchanged**, so `law_hubspot_contact_type` stays comparable for
+  whatever reads it downstream) and the ACF user meta
+  (accessibility/dietary) both forms share.
 - `law_registration_handler()` (on `admin_post_nopriv_law_register`): honeypot,
-  per-IP rate limit (20/hour), role-whitelisted account creation, auto-login;
-  a tripped rate limit now returns a titled 429 with a back link. Logged-in
-  users are bounced.
+  per-IP rate limit (20/hour), account creation **hardcoded to `subscriber`**
+  (no role is taken from input at all now, so there is nothing to escalate),
+  auto-login; a tripped rate limit returns a titled 429 with a back link.
+  Logged-in users are bounced.
 - `law_profile_handler()` (on `admin_post_law_profile`): the self-service
-  profile edit — role changes limited to the three self-service roles, and an
+  profile edit — no role changes at all, and an
   **email or password change requires the current password**
   (re-authentication); the core email-change notice is suppressed before
   `wp_update_user` and replaced by the module's own.
@@ -2898,6 +2947,55 @@ event status by the rebuild) plus "Reference".
   "account page templates and the flagship event". The same helper runs from
   the `?setup-account-pages` trigger and from the Flagship screen's first
   open, so no environment needs a manual step after a push.
+  **Step 10 also strips the "Roles: {user_roles}" line** from the two
+  user-registration emails (`law_setup_strip_user_roles_from_emails()`, shared
+  with the trigger). Editing the registry default was not enough and is the
+  lesson worth keeping: step 9 imported those notifications from Gravity Forms
+  as stored OVERRIDES, and an override beats the default, so the committee kept
+  reading "Roles: None ticked" on every new account until the store itself was
+  cleaned. The whole line goes rather than the token, since blanking the
+  placeholder would leave a bare "Roles:" behind. Step 9's own translation of
+  `{all_fields}` no longer emits the line either, so a fresh migration cannot
+  reintroduce it.
+  **Step 10 also carries two pieces of the role retirement** (14 September
+  2026), both shared with the `?setup-account-pages` trigger:
+  `law_setup_account_page_content()` (which replaced
+  `law_setup_account_page_audience()`) strips the `[user-content]` blocks from
+  the `/account/` body, leaving the `[action-message]` paragraph the hub
+  template needs; and `law_setup_account_subscriber_access()` (which replaced
+  `law_setup_account_events_attendee_access()`) adds a `subscriber` row to the
+  Members restriction on `/account/`, `/account/events/`, `/account/bookings/`
+  and `/account/events/submit/`. That second one is load-bearing and is why step
+  11 runs after step 10: strip somebody's `event_host` before the subscriber row
+  exists and the Members plugin locks them out of their own account, with a
+  refusal that comes from the plugin rather than from anything in this theme.
+  Pages with no restriction rows are left alone (the plugin reads none as
+  public) and the legacy role rows are never removed, so a rollback stays a
+  code revert.
+- **Step 11 (`law_migration_run_retire_roles()`, 14 September 2026)** — the
+  role retirement itself: every account holding `event_host`, `sponsor` or
+  `attendee` becomes a plain `subscriber`, with its hosting/sponsor intent
+  preserved as `law_intent` user meta. **Last in `law_migration_steps()` on
+  purpose**, because "Run all" walks that array in order and step 10 must have
+  written the subscriber Members rows first. The judgement lives in a pure
+  per-user helper, `law_migration_retire_user_roles( WP_User $user, $dry )`,
+  which is what the tests drive (the step itself writes to the log table, and
+  creating that table is DDL, which would commit the transaction the suite rolls
+  each test back with). Three invariants it exists to hold:
+  **never `set_role()`** (two live accounts hold administrator alongside a
+  retired role, and a sweep would demote them); **never role-less** (subscriber
+  goes on before anything comes off); and **never overwrite an intent somebody
+  has already chosen** (only the ABSENCE of a `law_intent` row means "never
+  asked", so a re-run after a profile edit is safe). The seed is the honest
+  translation: `event_host` → the hosting tick, `sponsor` → the sponsor tick,
+  `attendee` → nothing, because attendee was what everybody was. Idempotent by
+  construction rather than by a flag — the query asks for accounts that still
+  hold one of the three, so a processed account cannot come back and a re-run
+  reports "Nothing to do" — which is also what makes the 20-second time-box
+  safe. One log line per account, naming exactly which roles came off which
+  account: that is the only record a rollback would have to work from.
+  `law_migration_verification()` counts accounts still holding a retired role,
+  which must read 0 afterwards.
 - **`repair-owners.php`** — a one-off repair for the events whose
   `post_author` and `post_date` were overwritten by the pre-9-September-2026
   `wp_insert_post()` bug in `law_events_form_save()` (above), rendered as a
@@ -3036,22 +3134,32 @@ These predate the rebuild and now branch on `law_events_source()`.
   (`?law_event_bookings=`), links to the custom edit form, shows a
   "Review queue" link to committee members and renders the save-confirmation
   notice. Since **10 September 2026 it is the HOST side only** — a person's own
-  bookings live on `/account/bookings/` — and the file carries the two
-  `template_redirect` hooks that make the split survive contact with links
-  already sent. One forwards `?law_booking=` (with any `law_notice`) to the same
+  bookings live on `/account/bookings/` — and the file carries the
+  `template_redirect` hook that makes the split survive contact with links
+  already sent: it forwards `?law_booking=` (with any `law_notice`) to the same
   argument on the bookings page, because every confirmation email and every
   "Manage booking" button in someone's history points here, and the no-JS
   booking handlers redirect to the *referer* rather than to a URL the module
-  controls. The other sends a signed-in visitor with nothing to manage on to
-  their bookings. That second one tests
-  `! law_account_user_is_host_like() && ! law_account_events()`, and the events
-  half is load-bearing: the role helper is role-only, but a co-owner reaches
-  their event through the `_law_co_owner` meta row whatever their role, and only
-  an account the module *creates* is given `event_host` (`co-owners.php`), so an
-  existing attendee linked as a co-owner keeps the role they had. Redirecting on
-  the role alone would take their own event away from them. Both hooks no-op
-  unless `law_account_page_id( 'my_bookings' )` resolves, so an unprovisioned
-  environment cannot send everyone to a 404. `law_account_event_actions()` also appends a **Withdraw** action on
+  controls. It no-ops unless `law_account_page_id( 'my_bookings' )` resolves, so
+  an unprovisioned environment cannot send everyone to a 404.
+  There was a **second redirect**, sending a signed-in visitor with no events to
+  their bookings; it went on **14 September 2026** with the roles. While only
+  hosts and sponsors could submit, this page genuinely had nothing for anybody
+  else; now that anybody signed in can submit, the page always has a job and its
+  empty state is the invitation to do it (a filled navy panel with a Submit
+  button, `.law-account-events__empty`). A redirect would take that away from
+  exactly the people it is for.
+  `law_account_user_has_events( $user_id = 0, $reset = false )` lives here too:
+  owns-or-co-owns, the flagship excluded, memoised per user id (the header
+  renders twice a page and the hub asks a third time). It is what decides the
+  "My events" item in both the header bar and the hub, replacing the old
+  role test — with the roles gone, "is this person a host" can only mean "does
+  this person have an event". It reads `law_events_owned_event_ids()` rather
+  than `law_account_events()`, which hydrates every event and is wasted on a
+  yes/no. `law_account_events()` is keyed by user id now as well, and
+  `law_account_events_reset_cache()` clears both (the tests switch users
+  mid-request; `law_calendar_reset_caches()` is the precedent).
+  `law_account_event_actions()` also appends a **Withdraw** action on
   Draft/Proposed/Sent back events (CPT mode only): a *form-shaped* action
   (`parts/loop/event.php` renders it as a nonce'd POST to
   `law_event_handle_withdraw` with a honeypot, behind a
@@ -3064,9 +3172,15 @@ These predate the rebuild and now branch on `law_events_source()`.
 - **`auth.php`** (~500 lines): the branded `/login/` (sign-in / forgot /
   reset) flow, delegating all credential handling to core (`wp_signon` via
   `wp-login.php`, `retrieve_password()`, `check_password_reset_key()`,
-  `reset_password()`). `law_auth_redirect_to()` and a `login_redirect` filter
-  send committee members to `/account/dashboard/` (not the host "My events"
-  page). Two security properties to preserve:
+  `reset_password()`). **`law_auth_default_redirect()` is where a sign-in lands
+  with nothing better asked for: `/account/`, the Account hub** (it was
+  `/account/events/` until 14 September 2026, which made sense while only hosts
+  had anything to do). `law_auth_redirect_to()` and the `login_redirect` filter
+  both call it, and they must: the filter, which sends committee members to
+  `/account/dashboard/` instead, only overrides a destination that EQUALS the
+  default, so writing the default in two places would silently disable the
+  committee shortcut. `tests/AuthRedirectTest.php` pins both.
+  Two security properties to preserve:
   `LAW_AUTH_MIN_PASSWORD_LENGTH` (10) is the **single source** for the password
   floor, applied by the reset form, the registration handler, the profile
   handler and the three templates' `minlength` attributes — the reset form used
@@ -3080,23 +3194,39 @@ These predate the rebuild and now branch on `law_events_source()`.
 - **`header-nav.php`**: the top bar's items. `law_account_paths()` gained a
   `flagship` key (`account/dashboard/flagship`) and `law_header_nav()` a
   committee-only **Manage flagship** item beside Manage events, Manage bookings
-  and Manage speakers. The per-role table in `tests/HeaderNavTest.php` pins the
-  exact item list for every role, so adding an item means updating that
-  fixture: it is what proves a host or attendee never sees a committee link.
+  and Manage speakers. The table in `tests/HeaderNavTest.php` pins the
+  exact item list for every situation, so adding an item means updating that
+  fixture: it is what proves an ordinary account never sees a committee link.
   On 10 September 2026 it gained a `my_bookings` key (`account/bookings`) and
-  `law_header_nav()` stopped renaming one item for two audiences: a host-like
-  user now gets **My events** *and* **My bookings**, everyone else gets My
-  bookings alone. **Mind the two keys** — `bookings` is the committee's
-  cross-event dashboard, `my_bookings` is the personal page. They are one word
-  apart and point at different pages, which `HeaderNavTest` now asserts
-  outright. The `my_bookings` item is CPT-gated, because
-  `law_account_bookings()` returns nothing on the legacy source; pre-cutover a
-  non-host still gets the old page under the old "My bookings" label.
+  `law_header_nav()` stopped renaming one item for two audiences. **Mind the two
+  keys** — `bookings` is the committee's cross-event dashboard, `my_bookings` is
+  the personal page. They are one word apart and point at different pages, which
+  `HeaderNavTest` asserts outright. The `my_bookings` item is CPT-gated, because
+  `law_account_bookings()` returns nothing on the legacy source.
+  **Rewritten on 14 September 2026** with the role retirement:
+  - The order is **My profile, My bookings, My events, Submit an event, the six
+    committee tools, Sign out** (Denis). Personal first and the committee tools
+    after, because the account hub renders this same list as boxes and somebody
+    opening their account wants their own errands before the queue they also
+    happen to run. The committee items keep their order among themselves.
+  - **My events is gated on ownership** (`law_account_user_has_events()`),
+    committee included, not on a role. Submit an event is offered to everybody
+    signed in, so it is also the way in for a first-time host with nothing yet.
+  - Every item carries **`group`** (`personal` / `committee` / `signout`),
+    **`icon`** (a `law_icon()` key) and **`description`**. The top bar ignores
+    all three; `parts/layout/account-tiles.php` renders the hub's boxes from
+    them. **The hub is built from this function's items, never from a second
+    list**: one list is the point of the file, and a parallel one would drift
+    exactly as the old If Menu rules did.
 - **`shortcodes.php`**: `[action-message]` and `[user-content]`, the role-gated
-  content wrapper the account pages' editor copy is built from. Since
+  content wrapper page copy can be built from. Since
   10 September 2026 `law_user_content_audiences()` adds two capability-backed
-  audiences beside the role names, `host` (`law_account_user_is_host_like()`)
-  and `committee` (`law_user_is_committee()`), and page copy should use those.
+  audiences beside the role names, `host` (`law_account_user_is_host_like()`,
+  which since 14 September 2026 simply means "signed in") and `committee`
+  (`law_user_is_committee()`), and page copy should use those. **`/account/`
+  itself no longer uses any of this**: it is the Account hub, whose tiles are
+  built in code, and `law_setup_account_page_content()` strips the
+  `[user-content]` blocks from its body, leaving only `[action-message]`.
   A block that names a role drifts the moment a role is added, and that is not
   hypothetical: `/account/` shipped with `[user-content role="attendee"]` and
   `[user-content role="event_host"]`, so a user who registered as "LAW sponsor"
@@ -3113,6 +3243,17 @@ These predate the rebuild and now branch on `law_events_source()`.
   safe to call repeatedly. Not events-specific: any template in the theme can
   drop a modal in.
 
+- **`helpers.php`**: `law_asset()`, `law_hero_default_image_url()`, and since
+  14 September 2026 the theme's icon set. `law_icon_paths()` is one table of SVG
+  inner markup (a 24-unit box, no fill, `currentColor` stroke, round caps and
+  joins, matching the card arrow in `parts/loop/event.php`) and
+  `law_icon( $key, $class, $size, $stroke )` returns the complete `<svg>`,
+  `aria-hidden` and `focusable="false"`, or `''` for an unknown key. The first
+  eight glyphs were local to `parts/calendar-event-details.php` until the
+  account hub needed icons too; they moved rather than being copied, so a glyph
+  cannot end up drawn twice and differently. **Font Awesome's kit is loaded in
+  `header.php` and used by nothing** — do not reach for it.
+
 ---
 
 ## 4. Templates, parts and assets
@@ -3121,7 +3262,22 @@ These predate the rebuild and now branch on `law_events_source()`.
   and a short message. Deliberately never loops the queried post: it is also
   what the pre-launch Members gate renders after `set_404()`, which leaves the
   gated event in the query (see `source.php` above).
-- **Templates**: `register.php` (custom registration), `account-profile.php`
+- **Templates**: `account-hub.php` (**the Account hub at `/account/`, 14
+  September 2026**: a grid of linked boxes in the manner of WooCommerce's My
+  account, and where a sign-in lands. It renders
+  `parts/layout/account-tiles.php` from `law_header_nav()`'s items, calls
+  `nocache_headers()` because the page is per-user, and carries **its own
+  `is_user_logged_in()` check** — the Members plugin's content permissions
+  filter `the_content()`, which this template never calls, so the plugin's
+  restriction cannot reach its markup. `[action-message]` is rendered directly,
+  because a new registration lands on `/account/?action=registered` and needs
+  its callout. Styles in `assets/css/account-hub.css`, enqueued by template
+  name),
+  `account.php` (now the **editor-content** account page only: the "Event
+  submitted" confirmation at `account/events/submit/done`. It kept its name and
+  its buffered-content fallback, which is one sentence pointing at the hub
+  rather than the per-audience link list it used to be — the hub IS that list),
+  `register.php` (custom registration), `account-profile.php`
   (profile), `account-event-form.php` (submit/edit), `account-events.php`
   (My events + thread + the per-event attendee list), `account-bookings.php`
   ("My bookings", page path `account/bookings`: a person's own bookings and the
@@ -3510,8 +3666,9 @@ The following are open **product decisions**, not bugs, left for Denis:
    logged-out visitors and hosts. Deliberate pre-launch lock, or open it up?
    (Softened 6 September 2026: an event's own host/co-owners can now view
    their own listing through the gate; the programme itself stays locked.)
-4. **Profile `roles[]` demotion** — unticking your current role silently drops
-   you to `attendee`; no confirmation step.
+4. ~~**Profile `roles[]` demotion**~~ — **resolved 14 September 2026** by
+   removal: the profile form has no role controls, because there are no
+   self-service roles.
 5. Minor polish: a map-embed fallback state, the auto sponsored highlight on
    repeat *paying* hosts, and "Fee snapshot £0.00" showing on proposed events
    before approval.
@@ -3523,11 +3680,14 @@ The following are open **product decisions**, not bugs, left for Denis:
 
 Open findings from the forms/payments security review, none of them blocking:
 
-1. **The `sponsor` fee tier is self-asserted.** Anyone can self-register with
-   the `sponsor` role and then choose the sponsor tier, which is £0 — so the
-   event skips invoicing and auto-confirms on approval. The only control is the
-   committee seeing the tier on the dashboard, where it is displayed. Consider
-   a warning badge at approval, or gating the option on a verified sponsor flag.
+1. **The `sponsor` fee tier is self-asserted, and now more so.** Anyone can
+   choose the sponsor tier, which is £0 — so the event skips invoicing and
+   auto-confirms on approval. The only control is the committee seeing the tier
+   on the dashboard, where it is displayed. This got **wider on 14 September
+   2026**: it used to need the `sponsor` role, which at least took a deliberate
+   tick at registration; now any account can submit at all, and the sponsor tick
+   that replaced the role is unchecked meta that gates nothing. The warning
+   badge at approval is worth scheduling rather than noting.
 2. **Partial refunds mark an event fully refunded.** The `charge.refunded`
    branch of `stripe/webhook.php` ignores `amount_refunded` versus `amount`, so
    a goodwill part-refund flips a paid event to Refunded.
@@ -3536,8 +3696,12 @@ Open findings from the forms/payments security review, none of them blocking:
    single-event page. (The front-end edit lock being taken and never released
    was the third item here; `edit-lock.php` fixed it on 9 September 2026.)
 
-**Sponsor access parity (10 September 2026).** A full sweep of every role name
-and role-gated surface confirmed that the `sponsor` role has the same
+**Sponsor access parity (10 September 2026). SUPERSEDED on 14 September 2026**,
+when the three self-service roles were retired altogether: there is no sponsor
+role to have parity with, and every signed-in account holds the same front-end
+access. Kept for the history, and because the two divergences it records were
+database state on the legacy stack. A full sweep of every role name
+and role-gated surface confirmed that the `sponsor` role had the same
 front-end access as `event_host` in all of the theme's own code:
 `law_events_user_can_submit()` (submission-form.php),
 `law_account_user_is_host_like()` (account-bookings.php),
@@ -3565,18 +3729,21 @@ code:
    `footer-menu`, and `parts/layout/top-nav.php` renders the bar now, so no
    `wp_nav_menu()` call reaches menu 19.
 
-**The blank /account/ page (10 September 2026, fixed).** The page's editor copy
-gated its two blocks on role names, so a sponsor-only user matched neither and
-got a heading with no body. Three changes: `[user-content]` gained the
-capability-backed `host` and `committee` audiences (see §3, `shortcodes.php`);
-`law_setup_account_page_audience()` rewrites the page's `role="event_host"`
-block to `role="host"`, called from both the `?setup-account-pages` trigger and
-migration step 10, so a deploy alone fixes an environment; and
-`templates/account.php` now buffers `the_content()` and renders a generic
-signed-in fallback when nothing visible came out, so no future gating mistake
-can produce an empty page body again. `tests/AccountAudienceTest.php` pins the
-audience membership per role and asserts the page carries no bare `event_host`
-block.
+**The blank /account/ page (10 September 2026, fixed; the page replaced on
+14 September 2026).** The page's editor copy gated its two blocks on role names,
+so a sponsor-only user matched neither and got a heading with no body. Three
+changes at the time: `[user-content]` gained the capability-backed `host` and
+`committee` audiences (see §3, `shortcodes.php`); a setup helper rewrote the
+page's `role="event_host"` block to `role="host"` from both provisioning
+routes; and `templates/account.php` buffered `the_content()` and rendered a
+generic signed-in fallback when nothing visible came out.
+
+The whole class of bug left `/account/` on 14 September 2026, when it became
+the Account hub: its tiles are built in code from `law_header_nav()`, and
+`law_setup_account_page_content()` (the renamed helper) strips the
+`[user-content]` blocks from the body, leaving only `[action-message]`. The
+audiences still matter for page copy elsewhere, and `host` now means "signed
+in", which `tests/AccountAudienceTest.php` pins along with the emptied body.
 
 **Flagship conference (updated 10 September 2026).** The approval-gated
 application flow is now built (`flagship-bookings.php`, `stripe/attendees.php`,
@@ -4356,6 +4523,86 @@ stay possible. The host's stars are unconditional, because their block is on
 screen only on that answer; the committee's follow the stored answer, like the
 hint above them. `tests/VenueDetailsTest.php` covers the new rule and both
 exemptions.
+
+### The account hub, and the end of the self-service roles (14 September 2026)
+
+The client asked for the role checkboxes to come off the registration form.
+That one sentence retires `event_host`, `sponsor` and `attendee` altogether:
+any signed-in person may submit an event and book a place, every self-service
+account becomes a plain `subscriber`, and with everybody landing in the same
+place `/account/` becomes an Account hub. ROLES_AND_ACCOUNT_HUB.md is the
+contract; this is what was built.
+
+**How little actually depended on the roles.** They held only the `read`
+capability, so nothing capability-based touched them: the committee gate, the
+per-event gate, the wp-admin screens and the workflow engine were all untouched.
+Every dependency was a string comparison, and only two of those gated anything —
+`law_events_user_can_submit()` and `law_account_user_is_host_like()`, which both
+now mean "signed in". The rest was form fields, email selection, HubSpot tags,
+account-creation defaults, Members rows, tests and documentation.
+
+**Five settled decisions (Denis).**
+
+1. **Committee keep their shortcut.** Ordinary users land on the hub; committee
+   members still go straight to `/account/dashboard/`. They sign in to work the
+   queue, and one extra click every time is a real cost against a page they do
+   not need.
+2. **My events appears only for people who have events**, committee included.
+   With no roles, "is this a host" can only mean "does this person have an
+   event", and linking everybody to a page that would be empty for most of them
+   is noise. Submit an event is offered to everybody, so a first-time host still
+   has a way in.
+3. **The host/sponsor signal survives as optional meta, not a role.** Two ticks,
+   "I plan to host an event" and "I represent a LAW sponsor", stored as
+   `law_intent`. They choose the welcome email and the HubSpot contact type and
+   gate nothing. Two rather than one because the HubSpot tags are distinct, and
+   migration step 11 seeds them from the roles so nothing is lost.
+4. **Minimal cleanup.** The role definitions stay in `wp_user_roles` unassigned
+   (the mu-plugin re-registers `event_host` on every `init` regardless, and
+   mu-plugins are off limits), which keeps a rollback to a code revert. The
+   legacy Gravity Forms hooks in `functions/users.php` and `functions/hubspot.php`
+   and the User Registration feed on form 1 (User registration) are left for the
+   post-cutover cleanup ticket; they only fire on the retired forms.
+5. **One order for both surfaces:** My profile, My bookings, My events, Submit
+   an event, the committee tools, Sign out.
+
+**The hub.** `templates/account-hub.php` with `parts/layout/account-tiles.php`
+and `assets/css/account-hub.css`: filled navy boxes, every one the same weight,
+built from `law_header_nav()`'s items, which gained `group`, `icon` and
+`description` for the purpose. A second list would have been the drift the
+header rework existed to end. `law_icon()` in `functions/helpers.php` is the
+theme's first shared icon set; the eight glyphs from the event details box moved
+into it rather than being copied.
+
+**Three things that would have broken silently**, and are the parts to preserve:
+
+- **The guard in `law_registration_apply_attendee_profile()`** reads "this
+  account holds nothing beyond a self-service role, so a host may fill its
+  blanks". Emptying the role map without rewriting it makes `array_diff()`
+  truthy for every account, so on-behalf profile fills stop working for
+  everybody, with no error and nothing logged. It names `subscriber` and the
+  three retired roles now, the latter for the window before step 11 runs.
+- **The default sign-in destination is written in one place**
+  (`law_auth_default_redirect()`), because the committee's shortcut is expressed
+  as a comparison against it. Two copies, and the shortcut stops firing with
+  nothing visibly wrong.
+- **The `subscriber` Members rows** (`law_setup_account_subscriber_access()`,
+  run by both provisioning routes, and by step 10 before step 11). Without them
+  the retirement locks every user out of their own account, and the refusal
+  comes from the Members plugin rather than from any code here. On production:
+  deploy, run `?setup-account-pages` or step 10, and only then step 11.
+
+**The hub template carries its own `is_user_logged_in()` check** for a related
+reason: the Members plugin's content permissions filter `the_content()`, and the
+hub never calls it, so the page's restriction cannot reach its markup.
+
+Locally the step moved 302 accounts, seeding 149 hosting ticks and 40 sponsor
+ticks, and both administrator accounts kept administrator. New tests:
+`RoleRetirementTest`, `AuthRedirectTest`, `AccountHubTest`; `HeaderNavTest`'s
+fixture is a table of situations rather than roles, which is the change in one
+line. **Still open and now wider:** the self-asserted £0 sponsor fee tier (§6).
+**For the client:** the HubSpot Sponsor and Event Host tags come from the
+optional ticks now, and the tag strings are unchanged.
 
 ---
 

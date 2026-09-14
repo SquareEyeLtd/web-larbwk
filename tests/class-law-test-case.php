@@ -152,7 +152,7 @@ abstract class LAW_Test_Case extends TestCase {
 		return $post_id;
 	}
 
-	protected function make_user( $role = 'event_host' ): int {
+	protected function make_user( $role = 'subscriber' ): int {
 		$user_id = wp_insert_user(
 			array(
 				'user_login' => 'law-test-' . wp_generate_password( 8, false ),

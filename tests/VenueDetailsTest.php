@@ -54,7 +54,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_visibility_predicate(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 
 		$this->assertFalse( law_events_venue_details_visible( self::NEEDS_VENUE, $host ) );
@@ -74,7 +74,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_host_save_leaves_a_placed_events_venue_alone(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( self::PLACED, 'law-proposed', $host );
@@ -91,7 +91,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_host_save_logs_no_places_change_when_the_fields_were_hidden(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( self::PLACED, 'law-proposed', $host );
@@ -111,7 +111,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_committee_save_sets_the_venue_on_an_event_that_needs_one(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
@@ -135,7 +135,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_host_with_a_venue_still_saves_all_three(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-proposed', $host );
@@ -159,7 +159,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_band_ceiling_still_applies_to_a_host_with_a_venue(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-proposed', $host );
@@ -183,7 +183,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_a_venue_is_required_only_when_the_host_has_one(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-proposed', $host );
@@ -206,7 +206,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_all_three_venue_details_are_required_when_the_host_has_a_venue(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-proposed', $host );
@@ -249,7 +249,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_venue_details_are_not_required_of_a_host_who_needs_a_venue(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-proposed', $host );
@@ -264,7 +264,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_committee_is_not_blocked_on_an_event_that_needs_a_venue(): void {
-		$host      = $this->make_user( 'event_host' );
+		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
@@ -280,7 +280,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_a_post_approval_host_edit_is_not_judged_on_the_locked_band(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		// The band is locked after approval and a disabled <select> posts
@@ -308,7 +308,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_post_approval_host_edit_still_saves_the_venue_name(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		// venue_needed is locked for a host on an approved event, so the disabled
@@ -373,7 +373,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_panel_accepts_a_band_and_places_within_it(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $this->make_committee_user() );
 
 		$event_id = $this->make_event( array( '_law_venue_needed' => self::NEEDS_VENUE ), 'law-approved', $host );
@@ -421,7 +421,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_a_refused_panel_save_leaves_the_event_untouched(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $this->make_committee_user() );
 
 		$event_id = $this->make_event( self::PLACED, 'law-approved', $host );
@@ -431,7 +431,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_panel_logs_the_band_and_the_places_separately(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $this->make_committee_user() );
 
 		$event_id = $this->make_event( array( '_law_venue_needed' => self::NEEDS_VENUE ), 'law-approved', $host );
@@ -448,7 +448,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_panel_can_clear_the_places_back_to_no_limit(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $this->make_committee_user() );
 
 		$event_id = $this->make_event( self::PLACED, 'law-approved', $host );
@@ -462,7 +462,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 	}
 
 	public function test_post_approval_host_edit_on_a_placed_event_changes_nothing(): void {
-		$host = $this->make_user( 'event_host' );
+		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event(

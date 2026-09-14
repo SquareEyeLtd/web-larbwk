@@ -89,7 +89,7 @@ class FlagshipDashboardTest extends LAW_Test_Case {
 		wp_set_current_user( $this->make_committee_user() );
 		$this->assertContains( 'Manage flagship', $labels(), 'The committee gets the link.' );
 
-		wp_set_current_user( $this->make_user( 'event_host' ) );
+		wp_set_current_user( $this->make_user() );
 		$this->assertNotContains( 'Manage flagship', $labels(), 'A host does not.' );
 
 		wp_set_current_user( 0 );
@@ -157,7 +157,7 @@ class FlagshipDashboardTest extends LAW_Test_Case {
 
 	public function test_a_non_committee_user_gets_no_form(): void {
 		$this->make_flagship();
-		wp_set_current_user( $this->make_user( 'event_host' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		get_template_part( 'parts/events/flagship-manage' );

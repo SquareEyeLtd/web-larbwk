@@ -80,7 +80,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_a_sold_out_event_resolves_full_in_waitlist_mode(): void {
 		$event = $this->bookable_event( array( '_law_tickets_available' => 1 ) );
-		$this->make_booking( $event, $this->make_user( 'attendee' ) );
+		$this->make_booking( $event, $this->make_user() );
 		$state = law_booking_state( $event, array( 'user_id' => 0 ) );
 		$this->assertSame( 'full', $state['state'] );
 		$this->assertSame( 'waitlist', $state['mode'] );
@@ -104,7 +104,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_a_booked_viewer_resolves_booked_with_a_manage_url(): void {
 		$event = $this->bookable_event();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_booking( $event, $user );
 		$state = law_booking_state( $event, array( 'user_id' => $user ) );
 		$this->assertSame( 'booked', $state['state'] );
@@ -114,8 +114,8 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_a_waitlisted_viewer_resolves_waitlisted(): void {
 		$event = $this->bookable_event( array( '_law_tickets_available' => 1 ) );
-		$this->make_booking( $event, $this->make_user( 'attendee' ) );
-		$waiter = $this->make_user( 'attendee' );
+		$this->make_booking( $event, $this->make_user() );
+		$waiter = $this->make_user();
 		$this->make_waitlist( $event, $waiter );
 		$this->assertSame( 'waitlisted', law_booking_state( $event, array( 'user_id' => $waiter ) )['state'] );
 	}
@@ -127,7 +127,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_colleagues_are_counted_alongside_the_availability_state(): void {
 		$event  = $this->bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		$this->make_booking(
 			$event,
 			$booker,
@@ -153,7 +153,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_the_card_offers_the_waitlist_when_the_event_is_full(): void {
 		$event = $this->bookable_event( array( '_law_tickets_available' => 1 ) );
-		$this->make_booking( $event, $this->make_user( 'attendee' ) );
+		$this->make_booking( $event, $this->make_user() );
 		$action = $this->card( $event );
 		$this->assertSame( 'Join waitlist', $action['label'] );
 		$this->assertStringContainsString( 'law_waitlist=1', $action['url'] );
@@ -189,7 +189,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_a_booked_viewer_gets_a_manage_link_in_full_scope_and_nothing_in_action_scope(): void {
 		$event = $this->bookable_event();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_booking( $event, $user );
 		wp_set_current_user( $user );
 
@@ -212,7 +212,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 		wp_set_current_user( 0 );
 		$this->assertSame( $event, $this->card( $event )['dialog'] );
 
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 		$this->assertSame( $event, $this->card( $event )['dialog'] );
 	}
 
@@ -228,7 +228,12 @@ class BookingCardActionTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'You need an account to book places', $html );
 		$this->assertStringContainsString( 'Sign in', $html );
 		$this->assertStringContainsString( 'Create an account', $html );
-		$this->assertStringContainsString( 'role=attendee', $html );
+		// Both routes carry them back to the event they pressed. The register
+		// link used to lock a role as well (role=attendee); roles went on
+		// 14 September 2026, and there is nothing to lock when any signed-in
+		// person may book.
+		$this->assertStringContainsString( 'redirect_to', $html );
+		$this->assertStringNotContainsString( 'role=attendee', $html, 'The retired attendee role must not come back through a register link.' );
 		$this->assertStringNotContainsString( 'law-booking-form', $html, 'No form until they have an account.' );
 	}
 
@@ -246,7 +251,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 * the page gains a query per event.
 	 */
 	public function test_resolving_many_cards_does_not_query_per_card(): void {
-		$user = $this->make_user( 'attendee' );
+		$user = $this->make_user();
 		wp_set_current_user( $user );
 		$events = array();
 		for ( $i = 0; $i < 6; $i++ ) {
@@ -276,7 +281,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	public function test_the_batch_map_agrees_with_the_single_event_lookup(): void {
 		$event  = $this->bookable_event();
 		$other  = $this->bookable_event();
-		$user   = $this->make_user( 'attendee' );
+		$user   = $this->make_user();
 		$this->make_booking( $event, $user );
 
 		$statuses = law_booking_holding_statuses();
@@ -297,7 +302,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_event_page_opener_is_a_fetch_link_with_no_dialog(): void {
 		$event = $this->bookable_event();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		law_booking_render_opener( law_events_map_post( get_post( $event ) ), 'book' );
@@ -332,7 +337,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_event_pages_panel_puts_the_words_left_and_the_button_right(): void {
 		$event = $this->bookable_event();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_booking( $event, $user );
 		wp_set_current_user( $user );
 
@@ -363,7 +368,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_availability_pill_sits_above_the_count_in_the_left_slot(): void {
 		$event = $this->bookable_event();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		law_booking_render_action( law_events_map_post( get_post( $event ) ) );
@@ -389,7 +394,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_colleagues_only_state_keeps_both_buttons_in_the_action_slot(): void {
 		$event  = $this->bookable_event();
-		$booker = $this->make_user( 'attendee' );
+		$booker = $this->make_user();
 		// A colleague's place, and then not one of their own: the engine makes
 		// the booker's row first, so it is cancelled to reach this state.
 		$this->make_booking(
@@ -451,7 +456,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_the_foot_of_the_page_repeats_the_button_without_the_wording(): void {
 		$event = $this->bookable_event();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		ob_start();
 		law_booking_render_action_buttons( law_events_map_post( get_post( $event ) ) );
@@ -467,7 +472,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_the_foot_of_the_page_links_to_a_booking_already_held(): void {
 		$event = $this->bookable_event();
-		$user  = $this->make_user( 'attendee' );
+		$user  = $this->make_user();
 		$this->make_booking( $event, $user );
 		wp_set_current_user( $user );
 
@@ -493,7 +498,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_foot_of_the_page_does_not_repeat_the_inline_no_js_form(): void {
 		$event = $this->bookable_event();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 
 		$_GET['law_book'] = '1';
 		ob_start();
@@ -508,7 +513,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_the_dialog_endpoint_serves_the_booking_form_for_a_bookable_event(): void {
 		$event = $this->bookable_event();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 		$html = $this->render_dialog( $event );
 		$this->assertStringContainsString( 'id="law-booking-modal"', $html );
 		$this->assertStringContainsString( 'name="event_id" value="' . $event . '"', $html );
@@ -522,8 +527,8 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_dialog_endpoint_answers_a_stale_card_with_the_waitlist_form(): void {
 		$event = $this->bookable_event( array( '_law_tickets_available' => 1 ) );
-		$this->make_booking( $event, $this->make_user( 'attendee' ) );
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		$this->make_booking( $event, $this->make_user() );
+		wp_set_current_user( $this->make_user() );
 		$html = $this->render_dialog( $event );
 		$this->assertStringContainsString( 'id="law-waitlist-modal"', $html );
 		$this->assertStringContainsString( 'value="law_waitlist_join"', $html );
@@ -582,7 +587,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 
 	public function test_the_success_dialog_closes_back_to_where_the_booking_was_made(): void {
 		$event = $this->bookable_event();
-		wp_set_current_user( $this->make_user( 'attendee' ) );
+		wp_set_current_user( $this->make_user() );
 		$this->assertStringContainsString( esc_url( home_url( '/programme/' ) ), $this->render_dialog( $event ) );
 	}
 }

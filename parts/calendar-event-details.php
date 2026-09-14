@@ -73,33 +73,14 @@ if ( ! $law_ed_rows ) {
 }
 
 /**
- * The icon set. The theme has no icon library, so these are hand-drawn to match
- * the one existing inline icon (law-event-card__arrow, parts/loop/event.php):
- * a 24-unit box, no fill, currentColor stroke, round caps and joins. Stroke
- * weight is 1.75 rather than that icon's 2.5, which is too heavy at 18px.
+ * One icon, from the theme's shared set (law_icon(), functions/helpers.php).
+ * The glyphs lived here until the account hub needed some of them too; they
+ * moved rather than being copied, so the set cannot end up drawn twice.
+ *
+ * 18px rather than the default 24: these sit inside a <dt> beside its label.
  */
-$law_ed_icons = array(
-	'date'   => '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/>',
-	'time'   => '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
-	'venue'  => '<path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
-	'host'   => '<path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 9h4a1 1 0 0 1 1 1v11"/><path d="M2 21h20"/><path d="M8 8h3M8 12h3M8 16h3"/>',
-	'type'   => '<path d="M3 3h8l10 10-8 8L3 11V3Z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
-	'sector' => '<path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/>',
-	'places' => '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13A4 4 0 0 1 16 11"/>',
-	'price'  => '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
-);
-
-/**
- * One icon. aria-hidden because the adjacent <dt> already names the fact, and
- * focusable="false" because IE/Edge legacy put SVGs in the tab order.
- */
-$law_ed_icon = static function ( $key ) use ( $law_ed_icons ) {
-	if ( empty( $law_ed_icons[ $key ] ) ) {
-		return '';
-	}
-	return '<svg class="law-event-details__icon" viewBox="0 0 24 24" width="18" height="18" fill="none"'
-		. ' stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"'
-		. ' aria-hidden="true" focusable="false">' . $law_ed_icons[ $key ] . '</svg>';
+$law_ed_icon = static function ( $key ) {
+	return law_icon( $key, 'law-event-details__icon', 18 );
 };
 
 // The booking control (five states, functions/account-bookings.php). Buffered so

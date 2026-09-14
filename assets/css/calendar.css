@@ -1192,6 +1192,72 @@
   margin: 0;
 }
 
+/* --- My events, with nothing in it ----------------------------------------
+
+   Anybody signed in can reach /account/events/ since the self-service roles
+   were retired (14 September 2026), so most people who land here have never
+   submitted anything and this panel is the first thing they read. A grey
+   sentence would have read as an error; the house treatment for a call to
+   action is a filled navy panel, with every word in one block on the left and
+   the button on the right, so that is what this is. Same 4px orange top rule
+   and square, shadowless shape as .law-booking-panel. */
+.law-account-events__empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  margin: 0 0 2rem;
+  padding: 1.5rem 2rem;
+  background-color: #292459;
+  border-top: 4px solid #ef7d05;
+  color: #fff;
+}
+
+.law-account-events__empty-text {
+  flex: 1 1 20rem;
+}
+
+.law-account-events__empty p {
+  margin: 0;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.law-account-events__empty-title {
+  margin: 0 0 0.35rem !important;
+  font-family: poppins, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* .law-cal sets its own link colour, which would repaint the button's label
+   (the same reason .law-cal .law-flagship-strip__link exists). Bigger than the
+   theme's base button too: it is the only action in the panel. */
+.law-cal .law-account-events__empty-cta,
+.law-cal .law-account-events__empty-cta:hover,
+.law-cal .law-account-events__empty-cta:focus {
+  flex: 0 0 auto;
+  width: auto;
+  margin: 0;
+  padding: 0.85rem 1.75rem;
+  font-size: 1rem;
+  color: #292459;
+}
+
+@media screen and (max-width: 39.9375em) {
+  .law-account-events__empty {
+    padding: 1.25rem;
+  }
+
+  .law-cal .law-account-events__empty-cta {
+    width: 100%;
+    text-align: center;
+  }
+}
+
 /* --- Loading skeleton ----------------------------------------------------- */
 
 .law-cal-events.is-loading {

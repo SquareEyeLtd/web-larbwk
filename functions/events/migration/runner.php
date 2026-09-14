@@ -28,6 +28,11 @@ function law_migration_steps() {
 		'redirects'     => array( 'label' => 'Step 8: redirect map', 'gated' => true ),
 		'notifications' => array( 'label' => 'Step 9: notifications', 'gated' => true ),
 		'pages'         => array( 'label' => 'Step 10: account page templates and the flagship event', 'gated' => true ),
+		// Last on purpose. "Run all" walks this array in order, and step 10 is
+		// what writes the subscriber row into the Members restriction on the
+		// account pages: strip somebody's event_host before that row exists and
+		// the Members plugin locks them out of their own account.
+		'retire_roles'  => array( 'label' => 'Step 11: retire the self-service roles (event_host, sponsor and attendee become subscriber; hosting/sponsor intent seeded)', 'gated' => true ),
 	);
 }
 
@@ -402,7 +407,7 @@ function law_migration_run_co_owners( $dry ) {
 
 		if ( $dry ) {
 			$created++;
-			law_migration_log( 'co_owners', 'dry-run', $ref, sprintf( 'Would create event_host account for %s (%s).', $name, $email ) );
+			law_migration_log( 'co_owners', 'dry-run', $ref, sprintf( 'Would create account for %s (%s).', $name, $email ) );
 			continue;
 		}
 
@@ -412,7 +417,7 @@ function law_migration_run_co_owners( $dry ) {
 			continue;
 		}
 		$created++;
-		law_migration_log( 'co_owners', 'created', $ref, sprintf( 'Created event_host account %d for %s (%s). No welcome email sent.', $user_id, $name, $email ) );
+		law_migration_log( 'co_owners', 'created', $ref, sprintf( 'Created account %d for %s (%s). No welcome email sent.', $user_id, $name, $email ) );
 	}
 	return array( 'done' => true, 'summary' => sprintf( '%d created, %d matched, %d deferred.', $created, $matched, $deferred ) );
 }
@@ -1641,7 +1646,10 @@ function law_migration_run_notifications( $dry ) {
 		return strtr(
 			(string) $text,
 			array(
-				'{all_fields}'         => "Name: {user_name}\nEmail: {user_email}\nRoles: {user_roles}",
+				// No Roles line: the roles it summarised are retired, and the
+				// value would read "None ticked" on every account
+				// (14 September 2026).
+				'{all_fields}'         => "Name: {user_name}\nEmail: {user_email}",
 				'{Name (First):1.3}'   => '{user_name}',
 				'{Name (Last):1.6}'    => '',
 				'{Name:1}'             => '{user_name}',
@@ -1733,7 +1741,7 @@ function law_migration_run_notifications( $dry ) {
  */
 function law_migration_page_map() {
 	return array(
-		'account'                    => array( 'title' => 'Account', 'template' => 'templates/account.php' ),
+		'account'                    => array( 'title' => 'Account', 'template' => 'templates/account-hub.php' ),
 		'register'                   => array( 'title' => 'Register for an Account', 'template' => 'templates/register.php' ),
 		'account/bookings'           => array( 'title' => 'My bookings', 'template' => 'templates/account-bookings.php' ),
 		'account/dashboard'          => array( 'title' => 'Events dashboard', 'template' => 'templates/account-dashboard.php' ),
@@ -1817,24 +1825,25 @@ function law_migration_run_pages( $dry ) {
 		law_migration_log( 'pages', 'created', $ref, sprintf( 'Created page %d "%s" with template %s.', $page_id, $config['title'], $config['template'] ) );
 	}
 
-	// The /account/ page's audience blocks: its host block named the
-	// event_host role outright, so a sponsor-only user matched nothing and got
-	// an empty page body. Shared helper with the setup-account-pages trigger.
-	if ( ! $dry && function_exists( 'law_setup_account_page_audience' ) ) {
-		law_migration_log( 'pages', 'created', '/account/', 'Audience blocks: ' . law_setup_account_page_audience() . '.' );
-	}
-	// The bookings build: attendees keep access to /account/events/ so the
-	// links in already-sent emails still resolve, and account-events.php
-	// redirects them on to /account/bookings/. Shared helper with the
-	// setup-account-pages trigger, so the two cannot drift.
-	if ( ! $dry && function_exists( 'law_setup_account_events_attendee_access' ) ) {
-		law_migration_log( 'pages', 'created', '/account/events/', 'Attendee role access: ' . law_setup_account_events_attendee_access() . '.' );
+	// The /account/ page's body: the hub renders its tiles from code, so the
+	// audience-gated editor copy goes and only [action-message] stays (the
+	// registration confirmation needs it). Shared helper with the
+	// setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_account_page_content' ) ) {
+		law_migration_log( 'pages', 'created', '/account/', 'Body: ' . law_setup_account_page_content() . '.' );
 	}
 	// The personal My bookings page is a child of /account/, not of the events
 	// dashboard, and takes its parent's role rows. A page this step creates
 	// carries no Members restriction at all, which the plugin reads as public.
 	if ( ! $dry && function_exists( 'law_setup_my_bookings_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/bookings/', 'Members restriction: ' . law_setup_my_bookings_access() . '.' );
+	}
+	// Every account page a plain subscriber needs must admit the subscriber
+	// role, because step 11 below is about to make everybody one. After the
+	// my_bookings helper, which copies /account/'s rows onto a page that has
+	// none. Shared helper with the setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_account_subscriber_access' ) ) {
+		law_migration_log( 'pages', 'created', 'account pages', 'Subscriber role access: ' . law_setup_account_subscriber_access() . '.' );
 	}
 	// The Bookings dashboard is a child of the events dashboard and inherits
 	// its committee-only Members restriction (a freshly created page has none).
@@ -1853,6 +1862,13 @@ function law_migration_run_pages( $dry ) {
 	// 2026. The registry default is inactive, but a stored override from the
 	// Emails screen would beat it, so drop the stored 'active' key. Shared
 	// helper with the setup-account-pages trigger.
+	// The two user-registration emails were imported from Gravity Forms with a
+	// "Roles: {user_roles}" line; the roles are retired, so the line goes. The
+	// stored override beats the registry default, so this must run per
+	// environment. Shared helper with the setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_strip_user_roles_from_emails' ) ) {
+		law_migration_log( 'notifications', 'created', 'admins_user_registered / squareeye_user_registered', 'Roles line stripped: ' . law_setup_strip_user_roles_from_emails() . '.' );
+	}
 	if ( ! $dry && function_exists( 'law_setup_retire_booking_received_emails' ) ) {
 		law_migration_log( 'notifications', 'created', 'host_booking_received / committee_booking_received', 'Retired: stored active override cleared (' . law_setup_retire_booking_received_emails() . ').' );
 	}
@@ -1890,6 +1906,189 @@ function law_migration_run_pages( $dry ) {
 	return array(
 		'done'    => true,
 		'summary' => sprintf( '%d templates assigned, %d pages created, flagship event %s.', $updated, $created, $flagship_summary ),
+	);
+}
+
+/* Step 11: retire the self-service roles ____________________________________ */
+
+/**
+ * Move ONE account off the retired self-service roles, seeding its intent meta
+ * on the way past. The whole of step 11's judgement lives here, with no logging
+ * and no queries beyond the user itself, so it can be tested directly.
+ *
+ * Three things this must never do, each of them learned from the data:
+ *
+ *  1. Never set_role(). Two live accounts hold administrator alongside one of
+ *     the retired roles, and a set_role() sweep would demote them both.
+ *  2. Never leave an account role-less: subscriber goes on BEFORE anything
+ *     comes off, so an interrupted run cannot strand somebody with nothing.
+ *  3. Never overwrite an intent the person has already chosen. A row that
+ *     exists (even an empty array, which means "asked, ticked nothing") is
+ *     theirs; only the absence of a row means "never asked", and only then is
+ *     the seed written. That is what makes a re-run after somebody edits their
+ *     profile safe.
+ *
+ * The seed is the honest translation of what the checkbox used to say:
+ * event_host becomes the hosting tick, sponsor becomes the sponsor tick, and
+ * attendee becomes nothing at all, because "attendee" was what everybody was.
+ *
+ * @param WP_User $user The account.
+ * @param bool    $dry  Report only.
+ * @return array{status:string,removed:string[],kept:string[],intents:string[],seeded:bool,added_subscriber:bool}
+ *               status: skipped (holds none of the three) | dry-run | created.
+ */
+function law_migration_retire_user_roles( WP_User $user, $dry ) {
+	$legacy  = law_registration_legacy_roles();
+	$roles   = (array) $user->roles;
+	$removed = array_values( array_intersect( $legacy, $roles ) );
+
+	if ( ! $removed ) {
+		return array(
+			'status'           => 'skipped',
+			'removed'          => array(),
+			'kept'             => array_values( $roles ),
+			'intents'          => array(),
+			'seeded'           => false,
+			'added_subscriber' => false,
+		);
+	}
+
+	// administrator, editor, events_committee, subscriber: never touched.
+	$kept    = array_values( array_diff( $roles, $legacy ) );
+	$intents = array_values( array_filter( array(
+		in_array( 'event_host', $removed, true ) ? 'host' : '',
+		in_array( 'sponsor', $removed, true ) ? 'sponsor' : '',
+	) ) );
+	$seed    = ! metadata_exists( 'user', $user->ID, 'law_intent' );
+	$add_sub = ! in_array( 'subscriber', $roles, true );
+
+	$result = array(
+		'status'           => $dry ? 'dry-run' : 'created',
+		'removed'          => $removed,
+		'kept'             => $kept,
+		'intents'          => $intents,
+		'seeded'           => $seed,
+		'added_subscriber' => $add_sub,
+	);
+	if ( $dry ) {
+		return $result;
+	}
+
+	if ( $seed ) {
+		law_registration_write_intent( $user->ID, $intents );
+	}
+	if ( $add_sub ) {
+		$user->add_role( 'subscriber' );
+	}
+	foreach ( $removed as $role ) {
+		$user->remove_role( $role );
+	}
+	return $result;
+}
+
+/** One readable log line per account, which is also the rollback record. */
+function law_migration_retire_roles_message( array $result ) {
+	$parts = array();
+	if ( 'dry-run' === $result['status'] ) {
+		$parts[] = 'Would remove: ' . implode( ', ', $result['removed'] ) . '.';
+		$parts[] = $result['added_subscriber'] ? 'Would add subscriber.' : 'Subscriber already held.';
+	} else {
+		$parts[] = 'Roles removed: ' . implode( ', ', $result['removed'] ) . '.';
+		$parts[] = $result['added_subscriber'] ? 'Subscriber added.' : 'Subscriber already held.';
+	}
+	if ( $result['kept'] ) {
+		$parts[] = 'Kept: ' . implode( ', ', $result['kept'] ) . '.';
+	}
+	if ( ! $result['seeded'] ) {
+		$parts[] = 'Intent left as already set.';
+	} elseif ( $result['intents'] ) {
+		$parts[] = 'Intent seeded: ' . implode( ', ', $result['intents'] ) . '.';
+	} else {
+		$parts[] = 'Intent seeded: none.';
+	}
+	return implode( ' ', $parts );
+}
+
+/**
+ * Step 11. Every account holding event_host, sponsor or attendee becomes a
+ * plain subscriber, with its hosting/sponsor intent preserved as user meta.
+ *
+ * Idempotent by construction rather than by a flag: the query asks for accounts
+ * that still hold one of the three, so a processed account cannot come back,
+ * and a re-run reports that there is nothing to do. The same property makes the
+ * batching safe, since each batch re-queries what remains.
+ *
+ * One log line per account, deliberately: around 300 rows is nothing next to
+ * what the log already holds, and each line names exactly which roles came off
+ * which account, which is the only record a rollback would have to work from.
+ */
+function law_migration_run_retire_roles( $dry ) {
+	$started = time();
+	$done    = 0;
+	$host    = 0;
+	$sponsor = 0;
+	$already = 0;
+
+	$ids = get_users(
+		array(
+			'role__in' => law_registration_legacy_roles(),
+			'fields'   => 'ID',
+			'number'   => -1,
+			'orderby'  => 'ID',
+			'order'    => 'ASC',
+		)
+	);
+
+	if ( ! $ids ) {
+		law_migration_log( 'retire_roles', 'skipped', 'users', 'No account holds event_host, sponsor or attendee.' );
+		return array( 'done' => true, 'summary' => 'Nothing to do: no account holds a retired role.' );
+	}
+
+	foreach ( $ids as $id ) {
+		// Time-boxed like the history step: the page JS keeps requesting
+		// batches until done, so a slow host cannot hit an upstream timeout
+		// mid-sweep. Never fires on a dry run, which writes nothing.
+		if ( ! $dry && $done > 0 && time() - $started >= 20 ) {
+			return array(
+				'done'    => false,
+				'summary' => sprintf( '%d accounts moved this batch; more remain.', $done ),
+			);
+		}
+
+		$user = new WP_User( (int) $id );
+		if ( ! $user->exists() ) {
+			continue;
+		}
+		$result = law_migration_retire_user_roles( $user, $dry );
+		law_migration_log(
+			'retire_roles',
+			$result['status'],
+			sprintf( 'user %d (%s)', $user->ID, $user->user_email ),
+			law_migration_retire_roles_message( $result )
+		);
+
+		$done++;
+		if ( ! $result['seeded'] ) {
+			$already++;
+		} else {
+			if ( in_array( 'host', $result['intents'], true ) ) {
+				$host++;
+			}
+			if ( in_array( 'sponsor', $result['intents'], true ) ) {
+				$sponsor++;
+			}
+		}
+	}
+
+	return array(
+		'done'    => true,
+		'summary' => sprintf(
+			'%d accounts moved to subscriber (%d host intent, %d sponsor intent, %d intent already set).',
+			$done,
+			$host,
+			$sponsor,
+			$already
+		),
 	);
 }
 
@@ -1955,6 +2154,8 @@ function law_migration_run_step( $step, $dry ) {
 			return law_migration_run_notifications( $dry );
 		case 'pages':
 			return law_migration_run_pages( $dry );
+		case 'retire_roles':
+			return law_migration_run_retire_roles( $dry );
 	}
 	return new WP_Error( 'law_bad_step', 'Unknown migration step.' );
 }
@@ -1992,6 +2193,9 @@ function law_migration_verification() {
 		'migrated contact rows'  => $contact_rows,
 		'orphaned children (skipped by design)' => $orphans,
 		'trashed form 2 entries (kept in the GF archive)' => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 2, array( 'status' => 'trash' ) ) : 0,
+		// Step 11's own check: this must read 0 once the step has run, and it
+		// is the one number that would show a half-finished sweep.
+		'accounts still holding a retired role (step 11 target: 0)' => count( get_users( array( 'role__in' => law_registration_legacy_roles(), 'fields' => 'ID', 'number' => -1 ) ) ),
 	);
 }
 
