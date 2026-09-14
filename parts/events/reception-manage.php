@@ -37,7 +37,10 @@ foreach ( (array) $law_rm_state['input'] as $law_rm_key => $law_rm_typed ) {
 }
 
 $law_rm_new    = ! $law_rm_id;
-$law_rm_public = $law_rm_id ? (string) get_permalink( $law_rm_id ) : '';
+// The address it WILL have, not get_permalink()'s -- which on a draft hands
+// back ?post_type=law_event&p=995, neither the address it will get nor
+// something anybody wants to read (law_events_public_url(), source.php).
+$law_rm_public = $law_rm_id ? (string) law_events_public_url( $law_rm_id ) : '';
 $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 ?>
 
@@ -51,8 +54,9 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 
 <?php if ( ! $law_rm_new && ! $law_rm_values['show'] ) : ?>
 	<div class="law-form-notice" role="status">
-		<?php esc_html_e( 'This reception is not on the programme yet. Tick "Show on the programme" below and save to publish it at', 'law' ); ?>
-		<code><?php echo esc_html( $law_rm_public ); ?></code>.
+		<p><?php esc_html_e( 'This reception is not on the programme yet. Tick "Show on the programme" below and save to publish it at:', 'law' ); ?></p>
+		<?php // Its own line: a URL inline in a sentence wraps mid-address. ?>
+		<p><code><?php echo esc_html( $law_rm_public ); ?></code></p>
 	</div>
 <?php endif; ?>
 
