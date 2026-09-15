@@ -1707,28 +1707,44 @@ function law_migration_run_comments( $dry ) {
 function law_migration_run_history( $dry ) {
 	global $wpdb;
 	$map      = law_migration_map();
+	$events   = (array) ( $map['events'] ?? array() );
 	$migrated = 0;
+	$skipped  = 0;
 
-	// One pass over every revision entry, keyed by parent, instead of a
-	// grouped scan per event.
-	$all_revisions = $wpdb->get_results(
-		"SELECT e.id,
-			MAX(CASE WHEN em.meta_key = 'gv_revision_parent_id' THEN em.meta_value END) AS parent_id,
-			MAX(CASE WHEN em.meta_key = 'gv_revision_date' THEN em.meta_value END) AS revision_date,
-			MAX(CASE WHEN em.meta_key = 'gv_revision_user_id' THEN em.meta_value END) AS revision_user
-		 FROM {$wpdb->prefix}gf_entry e
-		 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id
-			AND em.meta_key IN ('gv_revision_parent_id','gv_revision_date','gv_revision_user_id')
-		 GROUP BY e.id"
-	);
-	$revisions_by_parent = array();
-	foreach ( (array) $all_revisions as $row ) {
-		$revisions_by_parent[ (int) $row->parent_id ][] = $row;
+	// A REAL run walks only what is left to do. It used to re-walk the whole
+	// map on every batch and write a law_migration_log() row — an INSERT — for
+	// each event it then skipped, so batch N paid for every event batches 1..N-1
+	// had already done. That is quadratic over a run, and it was why later
+	// batches visibly slowed down (3 events per batch, then 2). One query for
+	// the flags replaces all of it.
+	//
+	// A DRY run still walks everything and still reports the already-migrated
+	// ones, because a preview is meant to describe the whole picture and runs in
+	// a single request, so none of the above applies to it.
+	if ( ! $dry ) {
+		$total   = count( $events );
+		$events  = law_migration_history_pending( $events );
+		$skipped = $total - count( $events );
 	}
+
+	// One pass over the revision entries of the events actually in play, keyed
+	// by parent, instead of a grouped scan per event.
+	$revisions_by_parent = law_migration_history_revisions( array_keys( $events ) );
 
 	$started = time();
 
-	foreach ( $map['events'] as $entry_id => $post_id ) {
+	// wp_insert_comment() ends with wp_update_comment_count(), which is a
+	// COUNT(*) over wp_comments for the post, an UPDATE on wp_posts and a cache
+	// flush — per comment. A timeline is hundreds of comments on ONE post, so
+	// that recount ran hundreds of times to reach a number only the last one
+	// needed, and got slower as the post's comments accumulated. Deferring
+	// collapses it to one recount per post when the flag comes off below, which
+	// is the single biggest cost in this step on a remote database where every
+	// query is a round trip.
+	wp_defer_comment_counting( true );
+
+	try {
+		foreach ( $events as $entry_id => $post_id ) {
 		// Time-box a real run: writing every timeline (~1,000 comment inserts)
 		// in one request exceeds a proxy upstream timeout (seen on Kinsta), so
 		// stop BETWEEN events after ~20s and let the page JS request the next
@@ -1742,7 +1758,7 @@ function law_migration_run_history( $dry ) {
 		}
 		$ref = 'form 2 entry ' . $entry_id;
 
-		if ( get_post_meta( $post_id, '_law_history_migrated', true ) ) {
+		if ( $dry && get_post_meta( $post_id, '_law_history_migrated', true ) ) {
 			law_migration_log( 'history', 'skipped', $ref, 'History already migrated.' );
 			continue;
 		}
@@ -1793,9 +1809,94 @@ function law_migration_run_history( $dry ) {
 		update_post_meta( $post_id, '_law_history_migrated', 1 );
 		$migrated++;
 		law_migration_log( 'history', 'created', $ref, sprintf( 'Migrated %d notes and %d revision lines.', count( $notes ), count( $revisions ) ) );
+		}
+	} finally {
+		// On every exit path, including the time-box's return above: leaving
+		// counting deferred would hand the next request a site whose comment
+		// counts never settle.
+		wp_defer_comment_counting( false );
 	}
 
-	return array( 'done' => true, 'summary' => $migrated . ' event histories migrated.' );
+	return array(
+		'done'    => true,
+		'summary' => $skipped
+			? sprintf( '%d event histories migrated (%d already done).', $migrated, $skipped )
+			: $migrated . ' event histories migrated.',
+	);
+}
+
+/**
+ * The events from the map whose history has not been written yet.
+ *
+ * One query for the flags rather than a get_post_meta() per event, and nothing
+ * is logged for the ones already done — see the note in
+ * law_migration_run_history() about why that mattered.
+ *
+ * @param array<int,int> $events entry ID => post ID.
+ * @return array<int,int> The same shape, filtered.
+ */
+function law_migration_history_pending( array $events ) {
+	global $wpdb;
+
+	if ( ! $events ) {
+		return array();
+	}
+
+	$post_ids = array_map( 'intval', array_values( $events ) );
+	$in       = implode( ',', array_fill( 0, count( $post_ids ), '%d' ) );
+
+	$done = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT post_id FROM {$wpdb->postmeta}
+			 WHERE meta_key = '_law_history_migrated' AND post_id IN ({$in})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders built above.
+			$post_ids
+		)
+	);
+	$done = array_flip( array_map( 'intval', (array) $done ) );
+
+	return array_filter( $events, fn( $post_id ) => ! isset( $done[ (int) $post_id ] ) );
+}
+
+/**
+ * GravityView revision entries for the given parent entries, keyed by parent.
+ *
+ * Scoped to the entries actually in play rather than the whole table, so a
+ * batch late in a run reads less than the first one did.
+ *
+ * @param int[] $entry_ids Parent form 2 (Event > submit an event) entry IDs.
+ * @return array<int,object[]>
+ */
+function law_migration_history_revisions( array $entry_ids ) {
+	global $wpdb;
+
+	$entry_ids = array_map( 'intval', $entry_ids );
+	if ( ! $entry_ids ) {
+		return array();
+	}
+
+	$in = implode( ',', array_fill( 0, count( $entry_ids ), '%d' ) );
+
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT e.id,
+				MAX(CASE WHEN em.meta_key = 'gv_revision_parent_id' THEN em.meta_value END) AS parent_id,
+				MAX(CASE WHEN em.meta_key = 'gv_revision_date' THEN em.meta_value END) AS revision_date,
+				MAX(CASE WHEN em.meta_key = 'gv_revision_user_id' THEN em.meta_value END) AS revision_user
+			 FROM {$wpdb->prefix}gf_entry e
+			 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id
+				AND em.meta_key IN ('gv_revision_parent_id','gv_revision_date','gv_revision_user_id')
+			 GROUP BY e.id
+			 HAVING parent_id IN ({$in})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- placeholders built above.
+			$entry_ids
+		)
+	);
+
+	$by_parent = array();
+	foreach ( (array) $rows as $row ) {
+		$by_parent[ (int) $row->parent_id ][] = $row;
+	}
+
+	return $by_parent;
 }
 
 /* Step 7: counters and settings seed _________________________________________ */

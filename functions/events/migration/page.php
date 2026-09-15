@@ -197,6 +197,8 @@ function law_migration_admin_page() {
 
 		<?php law_events_backfill_agenda_panel(); ?>
 
+		<?php law_events_photo_fetch_panel(); ?>
+
 		<?php law_content_transfer_panel(); ?>
 
 		<h2>Cutover: front-end data source</h2>
