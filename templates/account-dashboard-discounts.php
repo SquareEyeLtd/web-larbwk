@@ -65,7 +65,7 @@ $law_page_url = get_permalink();
 			// the first question anybody creating one has.
 			?>
 			<p class="law-form-notice" role="status">
-				<?php esc_html_e( "Codes are accepted when booking a paid reception. Leave 'Applies to' empty for a code that works at every paid reception. Hosted events are free to attend, and the flagship conference does not use codes.", 'law' ); ?>
+				<?php esc_html_e( "Codes are accepted when registering for the flagship conference and when booking a paid reception. Leave 'Applies to' empty for a code that works wherever a place is charged for. Hosted events are free to attend, so codes do not apply to them.", 'law' ); ?>
 			</p>
 
 			<div class="law-cal-controls" data-law-cal-controls data-page-url="<?php echo esc_url( $law_page_url ); ?>">

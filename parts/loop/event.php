@@ -98,7 +98,7 @@ if ( $law_booking_scope ) {
 // Event details alone, which read as a card that had forgotten its button
 // rather than as an event you cannot book yet (Denis, 15 September 2026). The
 // second button is drawn disabled with the reason on it instead, so the row
-// says "Bookings open soon" without anybody opening the page.
+// says "Open soon" without anybody opening the page.
 //
 // Only when the row is a button short: callers that pass their own actions (My
 // events, My bookings) already fill the slot, and a dead button beside four

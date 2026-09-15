@@ -77,6 +77,7 @@ require_once __DIR__ . '/migration/page.php';
 require_once __DIR__ . '/migration/repair-owners.php';
 require_once __DIR__ . '/migration/repair-references.php';
 require_once __DIR__ . '/migration/backfill-session-agenda.php';
+require_once __DIR__ . '/migration/content-transfer.php';
 
 /**
  * Which data source the front end reads: 'gf' (legacy Gravity Forms entries)

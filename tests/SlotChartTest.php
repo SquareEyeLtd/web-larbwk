@@ -378,29 +378,6 @@ class SlotChartTest extends LAW_Test_Case {
 		$this->assertSame( array_keys( law_calendar_week_days() ), array_keys( $grouped['days'] ) );
 	}
 
-	/* The running total _____________________________________________________ */
-
-	public function test_the_density_counts_events_running_in_each_half_hour() {
-		$items = array(
-			$this->item( '09:00', '10:00', 'publish', 'A' ),
-			$this->item( '09:30', '11:00', 'publish', 'B' ),
-		);
-		$axis    = law_slotchart_axis( $items );
-		$density = law_slotchart_density( $items, $axis );
-
-		$this->assertSame( 1, $density[ 9 * 60 ], '09:00-09:30: A alone.' );
-		$this->assertSame( 2, $density[ ( 9 * 60 ) + 30 ], '09:30-10:00: both.' );
-		$this->assertSame( 1, $density[ 10 * 60 ], '10:00-10:30: B alone, A has ended.' );
-	}
-
-	/** An event ending exactly on a step boundary is not counted in that step. */
-	public function test_an_event_is_not_counted_in_the_step_it_ends_on() {
-		$items   = array( $this->item( '09:00', '10:00', 'publish', 'A' ) );
-		$density = law_slotchart_density( $items, law_slotchart_axis( $items ) );
-
-		$this->assertSame( 0, $density[ 10 * 60 ] );
-	}
-
 	/* The view switch _______________________________________________________ */
 
 	public function test_the_view_is_active_only_for_its_own_argument() {
@@ -516,6 +493,207 @@ class SlotChartTest extends LAW_Test_Case {
 
 		$this->assertStringContainsString( '19:45 onwards', $label );
 		$this->assertStringNotContainsString( '21:45', $label );
+	}
+
+	/* The facts a bar carries _______________________________________________ */
+
+	/**
+	 * The timeline is the list view laid out in time, so a bar has to state what
+	 * a table row states. This pins the wording of every column that moved onto
+	 * it; if the table and the chart ever disagree about an event, it is this
+	 * list that says which of them is wrong.
+	 */
+	public function test_a_bar_carries_the_same_facts_as_a_table_row() {
+		$host_id = $this->make_user( 'event_host' );
+		wp_update_user( array( 'ID' => $host_id, 'display_name' => 'Asimakis Papadopoulos' ) );
+
+		$event_id = $this->make_event(
+			array(
+				'_law_start'              => '2026-12-01 09:00',
+				'_law_end'                => '2026-12-01 10:30',
+				'_law_reference'          => 'LAW-2026-014',
+				'_law_host_organisations' => 'Mayer Brown',
+				'_law_tickets_available'  => 80,
+				'_law_tickets_sold'       => 12,
+			),
+			'publish',
+			$host_id
+		);
+
+		$facts = wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $event_id ) ) ), 'text' );
+		$all   = implode( ' | ', $facts );
+
+		$this->assertStringContainsString( 'Confirmed · Ref LAW-2026-014', $all, 'Status and reference share one line; a bare reference is one more unlabelled number on a bar covered in them.' );
+		$this->assertStringContainsString( 'Asimakis Papadopoulos', $all );
+		$this->assertStringContainsString( 'Mayer Brown', $all, 'The keyword box searches the firm, so a bar has to print it.' );
+		$this->assertStringContainsString( '12 booked', $all );
+		$this->assertStringContainsString( '68 of 80 left', $all );
+	}
+
+	/**
+	 * An external event is booked on the organiser's own website. "0 booked"
+	 * would read as nobody having come forward rather than as bookings not
+	 * happening here at all.
+	 */
+	public function test_an_external_event_says_where_its_bookings_happen() {
+		$event_id = $this->make_event(
+			array( '_law_is_external' => 1, '_law_start' => '2026-12-04 10:00', '_law_tickets_available' => 50 ),
+			'publish'
+		);
+
+		$all = implode( ' | ', wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $event_id ) ) ), 'text' ) );
+
+		$this->assertStringContainsString( "organiser's site", $all );
+		$this->assertStringNotContainsString( 'booked ·', $all );
+		$this->assertStringNotContainsString( 'left', $all );
+	}
+
+	/** Only a Confirmed event can hold a booking, so nothing else states a count. */
+	public function test_an_unconfirmed_event_states_no_booking_numbers() {
+		$event_id = $this->make_event(
+			array( '_law_start' => '2026-12-01 14:00', '_law_tickets_available' => 40, '_law_tickets_sold' => 3 ),
+			'law-proposed'
+		);
+
+		$all = implode( ' | ', wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $event_id ) ) ), 'text' ) );
+
+		$this->assertStringNotContainsString( 'booked', $all );
+		$this->assertStringNotContainsString( 'left', $all );
+	}
+
+	/**
+	 * Capacity is set at approval. Until it is, the event is not open for
+	 * booking, which is not the same fact as being full.
+	 */
+	public function test_no_capacity_is_not_reported_as_no_places_left() {
+		$event_id = $this->make_event( array( '_law_start' => '2026-12-01 14:00' ), 'publish' );
+
+		$all = implode( ' | ', wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $event_id ) ) ), 'text' ) );
+
+		$this->assertStringContainsString( 'no capacity set', $all );
+		$this->assertStringNotContainsString( '0 of 0 left', $all );
+	}
+
+	/**
+	 * "of 120" only once some of them have gone: on an event nobody has booked
+	 * yet the capacity IS the number left (Denis, 11 September 2026, about the
+	 * table's own Places left column).
+	 */
+	public function test_the_capacity_is_not_repeated_until_a_place_has_gone() {
+		$untouched = $this->make_event(
+			array( '_law_start' => '2026-12-01 14:00', '_law_tickets_available' => 120 ),
+			'publish'
+		);
+		$started   = $this->make_event(
+			array( '_law_start' => '2026-12-01 14:00', '_law_tickets_available' => 120, '_law_tickets_sold' => 4 ),
+			'publish'
+		);
+
+		$this->assertStringContainsString(
+			'120 left',
+			implode( ' | ', wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $untouched ) ) ), 'text' ) )
+		);
+		$this->assertStringNotContainsString(
+			'of 120',
+			implode( ' | ', wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $untouched ) ) ), 'text' ) )
+		);
+		$this->assertStringContainsString(
+			'116 of 120 left',
+			implode( ' | ', wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $started ) ) ), 'text' ) )
+		);
+	}
+
+	/**
+	 * A bar narrower than about an hour hides its detail lines rather than
+	 * printing an ellipsis six times (assets/css/slot-chart.css). Nothing may be
+	 * lost when it does, so the label has to carry every line the bar can draw.
+	 */
+	public function test_the_label_carries_every_fact_the_bar_can_hide() {
+		$host_id = $this->make_user( 'event_host' );
+		wp_update_user( array( 'ID' => $host_id, 'display_name' => 'Asimakis Papadopoulos' ) );
+
+		$event_id = $this->make_event(
+			array(
+				'_law_start'             => '2026-12-01 09:00',
+				'_law_end'               => '2026-12-01 09:30',
+				'_law_reference'         => 'LAW-2026-014',
+				'_law_tickets_available' => 80,
+				'_law_tickets_sold'      => 12,
+			),
+			'publish',
+			$host_id
+		);
+
+		$item  = law_slotchart_item( get_post( $event_id ) );
+		$label = law_slotchart_item_label( $item );
+
+		foreach ( wp_list_pluck( law_slotchart_item_facts( $item ), 'text' ) as $fact ) {
+			$this->assertStringContainsString( $fact, $label );
+		}
+		$this->assertStringContainsString( 'Asimakis Papadopoulos', $label );
+	}
+
+	/** The kind is named once, on the status line, and not again by the label. */
+	public function test_the_label_does_not_name_the_kind_twice() {
+		$event_id = $this->make_event(
+			array( '_law_is_reception' => 1, '_law_start' => '2026-11-30 18:30', '_law_reference' => 'LAW-2026-002' ),
+			'publish'
+		);
+
+		$label = law_slotchart_item_label( law_slotchart_item( get_post( $event_id ) ) );
+
+		$this->assertSame( 1, substr_count( $label, 'Reception' ) );
+	}
+
+	/**
+	 * The bar's position and length ARE the time and the ruler above it names it,
+	 * so printing "08:30-10:00" on each of a day's 48 bars restated the chart.
+	 * The payment status went with it: it is bookkeeping, and says nothing about
+	 * when an event runs or whether it clashes (Denis, 15 September 2026). Both
+	 * still have to be reachable from the bar's label.
+	 */
+	public function test_a_bar_prints_neither_the_time_nor_the_payment_status() {
+		$event_id = $this->make_event(
+			array(
+				'_law_start'             => '2026-12-01 08:30',
+				'_law_end'               => '2026-12-01 10:00',
+				'_law_payment_status'    => 'paid',
+				'_law_tickets_available' => 80,
+			),
+			'publish'
+		);
+
+		$item = law_slotchart_item( get_post( $event_id ) );
+		$all  = implode( ' | ', wp_list_pluck( law_slotchart_item_facts( $item ), 'text' ) );
+
+		$this->assertStringNotContainsString( '08:30', $all );
+		$this->assertStringNotContainsString( '10:00', $all );
+		$this->assertStringNotContainsString( 'Paid', $all );
+
+		$this->assertStringContainsString( '08:30–10:00', law_slotchart_item_label( $item ) );
+	}
+
+	/**
+	 * Status, reference and kind share one bold line, in that order, because that
+	 * is also the order they are truncated in on a narrow bar: the kind goes
+	 * first and the status is what survives. The part finds the line by key, not
+	 * by counting rows.
+	 */
+	public function test_the_bold_line_carries_status_then_reference_then_kind() {
+		$hosted   = $this->make_event(
+			array( '_law_start' => '2026-12-01 08:30', '_law_reference' => '1503' ),
+			'publish'
+		);
+		$external = $this->make_event(
+			array( '_law_start' => '2026-12-01 08:30', '_law_reference' => '1579', '_law_is_external' => 1 ),
+			'law-approved'
+		);
+
+		$keyed = wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $hosted ) ) ), 'text', 'key' );
+		$this->assertSame( 'Confirmed · Ref 1503', $keyed['identity'] );
+
+		$keyed = wp_list_pluck( law_slotchart_item_facts( law_slotchart_item( get_post( $external ) ) ), 'text', 'key' );
+		$this->assertSame( 'Approved · Ref 1579 · External event', $keyed['identity'] );
 	}
 
 	/* Parsing _______________________________________________________________ */

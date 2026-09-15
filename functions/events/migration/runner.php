@@ -2271,6 +2271,10 @@ function law_migration_run_pages( $dry ) {
 		law_migration_log( 'notifications', 'created', 'host_booking_received / committee_booking_received', 'Retired: stored active override cleared (' . law_setup_retire_booking_received_emails() . ').' );
 	}
 	// The flagship's own bookings page.
+	if ( ! $dry && function_exists( 'law_setup_scope_existing_discounts' ) ) {
+		law_migration_log( 'pages', 'created', 'discount codes', 'Pre-flagship unscoped codes limited to the paid receptions: ' . law_setup_scope_existing_discounts() . '.' );
+	}
+
 	if ( ! $dry && function_exists( 'law_setup_flagship_bookings_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/dashboard/flagship-bookings/', 'Committee restriction: ' . law_setup_flagship_bookings_access() . '.' );
 	}

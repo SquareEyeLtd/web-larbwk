@@ -24,7 +24,9 @@ abstract class LAW_Test_Case extends TestCase {
 	 * early and leave everything before it permanently in the database. Such a
 	 * class pays the old delete-based teardown instead. Nothing needs it
 	 * today: the only DDL in the theme is the migration log table in
-	 * functions/events/migration/report.php, and no test reaches it.
+	 * functions/events/migration/report.php, and the one class that reaches it
+	 * (ContentTransferTest, through the importer's logging) installs the table
+	 * in setUpBeforeClass() instead, which runs outside any test's transaction.
 	 */
 	protected bool $use_transaction = true;
 

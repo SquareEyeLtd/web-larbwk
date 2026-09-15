@@ -729,8 +729,8 @@
 }
 
 .law-event-card__arrow {
-  width: 0.7em;
-  height: 0.7em;
+  width: 1em;
+  height: 1em;
 }
 
 /* The booking button (law_booking_card_action()). Orange because it is the card's
@@ -1454,21 +1454,21 @@
   border-top: 1px solid #d5d2de;
 }
 
-/* --- The reception checkout dialog's price block -------------------------
+/* --- The checkout dialogs' price block (receptions and the flagship) -----
    Four ruled lines that have to be readable at a glance and swappable in
    place: the Apply button replaces the figures, and nothing may move when it
    does, or pressing Apply would feel like the page had reloaded. Hence fixed
    rows rather than a table, and the total set apart by weight and a rule
    rather than by a colour the dialog does not otherwise use. */
 
-.law-reception-price {
+.law-booking-price {
   margin: 0 0 1.25rem;
   padding: 0.75rem 1rem;
   background: #f5f4f8;
   border-left: 4px solid #292459;
 }
 
-.law-reception-price__row {
+.law-booking-price__row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1478,11 +1478,19 @@
   line-height: 1.4;
 }
 
-.law-reception-price__row--discount {
+/* The Discount line is hidden until a code is applied, and `hidden` alone does
+   not do it: the UA rule is display:none at the same specificity as the class
+   above, and the class comes later, so the row rendered as "Discount -£0.00"
+   on every dialog (Denis spotted it, 15 September 2026). */
+.law-booking-price__row[hidden] {
+  display: none;
+}
+
+.law-booking-price__row--discount {
   color: #1c6b3a;
 }
 
-.law-reception-price__row--total {
+.law-booking-price__row--total {
   margin: 0.5rem 0 0 !important;
   padding-top: 0.5rem;
   border-top: 1px solid #d5d2de;
@@ -1493,27 +1501,43 @@
    field, not a second decision below it. align-items: stretch, so the button
    takes the input's height rather than its own padding's — the two read as one
    control, and a short button beside a tall input reads as a mistake. */
-.law-reception-code {
+.law-booking-code {
   display: flex;
   flex-wrap: wrap;
   align-items: stretch;
   gap: 0.5rem;
 }
 
-.law-reception-code label {
+.law-booking-code label {
   flex: 1 1 100%;
 }
 
-.law-reception-code input {
-  flex: 1 1 12rem;
+/* The two are ONE control, so they are the same height, deterministically:
+   align-items: stretch alone left the button visibly shorter than the input
+   (Denis, 15 September 2026), because the input carries a fixed height from
+   the theme and the button carries its own padding. A shared min-height with
+   height:auto on both settles it whatever either of them inherits, and
+   inline-flex centres the button's label in whatever height it ends up with. */
+.law-booking-code input,
+.law-booking-code .button {
+  box-sizing: border-box;
+  align-self: stretch;
+  height: auto;
+  min-height: 2.75rem;
   margin: 0 !important;
 }
 
-.law-reception-code .button {
+.law-booking-code input {
+  flex: 1 1 12rem;
+}
+
+.law-booking-code .button {
   flex: 0 0 auto;
-  /* Vertical padding would fight the stretch; the horizontal keeps the label
-     off the edges. */
-  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Vertical padding would fight the shared height; the horizontal keeps the
+     label off the edges. */
   padding-top: 0;
   padding-bottom: 0;
   line-height: 1;

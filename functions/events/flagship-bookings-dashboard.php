@@ -52,17 +52,22 @@ function law_flagship_bookings_is_template() {
  * The filters, from the request or an explicit array (the export and tests
  * pass their own).
  *
- * @return array{kw:string,status:string,payment:string,complimentary:bool}
+ * @return array{kw:string,status:string,payment:string,complimentary:bool,ticket:string}
  */
 function law_flagship_bookings_filters( ?array $source = null ) {
 	$source = null === $source ? $_GET : $source;
 	$status = sanitize_text_field( wp_unslash( (string) ( $source['law_status'] ?? '' ) ) );
+	$ticket = sanitize_key( (string) ( $source['law_ticket'] ?? '' ) );
 
 	return array(
 		'kw'            => sanitize_text_field( wp_unslash( (string) ( $source['law_kw'] ?? '' ) ) ),
 		'status'        => array_key_exists( $status, law_flagship_application_statuses() ) ? $status : '',
 		'payment'       => sanitize_key( (string) ( $source['law_payment'] ?? '' ) ),
 		'complimentary' => ! empty( $source['law_comp'] ),
+		// Validated against the registry here, like status, so a hand-typed
+		// query string cannot empty the table by filtering on a type that
+		// does not exist.
+		'ticket'        => array_key_exists( $ticket, law_booking_ticket_types() ) ? $ticket : '',
 	);
 }
 
@@ -80,6 +85,11 @@ function law_flagship_payment_states() {
 			'ready'           => 'Payment method saved, pending approval',
 			'action_required' => 'Awaiting the delegate\'s bank',
 			'complimentary'   => 'No charge',
+			// Free because the delegate brought a code, not because the
+			// committee gave the place away, and still undecided. The two must
+			// read differently on the filter and in the export, or a code
+			// redemption looks like a gift LAW made.
+			'no_charge'       => 'Covered by a code, pending approval',
 		)
 	);
 }
@@ -120,10 +130,27 @@ function law_flagship_bookings_rows( array $filters ) {
 			'accessibility' => law_booking_profile_requirements( $profile, 'accessibility' ),
 			'press'         => (bool) law_event_meta( $booking_id, '_law_is_press' ),
 			'complimentary' => (bool) law_event_meta( $booking_id, '_law_is_complimentary' ),
+			// The committee's own classification. Both the slug and its label,
+			// because the table and the dialog need the slug and the export
+			// needs the words.
+			'ticket_type'   => (string) law_event_meta( $booking_id, '_law_ticket_type' ),
+			'ticket_label'  => law_booking_ticket_type_label( (string) law_event_meta( $booking_id, '_law_ticket_type' ) ),
 			'net_pence'     => $price['net'],
 			'gross_pence'   => $price['gross'],
+			// What a code took off, and what the place would otherwise have
+			// cost. _law_price_pence is already the DISCOUNTED net, so the
+			// list price is reconstructed here rather than stored twice.
+			'discount_code'  => (string) law_event_meta( $booking_id, '_law_discount_code' ),
+			'discount_pence' => (int) law_event_meta( $booking_id, '_law_discount_pence' ),
+			'list_pence'     => law_flagship_list_gross( $price, (int) law_event_meta( $booking_id, '_law_discount_pence' ) ),
 			'payment'       => $state,
-			'payment_label' => law_flagship_payment_states()[ $state ] ?? 'Awaiting payment details',
+			// A place a code covered settles at 'paid' with a gross of zero,
+			// which is the right state (law_flagship_confirm() explains why)
+			// and the wrong word on its own: "Paid" against £0.00 reads as a
+			// bug until you notice the Code column. Say what happened.
+			'payment_label' => ( 'paid' === $state && $price['gross'] < 1 && '' !== (string) law_event_meta( $booking_id, '_law_discount_code' ) )
+				? 'Paid in full by discount code'
+				: ( law_flagship_payment_states()[ $state ] ?? 'Awaiting payment details' ),
 			'payment_error' => (string) law_event_meta( $booking_id, '_law_payment_error' ),
 			'card'          => law_booking_payment_method_label( $booking_id ),
 			'invoice_url'   => (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' ),
@@ -142,6 +169,31 @@ function law_flagship_bookings_rows( array $filters ) {
 	return array( 'rows' => $rows, 'counts' => law_flagship_places() );
 }
 
+/**
+ * What one place would have cost without its code, with VAT, in pence.
+ *
+ * The booking stores the discounted net; the list price is net + discount,
+ * grossed up the same way. Only ever for a "was £X" line, so it is computed
+ * here rather than snapshotted, which would be a second figure to drift.
+ */
+function law_flagship_list_gross( array $price, $discount_pence ) {
+	$discount_pence = max( 0, (int) $discount_pence );
+	if ( $discount_pence < 1 ) {
+		return (int) $price['gross'];
+	}
+	$list_net = (int) $price['net'] + $discount_pence;
+
+	// A place a code covered in full carries _law_vat = 0, because there is no
+	// VAT to add to nothing — but the price it WOULD have cost still had VAT on
+	// it, and that is the figure this line reports. Both priced flows are
+	// VAT-liable, so a free booking that carries a code is grossed up too;
+	// reading the flag alone printed "was £550.00" for a ticket whose real list
+	// price is £660.00.
+	$vatable = ! empty( $price['vatable'] ) || ! empty( $price['free'] );
+
+	return $vatable ? law_events_gross_pence( $list_net ) : $list_net;
+}
+
 /** Columns, rows and title for the export trio. */
 function law_flagship_bookings_export_rows( array $filters ) {
 	$columns = array(
@@ -155,6 +207,10 @@ function law_flagship_bookings_export_rows( array $filters ) {
 		'Country',
 		'Press',
 		'Complimentary',
+		'Ticket type',
+		'List price',
+		'Discount code',
+		'Discount',
 		'Amount charged',
 		'Payment',
 		'Stripe invoice',
@@ -179,6 +235,10 @@ function law_flagship_bookings_export_rows( array $filters ) {
 			$row['country'],
 			$row['press'] ? 'Yes' : '',
 			$row['complimentary'] ? 'Yes' : '',
+			$row['ticket_label'],
+			law_events_format_pence( $row['list_pence'] ),
+			$row['discount_code'],
+			$row['discount_pence'] > 0 ? law_events_format_pence( $row['discount_pence'] ) : '',
 			law_events_format_pence( $row['gross_pence'] ),
 			$row['payment_label'],
 			$row['invoice_url'],
@@ -200,6 +260,76 @@ function law_flagship_bookings_export_rows( array $filters ) {
 			wp_date( 'j F Y' )
 		),
 	);
+}
+
+/* Ticket type _________________________________________________________________ */
+
+/** The DOM id of the shared "set the ticket type" dialog. */
+function law_flagship_ticket_type_modal_id() {
+	return 'law-flagship-ticket-type';
+}
+
+/**
+ * One Ticket type cell's inner markup.
+ *
+ * ONE renderer, called by the table when the page is drawn and again by
+ * law_flagship_ticket_type_handler() when the committee changes a value, so
+ * the cell that replaces itself over AJAX cannot look different from the cell
+ * the server would have drawn. (The same reasoning as the thread bubble in
+ * comments.php: return the rendered partial, swap the node, keep the markup in
+ * PHP.)
+ *
+ * The opener is a plain button that ships `hidden` with
+ * data-law-modal-enhanced, so law-modal.js reveals it only once the dialog it
+ * points at is confirmed to exist; a browser with no JavaScript is never shown
+ * a control that opens nothing, and gets the <noscript> select instead.
+ *
+ * @param int $booking_id The flagship booking.
+ */
+function law_flagship_ticket_type_cell( $booking_id ) {
+	$booking_id = (int) $booking_id;
+	$type       = (string) law_event_meta( $booking_id, '_law_ticket_type' );
+	$label      = law_booking_ticket_type_label( $type );
+	$person     = law_booking_attendee( $booking_id );
+
+	ob_start();
+	?>
+	<button type="button" class="law-linkish law-ticket-type__open"
+		data-law-ticket-open
+		data-law-refocus
+		data-law-ticket-id="<?php echo esc_attr( (string) $booking_id ); ?>"
+		data-law-ticket-value="<?php echo esc_attr( $type ); ?>"
+		data-law-ticket-name="<?php echo esc_attr( $person['name'] ); ?>"
+		data-law-modal-open="<?php echo esc_attr( law_flagship_ticket_type_modal_id() ); ?>"
+		data-law-modal-enhanced hidden>
+		<span class="law-ticket-type__label"><?php echo esc_html( '' !== $label ? $label : __( 'Add type', 'law' ) ); ?></span>
+		<?php echo law_icon( 'pencil', 'law-ticket-type__pencil', 14 ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- a fixed SVG from the theme's own table. ?>
+		<span class="show-for-sr"><?php echo esc_html( sprintf( __( 'Set the ticket type for %s', 'law' ), $person['name'] ) ); ?></span>
+	</button>
+	<?php
+	// The no-JS path. The dialog is position:fixed and stays hidden without
+	// JavaScript, so without this the column would be read-only for anyone
+	// with scripts off. Small on purpose: one select and one button.
+	?>
+	<noscript>
+		<form class="law-booking-form law-flagship-bookings__inline" method="post"
+			action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="law_flagship_ticket_type">
+			<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $booking_id ); ?>">
+			<?php wp_nonce_field( 'law_flagship_ticket_type' ); ?>
+			<?php law_events_honeypot_field(); ?>
+			<label class="show-for-sr" for="law-ticket-<?php echo esc_attr( (string) $booking_id ); ?>"><?php esc_html_e( 'Ticket type', 'law' ); ?></label>
+			<select id="law-ticket-<?php echo esc_attr( (string) $booking_id ); ?>" name="law_ticket_type">
+				<option value=""><?php esc_html_e( 'Not set', 'law' ); ?></option>
+				<?php foreach ( law_booking_ticket_types() as $law_tt_key => $law_tt_label ) : ?>
+					<option value="<?php echo esc_attr( $law_tt_key ); ?>" <?php selected( $type, $law_tt_key ); ?>><?php echo esc_html( $law_tt_label ); ?></option>
+				<?php endforeach; ?>
+			</select>
+			<button type="submit" class="law-linkish"><?php esc_html_e( 'Set', 'law' ); ?></button>
+		</form>
+	</noscript>
+	<?php
+	return trim( (string) ob_get_clean() );
 }
 
 /* The AJAX partial ___________________________________________________________ */
@@ -323,6 +453,7 @@ add_action(
 		};
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		wp_enqueue_script( 'law-flagship-ticket-type', get_theme_file_uri( 'assets/js/flagship-ticket-type.js' ), array( 'law-modal', 'law-booking-form' ), $mtime( 'assets/js/flagship-ticket-type.js' ), true );
 		wp_enqueue_script( 'law-pdfmake', get_theme_file_uri( 'assets/js/vendor/pdfmake.min.js' ), array(), $mtime( 'assets/js/vendor/pdfmake.min.js' ), true );
 		wp_enqueue_script( 'law-pdfmake-fonts', get_theme_file_uri( 'assets/js/vendor/vfs_fonts.js' ), array( 'law-pdfmake' ), $mtime( 'assets/js/vendor/vfs_fonts.js' ), true );
 		wp_enqueue_script( 'law-export-buttons', get_theme_file_uri( 'assets/js/export-buttons.js' ), array( 'law-pdfmake-fonts' ), $mtime( 'assets/js/export-buttons.js' ), true );

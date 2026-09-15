@@ -224,6 +224,12 @@ function law_booking_meta_schema() {
 		'_law_reviewed_by'            => 'int',
 		'_law_decline_reason'         => 'multiline',
 		'_law_is_complimentary'       => 'flag',
+		// The committee's own classification of a flagship registration
+		// (Delegate, Sponsor, Speaker, Exhibitor, Committee). Back-office only:
+		// nothing reads it but the committee's table, their exports and the
+		// wp-admin box, and no price, capacity or guard depends on it. Unset on
+		// every registration until somebody classifies it.
+		'_law_ticket_type'            => 'ticket_type',
 		// The receptions (RECEPTIONS.md §1.2).
 		//
 		// _law_discount_id is the CLAIMED code and is DELETED on release, which
@@ -374,12 +380,25 @@ function law_events_sanitize_value( $value, $type ) {
 			// pending_setup, the state that grants nothing. 'included' is the
 			// receptions' free place granted with a confirmed flagship ticket:
 			// a real place that was never charged, which 'complimentary'
-			// (the committee gave it) would mis-describe.
+			// (the committee gave it) would mis-describe. 'no_charge' is the
+			// third flavour of free and is the same kind of distinction: a
+			// flagship registration whose discount code covers the whole
+			// price, waiting on the committee with no payment method and
+			// nothing to charge. It is NOT complimentary (nobody gave it away)
+			// and NOT pending_setup (no card is coming, and the abandonment
+			// sweep would otherwise close it after 48 hours saying no card
+			// details were given, which would be both false and destructive).
 			return in_array(
 				$value,
-				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary', 'included' ),
+				array( 'pending_setup', 'ready', 'processing', 'paid', 'failed', 'action_required', 'refunded', 'complimentary', 'included', 'no_charge' ),
 				true
 			) ? $value : 'pending_setup';
+		case 'ticket_type':
+			// The committee's classification of a flagship registration. Unknown
+			// values become '', which DELETES the key rather than storing a
+			// default: nobody has said what this person is, and inventing
+			// "Delegate" would make the column look filled in when it is not.
+			return in_array( $value, array_keys( law_booking_ticket_types() ), true ) ? $value : '';
 		case 'registration_state':
 			$states = array( '', 'open', 'apply', 'free', 'external', 'invitation', 'closed' );
 			return in_array( $value, $states, true ) ? $value : '';

@@ -440,7 +440,13 @@ function law_maybe_notify_committee_assignee( $entry, $original_entry ) {
 
 	$title = rgar( $entry, '17' ); // Event title
 	$ref   = rgar( $entry, '70' ); // LAW reference
-	$link  = 'https://londonarbitrationweek.co.uk/account/dashboard/';
+	// home_url(), not the live domain hardcoded. This fires on
+	// gform_post_update_entry_2, so it is live on any environment still reading
+	// Gravity Forms — including a staging site carrying a copy of production's
+	// data, where it would otherwise email a real committee member a link to
+	// production (noticed 15 September 2026, preparing the production → staging
+	// database pull).
+	$link  = home_url( '/account/dashboard/' );
 
 	$subject = sprintf( 'You have been assigned an event: %s (%s)', $title, $ref );
 	$body    = '<p>You have been assigned as the committee contact for '

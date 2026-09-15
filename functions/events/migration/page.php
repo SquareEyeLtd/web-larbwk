@@ -40,7 +40,15 @@ function law_migration_admin_page() {
 				'redirects',
 				'info',
 				'forms',
-				sprintf( 'Module Gravity Forms (1,2,3,4,5,6,8,9) marked %s with the source flip.', 'cpt' === $new ? 'INACTIVE' : 'active again' )
+				// The list comes from the array actually used above, not a second
+				// copy typed into the message: it said "1,2,3,4,5,6,8,9" for a
+				// day after form 10 (Event > external events) joined it, and this
+				// log line is the record of what the flip did.
+				sprintf(
+					'Module Gravity Forms (%s) marked %s with the source flip.',
+					implode( ',', $module_forms ),
+					'cpt' === $new ? 'INACTIVE' : 'active again'
+				)
 			);
 		}
 		echo '<div class="notice notice-success"><p>Front-end data source flipped to <strong>' . esc_html( $new ) . '</strong>; the module Gravity Forms were marked ' . ( 'cpt' === $new ? 'inactive' : 'active' ) . ' (form 7, Contact, untouched).</p></div>';
@@ -188,6 +196,8 @@ function law_migration_admin_page() {
 		<?php law_events_repair_owner_panel(); ?>
 
 		<?php law_events_backfill_agenda_panel(); ?>
+
+		<?php law_content_transfer_panel(); ?>
 
 		<h2>Cutover: front-end data source</h2>
 		<form method="post">

@@ -97,8 +97,8 @@ if ( $law_ed_booking && $law_ed_event && function_exists( 'law_booking_render_ac
 
 // Availability: the booking control owns it whenever it renders, because it
 // states the position in words in every state ("N places left", "fully booked",
-// "Bookings open soon", "You're booked on this event", "This event has taken
-// place"). A separate places fact alongside it would duplicate the count in the
+// "Places for this event have not been released yet.", "You're booked on this
+// event", "This event has taken place"). A separate places fact alongside it would duplicate the count in the
 // bookable state and, worse, advertise "100 places remaining" on an event that
 // has already happened. So the fact is shown only as a fallback, when the
 // control renders nothing at all, which is now just the legacy source.

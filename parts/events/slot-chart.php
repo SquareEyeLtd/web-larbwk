@@ -44,9 +44,18 @@ foreach ( $law_days as $law_day_items ) {
 
 <?php foreach ( $law_days as $law_date => $law_items ) : ?>
 	<?php
-	$law_axis    = law_slotchart_axis( $law_items );
-	$law_lanes   = law_slotchart_lanes( $law_items );
-	$law_density = law_slotchart_density( $law_items, $law_axis );
+	$law_axis  = law_slotchart_axis( $law_items );
+	$law_lanes = law_slotchart_lanes( $law_items );
+	// How tall a bar has to be is how many detail lines the day's fullest item
+	// carries. The pixel arithmetic is in the stylesheet, where the type metrics
+	// it depends on live; this only supplies the count. Per day rather than once
+	// for the chart, because a day whose events have no waiting list and no
+	// session agenda is a line shorter throughout, and padding it out to the
+	// worst day's height puts dead space under every bar on it.
+	$law_fact_lines = 0;
+	foreach ( $law_items as $law_day_item ) {
+		$law_fact_lines = max( $law_fact_lines, count( law_slotchart_item_facts( $law_day_item ) ) );
+	}
 	// A day outside the configured programme week has no heading in
 	// law_calendar_week_days(); law_calendar_day_heading() formats the date
 	// itself, so the section is labelled rather than left with a bare key.
@@ -66,7 +75,7 @@ foreach ( $law_days as $law_day_items ) {
 		<?php else : ?>
 			<div
 				class="law-slotchart"
-				style="--law-sc-from:<?php echo (int) $law_axis['from']; ?>;--law-sc-span:<?php echo (int) $law_axis['span']; ?>"
+				style="--law-sc-from:<?php echo (int) $law_axis['from']; ?>;--law-sc-span:<?php echo (int) $law_axis['span']; ?>;--law-sc-facts:<?php echo (int) $law_fact_lines; ?>"
 			>
 				<div class="law-slotchart__track">
 					<?php
@@ -85,44 +94,22 @@ foreach ( $law_days as $law_day_items ) {
 						<?php endfor; ?>
 					</div>
 
-					<?php
-					// The running total the client asked for, and the only place
-					// on this view that states a number: the bars show WHERE the
-					// clashes are without ever saying how many. One figure per
-					// half hour, above the bars it counts. Nothing opens.
-					//
-					// The day's own busiest half hour is marked, and nothing
-					// else is. A fixed threshold would be a judgement invented
-					// here -- during this week two events at once is ordinary,
-					// so "more than one" would light up almost every step and
-					// mean nothing -- while the peak is a fact about the day.
-					$law_peak = $law_density ? max( $law_density ) : 0;
-					?>
-					<p class="show-for-sr"><?php esc_html_e( 'Events running in each half hour:', 'law' ); ?></p>
-					<div class="law-slotchart__density">
-						<?php foreach ( $law_density as $law_at => $law_count ) : ?>
-							<?php
-							// The opening step is the ruler's unlabelled lead-in,
-							// so its figure would float with no time above it.
-							if ( $law_at === $law_axis['from'] ) {
-								continue;
-							}
-							?>
-							<span
-								class="law-slotchart__count<?php echo ( $law_count > 0 && $law_count === $law_peak ) ? ' is-peak' : ''; ?>"
-								style="--at:<?php echo (int) ( $law_at - $law_axis['from'] ); ?>"
-							><abbr title="<?php
-								/* translators: 1: number of events, 2: start of the half hour, e.g. 08:30 */
-								echo esc_attr( sprintf( _n( '%1$d event running at %2$s', '%1$d events running at %2$s', $law_count, 'law' ), $law_count, law_slotchart_time_label( $law_at ) ) );
-							?>"><?php echo esc_html( (string) $law_count ); ?></abbr></span>
-						<?php endforeach; ?>
-					</div>
-
 					<ol class="law-slotchart__lanes">
 						<?php foreach ( $law_lanes as $law_lane ) : ?>
 							<li class="law-slotchart__lane">
 								<?php foreach ( $law_lane as $law_item ) : ?>
-									<?php $law_item_label = law_slotchart_item_label( $law_item ); ?>
+									<?php
+									$law_item_label = law_slotchart_item_label( $law_item );
+									$law_item_facts = law_slotchart_item_facts( $law_item );
+									?>
+									<?php
+									// aria-hidden on everything inside, with the whole
+									// bar named by aria-label. The visible lines are the
+									// same facts in the same order, so announcing both
+									// would read every event twice; and the label is the
+									// only complete version when the bar is too narrow
+									// to draw the lower lines.
+									?>
 									<a
 										class="law-slotchart__bar law-slotchart__bar--<?php echo esc_attr( $law_item['status_slug'] ); ?> law-slotchart__bar--kind-<?php echo esc_attr( $law_item['kind'] ); ?><?php echo $law_item['open_ended'] ? ' is-open-ended' : ''; ?>"
 										style="--at:<?php echo (int) ( $law_item['start'] - $law_axis['from'] ); ?>;--len:<?php echo (int) max( 1, $law_item['end'] - $law_item['start'] ); ?>"
@@ -130,8 +117,22 @@ foreach ( $law_days as $law_day_items ) {
 										title="<?php echo esc_attr( $law_item_label ); ?>"
 										aria-label="<?php echo esc_attr( $law_item_label ); ?>"
 									>
-										<span class="law-slotchart__bar-time" aria-hidden="true"><?php echo esc_html( $law_item['start_label'] ); ?></span>
-										<span class="law-slotchart__bar-title"><?php echo esc_html( $law_item['title'] ); ?></span>
+										<?php
+										// No time on the bar. Its position and its
+										// length are the time, the ruler above names it,
+										// and on a 48-bar day the repeated "08:30–10:00"
+										// was a line of type per bar saying what the
+										// chart already said (Denis, 15 September 2026).
+										// The tooltip and the label still carry it.
+										?>
+										<span class="law-slotchart__bar-title" aria-hidden="true"><?php echo esc_html( $law_item['title'] ); ?></span>
+										<?php if ( $law_item_facts ) : ?>
+											<span class="law-slotchart__bar-facts" aria-hidden="true">
+												<?php foreach ( $law_item_facts as $law_fact ) : ?>
+													<span class="law-slotchart__bar-fact law-slotchart__bar-fact--<?php echo esc_attr( $law_fact['key'] ); ?>"><?php echo esc_html( $law_fact['text'] ); ?></span>
+												<?php endforeach; ?>
+											</span>
+										<?php endif; ?>
 									</a>
 								<?php endforeach; ?>
 							</li>
@@ -145,20 +146,34 @@ foreach ( $law_days as $law_day_items ) {
 
 <?php if ( ! empty( $law_unscheduled ) ) : ?>
 	<?php
-	// No start time, so no place on any day's axis. A list rather than a chart,
-	// under every day tab, exactly as the programme handles the same case
-	// (parts/calendar-events.php). Dropping these would quietly hide an event
-	// from the one view whose job is to account for all of them.
+	// No start time, so no place on any day's axis. Under every day tab, exactly
+	// as the programme handles the same case (parts/calendar-events.php).
+	// Dropping these would quietly hide an event from the one view whose job is
+	// to account for all of them.
+	//
+	// It is the list view's own table, not a list written for this section
+	// (Denis, 15 September 2026). These events have no geometry to draw, so the
+	// chart has nothing to offer them that the table does not already do better,
+	// and a second layout for the same rows was one more thing to keep in step.
+	// Review is kept here although the bars do without it: there is no bar to
+	// click, so without the button the row's title link would be the only way in
+	// and would not look like one. Bookings stays off, as everywhere on this
+	// view. See the args' documentation in parts/events/dashboard-list.php.
+	$law_unscheduled_posts = array_filter( array_map( 'get_post', wp_list_pluck( $law_unscheduled, 'id' ) ) );
 	?>
 	<section class="law-cal-day-section law-slotchart-unscheduled" id="day-unscheduled" aria-label="<?php esc_attr_e( 'No confirmed slot', 'law' ); ?>">
 		<h2 class="law-cal-day-bar"><?php esc_html_e( 'No confirmed slot', 'law' ); ?></h2>
-		<ul class="law-slotchart__unscheduled-list">
-			<?php foreach ( $law_unscheduled as $law_item ) : ?>
-				<li>
-					<a class="law-slotchart__unscheduled-link" href="<?php echo esc_url( $law_item['url'] ); ?>"><?php echo esc_html( $law_item['title'] ); ?></a>
-					<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( $law_item['status_slug'] ); ?>"><?php echo esc_html( $law_item['status_label'] ); ?></span>
-				</li>
-			<?php endforeach; ?>
-		</ul>
+		<?php
+		get_template_part(
+			'parts/events/dashboard-list',
+			null,
+			array(
+				'events'        => $law_unscheduled_posts,
+				'show_count'    => false,
+				'show_bookings' => false,
+				'link_base'     => law_slotchart_url(),
+			)
+		);
+		?>
 	</section>
 <?php endif; ?>

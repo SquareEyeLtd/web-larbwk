@@ -789,6 +789,10 @@ function law_booking_payment_states() {
 		'refunded'        => __( 'Refunded', 'law' ),
 		'complimentary'   => __( 'Complimentary', 'law' ),
 		'included'        => __( 'Included', 'law' ),
+		// A discount code covering the whole price. Distinct from
+		// 'complimentary', which is the committee's gift, and from 'included',
+		// which rides on a flagship ticket.
+		'no_charge'       => __( 'Nothing to pay', 'law' ),
 	);
 }
 
@@ -1056,6 +1060,245 @@ function law_booking_price( $booking_id ) {
 		'gross'   => $vatable ? law_events_gross_pence( $net ) : $net,
 		'free'    => $net < 1,
 		'vatable' => $vatable,
+	);
+}
+
+/* The shared price quote ______________________________________________________
+ *
+ * One quote for every flow that charges a delegate, because there has only
+ * ever been one sum: the list price, less a discount code, plus VAT. The
+ * receptions had it first (RECEPTIONS.md §2.2) and the flagship joined on
+ * 15 September 2026; rather than copy 60 lines of arithmetic and a second
+ * endpoint, the reception version moved here and both flows now call it.
+ *
+ * It needed no change to serve the flagship, which is the point:
+ * law_event_price_pence() above already delegates the flagship's
+ * time-switched price to law_flagship_price_pence(), so the only
+ * flow-specific thing left was "is this event open", and that is a filter.
+ */
+
+/**
+ * What one place costs this person right now, with an optional code applied.
+ *
+ * PURE: it reads, it writes nothing and it claims nothing. That is what lets
+ * the same function render a dialog, answer the live Apply endpoint AND be
+ * re-run inside a checkout handler — which is the point, because it means the
+ * client can never send its own price.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param string $code     As typed; '' for the list price.
+ * @param int    $user_id  The delegate, for a future per-user code limit.
+ * @return array{list_net:int,list_gross:int,net:int,discount:int,vat:int,gross:int,code:string,discount_id:int,free:bool}|WP_Error
+ */
+function law_booking_quote( $event_id, $code = '', $user_id = 0 ) {
+	$event_id = (int) $event_id;
+	$list_net = law_event_price_pence( $event_id );
+	$code     = trim( (string) $code );
+
+	$quote = array(
+		'list_net'    => $list_net,
+		// The list price WITH VAT, which is what an unmodified dialog shows in
+		// its Total line. The no-JS path compares against it (see
+		// law_booking_quote_expected_gross()), so it has to travel with the
+		// quote rather than be recomputed by three callers.
+		'list_gross'  => $list_net > 0 ? law_events_gross_pence( $list_net ) : 0,
+		'net'         => $list_net,
+		'discount'    => 0,
+		'vat'         => $list_net > 0 ? law_events_vat_pence( $list_net ) : 0,
+		'gross'       => $list_net > 0 ? law_events_gross_pence( $list_net ) : 0,
+		'code'        => '',
+		'discount_id' => 0,
+		'free'        => $list_net < 1,
+	);
+
+	if ( '' === $code ) {
+		return $quote;
+	}
+
+	$discount = law_discount_validate(
+		$code,
+		array( 'event_id' => $event_id, 'user_id' => (int) $user_id, 'price_pence' => $list_net )
+	);
+	if ( is_wp_error( $discount ) ) {
+		return $discount;
+	}
+
+	$applied = law_discount_apply( $list_net, $discount );
+
+	$quote['net']         = (int) $applied['net_pence'];
+	$quote['discount']    = (int) $applied['discount_pence'];
+	$quote['vat']         = $quote['net'] > 0 ? law_events_vat_pence( $quote['net'] ) : 0;
+	$quote['gross']       = $quote['net'] > 0 ? law_events_gross_pence( $quote['net'] ) : 0;
+	$quote['code']        = (string) $discount['code'];
+	$quote['discount_id'] = (int) $discount['id'];
+	$quote['free']        = (bool) $applied['is_free'];
+
+	return $quote;
+}
+
+/**
+ * The gross a submitted form is allowed to have been SHOWING.
+ *
+ * With JavaScript the dialog re-quotes on Apply and writes the discounted
+ * gross into the hidden field, so the two agree. Without it there is no Apply
+ * button: the form was rendered at the LIST price and the delegate typed a
+ * code into it, so the figure it posts is the list gross and comparing that
+ * against the discounted gross refuses every no-JS redemption — for ever,
+ * because the inline form re-renders at the list price and the refusal
+ * repeats. (Found 15 September 2026 while wiring the flagship; it was already
+ * true of both reception forms.)
+ *
+ * A code can only ever reduce the total (law_discount_apply() caps a fixed
+ * discount at the price), so accepting the list gross here cannot charge
+ * anybody more than they saw, which is the only thing this guard exists to
+ * prevent.
+ *
+ * @param array $quote   law_booking_quote().
+ * @param bool  $applied Whether the client says it re-quoted before submitting.
+ */
+function law_booking_quote_expected_gross( array $quote, $applied ) {
+	return $applied ? (int) $quote['gross'] : (int) $quote['list_gross'];
+}
+
+/**
+ * Give a booking's discount code back, once.
+ *
+ * A code's use goes back with the place, but only while the money has not
+ * arrived: a PAID place that the committee cancels KEEPS the use, because the
+ * code really was spent (RECEPTIONS.md §2.7). The key is deleted on release,
+ * which is what makes a second release — the webhook's expiry, the daily sweep
+ * and a committee cancellation all reaching the same booking — a no-op rather
+ * than a theft of somebody else's live claim.
+ *
+ * Its own function since 15 September 2026, because the flagship's decline,
+ * withdrawal and abandonment paths change status directly and never go through
+ * law_booking_cancel(), so the rule would otherwise have had four copies.
+ *
+ * @param int    $booking_id    The booking.
+ * @param string $payment_state The payment state to judge by; read from the
+ *                              booking when not given. Callers that have
+ *                              already changed the booking's status pass the
+ *                              state they read BEFORE doing so, so a release
+ *                              is decided on the same facts as the rest of
+ *                              their transaction.
+ * @return bool Whether a claim was actually released.
+ */
+function law_booking_release_discount( $booking_id, $payment_state = null ) {
+	$booking_id  = (int) $booking_id;
+	$discount_id = (int) law_event_meta( $booking_id, '_law_discount_id' );
+
+	if ( ! $discount_id || ! function_exists( 'law_discount_release' ) ) {
+		return false;
+	}
+	$payment_state = null === $payment_state
+		? (string) law_event_meta( $booking_id, '_law_payment_status' )
+		: (string) $payment_state;
+
+	if ( 'paid' === $payment_state ) {
+		return false;
+	}
+
+	law_discount_release( $discount_id, $booking_id );
+	delete_post_meta( $booking_id, '_law_discount_id' );
+
+	return true;
+}
+
+/**
+ * Is this event one a quote may be asked for — published, on sale, still to
+ * come? Each priced flow answers for its own events.
+ *
+ * A filter rather than a branch, for the same reason
+ * law_booking_payment_handlers exists: this file must not learn what a
+ * reception or a flagship is.
+ *
+ * @return true|WP_Error
+ */
+function law_booking_quote_guard( $event_id ) {
+	$answer = apply_filters( 'law_booking_quote_guard', null, (int) $event_id );
+
+	if ( is_wp_error( $answer ) ) {
+		return $answer;
+	}
+	if ( true === $answer ) {
+		return true;
+	}
+
+	// Nobody claimed it. Refusing is the safe default: an unclaimed event ID
+	// must never be priceable through a public endpoint.
+	return new WP_Error( 'law_booking_not_quotable', __( 'Places at this event are not on sale.', 'law' ) );
+}
+
+add_action( 'admin_post_law_quote', 'law_booking_quote_handler' );
+add_action( 'admin_post_nopriv_law_quote', 'law_events_nopriv_json' );
+
+/**
+ * Price one place, with a code, without writing anything.
+ *
+ * JSON only, and never a redirect: it answers the Apply button, which has
+ * nowhere to go. Its own rate surface, because a delegate trying three codes
+ * must not spend the budget that lets them then book
+ * (FLAGSHIP_PAYMENTS.md §12's open decision, settled here). Both priced flows
+ * share the one budget rather than getting one each.
+ */
+function law_booking_quote_handler() {
+	// The return value is the is-AJAX flag, and this endpoint has no other
+	// mode: it answers JSON or it answers nothing, because the only thing that
+	// ever asks it is the Apply button.
+	law_events_guard_post(
+		'law_quote',
+		array(
+			'rate'          => array( 'discount_quote', 20, 600, 60 ),
+			'honeypot_json' => array( 'message' => 'Checked.' ),
+		)
+	);
+
+	if ( ! is_user_logged_in() ) {
+		wp_send_json_error( array( 'message' => __( 'Please sign in to book a place.', 'law' ) ), 401 );
+	}
+
+	$event_id = absint( $_POST['event_id'] ?? 0 );
+	// One agreed key for the code, so the field can keep whichever name its
+	// own form submits under. The script posts the VALUE; the name is the
+	// real submission's business.
+	$code = isset( $_POST['law_code'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['law_code'] ) ) : '';
+
+	$open = law_booking_quote_guard( $event_id );
+	if ( is_wp_error( $open ) ) {
+		wp_send_json_error( array( 'message' => $open->get_error_message() ), 404 );
+	}
+
+	$quote = law_booking_quote( $event_id, $code, get_current_user_id() );
+	if ( is_wp_error( $quote ) ) {
+		$data = (array) $quote->get_error_data();
+		wp_send_json_error(
+			array( 'message' => $quote->get_error_message(), 'field' => (string) ( $data['field'] ?? 'law_discount_code' ) ),
+			400
+		);
+	}
+
+	wp_send_json_success(
+		array(
+			// The LIST price on the Price line, so the block reads like a
+			// receipt: price, less the discount, plus VAT, equals the total.
+			// Showing the discounted net there and the reduction under it made
+			// the discount look as though it had been taken twice.
+			'net'      => law_events_format_pence( $quote['list_net'] ),
+			'discount' => law_events_format_pence( $quote['discount'] ),
+			'vat'      => law_events_format_pence( $quote['vat'] ),
+			'gross'    => law_events_format_pence( $quote['gross'] ),
+			'pence'    => $quote['gross'],
+			'code'     => $quote['code'],
+			'free'     => (bool) $quote['free'],
+			'label'    => $quote['discount'] > 0
+				? sprintf(
+					/* translators: 1: the code, 2: the amount off. */
+					__( 'Code %1$s applied: %2$s off.', 'law' ),
+					$quote['code'],
+					law_events_format_pence( $quote['discount'] )
+				)
+				: '',
+		)
 	);
 }
 
@@ -1730,7 +1973,10 @@ function law_booking_email_extra( $booking_id ) {
 				'discount_note'       => ( '' !== $code && $discount > 0 )
 					? sprintf(
 						/* translators: 1: the code, 2: the amount off. */
-						__( 'Discount code %1$s: %2$s off', 'law' ),
+						// A full stop, because every template that carries
+						// this places it mid-paragraph after a sentence of its
+						// own. Without one the next sentence ran straight on.
+						__( 'Discount code %1$s: %2$s off.', 'law' ),
 						$code,
 						law_events_format_pence( $discount )
 					)
@@ -2550,17 +2796,7 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		law_waitlist_renumber( $event_id );
 	}
 
-	// A discount code's use goes back with the place, but only while the money
-	// has not arrived: a paid place that the committee cancels KEEPS the use,
-	// because the code really was spent (RECEPTIONS.md §2.7). The key is
-	// deleted on release, which is what makes a second release — the webhook's
-	// expiry and the sweep both reaching this booking — a no-op rather than a
-	// theft of somebody else's live claim.
-	$discount_id = (int) law_event_meta( $booking->ID, '_law_discount_id' );
-	if ( $discount_id && 'paid' !== $payment && function_exists( 'law_discount_release' ) ) {
-		law_discount_release( $discount_id, (int) $booking->ID );
-		delete_post_meta( $booking->ID, '_law_discount_id' );
-	}
+	law_booking_release_discount( (int) $booking->ID, $payment );
 
 	$sold = law_event_recount_attendees( $event_id );
 	law_booking_unlock( $event_id );

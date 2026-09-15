@@ -407,10 +407,13 @@ function law_flagship_card_action( array $event, $scope = 'full' ) {
  * with nothing behind it is drawn disabled with the reason on it rather than
  * left off (Denis, 15 September 2026).
  *
- * The wording is the conference page's own ("Registration opens soon"), not the
- * hosted events' "Bookings open soon", because a place at the conference is
- * registered for rather than booked and the two surfaces should not name the
- * same wait two ways.
+ * The not-open label is the hosted events' own "Open soon" (Denis, 15
+ * September 2026). It used to be "Registration opens soon", to keep the
+ * conference's vocabulary (a place here is registered for, not booked) — but
+ * the shortened label names neither act, so both card buttons can say it, and
+ * two cards side by side on the same programme naming the same wait two ways
+ * was the worse outcome. The page below still speaks the conference's own
+ * language, where there is room for a sentence.
  *
  * @param array $event The calendar-mapped event array.
  * @return array|null One actions entry, or NULL to leave the card as it is.
@@ -433,7 +436,7 @@ function law_flagship_card_inert_action( array $event ) {
 	}
 	switch ( $state['state'] ) {
 		case 'not-open':
-			return law_booking_card_inert( __( 'Registration opens soon', 'law' ) );
+			return law_booking_card_inert( __( 'Open soon', 'law' ) );
 		case 'past':
 			return law_booking_card_inert( __( 'Registration closed', 'law' ) );
 	}
@@ -531,11 +534,10 @@ function law_flagship_render_opener( array $event, $preview = false ) {
 	// A disabled <button> is inert by every route — pointer, keyboard,
 	// assistive tech and form submission — where an <a> with only
 	// aria-disabled would still follow its href on Enter.
+	// law_booking_inert_button() (account-bookings.php) is the one place that
+	// markup is built, for the hosted control and this one alike.
 	if ( $preview ) {
-		printf(
-			'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
-			esc_html__( 'Register', 'law' )
-		);
+		echo law_booking_inert_button( __( 'Register', 'law' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
 		return;
 	}
 
@@ -597,15 +599,25 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 		: '';
 
 	if ( 'attending' === $state['state'] || 'attended' === $state['state'] ) {
+		// Three ways to hold a confirmed ticket, and they are not the same
+		// sentence: the committee gave it, a discount code covered it, or it
+		// was paid for. "£0.00 has been paid" was what the third one said
+		// about the second, which is true of the arithmetic and nonsense to
+		// read.
+		if ( law_event_meta( $booking_id, '_law_is_complimentary' ) ) {
+			$law_fs_line = __( 'Your ticket is confirmed, with our compliments.', 'law' );
+		} elseif ( $price['gross'] < 1 && '' !== (string) law_event_meta( $booking_id, '_law_discount_code' ) ) {
+			$law_fs_line = __( 'Your ticket is confirmed. Your discount code covered the whole price, so nothing was charged.', 'law' );
+		} else {
+			$law_fs_line = sprintf(
+				/* translators: %s: the amount paid. */
+				__( 'Your ticket is confirmed and %s has been paid.', 'law' ),
+				law_events_format_pence( $price['gross'] )
+			);
+		}
 		law_flagship_state(
 			'attended' === $state['state'] ? __( 'You attended this event', 'law' ) : __( "You're attending", 'law' ),
-			law_event_meta( $booking_id, '_law_is_complimentary' )
-				? __( 'Your ticket is confirmed, with our compliments.', 'law' )
-				: sprintf(
-					/* translators: %s: the amount paid. */
-					__( 'Your ticket is confirmed and %s has been paid.', 'law' ),
-					law_events_format_pence( $price['gross'] )
-				)
+			$law_fs_line
 		);
 		return $button;
 	}
@@ -631,11 +643,14 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 
 	// law-applied.
 	$waiting = 'needs-card' === $state['state'];
+	$covered = 'no_charge' === (string) law_event_meta( $booking_id, '_law_payment_status' );
 	law_flagship_state(
 		$waiting ? __( 'Your registration needs your payment details', 'law' ) : __( 'Your registration is being reviewed', 'law' ),
 		$waiting
 			? __( 'We cannot put your registration to the committee until your payment details are saved. Nothing is charged unless you are approved.', 'law' )
-			: __( 'The committee will decide shortly, and we will email you either way. Nothing has been charged.', 'law' )
+			: ( $covered
+				? __( 'The committee will decide shortly, and we will email you either way. Your discount code covers the whole price, so there is nothing to pay.', 'law' )
+				: __( 'The committee will decide shortly, and we will email you either way. Nothing has been charged.', 'law' ) )
 	);
 
 	return $button;
@@ -658,6 +673,10 @@ function law_flagship_state( $heading, $sub = '' ) {
 function law_flagship_notice_text( $key ) {
 	$map = array(
 		'flagship-applied'     => array( 'ok', __( 'Your registration has been received. We will email you as soon as the committee has decided.', 'law' ) ),
+		// A discount code covered the whole price, so no payment details were
+		// asked for. Said explicitly, because a registration that skipped the
+		// payment step otherwise looks half-finished.
+		'flagship-free-received' => array( 'ok', __( 'Your registration has been received. Your discount code covers the whole price, so there is nothing to pay and we have not asked for any payment details. We will email you as soon as the committee has decided.', 'law' ) ),
 		'flagship-card'        => array( 'ok', __( 'Your payment details have been saved. Nothing is charged unless your registration is approved.', 'law' ) ),
 		'flagship-card-failed' => array( 'error', __( 'Your payment details were not saved. Please try again.', 'law' ) ),
 		// Stripe sends the delegate back here when they abandon the hosted
@@ -762,5 +781,9 @@ add_action(
 		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), filemtime( get_theme_file_path( 'assets/css/event-form.css' ) ) );
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), filemtime( get_theme_file_path( 'assets/js/booking-form.js' ) ), true );
+		// The registration dialog takes a discount code since 15 September
+		// 2026, so this page needs the quote nonce in its own right rather
+		// than relying on the event view's enqueue happening to fire too.
+		law_booking_quote_localise();
 	}
 );

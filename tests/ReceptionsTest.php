@@ -272,6 +272,33 @@ class ReceptionsTest extends LAW_Test_Case {
 		$this->assertWPError( $result, 'law_reception_code_unapplied' );
 	}
 
+	/**
+	 * Without JavaScript a code still works.
+	 *
+	 * The form is rendered at the LIST price and the code is typed straight
+	 * into it, so the gross it posts is the list gross. Comparing that against
+	 * the DISCOUNTED gross refused every no-JS redemption, and the inline form
+	 * re-renders at the list price, so the refusal repeated for ever. Found
+	 * 15 September 2026 while wiring the same field into the flagship.
+	 */
+	public function test_a_code_typed_without_javascript_is_honoured_not_refused(): void {
+		$event_id = $this->make_reception();
+		$user_id  = $this->make_delegate();
+		$code     = $this->make_code(); // 25% of £45 = £11.25 off.
+		$this->queue_checkout_session();
+
+		$result = law_reception_checkout(
+			$user_id,
+			// No 'ajax', no 'applied_code', and the LIST gross: the no-JS form.
+			array( 'event_id' => $event_id, 'code' => $code['code'], 'terms' => 1, 'price_shown' => 5400 )
+		);
+
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$this->posts[] = $result['booking'];
+		$this->assertSame( 3375, (int) law_event_meta( (int) $result['booking'], '_law_price_pence' ) );
+		$this->assertSame( 1125, (int) law_event_meta( (int) $result['booking'], '_law_discount_pence' ) );
+	}
+
 	public function test_a_price_that_moved_is_refused_not_repriced(): void {
 		$event_id = $this->make_reception();
 		$user_id  = $this->make_delegate();

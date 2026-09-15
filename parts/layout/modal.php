@@ -17,10 +17,17 @@
  *     'name'     => 'law_note',            // confirmation with no input.
  *     'label'    => 'What needs changing?',
  *     'help'     => 'Small print under the label.',
- *     'rows'     => 4,                     // Default 4.
+ *     'type'     => 'textarea',            // Or 'select'. Default 'textarea'.
+ *     'rows'     => 4,                     // Default 4. Textarea only.
+ *     'options'  => array( 'a' => 'A' ),   // Required for 'select'.
+ *     'placeholder' => 'Not set',          // The select's blank first option.
+ *     'label_hidden' => true,              // Keep the label for screen readers
+ *                                          // but do not draw it, for a dialog
+ *                                          // whose title already names the
+ *                                          // one control it carries.
  *     'required' => true,                  // Default false.
  *     'error'    => 'Please tell the host why.',
- *     'value'    => '',                    // Prefilled text. Optional.
+ *     'value'    => '',                    // Prefilled value. Optional.
  *   ),
  *   'confirm' => array(                    // The submit button in the dialog,
  *     'label' => 'Approve',                // Default 'Confirm'.       or false
@@ -80,14 +87,30 @@ $law_modal_confirm = array(
 $law_modal_field = isset( $args['field'] ) && is_array( $args['field'] ) ? $args['field'] : array();
 if ( $law_modal_field ) {
 	$law_modal_field = array(
-		'name'     => isset( $law_modal_field['name'] ) ? trim( (string) $law_modal_field['name'] ) : '',
-		'label'    => isset( $law_modal_field['label'] ) ? trim( (string) $law_modal_field['label'] ) : '',
-		'help'     => isset( $law_modal_field['help'] ) ? trim( (string) $law_modal_field['help'] ) : '',
-		'rows'     => isset( $law_modal_field['rows'] ) ? max( 1, (int) $law_modal_field['rows'] ) : 4,
-		'required' => ! empty( $law_modal_field['required'] ),
-		'error'    => isset( $law_modal_field['error'] ) && '' !== trim( (string) $law_modal_field['error'] ) ? trim( (string) $law_modal_field['error'] ) : 'Please complete this field.',
-		'value'    => isset( $law_modal_field['value'] ) ? (string) $law_modal_field['value'] : '',
+		'name'        => isset( $law_modal_field['name'] ) ? trim( (string) $law_modal_field['name'] ) : '',
+		'label'       => isset( $law_modal_field['label'] ) ? trim( (string) $law_modal_field['label'] ) : '',
+		'help'        => isset( $law_modal_field['help'] ) ? trim( (string) $law_modal_field['help'] ) : '',
+		// A select was added on 15 September 2026 for the flagship's Ticket
+		// type dialog. It is the same field in every other respect — same
+		// name, same disabled-until-open behaviour, same aria-required — so
+		// law-modal.js needed no change at all. Anything but 'select' is the
+		// textarea this component started as.
+		'type'        => isset( $law_modal_field['type'] ) && 'select' === $law_modal_field['type'] ? 'select' : 'textarea',
+		'rows'        => isset( $law_modal_field['rows'] ) ? max( 1, (int) $law_modal_field['rows'] ) : 4,
+		'options'     => isset( $law_modal_field['options'] ) && is_array( $law_modal_field['options'] ) ? $law_modal_field['options'] : array(),
+		'placeholder' => isset( $law_modal_field['placeholder'] ) ? trim( (string) $law_modal_field['placeholder'] ) : '',
+		// A dialog with one control whose title already names it does not need
+		// the name a second time three lines lower. The label still exists —
+		// it is the control's accessible name — it is just not drawn.
+		'label_hidden' => ! empty( $law_modal_field['label_hidden'] ),
+		'required'    => ! empty( $law_modal_field['required'] ),
+		'error'       => isset( $law_modal_field['error'] ) && '' !== trim( (string) $law_modal_field['error'] ) ? trim( (string) $law_modal_field['error'] ) : 'Please complete this field.',
+		'value'       => isset( $law_modal_field['value'] ) ? (string) $law_modal_field['value'] : '',
 	);
+	// A select with nothing to choose from would post nothing either.
+	if ( 'select' === $law_modal_field['type'] && ! $law_modal_field['options'] ) {
+		$law_modal_field = array();
+	}
 	// A field with no name would post nothing, so treat it as no field at all.
 	if ( '' === $law_modal_field['name'] ) {
 		$law_modal_field = array();
@@ -98,12 +121,13 @@ $law_modal_field_id = $law_modal_id . '-field';
 
 // The label, built here so the markup below stays on one line: an optional
 // line of small print under the label text, the way the rest of the account
-// forms do it.
+// forms do it. No <br> before the small print, because the CSS makes it a
+// block; a break as well would leave an empty line between the two.
 $law_modal_field_label = '';
 if ( $law_modal_field ) {
 	$law_modal_field_label = esc_html( $law_modal_field['label'] );
 	if ( '' !== $law_modal_field['help'] ) {
-		$law_modal_field_label .= '<br><small>' . esc_html( $law_modal_field['help'] ) . '</small>';
+		$law_modal_field_label .= '<small>' . esc_html( $law_modal_field['help'] ) . '</small>';
 	}
 }
 
@@ -127,15 +151,27 @@ if ( $law_modal_field ) {
 		?>
 		<?php if ( $law_modal_field ) : ?>
 			<?php
-			// The textarea ships disabled and law-modal.js enables it only while
+			// The control ships disabled and law-modal.js enables it only while
 			// this modal is open, so a page carrying several modals still posts
 			// one value for the field name. aria-required, never the native
 			// required attribute: a required control inside a hidden ancestor
 			// makes the whole form unsubmittable in Chrome. The JS does the
 			// check itself and shows data-law-modal-error under the field.
 			?>
-			<p class="law-form-field"><label for="<?php echo esc_attr( $law_modal_field_id ); ?>"><?php echo $law_modal_field_label; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above. ?></label>
-				<textarea id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" rows="<?php echo esc_attr( (string) $law_modal_field['rows'] ); ?>" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled><?php echo esc_textarea( $law_modal_field['value'] ); ?></textarea></p>
+			<p class="law-form-field"><label for="<?php echo esc_attr( $law_modal_field_id ); ?>"<?php echo $law_modal_field['label_hidden'] ? ' class="show-for-sr"' : ''; ?>><?php echo $law_modal_field_label; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped above. ?></label>
+				<?php if ( 'select' === $law_modal_field['type'] ) : ?>
+					<select id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled>
+						<?php if ( '' !== $law_modal_field['placeholder'] ) : ?>
+							<option value=""><?php echo esc_html( $law_modal_field['placeholder'] ); ?></option>
+						<?php endif; ?>
+						<?php foreach ( $law_modal_field['options'] as $law_modal_option => $law_modal_option_label ) : ?>
+							<option value="<?php echo esc_attr( (string) $law_modal_option ); ?>" <?php selected( $law_modal_field['value'], (string) $law_modal_option ); ?>><?php echo esc_html( (string) $law_modal_option_label ); ?></option>
+						<?php endforeach; ?>
+					</select>
+				<?php else : ?>
+					<textarea id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" rows="<?php echo esc_attr( (string) $law_modal_field['rows'] ); ?>" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled><?php echo esc_textarea( $law_modal_field['value'] ); ?></textarea>
+				<?php endif; ?>
+			</p>
 		<?php endif; ?>
 		<p class="law-modal__actions">
 			<button type="button" class="button second" data-law-modal-close><?php echo esc_html( $law_modal_close ); ?></button>

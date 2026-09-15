@@ -20,7 +20,10 @@
  *    offending input; anything else prints above the actions. Success opens
  *    the form's data-law-booking-success dialog (locked: its two links are
  *    the only exits) or, when there is no dialog to show, follows the
- *    payload's redirect.
+ *    payload's redirect. A payload carrying `cell` is the exception that does
+ *    neither: it names one table cell and the markup to put in it, so an edit
+ *    that changes a single value leaves the rest of the page where it is. The
+ *    committee's Ticket type column is the first user.
  * 4. The host's waitlist arrows are the one action that does not reload: the
  *    reorder handler answers with the queue's new order and the table is
  *    reordered where it stands, with a shared status line above it. A payload
@@ -602,14 +605,17 @@
 	document.addEventListener('law:partial-rendered', syncAllBulkButtons);
 
 
-	/* 5. The live discount quote on a reception's checkout dialog.
+	/* 5. The live discount quote, on any dialog that charges for a place: a
+	   reception's checkout and, since 15 September 2026, the flagship's
+	   registration form. One block, keyed off [data-law-quote-event], rather
+	   than a copy per flow.
 
 	   Nothing here computes money. The Apply button asks the server
-	   (law_reception_quote_handler()) what one place costs with this code, and
-	   all this does is swap the four figures it is handed. That is the whole
-	   contract: the client can never send its own price, and the submit posts
-	   back the gross it was SHOWING so the server can refuse rather than
-	   reprice under somebody.
+	   (law_booking_quote_handler(), bookings.php) what one place costs with
+	   this code, and all this does is swap the figures it is handed. That is
+	   the whole contract: the client can never send its own price, and the
+	   submit posts back the gross it was SHOWING so the server can refuse
+	   rather than reprice under somebody.
 
 	   While a quote is in flight the SUBMIT is disabled as well as the Apply
 	   button. A submit mid-quote would post the old price_shown against the new
@@ -619,7 +625,7 @@
 	var quoteToken = 0;
 
 	function quoteForm(node) {
-		return node && node.closest ? node.closest('[data-law-reception-quote]') : null;
+		return node && node.closest ? node.closest('[data-law-quote-event]') : null;
 	}
 
 	function quoteField(form) {
@@ -677,27 +683,42 @@
 		}
 		var note = form.querySelector('[data-law-stripe-note]');
 		if (note) { note.hidden = !!data.free; }
+
+		/* The consent sentence names the amount, and it is the record of what
+		   the delegate agreed to be charged. Left alone it keeps quoting the
+		   list price after a code has moved it, so a £0 registration would
+		   carry a signed consent to £660 -- worse than no consent at all. */
+		var consent = form.querySelector('[data-law-consent]');
+		if (consent) {
+			var sentence = data.free
+				? consent.getAttribute('data-law-consent-free')
+				: consent.getAttribute('data-law-consent-default');
+			if (sentence) { consent.textContent = sentence.replace('%s', data.gross); }
+		}
 	}
 
 	/* Ask the server. Resolves with the payload, rejects with a message. */
 	function quoteFetch(form, code) {
 		var data = new FormData();
-		data.append('action', 'law_reception_quote');
-		data.append('event_id', form.getAttribute('data-law-reception-quote'));
-		data.append('law_reception[code]', code);
+		data.append('action', 'law_quote');
+		data.append('event_id', form.getAttribute('data-law-quote-event'));
+		/* One agreed key, whatever the field is called in the real form: the
+		   quote wants the VALUE, and the name belongs to the submission. */
+		data.append('law_code', code);
 		data.append('law_ajax', '1');
 		var nonce = form.querySelector('input[name="_wpnonce"]');
 		/* The quote endpoint has its own nonce action, so the form's nonce is
-		   no use to it: ask for one the server will accept. lawReceptionQuote
-		   is localised beside the script (functions/account-bookings.php). */
-		if (window.lawReceptionQuote && window.lawReceptionQuote.nonce) {
-			data.append('_wpnonce', window.lawReceptionQuote.nonce);
+		   no use to it: ask for one the server will accept. lawQuote is
+		   localised beside the script (law_booking_quote_localise(),
+		   functions/account-bookings.php). */
+		if (window.lawQuote && window.lawQuote.nonce) {
+			data.append('_wpnonce', window.lawQuote.nonce);
 		} else if (nonce) {
 			data.append('_wpnonce', nonce.value);
 		}
 
 		var token = ++quoteToken;
-		return fetch((window.lawReceptionQuote && window.lawReceptionQuote.url) || form.getAttribute('action'), {
+		return fetch((window.lawQuote && window.lawQuote.url) || form.getAttribute('action'), {
 			method: 'POST',
 			body: data,
 			credentials: 'same-origin'
@@ -787,7 +808,7 @@
 	   delegate gets the discount they typed rather than a refusal. */
 	document.addEventListener('submit', function (event) {
 		var form = event.target;
-		if (!form || !form.hasAttribute || !form.hasAttribute('data-law-reception-quote') || !window.fetch) { return; }
+		if (!form || !form.hasAttribute || !form.hasAttribute('data-law-quote-event') || !window.fetch) { return; }
 		var field = quoteField(form);
 		var applied = form.querySelector('[data-law-applied-code]');
 		if (!field || !applied) { return; }
@@ -882,6 +903,43 @@
 							return;
 						}
 					}
+					/* An action that changes ONE cell and nothing else: the
+					   handler answers with that cell's own markup, rendered by
+					   the same PHP that drew it in the first place, and we swap
+					   the node and close the dialog. No reload, so the
+					   committee can classify a run of rows in a run of presses.
+					   (The Ticket type column is the first of these. Compare
+					   the waitlist reorder below, which rebuilds state in here
+					   and is much the harder thing to keep right.)
+
+					   Nothing on the page to swap means the table has moved on
+					   since the press — a filter changed, the list was
+					   replaced — so fall through to the reload, which is the
+					   same bail-out applyWaitlistOrder() takes. */
+					if (payload.cell && payload.cell.target && payload.cell.html) {
+						var cell = document.querySelector(payload.cell.target);
+						if (cell) {
+							busyState(form, button, false);
+							cell.innerHTML = payload.cell.html;
+							if (window.lawModal) {
+								/* The replacement opener has not been through
+								   initOpener() yet. Opening is delegated so it
+								   would still work, but a JS-only opener ships
+								   `hidden` and it is initAll that reveals it —
+								   without this the cell would come back blank. */
+								window.lawModal.initAll(cell);
+								window.lawModal.close();
+							}
+							/* The control that opened the dialog was inside the
+							   cell we just threw away, so law-modal.js has
+							   nowhere to hand focus back to. Give it the
+							   replacement. */
+							var again = cell.querySelector('[data-law-refocus]');
+							if (again) { again.focus(); }
+							return;
+						}
+					}
+
 					var dialogId = form.getAttribute('data-law-booking-success');
 					var dialog = dialogId ? document.getElementById(dialogId) : null;
 					if (dialog && window.lawModal) {

@@ -178,9 +178,9 @@ class BookingCardActionTest extends LAW_Test_Case {
 	 */
 	public function test_the_states_with_nothing_to_press_each_name_their_reason(): void {
 		$cases = array(
-			'Bookings open soon' => $this->bookable_event( array( '_law_tickets_available' => 0 ) ),
-			'Bookings closed'    => $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ),
-			'Bookings not open'  => $this->bookable_event( array(), 'law-proposed' ),
+			'Open soon'         => $this->bookable_event( array( '_law_tickets_available' => 0 ) ),
+			'Bookings closed'   => $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ),
+			'Bookings not open' => $this->bookable_event( array(), 'law-proposed' ),
 		);
 		foreach ( $cases as $label => $event ) {
 			$inert = law_booking_card_inert_action( array( 'id' => $event ) );
@@ -212,7 +212,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 		$html = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'Event details', $html );
-		$this->assertStringContainsString( 'Bookings open soon', $html );
+		$this->assertStringContainsString( 'Open soon', $html );
 		// A real disabled <button>: an anchor with aria-disabled is still
 		// followed on click and on Enter.
 		$this->assertMatchesRegularExpression( '/<button[^>]+disabled/', $html );
@@ -474,6 +474,33 @@ class BookingCardActionTest extends LAW_Test_Case {
 			".law-event-details .law-booking-panel__action {\n  display: flex;",
 			(string) file_get_contents( get_theme_file_path( 'assets/css/calendar.css' ) )
 		);
+	}
+
+	/**
+	 * The not-open state's panel carries a button too (Denis, 15 September
+	 * 2026). The card has said "Open soon" on a disabled button since the row
+	 * went to two buttons; the event page printed the state as a heading and
+	 * left its right-hand slot empty, which made the one state an attendee
+	 * meets before bookings open the only panel that looked unfinished.
+	 */
+	public function test_the_not_open_panel_carries_the_disabled_open_soon_button(): void {
+		$event = $this->bookable_event( array( '_law_tickets_available' => 0 ) );
+		wp_set_current_user( $this->make_user() );
+
+		ob_start();
+		law_booking_render_action( law_events_map_post( get_post( $event ) ) );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Places for this event have not been released yet.', $html );
+		$this->assertStringContainsString( 'Check back nearer the date.', $html );
+		// A real disabled <button> in the action slot, not a greyed link: an
+		// anchor with aria-disabled is still followed on click and on Enter.
+		$this->assertStringContainsString(
+			'<div class="law-booking-panel__action"><button type="button" class="button orange" disabled aria-disabled="true">Open soon</button>',
+			$html
+		);
+		// And the state is not said twice: the button is the heading now.
+		$this->assertStringNotContainsString( 'Bookings open soon', $html );
 	}
 
 	/**

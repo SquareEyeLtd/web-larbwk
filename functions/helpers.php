@@ -56,6 +56,9 @@ function law_icon_paths() {
 		// glyph on the single-event panel button (15 September 2026); this table
 		// exists precisely so it is not drawn twice and differently.
 		'external'   => '<path d="M14 3h7v7"/><path d="M10 14 21 3"/>',
+		// The committee's inline "edit this" affordance, first used by the
+		// Ticket type cell on the flagship bookings table (15 September 2026).
+		'pencil'     => '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
 	);
 }
 
