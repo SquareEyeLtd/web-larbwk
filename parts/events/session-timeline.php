@@ -41,9 +41,12 @@
  *   navy panel ('panel' => true, from templates/flagship-event.php). Its agenda
  *   is the substance of that page, and the panel is what marks it out as the
  *   one paid, day-long event rather than a list of sessions like any other's
- *   (Denis, 11 September 2026). The description stays ABOVE the panel, on the
- *   white page, so the box contains the running order and nothing else. The
- *   speaker cards inside it reverse with it (calendar.css).
+ *   (Denis, 11 September 2026). That panel is also the one placement that sits
+ *   OUTSIDE the two columns, at the full width of the article and below them,
+ *   so the flagship page reads description (with the venue beside it) and then
+ *   the day (Denis, 15 September 2026); every other event keeps its sessions in
+ *   the reading column, under the description they belong to. The speaker cards
+ *   inside the panel reverse with it (calendar.css).
  *
  * get_template_part( 'parts/events/session-timeline', null, array(
  *   'sessions' => law_event_session_rows( $event_id ), // required

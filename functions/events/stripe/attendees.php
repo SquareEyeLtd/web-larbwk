@@ -255,7 +255,7 @@ function law_stripe_create_checkout_session( $booking_id ) {
 	if ( $price['vatable'] && '' === $tax_rate ) {
 		return new WP_Error(
 			'law_no_tax_rate',
-			'VAT applies to this booking but no Stripe tax rate ID is configured in LAW → Events settings. Nothing has been charged.'
+			'VAT applies to this booking but no Stripe tax rate ID is configured in Events → Settings. Nothing has been charged.'
 		);
 	}
 
@@ -771,7 +771,7 @@ function law_stripe_charge_booking( $booking_id ) {
 	if ( $price['vatable'] && '' === $tax_rate ) {
 		return new WP_Error(
 			'law_no_tax_rate',
-			'VAT applies to this booking but no Stripe tax rate ID is configured in LAW → Events settings. Nothing has been charged.'
+			'VAT applies to this booking but no Stripe tax rate ID is configured in Events → Settings. Nothing has been charged.'
 		);
 	}
 

@@ -75,6 +75,14 @@ get_header();
 					// page should be telling them. The same helper My bookings
 					// calls, so the two can never word it differently
 					// (RECEPTIONS.md §7.3).
+					//
+					// The assets it needs are all wired for this template:
+					// calendar.css for .law-strip (enqueue.php), and
+					// law-modal.css + booking-form.js for the dialog and its
+					// fetch submit (account-bookings.php, gated on
+					// law_reception_banner_state()). event-form.css is NOT
+					// loaded here and does not need to be: the dialog is
+					// law-modal.css throughout.
 					if ( function_exists( 'law_reception_banner' ) ) {
 						echo law_reception_banner( get_current_user_id() ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
 					}

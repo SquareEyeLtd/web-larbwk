@@ -45,11 +45,19 @@ require_once __DIR__ . '/flagship-bookings-dashboard.php';
 // the dashboards, which render their lists.
 require_once __DIR__ . '/receptions.php';
 require_once __DIR__ . '/receptions-dashboard.php';
+// External events (EVENTS_4.2_SPECS.md): the third kind of law_event the
+// committee owns outright. After the receptions because it follows their
+// shape, and before source.php, which maps the flag onto the calendar event.
+require_once __DIR__ . '/external-events.php';
 require_once __DIR__ . '/source.php';
 require_once __DIR__ . '/edit-lock.php';
 require_once __DIR__ . '/submission-form.php';
 require_once __DIR__ . '/registration.php';
 require_once __DIR__ . '/committee.php';
+// The committee's timeline view. After committee.php, whose law_committee_events()
+// it filters through, so the chart and the table can never select different
+// events; before export.php only to keep the dashboard's files together.
+require_once __DIR__ . '/slot-chart.php';
 require_once __DIR__ . '/export.php';
 require_once __DIR__ . '/stripe/client.php';
 require_once __DIR__ . '/stripe/service.php';

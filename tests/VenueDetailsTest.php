@@ -662,4 +662,192 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '101-150', 120, 'After a crafted host post:' );
 		$this->assertSame( self::NEEDS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ), 'The locked answer holds.' );
 	}
+
+	/* The band floor (15 September 2026) ____________________________________ */
+
+	public function test_the_band_floors_are_derived_from_the_ceilings(): void {
+		// Each band starts one above the previous band's ceiling, so the two
+		// halves of a band can never drift. "TBC" follows an uncapped band and
+		// so has no floor, which is the point of it.
+		$this->assertSame( 1, law_events_venue_capacity_band_floor( 'Under 50' ) );
+		$this->assertSame( 51, law_events_venue_capacity_band_floor( '51-100' ) );
+		$this->assertSame( 101, law_events_venue_capacity_band_floor( '101-150' ) );
+		$this->assertSame( 151, law_events_venue_capacity_band_floor( '151-250' ) );
+		$this->assertSame( 251, law_events_venue_capacity_band_floor( '251+' ) );
+		$this->assertNull( law_events_venue_capacity_band_floor( 'TBC' ) );
+
+		// An unrecognised band has no floor: callers refuse it outright, and
+		// inventing one for it would be worse than having none.
+		$this->assertNull( law_events_venue_capacity_band_floor( '101 to 150' ) );
+		$this->assertNull( law_events_venue_capacity_band_floor( '' ) );
+	}
+
+	public function test_the_panel_refuses_places_below_the_band(): void {
+		// The floor is inclusive, so the band's own first number is allowed and
+		// one fewer is not.
+		$this->assertSame( '', law_committee_venue_input_error( '51-100', '51' ) );
+		$this->assertStringContainsString(
+			'at least 51',
+			law_committee_venue_input_error( '51-100', '50' ),
+			'50 places belong to "Under 50", not to "51-100".'
+		);
+
+		// "251+" is uncapped above, not unbounded: it gained a floor of 251 when
+		// the rule landed, where it used to constrain nothing at all.
+		$this->assertSame( '', law_committee_venue_input_error( '251+', '251' ) );
+		$this->assertStringContainsString(
+			'at least 251',
+			law_committee_venue_input_error( '251+', '250' )
+		);
+
+		// "TBC" stays the one band that bounds nothing, and a band nobody chose
+		// has nothing to measure against.
+		$this->assertSame( '', law_committee_venue_input_error( 'TBC', '1' ) );
+		$this->assertSame( '', law_committee_venue_input_error( '', '1' ) );
+	}
+
+	public function test_blank_places_never_meet_the_floor(): void {
+		// A blank stores 0 and law_event_tickets_remaining() reads 0 as "not
+		// open for booking", so there is no allocation to judge against a band.
+		// Were the floor written as its own check rather than inside the chain,
+		// every band would refuse an event that has released nothing.
+		foreach ( array( 'Under 50', '51-100', '101-150', '151-250', '251+', 'TBC' ) as $band ) {
+			$this->assertSame( '', law_committee_venue_input_error( $band, '' ), "Blank places under '$band'" );
+		}
+	}
+
+	public function test_the_panel_writes_a_pair_that_sits_inside_the_band(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$event_id = $this->make_event( array( '_law_venue_needed' => self::NEEDS_VENUE ), 'law-approved', $host );
+
+		$this->assertNotSame( '', $this->panel_saves_venue( $event_id, '101-150', '20' ), 'Below the floor.' );
+		$this->assertNotSame( '', $this->panel_saves_venue( $event_id, '101-150', '180' ), 'Above the ceiling.' );
+		$this->assertSame( '', $this->panel_saves_venue( $event_id, '101-150', '101' ) );
+		$this->assertSame( 101, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
+	}
+
+	public function test_the_band_floor_applies_to_a_host_setting_their_own_places(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		// law-draft is the one status where the places are still the host's, so
+		// it is the one place on their form the floor can fire.
+		$event_id = $this->make_event( array(), 'law-draft', $host );
+
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'      => self::HAS_VENUE,
+					'venue'             => 'Their own offices',
+					'venue_capacity'    => '51-100',
+					'tickets_available' => '50',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertStringContainsString( 'at least 51', $result->get_error_message( 'tickets_available' ) );
+		$this->assertSame( '', $result->get_error_message( 'venue_capacity' ), 'The band is reachable, so it is not blamed.' );
+	}
+
+	public function test_the_floor_never_blocks_a_host_moving_to_a_bigger_room(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		// The committee released 120 places in a 101-150 room. Under review the
+		// host may still correct the room's size (Denis, 14 September 2026), and
+		// the common correction is upwards -- they moved somewhere bigger. The
+		// floor of "151-250" is 151, so judging it against the committee's 120
+		// would take that correction away. It is judged on the places instead,
+		// and the places are not the half being posted here.
+		$event_id = $this->make_event(
+			array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ),
+			'law-proposed',
+			$host
+		);
+
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'   => self::HAS_VENUE,
+					'venue'          => 'Guildhall, EC2V 7HH',
+					'venue_capacity' => '251+',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+
+		$this->assertSame( $event_id, $result );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '251+', 120, 'After a move to a bigger room:' );
+	}
+
+	public function test_a_stored_pair_outside_the_band_does_not_trap_its_host(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		// Both halves are locked once the event is approved, so the host posts
+		// neither and has no way to fix either. Judging the stored pair here
+		// would refuse every unrelated edit they make -- description, speakers,
+		// contacts -- over a control they cannot see. Migrated events carry
+		// exactly this shape: 120 places in a room banded "Under 50".
+		$event_id = $this->make_event(
+			array(
+				'_law_venue'             => 'Guildhall, EC2V 7HH',
+				'_law_venue_capacity'    => 'Under 50',
+				'_law_tickets_available' => 120,
+				'_law_venue_needed'      => self::HAS_VENUE,
+			),
+			'law-approved',
+			$host
+		);
+
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed' => self::HAS_VENUE,
+					'venue'        => 'Guildhall, EC2V 7HH',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+
+		$this->assertSame( $event_id, $result, 'The host can still edit the rest of their event.' );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', 'Under 50', 120, 'The breaching pair is left alone:' );
+	}
+
+	public function test_the_form_refuses_a_band_that_is_not_one_of_the_bands(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+
+		// The panel has refused a crafted band since 9 September 2026; this form
+		// stored it and every check downstream then read it as "no ceiling",
+		// quietly uncapping the allocation.
+		$event_id = $this->make_event( array(), 'law-draft', $host );
+
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue_needed'      => self::HAS_VENUE,
+					'venue'             => 'Their own offices',
+					'venue_capacity'    => '101 to 150',
+					'tickets_available' => '120',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertStringContainsString( 'not one of the venue capacity bands', $result->get_error_message( 'venue_capacity' ) );
+	}
 }

@@ -94,7 +94,7 @@ function law_events_backfill_agenda_apply( array $event_ids = array() ) {
 			continue;
 		}
 		$before = array(
-			'_law_is_law_event'   => (int) law_event_meta( $row['event_id'], '_law_is_law_event' ),
+			'_law_is_external'   => (int) law_event_meta( $row['event_id'], '_law_is_external' ),
 			'_law_session_agenda' => (int) law_event_meta( $row['event_id'], '_law_session_agenda' ),
 		);
 		law_event_update_meta( $row['event_id'], '_law_session_agenda', 1 );

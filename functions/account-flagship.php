@@ -1,14 +1,26 @@
 <?php
 /**
- * The flagship conference's front-end control and application form
+ * The flagship conference's front-end control and registration form
  * (FLAGSHIP_PAYMENTS.md §4.1, §4.2).
  *
  * The counterpart of functions/account-bookings.php, which does the same job
  * for hosted events. It is a separate file because almost nothing is shared:
- * a hosted event is booked instantly and free, the flagship is applied for,
+ * a hosted event is booked instantly and free, the flagship is registered for,
  * reviewed and charged, so the states, the copy and the form are different
  * all the way down. What IS shared is reused: the modal skeleton, the fetch
  * layer, the notice markup and the form styles.
+ *
+ * VOCABULARY, and it is deliberately two vocabularies (the client, via Denis,
+ * 15 September 2026). On screen this flow is REGISTRATION: the button says
+ * Register, a submitted-but-undecided place is "your registration", and the
+ * confirmed, paid place is "your ticket". In the code it is still the
+ * application flow -- `law_flagship_apply()`, the `law-applied` post status,
+ * `?law_flagship_apply=1` -- because those are stored on live bookings and
+ * mirrored into Stripe metadata, and renaming them buys a migration for
+ * nothing anybody can see. Do not "tidy" one vocabulary into the other.
+ * "Ticket" is never used for a place that has not been approved and charged:
+ * the committee can still decline, and a declined delegate who was told they
+ * had a ticket has a grievance.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -130,7 +142,7 @@ function law_flagship_render_action( array $event, $preview = false ) {
 	}
 
 	// No status pill: every flagship state already opens with a
-	// .law-booking-state heading, and the one that does not (the plain Apply
+	// .law-booking-state heading, and the one that does not (the plain Register
 	// button) now states its count at the left-hand end of the panel itself.
 	ob_start();
 	$parts = law_flagship_render_action_body( $event, $preview, $application, $price, $passed );
@@ -271,10 +283,10 @@ function law_flagship_action_link( array $state ) {
 		case 'needs-card':
 			return array( 'label' => __( 'Add my payment details', 'law' ), 'url' => $state['manage_url'] );
 		case 'in-review':
-			return array( 'label' => __( 'View my application', 'law' ), 'url' => $state['manage_url'] );
+			return array( 'label' => __( 'View my registration', 'law' ), 'url' => $state['manage_url'] );
 		case 'apply':
 			return array(
-				'label' => __( 'Apply', 'law' ),
+				'label' => __( 'Register', 'law' ),
 				'url'   => add_query_arg( 'law_flagship_apply', '1', get_permalink( (int) $state['event_id'] ) ),
 			);
 	}
@@ -296,7 +308,7 @@ function law_flagship_render_action_buttons( array $event, $preview = false ) {
 		return;
 	}
 
-	// Apply goes through the opener, so the foot of the page gets the same
+	// Register goes through the opener, so the foot of the page gets the same
 	// fetch-on-press link (and the same inert button under preview) as the top.
 	//
 	// Except on the no-JS path, where the opener IS the form: ?law_flagship_apply=1
@@ -322,18 +334,30 @@ function law_flagship_render_action_buttons( array $event, $preview = false ) {
  * as one entry in the same shape parts/loop/event.php's actions take.
  *
  * The flagship is not an ordinary card and has its own block, but it needs the
- * same treatment: a visitor browsing the programme should be able to apply, or
- * reach their application, without opening the conference page first. Like the
+ * same treatment: a visitor browsing the programme should be able to register,
+ * or reach their registration, without opening the conference page first. Like the
  * hosted events, the card carries NO dialog -- booking-form.js fetches the
  * apply dialog from {permalink}?law_flagship_apply=1&law_dialog=1 on the press.
  *
+ * The ordinary card partial routes here too, for every list the conference
+ * turns up in as a plain row: a speaker profile's "Speaking at", My bookings,
+ * My events. law_booking_card_action() deliberately returns nothing for the
+ * flagship, so without this those rows were the only places on the site showing
+ * the conference with no way into it (Denis, 15 September 2026).
+ *
+ * @param array  $event The calendar-mapped event array.
+ * @param string $scope 'full'  every state, including the link to the viewer's
+ *                              own registration;
+ *                      'action' only the states that offer something new, for
+ *                              callers whose own actions already link to that
+ *                              registration (My bookings, My events).
  * @return array|null
  */
-function law_flagship_card_action( array $event ) {
+function law_flagship_card_action( array $event, $scope = 'full' ) {
 	$event_id = (int) ( $event['id'] ?? 0 );
 
 	// The committee programme lists the flagship before it is published, and an
-	// Apply button on a conference nobody can apply to would be a broken
+	// Register button on a conference nobody can register for would be a broken
 	// promise. Gated here rather than in the resolver, because the conference
 	// page's own control deliberately renders for the committee preview.
 	if ( ! $event_id || 'publish' !== get_post_status( $event_id ) ) {
@@ -344,6 +368,15 @@ function law_flagship_card_action( array $event ) {
 	if ( ! $state ) {
 		return null;
 	}
+
+	// 'action' scope: the caller already puts a link to the viewer's own
+	// registration on the row, so the only state left worth a button here is
+	// the one that offers something new -- Register, for somebody who has not
+	// applied yet.
+	if ( 'full' !== $scope && 'apply' !== $state['state'] ) {
+		return null;
+	}
+
 	$link = law_flagship_action_link( $state );
 	if ( ! $link ) {
 		return null;
@@ -355,17 +388,56 @@ function law_flagship_card_action( array $event ) {
 		'class' => 'orange law-event-card__button--book',
 	);
 	if ( 'apply' === $state['state'] ) {
-		// Only the Apply button has a dialog behind it; the rest are plain links
+		// Only the Register button has a dialog behind it; the rest are plain links
 		// into the account area. Signed-out visitors get it too: being told an
 		// account is needed is exactly what the dialog is for.
 		$action['sr_label'] = sprintf(
 			/* translators: %s: event title. */
-			__( 'Apply for %s', 'law' ),
+			__( 'Register for %s', 'law' ),
 			(string) ( $event['title'] ?? '' )
 		);
 		$action['dialog'] = (int) $state['event_id'];
 	}
 	return $action;
+}
+
+/**
+ * The conference's inert second button, the hosted events' counterpart being
+ * law_booking_card_inert_action(): every card carries two buttons, and the one
+ * with nothing behind it is drawn disabled with the reason on it rather than
+ * left off (Denis, 15 September 2026).
+ *
+ * The wording is the conference page's own ("Registration opens soon"), not the
+ * hosted events' "Bookings open soon", because a place at the conference is
+ * registered for rather than booked and the two surfaces should not name the
+ * same wait two ways.
+ *
+ * @param array $event The calendar-mapped event array.
+ * @return array|null One actions entry, or NULL to leave the card as it is.
+ */
+function law_flagship_card_inert_action( array $event ) {
+	$event_id = (int) ( $event['id'] ?? 0 );
+	if ( ! $event_id || ! law_flagship_is( $event_id ) ) {
+		return null;
+	}
+
+	// The committee's programme lists the conference before it is published,
+	// where law_flagship_card_action() deliberately offers nothing.
+	if ( 'publish' !== get_post_status( $event_id ) ) {
+		return law_booking_card_inert( __( 'Registration not open', 'law' ) );
+	}
+
+	$state = law_flagship_action_state( $event_id );
+	if ( ! $state ) {
+		return null;
+	}
+	switch ( $state['state'] ) {
+		case 'not-open':
+			return law_booking_card_inert( __( 'Registration opens soon', 'law' ) );
+		case 'past':
+			return law_booking_card_inert( __( 'Registration closed', 'law' ) );
+	}
+	return null;
 }
 
 /**
@@ -384,11 +456,11 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 		return law_booking_action_parts( law_flagship_render_own_state( $application, $passed ) );
 	}
 
-	// State: nothing to apply for yet. A price of 0 is the committee's way of
+	// State: nothing to register for yet. A price of 0 is the committee's way of
 	// saying "not on sale", so it reads the same as no date at all rather
 	// than offering a free place.
 	if ( $price < 1 ) {
-		law_flagship_state( __( 'Applications open soon', 'law' ), __( 'Applications for this conference have not opened yet. Please check back.', 'law' ) );
+		law_flagship_state( __( 'Registration opens soon', 'law' ), __( 'Registration for this conference has not opened yet. Please check back.', 'law' ) );
 		return law_booking_action_parts();
 	}
 
@@ -404,7 +476,7 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 	// because it is the same number doing the same job on the same component.
 	//
 	// Below it, one line in the single case that would otherwise surprise
-	// somebody — a conference that is full and still taking applications.
+	// somebody — a conference that is full and still taking registrations.
 	$count = law_flagship_details_places( $event );
 	if ( '' !== $count ) {
 		printf( '<p class="law-booking-panel__count">%s</p>', esc_html( $count ) );
@@ -414,7 +486,7 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 	if ( $places['full'] ) {
 		printf(
 			'<p class="law-booking-substate">%s</p>',
-			esc_html__( 'You can still apply, and we will be in touch if a place opens up.', 'law' )
+			esc_html__( 'You can still register, and we will be in touch if a place opens up.', 'law' )
 		);
 	}
 
@@ -431,7 +503,7 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 }
 
 /**
- * Whether law_flagship_render_opener() will render the whole no-JS application
+ * Whether law_flagship_render_opener() will render the whole no-JS registration
  * form rather than a button.
  *
  * One function so the opener and the panel that places its output cannot come
@@ -442,7 +514,7 @@ function law_flagship_opener_is_form( $preview = false ) {
 }
 
 /**
- * The Apply button plus its two dialogs.
+ * The Register button plus its two dialogs.
  *
  * The opener is a real link to the inline no-JS form, which this function
  * renders in its place when the link is followed; booking-form.js upgrades
@@ -462,7 +534,7 @@ function law_flagship_render_opener( array $event, $preview = false ) {
 	if ( $preview ) {
 		printf(
 			'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
-			esc_html__( 'Apply', 'law' )
+			esc_html__( 'Register', 'law' )
 		);
 		return;
 	}
@@ -487,12 +559,12 @@ function law_flagship_render_opener( array $event, $preview = false ) {
 		'<a class="button orange" href="%s" data-law-book="%s">%s</a>',
 		esc_url( add_query_arg( 'law_flagship_apply', '1', get_permalink( $event_id ) ) ),
 		esc_attr( (string) $event_id ),
-		esc_html__( 'Apply', 'law' )
+		esc_html__( 'Register', 'law' )
 	);
 }
 
 /**
- * What the delegate sees once they have an application of their own: the
+ * What the delegate sees once they have a registration of their own: the
  * heading and the line beneath it printed, the button handed back.
  *
  * The button is returned rather than printed because the panel puts it in its
@@ -528,17 +600,17 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 		law_flagship_state(
 			'attended' === $state['state'] ? __( 'You attended this event', 'law' ) : __( "You're attending", 'law' ),
 			law_event_meta( $booking_id, '_law_is_complimentary' )
-				? __( 'Your place is confirmed, with our compliments.', 'law' )
+				? __( 'Your ticket is confirmed, with our compliments.', 'law' )
 				: sprintf(
 					/* translators: %s: the amount paid. */
-					__( 'Your place is confirmed and %s has been paid.', 'law' ),
+					__( 'Your ticket is confirmed and %s has been paid.', 'law' ),
 					law_events_format_pence( $price['gross'] )
 				)
 		);
 		return $button;
 	}
 
-	// Past the event, an undecided or unpaid application is history: there is
+	// Past the event, an undecided or unpaid registration is history: there is
 	// nothing useful left to do with it, and offering "sort out my payment"
 	// for a conference that has happened would be worse than saying nothing.
 	if ( 'past' === $state['state'] ) {
@@ -551,8 +623,8 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 		law_flagship_state(
 			__( 'Your payment needs attention', 'law' ),
 			$sca
-				? __( 'Your application has been approved, but your bank needs you to confirm the payment.', 'law' )
-				: __( 'Your application has been approved, but we could not take the payment.', 'law' )
+				? __( 'Your registration has been approved, but your bank needs you to confirm the payment.', 'law' )
+				: __( 'Your registration has been approved, but we could not take the payment.', 'law' )
 		);
 		return $button;
 	}
@@ -560,9 +632,9 @@ function law_flagship_render_own_state( WP_Post $application, $passed = false ) 
 	// law-applied.
 	$waiting = 'needs-card' === $state['state'];
 	law_flagship_state(
-		$waiting ? __( 'Your application needs your payment details', 'law' ) : __( 'Your application is being reviewed', 'law' ),
+		$waiting ? __( 'Your registration needs your payment details', 'law' ) : __( 'Your registration is being reviewed', 'law' ),
 		$waiting
-			? __( 'We cannot put your application to the committee until your payment details are saved. Nothing is charged unless you are approved.', 'law' )
+			? __( 'We cannot put your registration to the committee until your payment details are saved. Nothing is charged unless you are approved.', 'law' )
 			: __( 'The committee will decide shortly, and we will email you either way. Nothing has been charged.', 'law' )
 	);
 
@@ -585,19 +657,19 @@ function law_flagship_state( $heading, $sub = '' ) {
  */
 function law_flagship_notice_text( $key ) {
 	$map = array(
-		'flagship-applied'     => array( 'ok', __( 'Your application has been received. We will email you as soon as the committee has decided.', 'law' ) ),
-		'flagship-card'        => array( 'ok', __( 'Your payment details have been saved. Nothing is charged unless your application is approved.', 'law' ) ),
+		'flagship-applied'     => array( 'ok', __( 'Your registration has been received. We will email you as soon as the committee has decided.', 'law' ) ),
+		'flagship-card'        => array( 'ok', __( 'Your payment details have been saved. Nothing is charged unless your registration is approved.', 'law' ) ),
 		'flagship-card-failed' => array( 'error', __( 'Your payment details were not saved. Please try again.', 'law' ) ),
 		// Stripe sends the delegate back here when they abandon the hosted
 		// page. Without a word they are left on a page that looks unchanged
 		// and cannot tell whether anything was saved.
-		'flagship-card-cancelled' => array( 'ok', __( 'No payment details were saved, so nothing has been charged. Your application is still here whenever you want to add them.', 'law' ) ),
-		'flagship-price-changed'  => array( 'error', __( 'The price changed while you were filling in the form, so nothing was submitted. Please check the new price and apply again.', 'law' ) ),
+		'flagship-card-cancelled' => array( 'ok', __( 'No payment details were saved, so nothing has been charged. Your registration is still here whenever you want to add them.', 'law' ) ),
+		'flagship-price-changed'  => array( 'error', __( 'The price changed while you were filling in the form, so nothing was submitted. Please check the new price and register again.', 'law' ) ),
 		// Only shown when the retry actually went through. While it was shown
 		// for every retry it contradicted the failure panel underneath it.
-		'flagship-paid'        => array( 'ok', __( 'Thank you. The payment has gone through and your place is confirmed.', 'law' ) ),
+		'flagship-paid'        => array( 'ok', __( 'Thank you. The payment has gone through and your ticket is confirmed.', 'law' ) ),
 		'flagship-retried'     => array( 'ok', __( 'Thank you. We have tried the payment again with your new payment method.', 'law' ) ),
-		'flagship-withdrawn'   => array( 'ok', __( 'Your application has been withdrawn and the payment details we held have been removed.', 'law' ) ),
+		'flagship-withdrawn'   => array( 'ok', __( 'Your registration has been withdrawn and the payment details we held have been removed.', 'law' ) ),
 		'flagship-failed'      => array( 'error', __( 'Sorry, that could not be done. Please check the details and try again.', 'law' ) ),
 		'flagship-denied'      => array( 'error', __( 'Sorry, you cannot do that.', 'law' ) ),
 		'rate-limited'         => array( 'error', __( 'Too many actions in a short time. Please wait a moment and try again.', 'law' ) ),

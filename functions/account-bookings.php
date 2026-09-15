@@ -186,7 +186,7 @@ function law_account_bookings() {
 			'invited_by' => $group['own'] ? law_booking_invited_by_label( $group['own'] ) : '',
 			'waitlisted' => 'law-waitlisted' === $primary->post_status,
 			// The status itself, so a surface can badge a flagship
-			// application ("Awaiting review", "Payment failed") without every
+			// application ("Pending approval", "Payment failed") without every
 			// caller learning a new boolean per state.
 			'status'     => (string) $primary->post_status,
 			'flagship'   => function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ),
@@ -250,7 +250,7 @@ function law_booking_notice_text( $key ) {
 function law_booking_card_badge( $status ) {
 	$badges = array(
 		'law-waitlisted'      => array( 'label' => __( 'Waitlisted', 'law' ), 'slug' => 'waitlisted' ),
-		'law-applied'         => array( 'label' => __( 'Awaiting review', 'law' ), 'slug' => 'applied' ),
+		'law-applied'         => array( 'label' => __( 'Pending approval', 'law' ), 'slug' => 'applied' ),
 		'law-payment-failed'  => array( 'label' => __( 'Payment needed', 'law' ), 'slug' => 'payment-failed' ),
 		'law-pending-payment' => array( 'label' => __( 'Awaiting payment', 'law' ), 'slug' => 'pending-payment' ),
 	);
@@ -277,7 +277,7 @@ function law_booking_status_badge_class( $status ) {
 		'law-applied'         => 'law-cal-card__badge--applied',
 		'law-waitlisted'      => 'law-cal-card__badge--waitlisted',
 		'law-payment-failed'  => 'law-cal-card__badge--payment-failed',
-		// Awaiting payment reads like awaiting review: something is happening
+		// Awaiting payment reads like pending approval: something is happening
 		// and nothing is wrong, which is exactly what a held place is.
 		'law-pending-payment' => 'law-cal-card__badge--applied',
 		'law-declined'        => 'law-cal-card__badge--cancelled',
@@ -424,6 +424,10 @@ function law_booking_tone( array $state ) {
 		// Invitation only: there is nothing to press and nothing to hurry for,
 		// so it paints like a closed event rather than like an offer.
 		case 'invitation':
+		// External: the button leaves the site, so there is no local capacity
+		// to be urgent about. Without this case the arithmetic below runs on a
+		// remaining of null and reads every external event as nearly full.
+		case 'external':
 			return 'closed';
 		case 'full':
 		case 'buy-full':
@@ -470,6 +474,9 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		// asking the meta again.
 		'reception'  => function_exists( 'law_reception_is' ) && law_reception_is( $event_id ),
 		'price'      => function_exists( 'law_event_price_pence' ) ? law_event_price_pence( $event_id ) : 0,
+		// Set only on the 'external' state below, but declared here so every
+		// consumer can read it without guarding for the key.
+		'external_url' => '',
 	);
 
 	// The flagship is applied for, not booked. Returned as a state rather than
@@ -492,6 +499,16 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 	// has invited still needs the page to explain what this event is.
 	if ( function_exists( 'law_event_is_invitation_only' ) && law_event_is_invitation_only( $event_id ) ) {
 		$state['state'] = 'invitation';
+		return $state;
+	}
+
+	// External events, for the same reason and in the same place: the booking
+	// happens on the organiser's own website, and nothing about the viewer
+	// changes that. Nobody can hold a local booking on one, so this cannot
+	// shadow a state the viewer would rather see.
+	if ( function_exists( 'law_event_is_external' ) && law_event_is_external( $event_id ) ) {
+		$state['state']        = 'external';
+		$state['external_url'] = (string) law_event_meta( $event_id, '_law_external_url' );
 		return $state;
 	}
 
@@ -738,6 +755,20 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 		return law_booking_action_parts();
 	}
 
+	// External: one line, no substate. The button beside it already says
+	// Register and carries the leaves-the-site arrow, so a paragraph explaining
+	// that LAW does not take the booking is telling the reader something the
+	// control has just told them (Denis, 15 September 2026). It reads in the
+	// same place as invitation-only, and for the same reason: nothing about the
+	// viewer changes where a place comes from.
+	if ( 'external' === $state['state'] ) {
+		printf(
+			'<p class="law-booking-state">%s</p>',
+			esc_html__( 'Registration is on the organiser\'s website.', 'law' )
+		);
+		return law_booking_action_parts( law_booking_external_button( $state, $preview ) );
+	}
+
 	$booking = $state['booking'];
 
 	// A payment part-way through: the place is HELD, so the honest thing is to
@@ -912,7 +943,7 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 			&& law_flagship_application_for_user( get_current_user_id() ) ) {
 			printf(
 				'<p class="law-booking-substate">%s</p>',
-				esc_html__( 'If your flagship application is approved, this reception is included at no cost.', 'law' )
+				esc_html__( 'If your flagship registration is approved, this reception is included at no cost.', 'law' )
 			);
 		}
 
@@ -956,6 +987,42 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
  */
 function law_booking_action_parts( $action = '', $form = '' ) {
 	return array( 'action' => (string) $action, 'form' => (string) $form );
+}
+
+/**
+ * The Register button for an external event: a link out to the organiser's own
+ * site, or a disabled button when they have not opened registration yet.
+ *
+ * Shared by the hero panel and the foot repeat so the two cannot drift. The
+ * arrow is law_icon( 'external' ), the same glyph the cards draw, and the
+ * "opens in a new tab" fact lives in the accessible name because the glyph is
+ * aria-hidden and would otherwise tell a screen-reader user nothing.
+ *
+ * @param array $state   law_booking_resolve_state() with state 'external'.
+ * @param bool  $preview Committee preview: inert, like every other opener.
+ * @return string
+ */
+function law_booking_external_button( array $state, $preview = false ) {
+	$url = (string) ( $state['external_url'] ?? '' );
+
+	// No URL yet is a real state, not a defect: the committee lists an event
+	// before its organiser opens registration. The control is shown disabled
+	// rather than omitted, so the absence reads as "not yet" rather than as
+	// "there is no way in".
+	if ( '' === $url || $preview ) {
+		return sprintf(
+			'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
+			esc_html( '' === $url ? __( 'Registration opening soon', 'law' ) : __( 'Register', 'law' ) )
+		);
+	}
+
+	return sprintf(
+		'<a class="button orange law-event-card__button--register" href="%s" target="_blank" rel="noopener noreferrer" aria-label="%s">%s %s</a>',
+		esc_url( $url ),
+		esc_attr__( 'Register on the organiser\'s own website (opens in a new tab)', 'law' ),
+		esc_html__( 'Register', 'law' ),
+		law_icon( 'external', 'law-event-card__arrow', 24, 2.5 )
+	);
 }
 
 /**
@@ -1096,6 +1163,14 @@ function law_booking_render_action_buttons( $event, $preview = false ) {
 		return;
 	}
 
+	// External: the hero has explained, but there IS something to press, and
+	// somebody who has read to the bottom of a long listing should not have to
+	// scroll back up to find it.
+	if ( 'external' === $state['state'] ) {
+		echo law_booking_external_button( $state, $preview ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in the builder.
+		return;
+	}
+
 	// Their own place: the one link they need, worded as at the top.
 	if ( $state['booking'] ) {
 		printf(
@@ -1213,6 +1288,25 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 		return null;
 	}
 
+	// External: a card button that leaves the site, with the arrow and the
+	// new-tab attributes this partial already knows how to draw. No 'dialog'
+	// key, which is what stops booking-form.js binding its fetch to it.
+	if ( 'external' === $state['state'] ) {
+		$url = (string) $state['external_url'];
+		if ( '' === $url ) {
+			return law_booking_card_inert( __( 'Registration opening soon', 'law' ) );
+		}
+		return array(
+			'label'    => __( 'Register', 'law' ),
+			'url'      => $url,
+			'class'    => 'orange law-event-card__button--book',
+			'arrow'    => true,
+			'external' => true,
+			/* translators: %s: event title. */
+			'sr_label' => sprintf( __( 'Register for %s on the organiser\'s own website (opens in a new tab)', 'law' ), (string) ( $event['title'] ?? '' ) ),
+		);
+	}
+
 	// The viewer's own place, however it is standing. The manage view is where
 	// a payment is finished, a failure is sorted out or details are added, so
 	// the card offers the one link that covers all of them.
@@ -1273,6 +1367,72 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 		),
 		'dialog'   => (int) $state['event_id'],
 	);
+}
+
+/**
+ * One card action, disabled: the second button an event card carries when
+ * there is nothing to press on it.
+ *
+ * @param string $label The reason, as the button's words.
+ * @return array One entry for parts/loop/event.php's actions array.
+ */
+function law_booking_card_inert( $label ) {
+	return array(
+		'label'    => (string) $label,
+		'disabled' => true,
+		// The same class the live booking button carries. Without it the card
+		// paints the theme's default blue while the identical button on the
+		// event page is a muted orange; the dimming and the dead pointer come
+		// from .law-cal .button[aria-disabled="true"] (calendar.css), which
+		// loads wherever these cards do.
+		'class'    => 'orange law-event-card__button--book',
+	);
+}
+
+/**
+ * The card's second button when the event offers no booking action at all: a
+ * disabled control naming the reason, so every event card carries the same two
+ * buttons whatever state its event is in (Denis, 15 September 2026).
+ *
+ * A card that simply dropped its booking button read as a card that had
+ * forgotten one. "Bookings open soon" is the one thing the row could not say,
+ * and it is exactly what somebody scanning the programme wants to know before
+ * they open the page -- the single event view has said it in its panel since
+ * the booking states were built (law_booking_render_action_body()), and this
+ * is the same sentence shortened to a button.
+ *
+ * Only the states with genuinely nothing to press get a label. A state that
+ * HAS an action and was merely filtered out by the caller's 'action' scope
+ * returns NULL: those callers (My bookings, My events) put their own buttons
+ * on the row, and inventing a dead one beside them would be noise.
+ *
+ * @param array $event The calendar-mapped event array.
+ * @return array|null One actions entry, or NULL to leave the card as it is.
+ */
+function law_booking_card_inert_action( array $event ) {
+	// The legacy source has no booking system at all, so a dead "Bookings..."
+	// button on every card would be explaining a feature the page has not got.
+	if ( 'cpt' !== law_events_source() ) {
+		return null;
+	}
+
+	$state = law_booking_state( (int) ( $event['id'] ?? 0 ) );
+	if ( ! $state ) {
+		// No resolvable state: an event that is not published yet. The
+		// committee's own programme lists those, and nothing can be booked on
+		// one, so the row says that rather than promising a date.
+		return law_booking_card_inert( __( 'Bookings not open', 'law' ) );
+	}
+
+	switch ( $state['state'] ) {
+		case 'invitation':
+			return law_booking_card_inert( __( 'Invitation only', 'law' ) );
+		case 'not-open':
+			return law_booking_card_inert( __( 'Bookings open soon', 'law' ) );
+		case 'closed':
+			return law_booking_card_inert( __( 'Bookings closed', 'law' ) );
+	}
+	return null;
 }
 
 /**

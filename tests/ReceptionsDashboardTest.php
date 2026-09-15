@@ -19,7 +19,7 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 
 	private function make_reception( array $meta = array(), $status = 'law-draft' ): int {
 		return $this->make_event(
-			array_merge( array( '_law_is_reception' => 1, '_law_is_law_event' => 1 ), $meta ),
+			array_merge( array( '_law_is_reception' => 1 ), $meta ),
 			$status
 		);
 	}

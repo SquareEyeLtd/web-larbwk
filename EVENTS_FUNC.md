@@ -12,7 +12,8 @@
 Working reference for the custom, CPT-backed events module that replaces the
 Gravity Forms / Gravity Flow / GravityView / Make stack: the 4.1 host side
 (submission, moderation, invoicing) and the 4.2 attendee side (bookings, the
-waitlist, and the flagship conference's application and payment). What the
+waitlist, and the flagship conference's registration and payment, which the
+code still calls the application flow). What the
 code does is described in the sections below; when each part arrived is in
 **Change history** at the end.
 
@@ -134,11 +135,15 @@ repair-references, backfill-session-agenda).
   filtered to valid addresses.
 - `law_events_stripe_mode()`: 'live' or 'test' from the secret key prefix.
 - `law_events_register_settings_page()` (on `admin_menu` priority 999) and
-  `law_events_register_law_subpage()`: register the "LAW > Events settings"
-  screen. **Priority 999 matters** — ACF creates the top-level LAW menu late,
-  so the module's submenus must register after it or they never attach. This
-  helper is the shared, AME-proof registrar used by all three module screens
-  (settings, emails, migration).
+  `law_events_register_law_subpage()`: register the settings screen. It hangs
+  off the Events CPT menu as "Events > Settings" (moved there from the LAW
+  menu on 15 September 2026; the slug stays `law-events-settings`, so existing
+  links and bookmarks still resolve). **Priority 999 matters** for the screens
+  that still hang off the LAW parent — ACF creates the top-level LAW menu late,
+  so those submenus must register after it or they never attach. The registrar
+  takes a `$parent` and an optional `$menu_title`, and is the shared, AME-proof
+  helper behind settings and migration; it seeds `$_registered_pages` for the
+  parent it was given as well as the LAW ones.
 - `law_events_terms_url()`: the host terms & conditions page the submission
   form links to — the `terms_page` setting (page ID or absolute URL) if set,
   else `/policies/event-host-terms-conditions/`, else the Policies index.
@@ -307,11 +312,14 @@ repair-references, backfill-session-agenda).
   - `migration/backfill-session-agenda.php`: the one-off, idempotent step that
     switches `_law_session_agenda` on for every event that already has
     sessions, with a scan/apply panel on the migration screen like
-    `repair-owners.php`. Without it those events would have an open agenda
-    section (the gate's "or has sessions" limb) and still be missing from the
-    "With an agenda" filter, so the switch and the filter would mean different
-    things. `_law_is_law_event` needs no backfill: its filter's
-    `NOT EXISTS OR != '1'` pair is correct unconditionally.
+    `repair-owners.php`. Without it the switch would read "off" on events that
+    plainly have an agenda, and only the gate's "or has sessions" limb would
+    keep their section open, so the switch and the admin column would contradict
+    the event. (It also fed a "With an agenda" dashboard filter until
+    15 September 2026, when that select was dropped as noise: the committee list
+    already prints each event's session count.) `_law_is_law_event` needs no
+    backfill: its filter's `NOT EXISTS OR != '1'` pair is correct
+    unconditionally.
 
 
 ### `statuses.php`: the custom workflow statuses
@@ -339,7 +347,7 @@ repair-references, backfill-session-agenda).
 
 **Booking statuses grew on 10 September 2026** (FLAGSHIP_PAYMENTS.md §2.1).
 `law_booking_statuses()` is now `publish` (Confirmed), `law-applied`
-(Awaiting review), `law-waitlisted`, `law-payment-failed`, `law-declined` and
+(Pending approval), `law-waitlisted`, `law-payment-failed`, `law-declined` and
 `law-cancelled`. The last three belong to the flagship's application flow and
 are kept out of the hosted-event vocabulary by
 `law_flagship_application_statuses()`, so a host's bookings list never offers
@@ -868,7 +876,10 @@ ONE booking carrying an attendee rows array; that model, its flat
   neither page server-renders `law-booking-modal` / `law-booking-success` any
   more: `law_booking_state()` is the one state decision
   the control and the cards both read, `law_booking_card_action()` turns it into
-  a card action, and `law_booking_maybe_render_dialog()` serves one event's
+  a card action — with `law_booking_card_inert_action()` supplying the disabled
+  one for the states that offer nothing to press, so every card carries two
+  buttons (see the change-history entry of 15 September 2026) — and
+  `law_booking_maybe_render_dialog()` serves one event's
   dialog as an HTML fragment at `{permalink}?law_dialog=1` — the cards carry no
   dialog markup at all, because a programme page renders the whole week and the
   dialog's wrapper id is fixed. `law_booking_render_loading_modal()` puts one
@@ -877,10 +888,14 @@ ONE booking carrying an attendee rows array; that model, its flat
   silent. The flagship's block on the programme
   (`parts/events/flagship-card.php`) carries the same treatment through
   `law_flagship_action_state()` / `law_flagship_action_link()` /
-  `law_flagship_card_action()` in `functions/account-flagship.php`: Apply, or
-  whatever the viewer's own application offers instead, with the apply dialog
+  `law_flagship_card_action()` in `functions/account-flagship.php`: Register, or
+  whatever the viewer's own registration offers instead, with the registration dialog
   served by `law_booking_render_flagship_dialog()` behind
-  `law_flagship_guard_open()`. `law_booking_render_action_buttons()` repeats the
+  `law_flagship_guard_open()`. Since 15 September 2026 the ordinary card
+  partial routes the flagship to that same action, so the conference can be
+  registered for from every list it appears in as a plain row — a speaker
+  profile's "Speaking at", My bookings, My events — and the action takes the
+  same `$scope` argument as the hosted one. `law_booking_render_action_buttons()` repeats the
   button (and only the button) at the foot of the single event page, after
   "Back to programme", routing the flagship to
   `law_flagship_render_action_buttons()`. `law_booking_user_bookings_by_event()`
@@ -1408,7 +1423,19 @@ block the queue. Joining is refused while places are free.
     is left alone, so an existing `/speakers/<slug>/` link keeps resolving.
     The email is the dedupe key, so a new address that already belongs to another
     record is skipped (the rest of the row still saves) rather than merging two
-    people.
+    people, and **a blank email is skipped too** (15 September 2026): it means
+    "not given", never "delete the one on file". `law_event_update_meta()` turns
+    `''` into a `delete_post_meta()`, so without that guard an empty box took the
+    dedupe key off a record shared with every event the speaker appears at, and
+    every future match for them silently fell back to name matching. The host
+    event form cannot post a blank (the field is required there), but the
+    committee's external-event form validates no speaker rows at all
+    (`law_external_event_validate()`) and shares this saver. Clearing an address
+    outright is a Manage Speakers action, where a committee member means it:
+    `law_speakers_dashboard_write_identity()` writes identity directly rather
+    than through the upsert, exactly so that it can. The website has no such
+    rule — it is nobody's identity, and an emptied box there is an ordinary
+    correction. `tests/SpeakerNamesTest.php` covers both halves.
 - **The event form round-trips each speaker row's post ID** in a hidden
   `speakers[i][speaker_id]` input (`parts/events/event-form-fields.php`), which
   is what lets a re-save edit the right record instead of re-matching on the very
@@ -1429,7 +1456,13 @@ block the queue. Joining is refused while places are free.
   `organisation_override` as `organisation`, and `bio` takes the textarea
   sanitiser so a biography keeps its line breaks. A row that leaves the
   biography or photo blank falls back to the speaker post's editor content and
-  featured image at read time.
+  featured image at read time. Both are optional on the host form, and since
+  15 September 2026 so are the organisation and the job title — see the Speakers
+  fieldset under `law_events_form_save()`. The committee event detail
+  (`templates/account-dashboard.php`) prints each of the three lines only when it
+  has something in it: its `mailto:` used to be emitted unguarded, so a speaker
+  with no email (the 173 the migration brought in from the legacy List field 48
+  never had one) got an empty link and an orphaned `·` before the profile link.
 - **Speaker roles are per appearance too** (Trevor, 3 September 2026; built
   8 September 2026): the row's `role` slot, reserved since 4.1, now holds what
   the person was at THIS event. `law_speaker_roles()` is the vocabulary
@@ -1536,10 +1569,28 @@ block the queue. Joining is refused while places are free.
   (`.law-event-card__flagship-badge`), so the conference reads as the
   conference wherever it is listed — the profile, My bookings, My events. The
   programme's own day lists never take this path: the flagship is lifted out of
-  them and rendered as `parts/events/flagship-card.php` instead. The row gets
-  no booking button, because `law_booking_card_action()` returns null for the
-  flagship state (its application flow has its own card), so it carries Event
-  details alone.
+  them and rendered as `parts/events/flagship-card.php` instead.
+- **And it carries the same Register button** (Denis, 15 September 2026). The
+  row used to have Event details alone: `law_booking_card_action()` returns
+  null for the flagship (it is applied for, not booked, and its own programme
+  block asks `law_flagship_card_action()` instead), so a speaker profile, My
+  bookings and My events were the only places on the site listing the
+  conference with no way into it. `parts/loop/event.php` now branches on the
+  same `is_flagship` flag it repaints the row with, and asks
+  `law_flagship_card_action()` for the button: Register with the
+  `data-law-book` fetch hook and the `?law_flagship_apply=1` no-JS link behind
+  it, or whatever the viewer's own registration offers instead (View my
+  booking, Sort out my payment, Add my payment details, View my registration),
+  and nothing at all before the conference is published or on sale. The
+  function took a `$scope` argument to match `law_booking_card_action()`'s:
+  under `'action'` — what My bookings and My events pass, because their own
+  actions already link to the viewer's registration — only Register survives.
+  The dialog itself needed no work: `law_booking_maybe_render_dialog()` already
+  branches the flagship to `law_booking_render_flagship_dialog()`, and
+  `law_booking_is_card_view()` already names the speaker profile (twice: the
+  `law_speaker` single and the routed legacy page), so the fetch layer, the
+  modal component and the placeholder dialog were on the page waiting for a
+  button to answer.
 - `law_speaker_bio_excerpt()` (24 words, an explicit `…` because
   `wp_trim_words()` otherwise appends the `&hellip;` entity, and
   `strip_shortcodes()` because an appearance biography never passes through
@@ -2153,7 +2204,10 @@ of `stripe/attendees.php`, and the waitlist.
   never refused. A full refund on the ticket takes them back.
 - **The banner** offering them is ONE helper, `law_reception_banner()`,
   rendered on both My bookings and the Account hub, because the hub is where a
-  sign-in now lands and two copies of the copy would drift.
+  sign-in now lands and two copies of the copy would drift. Two surfaces means
+  two sets of assets: `.law-strip__cta` and `.law-hp` were both scoped to
+  stylesheets or wrappers only My bookings had, which is why the hub drew a
+  small button and a visible honeypot until 15 September 2026.
 - **The paid waitlist.** Joining saves a payment method (Checkout in setup
   mode) and snapshots the price, so the delegate is charged the figure they
   agreed to. `waitlist.php` is modified IN PLACE rather than forked, because
@@ -2240,6 +2294,110 @@ spreadsheet of people actually goes.
   `law-draft` records seeded by slug with **no price**, because the prices are
   LAW's to confirm.
 - Tests: `tests/ReceptionsDashboardTest.php` (11).
+
+### `external-events.php`: events LAW neither runs nor books (15 September 2026)
+
+The third kind of `law_event` the committee owns outright, after the flagship
+and the receptions. LCIA's Tylney Symposium, GAR Live, the CIArb Alexander
+Lecture and Law Rocks all run during the programme week, register people on
+their own websites, and belong on the LAW programme because a delegate planning
+their week needs to see the whole week. A colleague captured them on Gravity
+Forms **form 10 (Event > external events)** in September 2026; this module
+replaced that form and migration step 3b brought the four entries across.
+
+**The data.** Three keys, all in `law_event_meta_schema()`:
+
+- **`_law_is_external`** (`flag`) — **renamed from `_law_is_law_event`, with the
+  opposite meaning**. The old key meant "LAW runs this itself", was written by
+  the committee's Classification tick and by the three receptions, and was read
+  by nothing except a badge, an export column and the Organiser filter:
+  `law_event_is_managed_by_law()` has always read the flagship and reception
+  flags, never this one. The identity the committee actually needed to tag was
+  the external one (Denis, 15 September 2026), so the key was repurposed rather
+  than a second one added. The polarity is inverted, so the receptions no longer
+  write it — LAW runs and books those. No data migration was needed: the CPT
+  module was not live anywhere when the rename landed.
+- **`_law_external_url`** (`url`) — where Register goes. **Empty is a
+  legitimate state**, not a defect: the committee lists an event before its
+  organiser opens registration, and the listing then shows a disabled
+  "Registration opening soon" button rather than nothing at all.
+- **`_law_registration_state`** = `'external'`, the value the vocabulary has
+  reserved since 4.1 and nothing wrote until now.
+
+**What makes one different**, and where each difference is enforced:
+
+| | Where |
+|---|---|
+| No workflow: created published or draft, no approval | `wp_insert_post()` on a NEW post passes straight through the status guard (`workflow.php`); a later status change needs `law_event_is_managed_by_law()`, which now answers yes for `_law_is_external` |
+| No slot: a typed date and two times | `law_external_event_apply_when()` writes `_law_start` / `_law_end` and leaves `_law_slot_label` empty, exactly as `law_reception_save()` does |
+| No booking here | `law_event_is_external()` and the refusal in `law_booking_guard_form_open()` — the create handler, add-attendee, register-on-behalf and the `?law_dialog=1` fragment server all run through it |
+| Register links out | `law_booking_resolve_state()` resolves `'external'` immediately after `'invitation'`; `law_booking_external_button()` builds the link; `law_booking_card_action()` returns `arrow` + `external` and **no `dialog` key**, which is what stops `booking-form.js` binding its fetch to a link that leaves the site |
+| No fee, invoice, tickets, co-owners or contacts | Simply not on the form. All four entries migrated from form 10 left every one of those fields empty |
+
+**The screen.** `/account/dashboard/?law_external=<id|new>`: a branch of Manage
+events, not a dashboard of its own. An external event IS one of the events that
+dashboard lists — same table, same Organiser filter, same export — and a page of
+its own would be database state to provision on every environment for a screen
+already there. "Create an external event" sits above the filter bar in the
+`.law-dashboard__actions` / `.button.orange` shape the receptions and discounts
+dashboards use.
+
+A **full page rather than a dialog**, against the site's usual add-in-a-dialog
+rule and deliberately (Denis, 15 September 2026): this form carries a repeating
+speakers table and a whole session agenda, and two of the four migrated events
+have eight sessions and thirteen.
+
+**Shared, not copied.** The Speakers and Session agenda repeaters were lifted
+out of `parts/events/event-form-fields.php` into
+`parts/events/event-form-speakers.php` and `parts/events/event-form-agenda.php`,
+which the host form, the committee edit form and this one all render; the savers
+are `law_events_form_save_speakers()` and `law_events_form_save_sessions()`
+unchanged. The agenda's committee gate stayed with the *caller*, because an
+external event always has the section (the committee is transcribing a published
+running order) while a host only gets one once the committee asks.
+
+**Drafts are visible to the committee**, which needed a change to
+`law_committee_events()`. That function excludes `law-draft` because a host's
+draft is their own private, unsubmitted data; an external draft is the
+committee's own and means only "not on the programme yet". A second query, on
+`law-draft` plus `_law_is_external`, is merged into the first and re-sorted; an
+explicit `?law_status=law-draft` returns that set alone, and the filter option
+says **"Draft (external)"** so it is clear which drafts it means.
+
+**An end before its start is dropped, not stored.** Form 10 entry 1559, Law
+Rocks! LONDON 2026, was captured as 19:45 to 11:30 — a night running past
+midnight, which this model cannot express and must not guess a second date for.
+Both the saver and the migration step write the start, leave the end empty so
+the programme reads "7:45pm onwards", and log the fact. Silently dropping it
+would be the committee never finding out.
+
+**No way into a bookings list.** The committee table suppresses both the
+bookings count and the Bookings button on an external row
+(`parts/events/dashboard-list.php`). Neither can ever lead anywhere, and a
+hollow "0" reads as "nobody has booked" rather than "bookings do not happen
+here" (Denis, 15 September 2026). The event page's panel is one line for the
+same reason: the Register button beside it already says where it goes.
+
+**Four things the browser pass caught (15 September 2026)**, all in the shape
+of "the server was right and the screen was not":
+
+1. Only Title and Description were checked in the browser, so the committee
+   fixed those, resubmitted, and only then heard about Event type and Date. The
+   fields now carry `required` and "Save as draft" carries `formnovalidate`, the
+   arrangement the host form already uses and which `law-rich-text.js` honours.
+2. A successful save landed back on a blank create form with no word that
+   anything had happened. `law_events_respond()`'s no-JS path is
+   `law_events_redirect_back()`, which returns to the referer and ignores the
+   `redirect` key that only the AJAX path reads, so the handler now redirects to
+   the list itself; the form branch renders the notices too, for a refused save.
+3. The disabled "Registration opening soon" button carried no class on a card,
+   so it painted the theme's default blue while the same button on the event
+   page was a muted orange.
+4. Preview was offered on an external draft but `?preview-event=` refused every
+   `law-draft`, and `law_events_map_post()` drops one unless asked with
+   `array( '*' )`. Both now carve out the external case.
+
+- Tests: `tests/ExternalEventsTest.php` (21).
 
 ### `source.php`: the CPT ↔ front-end bridge and legacy continuity
 
@@ -2399,7 +2557,9 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   user defaults to the current user, so the template render and the save-side
   enforcement always agree.
 - `law_events_form_save()`: validation + persistence, with the required set
-  mirroring form 2 (Event > submit an event) field for field. **The update path
+  mirroring form 2 (Event > submit an event) field for field, the speaker rows
+  excepted (see the Speakers fieldset below: organisation and job title were
+  relaxed on 15 September 2026). **The update path
   goes through `wp_update_post()`, never `wp_insert_post()`** — the latter fills
   every OMITTED key from its own defaults *before* it works out that it is an
   update, and never restores the stored row. Until 9 September 2026 the partial
@@ -2468,13 +2628,40 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   check and duplicated them. Both `id` and `photo_id` are excluded from the
   repeater's "has this row been started?" test, or clearing a row's fields to
   delete it would fail validation instead. The Speakers fieldset
-  (`parts/events/event-form-fields.php`) opens with **First name** and **Last
-  name** (both required on a started row, since 9 September 2026), then a Role
-  select, then Email — the live form 8 layout. The Role select has **no
+  (`parts/events/event-form-speakers.php`, extracted from
+  `event-form-fields.php` on 15 September 2026 so the committee's
+  external-event form renders the same repeater) opens with **First name** and
+  **Last name** (both required on a started row, since 9 September 2026), then a
+  Role select, then Email — the live form 8 layout. The Role select has **no
   default**: its first option is a blank `Select role` placeholder (Denis,
   9 September 2026), the field is not required, and an unset role still reads as
   Speaker on the public cards. The neighbouring label is "Job title" (it read
   "Job title / role", which beside a Role select said the same thing twice).
+- **Only the two names and the email are required of a speaker row** (Denis,
+  15 September 2026). The organisation and the job title were required until
+  then, mirroring form 8 (Event > speaker) field 3 (Organisation / firm /
+  chambers) and field 4 (Job title / role), which really were required on the
+  live form; they are now optional, as field 9 (Role) always was, because a host
+  frequently knows who is speaking long before they know which hat that person
+  will wear. Nothing had to change to absorb the blanks: every surface that
+  prints the pair already builds the line with `array_filter`
+  (`parts/events/speaker-card.php`, `speaker-bio-modal.php`,
+  `admin/speaker-screen.php`) or guards each field separately
+  (`templates/speaker.php`, `parts/loop/speaker.php`), the Manage Speakers
+  export writes empty cells, and 14 of the 248 appearance rows already carried
+  no organisation. The asterisks came off the two labels in the shared
+  repeater, which also ends a small lie: the committee's external-event form
+  renders the same partial and `law_external_event_validate()` never enforced
+  those fields at all.
+  **The email stays required and should not be relaxed casually.** It is the
+  speaker dedupe key: with it blank `law_speaker_find_existing()` falls back to
+  matching on the name, and a second "John Smith" would be silently attached to
+  the first one's shared, publicly displayed profile. The reasoning is set out
+  at `functions/events/speakers.php:110-121`, and the merge tool that comment
+  offers as the remedy for a duplicate (EVENTS_4.2_SPECS.md §3.5) is not built
+  yet. Both names stay required for a different reason:
+  `law_events_form_save_speakers()` drops a row whose joined name is empty, so
+  a nameless row would vanish rather than be reported back to the host.
   Before 8 September 2026 this save hard-coded `role => ''`, so a role the
   committee set in wp-admin vanished on the host's next edit. `event-form.js`
   resets a cloned `<select>` to its first option, which on the Role select is
@@ -2617,9 +2804,52 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 ### `committee.php`: the committee dashboard back end
 
 - `law_committee_events( $overrides = array() )`: the review queue query
-  (status filter + search). The `$overrides` array is merged over the query
+  (status filter + "run by" filter + keyword). The `$overrides` array is merged
+  over the query
   args; the dashboard export passes `posts_per_page => -1` through it to
   escape the 300-row screen cap without duplicating the filter logic.
+- `law_committee_keyword_event_ids()`: **what the keyword box actually
+  searches** (15 September 2026). It was a bare `WP_Query` `s` until then, so
+  it matched the event post's title, excerpt and content and nothing else —
+  and the firm that runs an event is meta, not content, so typing a firm name
+  returned nothing at all. Measured on the local database at the time: "Mayer
+  Brown" returned 0 rows against 2 events it hosts, "Norton Rose" 0 against 2,
+  "Hill Dickinson" 0 against 1. 104 of 108 events carried a firm, because
+  `_law_host_organisations` is required at submission. The committee's own list
+  was the last one in the module that did not match on organisation — bookings,
+  flagship bookings, speakers and even the **public** programme filter
+  (`law_calendar_event_matches_filters()`, which reads the same meta through
+  `source.php`'s `host` key) all already did. Reported by the client
+  (Emily O'Callaghan, 15 September 2026).
+  The helper ORs three limbs, each a `fields => ids` query over **every**
+  status, `law-draft` included, so the status rules stay in
+  `law_committee_events()` alone and are not a second thing to keep in step:
+  core `s` (delegated, not reimplemented, so the existing behaviour cannot
+  quietly change); a `LIKE` on `_law_host_organisations` (free text in a plain
+  meta row, so this is an ordinary column comparison, not the
+  LIKE-over-serialised-meta the module refuses); and linked organisations
+  matched **by name** — `_law_organisation_ids` is an `int_array` stored as one
+  serialised row, so no `meta_query` can reach a member of it, and the limb
+  instead fetches the events carrying the key at all (a handful; the field is
+  committee-only and quiet) and resolves them in PHP through the memoised
+  `law_events_organisation_titles()` map.
+  **Two `WP_Query` behaviours dictate the shape of the calling block**, and
+  both fail silently if got wrong. `post__in` and `post__not_in` are an
+  `if`/`elseif` in `WP_Query::get_posts()`, not two `AND` clauses, so setting
+  `post__in` would disable the flagship exclusion and put the conference back
+  on the review queue — the flagship is therefore **subtracted from the matched
+  ID set** rather than left to `post__not_in`. And an **empty** `post__in` is
+  skipped rather than matching nothing, so a keyword no event answers has to
+  return early; left to `WP_Query` the dashboard would answer a typo with every
+  event on the site. `tests/CommitteeSearchTest.php` (12) covers both, plus the
+  three limbs, the draft rules and the interaction with the "run by" filter.
+  Host name, host email and the LAW reference are deliberately **not** searched
+  (Denis, 15 September 2026); the scope was the firm.
+- The list's **Host column carries the firm under the person's name**
+  (`parts/events/dashboard-list.php`), in the same `.law-dashboard__row-note`
+  span the Event and Slot cells use, so it needed no CSS. Without it a
+  "Mayer Brown" search would return rows whose visible text never said Mayer
+  Brown, which reads as a broken filter rather than a working one.
   An explicit `?law_status=law-draft` is refused (falls back to the default
   non-draft set): drafts are owner-only unsubmitted host data, and before
   this guard a committee member could list — and once the export existed,
@@ -2628,6 +2858,15 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 - `law_committee_status_counts()`: the filter-chip counts, via **one**
   `wp_count_posts()` call (not a capped per-status query).
 - `law_committee_requested_event()`: the event opened in the detail panel.
+- `law_committee_event_url( $event_id )`: the dashboard screen that manages
+  one event, resolved from what the event is — the flagship dashboard for the
+  flagship (which `law_committee_requested_event()` refuses), Manage receptions
+  for a reception, the external-event form (`?law_external=<id>`) for an
+  external event, and the detail panel (`?event=<id>`) for a host event. One
+  home for the four cases so every "Edit" affordance the committee sees lands
+  on a front-end screen rather than `post.php`; `law_calendar_edit_link()` on
+  the programme and the `{edit_link}` email placeholder both go through it
+  (Denis, 15 September 2026).
 - `law_committee_maybe_render_partial()` (on `template_redirect`): the
   dashboard URL with `&law_partial=1` returns just the event-list markup
   (`parts/events/dashboard-list.php`) so the filter bar can swap it in place
@@ -2808,7 +3047,146 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 open a detail view offering workflow actions the flagship does not have. By ID,
 not a `NOT EXISTS` meta clause, because a caller-supplied `meta_query` replaces
 the filters wholesale (see the note in that function) and one memoised ID
-lookup beats a second LEFT JOIN on every dashboard query.
+lookup beats a second LEFT JOIN on every dashboard query. The timeline view
+(`slot-chart.php`, 15 September 2026) is the one caller that asks for it back,
+with the non-query key `$overrides['law_include_flagship']`, consumed before the
+merge into `WP_Query`'s arguments: it draws a day at a time to show clashes, and
+a day-long flagship is the biggest clash on the programme. Note the flagship
+carries no `_law_is_external` meta and so answers the "Hosted events" filter —
+the wrong word for it, but the same answer `law_event_is_external()` gives
+everywhere else, and a special case would make the chart disagree with the table
+it switches from.
+
+### `slot-chart.php`: the committee's timeline view (15 September 2026)
+
+A second view of the same dashboard, at `?law_view=slots`, reached by an
+outlined button beside "Create an external event". One day at a time, time
+running left to right, every event drawn as a bar at its real start and its
+real length, and the rows packed so that two events running at once are never
+on the same row. A vertical column of bars is a clash, and there is nothing to
+click to find that out.
+
+- **Why**: the client asked for it in those words (emily O'Callaghan,
+  11 September 2026: "it won't help us to identify clashes - is there any way we
+  can have a running total of events confirmed at a particular time slot
+  somewhere?"), and EVENTS_4.2_SPECS.md §3.1 had promised "a day-and-time grid,
+  showing overlapping and parallel sessions at a glance" since the spec was
+  written. The table is sorted by last modified and says nothing about two
+  events colliding; the programme groups events under text slot headings, which
+  is a list, not a grid.
+- **It detects nothing.** There is still no event-to-event clash rule anywhere
+  in the module. `law_booking_guard_clash()` is a per-attendee guard about one
+  person being in two places, and it exempts the flagship and the receptions.
+  This view makes the overlaps visible and leaves the judgement to the
+  committee.
+- **Not slots, datetimes.** Every kind of event reduces to `_law_start` /
+  `_law_end`: `law_event_apply_slot_label()` writes them from a chosen slot, and
+  `law_flagship_recompute()`, `law_reception_save()` and
+  `law_external_event_apply_when()` write them directly. So the chart needs no
+  per-kind branching, and it can place an event whose times match no configured
+  slot, which is most of the custom ones.
+- `law_slotchart_is_active()`, `law_slotchart_url( $view )`: the view arg is
+  `law_view`, joining `law_status` / `law_kw` / `law_run_by` / `law_external` /
+  `law_edit` / `law_partial` rather than a bare `view`, because it has to double
+  as a form field name. The switch carries the current filters, so pressing it
+  changes how the events are drawn and never which ones.
+- `law_slotchart_items()`: goes through `law_committee_events()`, so the filters
+  apply here exactly as they do to the table with no second implementation to
+  drift, and asks for the flagship back with the new
+  `$overrides['law_include_flagship']`. Memoised, because the day tabs need the
+  per-day counts before the chart renders the days.
+- `law_slotchart_lanes()`: first fit, with `law_slotchart_band_order()`
+  (approved, confirmed, sent back, proposed, rejected, then cancelled and draft,
+  which were not named) deciding the **order events are placed in** and not
+  giving each status a block of rows. Packing each status separately was the
+  first attempt and it left a hole the width of the morning at the top of a busy
+  day: Tuesday's nine confirmed 08:30 events sat in rows 7 to 15 while rows 1 to
+  6 held approved events starting at 10:30. Every event now falls into the first
+  row with space for it, so the chart is exactly as tall as the day's worst
+  clash (Tuesday: 48 events, peak concurrency 9, nine rows) while an approved
+  event keeps first refusal on the top rows (Denis, 15 September 2026).
+  **Touching is not overlapping**: an event ending at 10:00 and one starting at
+  10:00 share a row, because they do not clash. A status the array does not name
+  is placed last rather than dropped.
+- `law_slotchart_axis()`: floored and ceiled to the half hour, computed per day
+  from that day's own events and widened to a three-hour minimum. Only one day
+  is on screen, so a varying scale is not confusing, and a Wednesday carrying
+  one evening reception renders 18:00 to 22:30 rather than fourteen empty hours.
+  It then opens **one step earlier still**, and the part draws neither a label
+  nor a running total for that opening step: a ruler label is centred on the
+  moment it names, so the first one was sliced in half by the scroller's own
+  left edge. The lead-in is what puts the first real time on screen in full
+  (Denis, 15 September 2026).
+- `law_slotchart_item()`: an empty `_law_end` is drawn at **two hours**, which
+  is already `law_event_ics()`'s answer to the same question — a different
+  number would give the site two answers to "how long is this event". The bar
+  gets `is-open-ended` and a **dashed** right edge, and its label says "onwards"
+  rather than stating an end that was never recorded. That edge was a gradient
+  fade first, and it read as a rendering artefact at the right-hand end of the
+  chart rather than as a fact about the event. An end on a later date or
+  at/before its start is the same case (form 10 entry 1559, Law Rocks! LONDON
+  2026, captured as 19:45 to 11:30).
+- `law_slotchart_density()`: one figure per half hour under the ruler, the
+  running total the client asked for. The bars show *where* the clashes are
+  without ever stating a number; this is the number. Nothing opens and nothing
+  expands — there is no drill-down on this view (Denis, 15 September 2026).
+- **Days**: the configured programme week *plus any other date carrying an
+  event*. `law_calendar_events_by_date()` drops an out-of-week event into its
+  unscheduled bucket, which is right for a five-tab public programme and wrong
+  here; the flagship screen already warns that a date can fall outside the week,
+  so the committee can produce one, and a planning view has to account for every
+  event. Events with no start at all get the `day-unscheduled` section, a list
+  rather than a chart, shown under every tab.
+- **Page**: `parts/events/slot-chart.php`, rendered inside `#law-cal-events` and
+  returned on its own by `&law_partial=1`, so filtering swaps the chart in place
+  exactly as it swaps the table.
+- **The day tabs are reused whole, with no JavaScript change.**
+  `assets/js/calendar-tabs.js` selects `.law-cal-day-section[id^="day-"]`, reads
+  `data-count` for the tab labels, keeps `#day-unscheduled` out of the tabs and
+  under every one of them, and re-enhances itself on `law:partial-rendered`.
+  Emitting the programme's markup contract is the whole of the support.
+  `parts/calendar-daynav.php` gained optional `days` / `counts` /
+  `flagship_date` / `label` args, because its own counts are the public
+  programme's — a differently filtered set that excludes the flagship.
+- **The one trap.** `filterParams()` in `assets/js/calendar-filters.js` builds
+  both the replaced URL and the `&law_partial=1` fetch URL from the named inputs
+  inside `#law-cal-filter-form` and **silently drops every other query
+  argument**. The view therefore renders a hidden `law_view` field inside that
+  form; without it the first keystroke in the keyword box fetches the table
+  partial, swaps the chart for it and strips the view from the address bar.
+  Anyone adding a query argument to one of these pages needs the same field.
+- **Assets**: `assets/css/slot-chart.css` (its own file rather than more of the
+  2,900-line `calendar.css`, loaded only on this view), and `calendar-tabs.js`
+  now also enqueued for it. Bars carry `--at` and `--len` in **minutes** as
+  custom properties, not percentages and not grid columns: the ruler ticks every
+  30 minutes but real events do not start on the half hour (17:25 and 19:45 are
+  both live data), and the zoom is one number in the stylesheet. Bar colours are
+  the status-badge palette from `calendar.css`, not a second set for the
+  committee to learn. A bar has a `min-width` so a very short event still shows
+  some of its title — the **left** edge stays exact, only the right can overrun,
+  and the `title` attribute always carries the true times.
+- **Exports are kept** on this view: they export the filtered event list, the
+  filters work here, and leaving them costs no code.
+- **Two CSS traps it walked into**, both the same shape: a bar is an `<a>`, and
+  the theme has opinions about those.
+  `.law-dashboard a:not(.button)` in `event-form.css` paints every dashboard
+  link navy and underlined, outranking both
+  `.law-cal-daynav__link[aria-selected="true"]` and the bar colours, so the
+  selected day tab and every Confirmed bar rendered navy-on-navy and went blank.
+  Fixed by excluding those two from that rule rather than out-specifying it
+  locally, so the exception sits with the rule that needs it. Excluding them
+  then exposed the global `a:hover { color: #fff }` in `app.css`, which had been
+  masked by it: an Approved bar is orange type on white, so it went
+  white-on-white under the pointer. Fixed with a `--law-sc-ink` token set once
+  per status and re-asserted on `:hover`, `:focus`, `:active` and `:visited`,
+  rather than seven more hover rules. The same global rule also underlines an
+  anchor on hover, which drew a rule under the day name and count of whichever
+  tab the pointer was over; `.law-cal-daynav__link` now sets
+  `text-decoration: none` in all three of its states. **That one fixes the
+  programme too** — nothing had ever set it, so the public day tabs had
+  underlined on hover since they were built; it only became visible here
+  because the dashboard's blanket rule used to underline them in every state.
+- Tests: `tests/SlotChartTest.php` (35).
 
 ### `export.php`: the dashboard exports (CSV / Excel / PDF)
 
@@ -2817,6 +3195,16 @@ DataTables export buttons. Three buttons ("Export: CSV | Excel | PDF") sit
 under the dashboard filter bar (list view only) and export the full filtered
 event list — the legacy column set minus "Workflow step" (folded into the
 event status by the rebuild) plus "Reference".
+
+**"Host organisation(s)" was added on 15 September 2026**, alongside the
+dashboard search change above. The field is required at submission and so is
+the most complete firm data the module holds, yet every export had gone out
+without it while the quieter, committee-set "Linked organisations" column was
+already there. It sits immediately before that column, in
+`law_committee_export_columns()` and `law_committee_export_row()` alike — the
+two are one ordered pair, and `tests/CommitteeSearchTest.php`,
+`tests/LinkedOrganisationsTest.php` and `tests/EventFlagsTest.php` all assert
+they stay the same length.
 
 - **One row builder, three formats.** `law_committee_export_rows()` returns
   `{columns, rows}` for every format, so they cannot drift. It calls
@@ -3186,9 +3574,26 @@ event status by the rebuild) plus "Reference".
   per-step summaries and a tail for the admin panel, plus the snapshot-download
   and CSV-export admin-post handlers.
 - **`runner.php`** — the engine. `law_migration_steps()` defines the ordered
-  steps: snapshot → preflight → co-owners → speakers → events → sessions →
+  steps: snapshot → preflight → co-owners → speakers → events → external
+  events (3b) → sessions →
   speaker appearances (4b) → comments → history → counters → redirects →
-  notifications → pages. Step 2 imports each form 8 (Event > speaker) child's
+  notifications → pages.
+
+  **Step 3b (`law_migration_run_external_events()`, 15 September 2026)** reads
+  form 10 (Event > external events) and creates published `law_event` posts
+  flagged `_law_is_external`. Its PLACEMENT is load bearing twice over: 21 of
+  the 31 active form 9 (Event > session) entries are children of a form 10
+  entry, and step 4 resolves a session's parent through `$map['events']`, so
+  putting the external events in that map first means step 4 picks their
+  agendas up with no change to it at all — run it afterwards and those 21
+  sessions are skipped and lost. And it goes BEFORE step 11 (`retire_roles`),
+  which must stay last. The events arrive `publish` rather than `law-draft`
+  because form 10 has no status field and every active entry is already on the
+  programme; migrating them as drafts would take four events off it at cutover.
+  Form 10 also joined `law_migration_module_form_ids()` (so the source flip
+  deactivates it) and the preflight's structure map.
+
+  Step 2 imports each form 8 (Event > speaker) child's
   photo once and records it in the map (`speaker_photos`); step 3 builds the
   event's rows with `law_migration_speaker_rows()` (field 9 Role — the
   Speaker / Host / Moderator drop down Trevor added to the live form on
@@ -3214,7 +3619,25 @@ event status by the rebuild) plus "Reference".
   `law_migration_snapshot_ok()` fetches the snapshot's own public URL
   unauthenticated and deletes it if the server actually serves it (the
   nginx-ignores-.htaccess guard). `law_migration_preflight()` gates on data
-  health. The `law_migration_run_*()` functions import each entity from GFAPI;
+  health, including two checks added on 15 September 2026 when the production
+  database was pulled down for the cutover rehearsal. **"Entry counts within
+  the read limits"** is blocking: neither `law_migration_entries()` nor
+  `law_migration_children()` pages, so `LAW_MIGRATION_ENTRY_PAGE_SIZE` (500) and
+  `LAW_MIGRATION_CHILD_PAGE_SIZE` (100) are the points past which rows are
+  simply never read, and a run would report success with data missing. The
+  check names every form and parent that has reached a cap, resolving each
+  parent's own form rather than assuming form 2 (Event > submit an event),
+  because nested children hang off form 10 (Event > external events) too.
+  **"Unknown active forms"** is warn-only: it lists any active form outside
+  `law_migration_known_form_ids()` by ID and title. Such a form is neither
+  migrated nor deactivated by the source flip, so it stays submittable through
+  GF's REST endpoint — which is correct for form 7 (Contact) and, for now, for
+  form 10 (Event > external events), and would be wrong for anything else. The
+  form-ID lists live in `law_migration_module_form_ids()`,
+  `law_migration_known_form_ids()`, `law_migration_paged_form_ids()` and
+  `law_migration_child_form_ids()`, which the source flip in
+  `migration/page.php` now reads too, so the list exists once rather than in
+  four places. The `law_migration_run_*()` functions import each entity from GFAPI;
   `law_migration_derive_payment()` sets the payment status from the legacy
   status (field 96 Payment status was blank on every entry — defect 1);
   `law_migration_slot_labels()` reads the canonical slot labels straight from
@@ -3712,9 +4135,11 @@ These predate the rebuild and now branch on `law_events_source()`.
   `$law_cal_sessions_style` on 11 September 2026, when Denis had every event
   move to the timeline and the accordion was deleted) and
   `$law_cal_sessions_panel` (added 11 September 2026: renders that timeline
-  reversed inside a filled navy panel, which only the flagship page sets). The
-  venue markup lives in its own part, `parts/events/event-venue.php`, from
-  when the flagship briefly rendered it in a different position; the
+  reversed inside a filled navy panel, which only the flagship page sets, and
+  since 15 September 2026 also places it at the full width of the article below
+  both columns rather than inside the reading one). The venue markup lives in
+  its own part, `parts/events/event-venue.php`, which now renders in the
+  reference sidebar; the
   flagship's own hero image (`_law_hero_image_id`) is read here too, and an
   event without one keeps `hero-title.php`'s default photograph),
   `calendar-events.php`, `calendar-filters.php` and
@@ -3767,21 +4192,55 @@ These predate the rebuild and now branch on `law_events_source()`.
   Financial Services" arrived as two query args and the filter saw "Banking ".
   The sector pills exposed it; "Back to programme" had carried the same broken
   value for any filtered term with an ampersand in it.
-- **The single event view's section order is fixed: description, sessions,
-  speakers, venue** (Denis, 9 September 2026). `calendar-body.php` renders
-  those four in exactly that sequence for every event, ordinary or flagship:
-  the description sets the scene, the running order and the people are what
-  the reader came for, and the address is a detail they need once, so it goes
-  last. The venue used to sit directly under the description, with a
-  `$law_cal_venue_last` caller variable the flagship page set to push it below
-  the sessions instead; that variable is gone, because two orders for the same
-  four sections was a difference with no reason behind it. Nothing is lost by
-  putting the venue at the foot: the facts box in the hero states the location
-  at the top and links down to the section
-  (`href="#law-cal-venue-heading"`, `calendar-event-details.php`) whenever the
-  address is mappable. Note that the event-level **Speakers** section still
-  renders only when the event has no sessions, because a session's speakers
-  are already listed beside its own description on the timeline.
+- **The single event view is a reading column and a reference column** (Denis,
+  15 September 2026). The `large-8` **reading** column on the left is the
+  thread the reader follows: the description, then the running order under it.
+  The `large-4` **reference** column on the right holds what they look up rather
+  than read through (`.law-cal-detail__sidebar` > `.law-cal-detail__aside`): the
+  **Speakers** list on a hosted event, and the **Venue** with its map on the
+  flagship. Speakers sit beside the reader instead of pushing the running order
+  down the page, which is where they went before 9 September 2026. The reading
+  column falls back to `large-12` when there is nothing for the sidebar
+  (`$law_cal_has_aside`) — which is every hosted event that has sessions, since
+  those list their speakers on the timeline and keep the venue in the reading
+  column. The back / register row stays outside both columns, under them, at the
+  full width of the article.
+
+  **The venue is the one section that reads differently on the two pages.** On
+  a hosted event it sits at the foot of the reading column, below the sessions,
+  where it has been since 9 September 2026: the running order is what the
+  reader came for, and the address is a detail they need once. On the flagship
+  it moves to the sidebar, because that page's reading column holds the
+  description and nothing else (its agenda being a panel below both columns),
+  so an address under it would sit in a half-empty column with the sidebar
+  beside it. `$law_cal_venue_in_main` is simply `! $law_cal_sessions_panel`
+  (Denis, 15 September 2026), so **one flag carries the whole flagship layout**
+  — the panel, its placement below the columns and the venue beside the
+  description — and no part of it can disagree with another. Both positions
+  render from **one closure**, so there is one venue markup and one
+  `event-venue.php` call site.
+
+  Two details of that arrangement predate it and still hold. The event-level
+  **Speakers** list renders only when the event has **no** sessions
+  (`$law_cal_speakers_aside`), because a session's speakers are already listed
+  under its own description on the timeline and a sidebar copy would print
+  every card, and its bio dialog, twice; so an event with an agenda — the
+  flagship always, an ordinary event often — gets a sidebar holding the venue
+  alone. And the facts box in the hero still states the location at the top and
+  links down to the section (`href="#law-cal-venue-heading"`,
+  `calendar-event-details.php`) whenever the address is mappable. The
+  `$law_cal_venue_last` caller variable that once let the flagship page reorder
+  these sections is long gone, and there is still exactly one venue position.
+
+  **The flagship is the one exception, and the panel flag carries it.** Its
+  agenda is a filled navy box the width of the article, which has no business
+  inside two thirds of a row, so `$law_cal_sessions_panel` also moves the
+  timeline **out** of the reading column to the full width of the article below
+  both of them (`$law_cal_sessions_full`, `parts/calendar-body.php`). That page
+  therefore reads: description, with the venue in the sidebar beside it, then
+  the day. Both placements call **one closure**, so the two cannot drift into
+  rendering different agendas, and `EventSectionOrderTest` pins the whole
+  arrangement against the source of the partial.
 - **Flagship parts** (9 September 2026): `parts/events/flagship-card.php` (the
   highlighted block on the programme: the banner photograph left, and right the
   "Flagship event" label, the title, the session list with times and an "Event
@@ -3801,8 +4260,9 @@ These predate the rebuild and now branch on `law_events_source()`.
   wraps the whole section in a filled brand-navy box and reverses everything
   inside it) and
   `parts/events/event-venue.php` (the address and its keyless Google map,
-  extracted from `parts/calendar-body.php` so it can render above or below the
-  sessions) and `parts/events/flagship-manage.php` (the committee's editor: the
+  extracted from `parts/calendar-body.php` when it could render in either of two
+  positions; since 15 September 2026 it has one, the reference sidebar under the
+  Speakers list) and `parts/events/flagship-manage.php` (the committee's editor: the
   theme's own front-end form markup for the top-level fields, and the shared
   agenda block from `flagship-form.php` below them). **Every** single event
   view renders its sessions open on this timeline, the flagship and an ordinary
@@ -3831,8 +4291,16 @@ These predate the rebuild and now branch on `law_events_source()`.
   (`.law-timeline-section--panel`, set from `templates/flagship-event.php` via
   `$law_cal_sessions_panel`, Denis 11 September 2026): its agenda is the
   substance of that page, so it reads as a block of the page rather than a list
-  inside it. Only the timeline is in the box — the flagship's description still
-  sits **above** it on the white page and the venue below it — and everything
+  inside it. The gap above the panel is **3.5rem**, declared as
+  `.law-timeline-section.law-timeline-section--panel` with both of its classes
+  on purpose: `.law-cal-sessions` sits further down `calendar.css` and sets
+  `margin-top: 0.5rem` at the same specificity, so at one class it won on source
+  order and the gap stayed at 8px however large a number was written in the
+  panel rule. (The same trap as `.law-cal-speakers`' `margin` shorthand and the
+  space above a session's speaker cards — twice now, in the late half of this
+  stylesheet one class is not enough.)
+  Only the timeline is in the box — the flagship's description
+  sits **above** it and its venue beside that description in the sidebar — and everything
   inside reverses, the heading, the times, the titles, the descriptions and the
   session's speaker cards. The CSS is colour only (one block in `calendar.css`,
   no geometry repeated, so the light and reversed layouts cannot drift): the
@@ -3845,7 +4313,11 @@ These predate the rebuild and now branch on `law_events_source()`.
   single event view — photo or initials, the role at this event as a small
   uppercase label on its own line above the name (`.law-cal-speakers__tag`,
   first in the source and outside the profile link so the link text stays the
-  name alone), then the name, then "job title, organisation", a
+  name alone), then the name, which links to the speaker's profile in a **new
+  tab** (`target="_blank" rel="noopener"` plus a `.show-for-sr` "(opens in a new
+  tab)" hint, matching the dialog's "View speaker profile" link) so a reader
+  following a speaker does not lose the event they were reading (Denis,
+  15 September 2026), then "job title, organisation", a
   14-word biography excerpt (about two lines) and the "Read full bio" pair: the
   `[data-law-modal-enhanced]` button and the `[data-law-modal-fallback]`
   `<details>` holding the full text for the no-JS path, which also keeps it
@@ -4208,6 +4680,29 @@ rollback must stay alive.
 ---
 
 ## Change history
+
+Updated 15 September 2026 for the **committee's timeline view**, a second view
+of `/account/dashboard/` at `?law_view=slots` that draws a day at a time as a
+time axis with every event as a bar, rows packed so that concurrent events never
+share one. It answers the client's "it won't help us to identify clashes"
+(emily O'Callaghan, 11 September 2026) and builds the day-and-time grid
+EVENTS_4.2_SPECS.md §3.1 has promised since the spec was written. New:
+`functions/events/slot-chart.php`, `parts/events/slot-chart.php`,
+`assets/css/slot-chart.css`, `tests/SlotChartTest.php`. Changed:
+`assets/css/event-form.css` (the dashboard's blanket link colour excludes the
+day tabs and the timeline's bars, which choose their text colour against their
+own background and were being painted navy-on-navy),
+`committee.php` (the `law_include_flagship` override, and the AJAX partial now
+returns whichever view the filters were applied from), `parts/calendar-daynav.php`
+(optional days/counts/flagship_date/label, so the dashboard can supply its own
+rather than the programme's), `templates/account-dashboard.php` (the outlined
+view switch beside "Create an external event", the hidden `law_view` field
+inside the filter form, the day nav, the branch), `assets/js/calendar-filters.js`
+(a chart-shaped loading skeleton — the only JavaScript change in the piece of
+work; `calendar-tabs.js` needed none) and `functions/enqueue.php`. Deliberately
+**not** built: any event-to-event clash detection — the view makes overlaps
+visible and leaves the judgement to the committee — and any drill-down, because
+everything is on the chart (Denis, 15 September 2026).
 
 Updated 14 September 2026 for the **drinks receptions** (RECEPTIONS.md, in
 full). LAW runs three: Monday and Wednesday paid and pay-now and also free
@@ -4706,8 +5201,11 @@ status. They reuse the form's `data-law-capacity` / `data-law-tickets` hooks, so
 the sync in `assets/js/event-form.js` keeps the number field's max in step with
 the band here too (the script is already enqueued on the dashboard, and the
 panel and the edit form never render together, so its single-element lookup is
-safe). A blank Places available means no limit, which is what
-`law_events_bookings_remaining()` already reads a 0 or unset value as.
+safe). A blank Places available was described here as meaning "no limit",
+citing `law_events_bookings_remaining()`. **Both halves of that were wrong**, and
+the correction is in the 15 September 2026 entry below: no such function exists,
+and `law_event_tickets_remaining()`, which does, reads 0 or unset as **not open
+for booking**.
 
 `law_committee_venue_input_error()` holds the rules, deliberately outside the
 handler so they can be tested and reused rather than only exercised through a
@@ -4728,7 +5226,9 @@ Logging follows the WooCommerce-notes rule: the new
 offers any newly opened places to the waitlist, with `committee_panel` as the
 source. An unchanged save logs neither. The panel's own help text says only
 that places cannot exceed the band, that "251+" and "TBC" set no ceiling, that
-blank means no limit and that raising it offers the places to the waitlist:
+blank means no limit and that raising it offers the places to the waitlist (the
+first three of those were reworded on 15 September 2026, when the band gained a
+floor and the "no limit" claim turned out to be false):
 **the activity log is not mentioned in UI copy** (Denis), it is machinery the
 committee can see for themselves in the log.
 
@@ -5117,6 +5617,295 @@ and the wp-admin **Event facts** box all behave exactly as they did, and remain
 the only ways the number moves. `tests/VenueDetailsTest.php` gained five cases
 for the new rule and `tests/SubmissionFormLockTest.php`'s matrix now separates
 `law-draft` from the two review statuses.
+
+---
+
+### "Register" and "ticket" replace "apply" and "application" on screen (15 September 2026)
+
+**What the client asked for.** The client wants the words **"Ticket"** and
+**"Register"** wherever the site had said "application" or "apply", the
+flagship conference included. This reverses the 10 September decision recorded
+in FLAGSHIP_PAYMENTS.md and EVENTS_4.2_SPECS.md §3.4, where "Register" was
+reserved for free hosted events on the reasoning that an approval-gated place is
+applied for rather than booked. The client's vocabulary wins; the reasoning
+behind the old decision was never wrong about the mechanism, only about the
+words, and the mechanism has not changed.
+
+**The scheme, and why it is three words rather than two.** A flagship place is
+still submitted, reviewed, then charged, so there is a real window in which the
+delegate has asked for a place and may yet be declined. Calling that a "ticket"
+would be a false statement in an email, and a declined delegate who was told
+they had a ticket has a grievance. So:
+
+- **Register** is the verb and every call to action. "Register to attend",
+  "Register for %s", the button on the conference page, the button on the
+  programme card, and the heading of the dialog and its no-JS inline twin.
+- **Registration** is the noun for the record while it is undecided. "Your
+  registration is being reviewed", "Registration #1042", "Search registrations",
+  and the committee table's first column.
+- **Ticket** is the confirmed, paid place and nothing else. "Your ticket is
+  confirmed", "Your ticket is confirmed and £660.00 has been paid", the subject
+  line of `user_flagship_approved` and `user_flagship_complimentary`, and
+  "Ticket #1042" on the delegate's own view once the booking is `publish`.
+
+`parts/events/flagship-manage-application.php` renders both a pending
+registration and a confirmed ticket, so its reference line switches on
+`post_status`: `Ticket #%d` at `publish`, `Registration #%d` otherwise.
+
+**Two vocabularies, deliberately.** This was copy only. Every identifier keeps
+the application vocabulary: the `law-applied` post status, `law_flagship_apply()`
+and its `admin_post_law_flagship_apply` handler, the `?law_flagship_apply=1`
+no-JS URL and the `law_flagship_apply[...]` field names, the `_law_application_at`
+/ `_law_application_answers` / `_law_application_ready` meta keys,
+`law_flagship_applications()`, `law_flagship_application_statuses()`,
+`law_flagship_application_for_user()`, the `flagship-applied` notice key, the
+`user_flagship_applied` and `committee_flagship_application` email slugs, the
+`flagship_applied` log action, the `parts/events/flagship-apply-modal.php` and
+`flagship-manage-application.php` filenames and the `.law-flagship-apply` /
+`.law-cal-card__badge--applied` classes. They are stored on live bookings and
+mirrored into Stripe metadata, so renaming them would buy a data migration for
+nothing anybody can see. The file header of `functions/account-flagship.php`
+states the split so a future reader does not "tidy" one into the other.
+Nothing in the status vocabulary needed changing either: `law-applied` already
+displays as a state ("Pending approval"), not as a noun.
+
+**The "Apply" buttons that stayed.** Eight of them, all a different sense of the
+word and all deliberately untouched: the filter-form submit on the programme
+filters, the Manage bookings, Manage speakers, Discounts and Flagship bookings
+dashboards; the discount-code Apply in the reception checkout dialog; and the
+"Applies to" column and label in the discount catalogue. So is "the price that
+applied when they saved their payment details" on the flagship settings screen.
+
+**Files touched.** `functions/account-flagship.php` (18 strings),
+`functions/events/notifications.php` (all ten flagship email templates, their
+Emails-screen names and triggers),
+`functions/events/flagship-bookings.php` (27 handler messages and WP_Error
+strings, plus 14 activity-log lines the committee reads on the booking),
+`functions/events/flagship-bookings-dashboard.php` (the export's "Registration"
+and "Registered" columns, its title and its `flagship-registrations-*`
+filename), `functions/events/settings.php`,
+`functions/events/admin/flagship-screen.php`, `functions/account-bookings.php`,
+`functions/header-nav.php`, `parts/events/flagship-apply-modal.php`,
+`flagship-manage-application.php`, `flagship-bookings-list.php`
+(including "Applicant" → "Delegate"), `flagship-manage.php`,
+`flagship-success-modal.php`, `flagship-card.php`, `booking-loading-modal.php`,
+`reception-manage.php`, `templates/account-dashboard-flagship-bookings.php` and
+`assets/js/booking-form.js`.
+
+**Check the email overrides before assuming this shipped.** The registry is
+code, but `law_events_email()` merges the `law_events_email_overrides` option
+over it, so any flagship email somebody has pressed Save on from the Emails
+screen keeps its stored subject and body and will still say "application" after
+this deploy. The local database holds no overrides at all; staging and
+production need checking. If one is found and its text was never actually
+rewritten, `law_setup_retire_booking_received_emails()` in
+`functions/setup-account-pages.php` is the precedent for dropping a stale key
+from both the `?setup-account-pages` trigger and a migration step.
+
+**Not changed.** The receptions keep "Book now" and "Your place at X is
+confirmed": the client's ask was about the application vocabulary, and a
+pay-now reception place was never applied for. "My bookings" keeps its name as
+the container for all three kinds of place, so the delegate's ticket still lives
+under My bookings rather than under a second, parallel noun.
+
+### Two buttons on every event card (15 September 2026)
+
+An event card carried its booking button only when there was one to carry.
+Everything else — places not released yet, invitation only, the event has been
+and gone, an event the committee has not published — dropped to Event details
+alone, and a row with one lonely button reads as a card that has forgotten its
+button rather than as an event nobody can book yet. The single event view has
+said "Bookings open soon" in its panel since the booking states were built
+(`law_booking_render_action_body()`); the programme said nothing, so the only
+way to find out was to open every event on the page (Denis, 15 September 2026).
+
+**Every card now carries two buttons, the second one disabled with the reason
+on it when there is nothing to press.** `law_booking_card_inert_action()`
+(`functions/account-bookings.php`) maps the actionless states to their words —
+`not-open` → "Bookings open soon", `closed` → "Bookings closed", `invitation` →
+"Invitation only", and an event with no resolvable state at all (an unpublished
+one, which only the committee's own programme lists) → "Bookings not open".
+`law_flagship_card_inert_action()` (`functions/account-flagship.php`) is its
+counterpart for the conference, in the conference's own vocabulary:
+"Registration opens soon", "Registration closed", "Registration not open"
+before it is published. A place there is registered for rather than booked, and
+the two surfaces should not name the same wait two ways.
+
+Three details worth keeping:
+
+- **It is a real disabled `<button>`, not a greyed link.** An anchor with an
+  `href` is still followed on click and on Enter whatever `aria-disabled` says,
+  and this control has nowhere to send anybody. `parts/loop/event.php` already
+  drew the `disabled` action entry that way for an external event whose
+  organiser has not opened registration; that branch is now the common path,
+  and `law_booking_card_inert()` is the one place the entry is built (the
+  external no-URL case calls it too). The dimming and the dead pointer come
+  from `.law-cal .button[aria-disabled="true"]` in calendar.css, which already
+  existed for exactly this.
+- **Only when the row is a button short.** The fallback sits in
+  `parts/loop/event.php` behind `count( $law_actions ) < 2`, so the callers
+  that pass their own actions — My events (Edit, Comments, Withdraw…), My
+  bookings (View event, Manage) — are untouched. A dead button beside four live
+  ones is noise, not information. `law_booking_card_action()` and
+  `law_flagship_card_action()` keep their existing contracts and still return
+  null: what a caller's `'action'` scope filtered out is not an actionless
+  state, and inventing a reason for it would be a lie.
+- **Not on the legacy source.** `law_booking_card_inert_action()` returns null
+  unless `law_events_source()` is `'cpt'`: the GF programme has no booking
+  system at all, and a dead "Bookings…" button on every card there would be
+  explaining a feature the page has not got. Legacy cards keep their single
+  Event details button until cutover.
+
+`parts/events/flagship-card.php` gained the same treatment, so the programme's
+conference block is never a one-button block either; it renders the inert entry
+as a disabled `<button>` and its live entry as the anchor it always was.
+Pinned by `BookingCardActionTest::test_the_states_with_nothing_to_press_each_name_their_reason`,
+`::test_the_card_partial_renders_the_second_button_disabled` (two buttons on the
+row, and the second inert), `::test_the_legacy_source_gets_no_inert_button` and
+`FlagshipCardActionTest::test_the_conference_names_its_reason_when_there_is_nothing_to_press`.
+
+### The dashboard keyword box learns about firms (15 September 2026)
+
+A client comment on staging — "Can't Search by firm name. Can we change that?"
+(Emily O'Callaghan) — turned out to be exactly right, and to reproduce on the
+first try. The Events dashboard's keyword box was a plain WordPress core
+search, so it read the event post's title, excerpt and content and never
+touched `_law_host_organisations`, where the firm actually lives. Typing
+"Mayer Brown" returned nothing while two of its events sat a few rows down the
+same list. The Host column showed the submitting person's `display_name` and no
+firm, so the failure was doubly invisible: nothing matched, and nothing on
+screen named a firm to suggest what had gone wrong.
+
+Three things changed together, because any one of them alone would have left
+the surface dishonest:
+
+1. The keyword now resolves to an explicit ID set across core search, the host
+   organisation text and the linked organisation records
+   (`law_committee_keyword_event_ids()`, see `committee.php` above for the two
+   `WP_Query` traps that decide its shape).
+2. The Host column prints the firm under the person, so a firm search returns
+   rows that visibly contain the firm.
+3. The exports gained the "Host organisation(s)" column they had never had.
+
+The timeline view and all three export formats inherited the search for free:
+`slot-chart.php` and `export.php` both go through `law_committee_events()`.
+
+**The limitation worth remembering.** `_law_host_organisations` is free text a
+host types, and the live data is already inconsistent — "36 Stone," and
+"36 Stone" are two separate events, and "Evershed Sutherland" appears where
+"Eversheds Sutherland" was meant. A substring search copes with most of that
+("Evershed" finds both spellings) but it cannot merge them, and there is no
+trustworthy "all events by this firm" count to be had from the field. Making
+that reliable would mean linking each event to an `organisation` post at
+submission, which is a larger, separate piece of work. Do not describe this
+search to the committee as exact.
+
+
+### The venue capacity band gained a floor (15 September 2026)
+
+Places available had to sit **inside** the chosen venue capacity band, not
+merely under its ceiling (Denis): with the band set to "51-100", places of 50
+and of 101 are both refused. Only the ceiling had ever been checked, so a
+"101-150" room releasing 20 places saved without complaint.
+
+**The floors are derived, not restated.**
+`law_events_venue_capacity_band_floor()` (settings.php, beside the band list)
+reads `law_events_venue_capacity_bands()` and returns the previous band's
+ceiling plus one, so the two halves of a band cannot drift: 1, 51, 101, 151,
+251, and no floor for "TBC", which follows an uncapped band. **The band list
+must therefore stay in ascending order**, which its doc block now says. Note
+that **"251+" is bounded below (251)** where it used to constrain nothing at
+all — it is uncapped above, not unbounded — and "TBC" is now the only band that
+bounds nothing, which is the point of it.
+
+**The rule moved into one function.** It had been implemented twice, in
+`law_committee_venue_input_error()` and inline in `law_events_form_save()`, and
+only one of them would have grown the floor.
+**`law_events_venue_pair_error( $band, $places, $check_floor )`** now holds it.
+It names which **half** of the pair is at fault (`'band'` or `'places'`) rather
+than a form field, because the two callers name their fields differently and the
+event form has the further job of deciding which half the submitter can reach.
+`law_committee_venue_input_error()` survives as a thin wrapper returning only
+the message: the panel shows one message and has no field to key an error to.
+
+**The two bounds are not symmetrical, and this is the important part.** The
+ceiling is checked whichever half was posted, because releasing more places than
+the room holds oversells the event. The floor is checked **only when the places
+are the half being set**, which is what `$check_floor` is for. A band merely
+bigger than the places released harms nothing, and enforcing it both ways would
+have destroyed the 14 September rule directly above: a host under review may
+still correct the room's size, and the common correction is *upwards* — they
+moved somewhere bigger. Judging a posted "151-250" against the committee's
+stored 120 places would refuse exactly that.
+`test_the_floor_never_blocks_a_host_moving_to_a_bigger_room()` is that case, and
+`test_a_host_under_review_may_still_change_the_band()` was the passing test the
+naive version broke.
+
+**A pair nobody can reach is no longer judged at all.** Both halves are locked
+for a host from approval, so they post neither and the check ran
+stored-against-stored, refusing **every unrelated edit** — description,
+speakers, agenda, contacts — with the message on a disabled control. That was
+already live for the ceiling: any approved event whose stored pair breaks it
+locked its host out of their own form entirely, and 14 migrated events are in
+that shape. `law_events_form_save()` now skips the pair check when the submitter
+can move neither half. This is not grandfathering, which Denis ruled out: the
+committee, who can always move both, is still refused on any save, through the
+panel and the shared form alike.
+
+**The form learned the band check the panel already had.** An unrecognised band
+posted to `law_events_form_save()` used to be stored and then read as "no
+ceiling" everywhere, quietly uncapping the allocation; the panel has refused one
+since 9 September. The form now refuses it too, on `venue_capacity`.
+
+**The script stopped rewriting the number.** `assets/js/event-form.js` silently
+clamped an over-band value down to the ceiling, so a host who typed 900 watched
+it become 50 with no explanation — and a clamp means the server rule can only
+ever fire on a tampered post. It now leaves the value alone and renders an
+inline `.law-form-error` beside the field, built the way `photoError()` builds
+its own. It **never writes to the field**: on the committee panel, quietly
+*raising* the places would run `law_event_tickets_changed()` on save, which
+offers the new places to the waitlist and emails people.
+
+The `min`/`max` attributes are maintained only where a stale value cannot do
+harm, which is what the new **`data-law-strict`** attribute marks. The host
+form opts in: the field is the one being edited, and a locked one is `disabled`
+and so exempt from constraint validation. **The committee panel deliberately
+opts out**, because its Approve, Send back, Reject, Mark paid, Cancel and
+Delete buttons all submit the same `<form>`, so an attribute the stored value
+violates would block every one of them behind a validation bubble.
+
+**Two things this entry does not fix, both raised with Denis and deferred.**
+
+- **The panel is already blocked on a breaching event.** The PHP-rendered `max`
+  on `law-dash-places` makes the whole controls form invalid when the stored
+  places exceed the stored band, and none of the action buttons carry
+  `formnovalidate`. On the 14 above-ceiling events the committee cannot
+  approve, send back, reject, mark paid, cancel **or delete** from the
+  dashboard. `law_venue_present` also rides along on every AJAX action
+  (`committee-actions.js` posts the whole form), so the server refuses those
+  actions too, and the message surfaces inside whichever modal is open. A
+  capacity rule should not be able to block a delete. Denis chose to raise this
+  separately rather than widen the change; this entry is the record of it.
+- **"Blank means no limit" is wrong wherever it is written.**
+  `law_event_tickets_remaining()` (bookings.php) returns `null` for 0 or unset
+  and its own doc block says so plainly — the event is **not open for booking**,
+  and "neither can mean unlimited". `law_booking_guard_seats()` then refuses
+  with "Booking for this event has not opened yet." So a committee member who
+  clears Places available expecting to lift the cap silently closes bookings.
+  The panel's help text and the refusal copy were corrected here, and so were
+  the two earlier passages in this document that repeated the claim — one of
+  which cited `law_events_bookings_remaining()`, **a function that does not
+  exist**. The behaviour itself is untouched: whether a cleared Places field
+  *should* mean "no limit" or "bookings closed" is a product question nobody has
+  put to Denis.
+
+**17 live events breached a bound when this was written** — 14 above the
+ceiling, 3 below a floor, migrated data that never passed through the current
+check. Several below-floor ones look deliberate rather than wrong ("FTI
+Consulting London Arbitration Week Quiz", 101-150 with 20 places), which is the
+case against a floor: Places available is the booking capacity, not a fact about
+the room. Denis chose the hard rule anyway. Each is fixable in one save from the
+committee panel, where both halves post together.
 
 ---
 

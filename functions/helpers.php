@@ -51,6 +51,11 @@ function law_icon_paths() {
 		// A raised glass: the drinks receptions (RECEPTIONS.md §0.4).
 		'receptions' => '<path d="M4 4h16l-8 9-8-9Z"/><path d="M12 13v7"/><path d="M8 21h8"/>',
 		'signout'    => '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+		// The north-east arrow that says "this link leaves the site". It was
+		// inline in parts/loop/event.php until external events needed the same
+		// glyph on the single-event panel button (15 September 2026); this table
+		// exists precisely so it is not drawn twice and differently.
+		'external'   => '<path d="M14 3h7v7"/><path d="M10 14 21 3"/>',
 	);
 }
 

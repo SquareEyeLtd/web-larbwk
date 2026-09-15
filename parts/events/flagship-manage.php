@@ -195,7 +195,7 @@ get_template_part(
 					<label for="law-fm-places"><?php esc_html_e( 'Places available', 'law' ); ?></label>
 					<input type="number" id="law-fm-places" name="law_flagship[places]" min="0" step="1"
 						value="<?php echo esc_attr( (string) (int) $law_fm_values['places'] ); ?>">
-					<span class="law-form-hint"><?php esc_html_e( 'Applications are never refused when this runs out: the page tells the delegate the conference is full and that they will be queued, and you can still approve them. Zero means no number has been set yet.', 'law' ); ?></span>
+					<span class="law-form-hint"><?php esc_html_e( 'Registrations are never refused when this runs out: the page tells the delegate the conference is full and that they will be queued, and you can still approve them. Zero means no number has been set yet.', 'law' ); ?></span>
 				</p>
 
 				<div class="law-row-grid">
@@ -239,7 +239,7 @@ get_template_part(
 						placeholder="<?php esc_attr_e( 'Page ID, or https://…', 'law' ); ?>"
 						value="<?php echo esc_attr( (string) $law_fm_values['attendee_terms'] ); ?>">
 					<span class="law-form-hint">
-						<?php esc_html_e( 'The terms a delegate agrees to when they apply. A page ID or a full address. These are the ATTENDEE terms, not the terms a host signs: those mention the £1,200 host fee and must never be shown here. Leave it empty and the link falls back to the Policies index.', 'law' ); ?>
+						<?php esc_html_e( 'The terms a delegate agrees to when they register. A page ID or a full address. These are the ATTENDEE terms, not the terms a host signs: those mention the £1,200 host fee and must never be shown here. Leave it empty and the link falls back to the Policies index.', 'law' ); ?>
 					</span>
 					<?php
 					// Say where it currently points, because "a page ID or a
@@ -254,7 +254,7 @@ get_template_part(
 							<strong class="law-flagship-bookings__over">
 								<?php esc_html_e( 'Not set.', 'law' ); ?>
 							</strong>
-							<?php esc_html_e( 'Delegates are being sent to the Policies index, which may not say anything about registering. Set this before applications open.', 'law' ); ?>
+							<?php esc_html_e( 'Delegates are being sent to the Policies index, which may not say anything about registering. Set this before registration opens.', 'law' ); ?>
 						<?php endif; ?>
 					</span>
 				</p>

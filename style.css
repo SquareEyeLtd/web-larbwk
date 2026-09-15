@@ -225,6 +225,21 @@ form .button.primary,
     max-width: 100%;
 }
 
+/*
+ * Spam honeypot (law_events_honeypot_field()).
+ *
+ * Lives here, in the always-loaded stylesheet, rather than in event-form.css:
+ * the field is printed by forms all over the site, including ones on templates
+ * that never load the form stylesheet, and when the rule is missing the visitor
+ * sees a bare "Leave this field empty" input sitting in the page.
+ */
+.law-hp {
+    position: absolute !important;
+    left: -9999px;
+    height: 1px;
+    overflow: hidden;
+}
+
 /* WP-specific overrides */
 .admin-bar .nav {
     top: 32px;

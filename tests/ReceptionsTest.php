@@ -39,7 +39,6 @@ class ReceptionsTest extends LAW_Test_Case {
 			array_merge(
 				array(
 					'_law_is_reception'         => 1,
-					'_law_is_law_event'         => 1,
 					'_law_start'                => gmdate( 'Y-m-d H:i', strtotime( '+30 days 18:30' ) ),
 					'_law_end'                  => gmdate( 'Y-m-d H:i', strtotime( '+30 days 20:30' ) ),
 					'_law_tickets_available'    => 10,

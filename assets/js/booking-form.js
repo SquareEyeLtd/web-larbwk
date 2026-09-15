@@ -3,7 +3,7 @@
  * three no-JS-complete pieces.
  *
  * 1. Every booking opener — Register and Join waitlist on an event card and on
- *    the event page itself, and the flagship's Apply on both — is a real link
+ *    the event page itself, and the flagship's Register on both — is a real link
  *    to the inline form (?law_book=1, ?law_waitlist=1, ?law_flagship_apply=1)
  *    carrying data-law-book. With JS, section 2b opens the placeholder dialog
  *    on the press and fetches that one event's real dialog into it

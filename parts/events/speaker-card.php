@@ -57,7 +57,15 @@ $law_sc_dialog = $law_sc_bio['trimmed'] ? law_speaker_dialog_register( $law_sc )
 			<?php endif; ?>
 			<span class="law-cal-speakers__name">
 				<?php if ( ! empty( $law_sc['url'] ) ) : ?>
-					<a href="<?php echo esc_url( (string) $law_sc['url'] ); ?>"><?php echo esc_html( $law_sc_name ); ?></a>
+					<?php
+					// A new tab, matching the dialog's "View speaker profile" link
+					// (parts/events/speaker-bio-modal.php): a reader following a
+					// speaker out of the running order should not lose the event
+					// listing they were reading (Denis, 15 September 2026). The
+					// screen-reader hint sits outside the link text so the link is
+					// still announced as the name alone.
+					?>
+					<a href="<?php echo esc_url( (string) $law_sc['url'] ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $law_sc_name ); ?><span class="show-for-sr"> <?php esc_html_e( '(opens in a new tab)', 'law' ); ?></span></a>
 				<?php else : ?>
 					<?php echo esc_html( $law_sc_name ); ?>
 				<?php endif; ?>

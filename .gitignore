@@ -34,3 +34,6 @@ EVENTS_4.1_FUNC.md
 
 .playwright/
 .playwright-cli/
+
+# PHP CS Fixer cache (local, per-machine)
+.php-cs-fixer.cache

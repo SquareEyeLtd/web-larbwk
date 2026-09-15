@@ -61,8 +61,12 @@ $law_cal_sessions_heading = __( 'Agenda', 'law' );
 // Reversed onto brand navy (Denis, 11 September 2026). The agenda is the
 // substance of this page -- it is the one day-long, paid event, and the reader
 // came for the running order and the speakers -- so it reads as a block of the
-// page rather than a list inside it. Only the timeline goes in the box: the
-// description stays above it on the white page, and the venue stays below.
+// page rather than a list inside it. Only the timeline goes in the box.
+//
+// The same flag also places it: a panel this wide belongs below the two
+// columns rather than inside the left one, so this page reads description,
+// with the venue in the sidebar beside it, and then the day
+// (parts/calendar-body.php, Denis 15 September 2026).
 $law_cal_sessions_panel = true;
 
 require get_theme_file_path( 'parts/calendar-body.php' );

@@ -89,7 +89,7 @@ $law_types     = law_calendar_field_choices( 63 );
 						<label class="show-for-sr" for="law-cal-run-by"><?php esc_html_e( 'Organiser', 'law' ); ?></label>
 						<select id="law-cal-run-by" name="law_run_by">
 							<option value=""><?php esc_html_e( 'Organiser', 'law' ); ?></option>
-							<option value="law" <?php selected( $law_filters['run_by'], 'law' ); ?>><?php esc_html_e( 'LAW events', 'law' ); ?></option>
+							<option value="external" <?php selected( $law_filters['run_by'], 'external' ); ?>><?php esc_html_e( 'External events', 'law' ); ?></option>
 							<option value="host" <?php selected( $law_filters['run_by'], 'host' ); ?>><?php esc_html_e( 'Hosted events', 'law' ); ?></option>
 						</select>
 					</p>

@@ -1,0 +1,370 @@
+/* The committee's timeline view (parts/events/slot-chart.php).
+   ---------------------------------------------------------------------------
+   One day at a time, time running left to right, every event a bar at its real
+   start and length, rows packed so that two events running at once are never on
+   the same row. The point is to see clashes: a vertical column of bars is a
+   clash, and there is nothing to click to find that out.
+
+   Loaded only on the dashboard's timeline view (functions/enqueue.php), so none
+   of this reaches the programme or the table.
+
+   Brand: navy #292459, orange #ef7d05. The bar colours are deliberately the
+   SAME palette as the status badges in calendar.css -- the committee already
+   reads navy as confirmed and outlined-orange as approved, and a second set of
+   status colours on the same dashboard would be a second thing to learn. */
+
+.law-slotchart {
+  /* The horizontal scroller. Everything inside is sized in minutes, so a long
+     day is wide rather than squashed, and wide is what scrolls. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 0.5rem;
+  /* Per-minute scale: 2px a minute puts a half hour at 60px and an hour at
+     120px. Zooming the whole chart is changing this one number. */
+  --law-sc-min: 2px;
+  --law-sc-lane: 2.1rem;
+  --law-sc-gap: 0.25rem;
+}
+
+.law-slotchart__track {
+  position: relative;
+  /* The +1 is the right-hand edge tick's own label, which is centred on the
+     axis end and would otherwise be clipped by the scroller. */
+  min-width: calc((var(--law-sc-span) + 30) * var(--law-sc-min));
+}
+
+/* --- The ruler ------------------------------------------------------------- */
+
+.law-slotchart__ruler {
+  position: relative;
+  height: 1.5rem;
+  border-bottom: 1px solid #d9d6e4;
+}
+
+.law-slotchart__tick {
+  position: absolute;
+  top: 0;
+  left: calc(var(--at) * var(--law-sc-min));
+  /* Centred on its own moment, so the label sits over the gridline it names
+     rather than to the right of it. */
+  transform: translateX(-50%);
+  color: #6b6684;
+  font-family: poppins, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.law-slotchart__tick.is-hour {
+  color: #292459;
+  font-weight: 600;
+}
+
+/* --- The running total ----------------------------------------------------- */
+
+.law-slotchart__density {
+  position: relative;
+  height: 1.35rem;
+  margin-top: 0.15rem;
+}
+
+.law-slotchart__count {
+  position: absolute;
+  top: 0;
+  /* Each figure sits in the middle of the half hour it counts, not on its
+     edge, so it reads as "this span" rather than "this instant". */
+  left: calc((var(--at) + 15) * var(--law-sc-min));
+  transform: translateX(-50%);
+  color: #9a96ad;
+  font-family: poppins, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  line-height: 1.35rem;
+}
+
+/* The day's own busiest half hour, and nothing else. Not a fixed threshold:
+   during this week two events at once is ordinary, so "more than one" would
+   light up almost every step and say nothing. */
+.law-slotchart__count.is-peak {
+  color: #ef7d05;
+  font-size: 0.75rem;
+}
+
+.law-slotchart__count abbr {
+  text-decoration: none;
+  border: 0;
+}
+
+/* --- The lanes ------------------------------------------------------------- */
+
+.law-slotchart__lanes {
+  position: relative;
+  margin: 0;
+  padding: 0.35rem 0 0;
+  list-style: none;
+  /* Gridlines with no DOM behind them: a hairline every half hour and a
+     stronger one on the hour. Anchored to the axis start, which is always a
+     half-hour boundary (law_slotchart_axis floors it), so the lines land under
+     the ruler's ticks. */
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      #c9c5d6 0,
+      #c9c5d6 1px,
+      transparent 1px,
+      transparent calc(60 * var(--law-sc-min))
+    ),
+    repeating-linear-gradient(
+      to right,
+      #efedf5 0,
+      #efedf5 1px,
+      transparent 1px,
+      transparent calc(30 * var(--law-sc-min))
+    );
+  background-repeat: repeat;
+}
+
+.law-slotchart__lane {
+  position: relative;
+  height: var(--law-sc-lane);
+  margin-bottom: var(--law-sc-gap);
+}
+
+/* --- The bars -------------------------------------------------------------- */
+
+.law-slotchart__bar {
+  position: absolute;
+  top: 0;
+  left: calc(var(--at) * var(--law-sc-min));
+  width: calc(var(--len) * var(--law-sc-min));
+  /* A fifteen-minute event is 30px wide, which is not enough for a character of
+     its title. The LEFT edge stays exact -- that is the one that has to be
+     trusted for reading a clash -- and only the right edge overruns. The bar's
+     title attribute always carries the true times. */
+  min-width: 4.5rem;
+  height: var(--law-sc-lane);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  box-sizing: border-box;
+  padding: 0 0.5rem;
+  border: 1px solid #292459;
+  border-radius: 3px;
+  background: #292459;
+  /* The ink is a token, not a plain colour, because it has to be re-asserted
+     on :hover and :focus below. The theme's global `a:hover { color: #fff }`
+     (app.css) outranks a single status class, so an Approved bar -- orange type
+     on white -- went white-on-white under the pointer. One token, set once per
+     status, and the two states below put it back. */
+  --law-sc-ink: #fff;
+  color: var(--law-sc-ink);
+  font-family: poppins, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  overflow: hidden;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+/* Lifted rather than recoloured: the colour is carrying the status and must not
+   change under the pointer. Restating colour and text-decoration is what beats
+   the theme's global a:hover, which would otherwise paint every bar's type
+   white and underline it. z-index so a hovered bar's full title can be read
+   over its neighbour when the two are tight together. */
+.law-slotchart__bar:hover,
+.law-slotchart__bar:focus,
+.law-slotchart__bar:active,
+.law-slotchart__bar:visited {
+  color: var(--law-sc-ink);
+  text-decoration: none;
+}
+
+.law-slotchart__bar:hover,
+.law-slotchart__bar:focus {
+  z-index: 2;
+  box-shadow: 0 2px 8px rgba(41, 36, 89, 0.35);
+  transform: translateY(-1px);
+}
+
+.law-slotchart__bar-time {
+  flex: 0 0 auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.law-slotchart__bar-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Status. Same colours as .law-cal-card__badge--* in calendar.css. */
+
+.law-slotchart__bar--confirmed {
+  background: #292459;
+  border-color: #292459;
+  --law-sc-ink: #fff;
+}
+
+.law-slotchart__bar--approved {
+  background: #fff;
+  border-color: #ef7d05;
+  --law-sc-ink: #ef7d05;
+}
+
+.law-slotchart__bar--proposed {
+  background: #f4f2fa;
+  border-color: #c9c5d6;
+  --law-sc-ink: #292459;
+}
+
+.law-slotchart__bar--sent-back {
+  background: #fdeee0;
+  border-color: #f0c9a0;
+  --law-sc-ink: #a35300;
+}
+
+.law-slotchart__bar--rejected {
+  background: #f3f3f3;
+  border-color: #d8d8d8;
+  --law-sc-ink: #666;
+}
+
+.law-slotchart__bar--cancelled {
+  background: #fdeaea;
+  border-color: #f0c4c3;
+  --law-sc-ink: #a12622;
+}
+
+.law-slotchart__bar--draft {
+  background: #fff;
+  border-color: #c9c5d6;
+  --law-sc-ink: #6b6684;
+  border-style: dashed;
+}
+
+/* An end that was never recorded. The drawn length is a two-hour default
+   (LAW_SLOTCHART_OPEN_MINUTES), so the right edge is a guess: it is dashed to
+   say so, and the label reads "onwards". A gradient fade was the first attempt
+   and it read as a rendering artefact at the right-hand end of the chart rather
+   than as a fact about the event (Denis, 15 September 2026). */
+.law-slotchart__bar.is-open-ended {
+  border-right-style: dashed;
+  border-right-width: 2px;
+}
+
+/* Who runs it, which is not a status: an outline marker on the left edge, so it
+   reads alongside the status colour rather than competing with it. */
+.law-slotchart__bar--kind-flagship,
+.law-slotchart__bar--kind-reception,
+.law-slotchart__bar--kind-external {
+  border-left-width: 4px;
+}
+
+.law-slotchart__bar--kind-flagship {
+  border-left-color: #ef7d05;
+}
+
+.law-slotchart__bar--kind-reception {
+  border-left-color: #7b74a8;
+}
+
+.law-slotchart__bar--kind-external {
+  border-left-color: #292459;
+}
+
+/* --- Day headings ---------------------------------------------------------- */
+
+/* .law-cal-day-bar carries padding-left: 1.1rem (calendar.css) to line the
+   programme's day headings up with its event cards, which are inset by their
+   own 4px edge plus their padding. The timeline has no such inset: its ruler,
+   its bars and the unscheduled list all start hard against the left of the
+   track, so the heading was the only thing indented and read as misaligned. */
+.law-slotchart-day > .law-cal-day-bar,
+.law-slotchart-unscheduled > .law-cal-day-bar {
+  padding-left: 0;
+}
+
+/* --- Days with nothing on, and events with no day -------------------------- */
+
+.law-slotchart-day .law-cal__empty {
+  margin: 0.25rem 0 1.5rem;
+  color: #6b6684;
+  font-size: 0.85rem;
+}
+
+.law-slotchart__unscheduled-list {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.law-slotchart__unscheduled-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid #e6e3ee;
+}
+
+.law-slotchart__unscheduled-link {
+  font-family: poppins, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #292459;
+}
+
+/* --- The view switch ------------------------------------------------------- */
+
+/* Sits beside "Create an external event" in .law-dashboard__actions, which is
+   already a flex row sizing its buttons to their labels (calendar.css). The
+   base .button in app.css is the outlined one -- white, navy type, orange rule
+   -- so the filled orange "create" button stays the primary action and this
+   reads as the secondary it is. Nothing to add but the reason. */
+
+/* --- Loading skeleton ------------------------------------------------------ */
+
+/* Rendered by assets/js/calendar-filters.js while a filter fetch is in flight
+   (data-law-skeleton="chart"). It reuses .law-cal-skeleton__bar from
+   calendar.css for the shimmer and the base tint; these two only give it the
+   timeline's shape, so the page does not flash the outline of a table. */
+
+.law-cal-skeleton__bar--ruler {
+  height: 1.5rem;
+  margin: 0 0 0.75rem;
+  background: #e6e3ee;
+}
+
+.law-cal-skeleton__bar--lane {
+  height: 2.1rem;
+  margin: 0 0 0.25rem;
+  /* Each lane a different width, because a real day's rows are ragged and a
+     stack of identical bars reads as a table again. */
+  width: 88%;
+}
+
+.law-cal-skeleton__bar--lane:nth-child(3) { width: 64%; }
+.law-cal-skeleton__bar--lane:nth-child(5) { width: 76%; }
+.law-cal-skeleton__bar--lane:nth-child(7) { width: 43%; }
+
+/* --- Motion ---------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .law-slotchart {
+    scroll-behavior: auto;
+  }
+
+  .law-slotchart__bar {
+    transition: none;
+  }
+
+  .law-slotchart__bar:hover,
+  .law-slotchart__bar:focus {
+    transform: none;
+  }
+}

@@ -3,11 +3,14 @@
  * An event's venue: the address, and the Google map when the address is a real
  * place (parts/calendar-body.php).
  *
- * Extracted 9 September 2026 so the section can render in either of two
- * positions without the markup existing twice. The ordinary single event view
- * puts it above the sessions; the flagship page puts it below the agenda,
- * because on a day-long conference the running order is what the reader came
- * for and the venue is a detail they need once.
+ * Extracted 9 September 2026 so the section could render in either of two
+ * positions without the markup existing twice, which is still what it is for.
+ * On a hosted event it sits at the foot of the reading column, below the
+ * sessions: the running order is what the reader came for and the address is a
+ * detail they need once. On the flagship it moves to the sidebar, beside a
+ * description that would otherwise have half a row to itself, that page's
+ * agenda being a panel below both columns (parts/calendar-body.php, 15
+ * September 2026).
  *
  * get_template_part( 'parts/events/event-venue', null, array(
  *   'venue' => $event['venue'], // required; nothing renders when empty

@@ -75,7 +75,7 @@ function law_prepopulate_orgid( $value ) {
  * This constant governs the legacy Gravity Forms route only. The custom module
  * keeps the same information as a per-slot `retired` flag in the events
  * settings slot list (see law_events_slots()); step 7 of the migration copies
- * these four labels into it, so retire a slot in LAW > Events settings from now
+ * these four labels into it, so retire a slot in Events > Settings from now
  * on and treat this list as history.
  *
  * Do not delete a choice in the form editor — Gravity Forms only saves values

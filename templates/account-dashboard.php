@@ -43,8 +43,21 @@ if ( $law_preview_id && law_user_is_committee() && 'cpt' === law_events_source()
 	// check inside law_events_map_post() still handles an id naming a page or
 	// a booking.
 	$law_preview_statuses = array_diff( array_keys( law_event_statuses() ), array( 'law-draft' ) );
+	// An EXTERNAL event's draft is previewable, unlike a host's. The exclusion
+	// above exists because a law-draft is normally unsubmitted host data that
+	// the committee has no business reading; an external draft is the
+	// committee's own work, and the detail view offers them a Preview button
+	// for it, which fell through to the events list without this
+	// (browser pass, 15 September 2026).
+	$law_preview_external = function_exists( 'law_external_event_is' ) && law_external_event_is( $law_preview_id );
+	if ( $law_preview_external ) {
+		$law_preview_statuses[] = 'law-draft';
+	}
+	// array() means "every status but law-draft" to law_events_map_post(), which
+	// drops a draft on its own regardless of the list above; array( '*' ) is how
+	// a caller says it wants drafts too.
 	$law_preview          = in_array( get_post_status( $law_preview_id ), $law_preview_statuses, true )
-		? law_events_map_post( $law_preview_id, array() )
+		? law_events_map_post( $law_preview_id, $law_preview_external ? array( '*' ) : array() )
 		: null;
 	if ( $law_preview ) {
 		$law_cal_event       = law_events_cpt_hydrate( $law_preview );
@@ -67,6 +80,12 @@ $law_can    = law_user_is_committee();
 // (parts/events/committee-event-form.php) on this same page, so the Members
 // gate and the committee check above cover it with no extra routing.
 $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
+// ?law_external=new|<id> swaps in the committee's external-event form
+// (parts/events/external-manage.php), on this page rather than one of its own:
+// an external event is one of the events this dashboard lists, and a separate
+// page would be database state to provision on every environment for a screen
+// that is already here.
+$law_external = function_exists( 'law_external_event_requested' ) ? law_external_event_requested() : 0;
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
@@ -77,6 +96,28 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 
 	<?php if ( ! $law_can ) : ?>
 		<p><?php esc_html_e( 'This dashboard is for the LAW committee.', 'law' ); ?></p>
+
+	<?php elseif ( $law_external ) : ?>
+		<?php
+		// The same notices the list renders: a refused save returns to this
+		// branch, and a bookmarked or hand-typed URL can carry one too.
+		$law_form_notice  = sanitize_key( $_GET['law_notice'] ?? '' );
+		$law_form_notices = function_exists( 'law_external_event_notices' ) ? law_external_event_notices() : array();
+		?>
+		<?php if ( isset( $law_form_notices[ $law_form_notice ] ) ) : ?>
+			<div class="law-form-notice <?php echo esc_attr( $law_form_notices[ $law_form_notice ][0] ); ?>" role="status">
+				<?php echo esc_html( $law_form_notices[ $law_form_notice ][1] ); ?>
+			</div>
+		<?php endif; ?>
+		<?php get_template_part( 'parts/events/external-manage', null, array( 'event_id' => 'new' === $law_external ? 0 : (int) $law_external ) ); ?>
+
+	<?php elseif ( $law_edit_mode && law_external_event_is( $law_detail->ID ) ) : ?>
+		<?php
+		// An external event reached through the host edit URL. Redirected in
+		// place rather than refused: the committee member wanted to edit this
+		// event, and the form that edits it is one branch up.
+		get_template_part( 'parts/events/external-manage', null, array( 'event_id' => (int) $law_detail->ID ) );
+		?>
 
 	<?php elseif ( $law_edit_mode ) : ?>
 		<?php get_template_part( 'parts/events/committee-event-form', null, array( 'post' => $law_detail ) ); ?>
@@ -90,9 +131,13 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 		$law_stripe_error = law_event_meta( $law_id, '_law_stripe_error' );
 		$law_fee    = (int) law_event_meta( $law_id, '_law_fee_pence' );
 
+		// Back to the view this event was opened from. A bar on the timeline
+		// carries law_view and the filters in its href (law_slotchart_item()),
+		// so arriving from the chart returns to the chart; arriving from the
+		// table is the bare permalink it always was.
 		get_template_part( 'parts/layout/back-link', null, array(
-			'url'   => get_permalink(),
-			'label' => __( 'Back to all events', 'law' ),
+			'url'   => law_slotchart_is_active() ? law_slotchart_url() : get_permalink(),
+			'label' => law_slotchart_is_active() ? __( 'Back to the timeline', 'law' ) : __( 'Back to all events', 'law' ),
 		) );
 		?>
 
@@ -127,9 +172,16 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 				<h1 class="law-dashboard__title"><?php echo esc_html( $law_detail->post_title ); ?>
 					<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( law_calendar_status_slug( $law_status ) ); ?>"><?php echo esc_html( $law_status ); ?></span></h1>
 
-				<?php if ( 'law-draft' !== $law_detail->post_status ) : // A draft belongs to its host: neither edited nor previewed here. ?>
+				<?php
+				// A HOST's draft belongs to its host: neither edited nor previewed
+				// here. An external event's draft is the committee's own, and means
+				// only "not on the programme yet", so it keeps both.
+				$law_is_external_event = law_external_event_is( $law_id );
+				$law_detail_editable   = 'law-draft' !== $law_detail->post_status || $law_is_external_event;
+				?>
+				<?php if ( $law_detail_editable ) : ?>
 					<p class="law-dashboard__event-actions">
-						<a class="button" href="<?php echo esc_url( add_query_arg( array( 'event' => $law_id, 'law_edit' => 1 ), get_permalink() ) ); ?>">Edit event details</a>
+						<a class="button" href="<?php echo esc_url( $law_is_external_event ? law_external_event_url( $law_id ) : add_query_arg( array( 'event' => $law_id, 'law_edit' => 1 ), get_permalink() ) ); ?>">Edit event details</a>
 						<?php
 						// The preview renders law_event posts, so there is nothing to
 						// offer pre-cutover. Once the event is Confirmed there is a real
@@ -164,7 +216,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					// to see the value is to find the control further down the page.
 					$law_detail_sessions = count( law_event_session_ids( $law_id ) );
 					?>
-					<dt>Run by</dt><dd><?php echo esc_html( law_event_meta( $law_id, '_law_is_law_event' ) ? 'LAW' : 'An external host' ); ?></dd>
+					<dt>Run by</dt><dd><?php echo esc_html( law_event_meta( $law_id, '_law_is_external' ) ? 'An external organiser' : 'A host' ); ?></dd>
 					<dt>Session agenda</dt><dd><?php
 						if ( law_event_meta( $law_id, '_law_session_agenda' ) || $law_detail_sessions ) {
 							echo esc_html(
@@ -225,6 +277,15 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 								$law_speaker = get_post( $law_card['id'] );
 								$law_sp_web  = (string) law_event_meta( $law_speaker->ID, '_law_website' );
 								$law_sp_bio  = trim( (string) $law_speaker->post_content );
+								// Every one of these is optional now: the job title and the
+								// organisation since 15 September 2026, and the email on the
+								// 173 speakers the migration brought in from the legacy List
+								// field 48, which never carried one. So each line is printed
+								// only when it has something in it — an unguarded mailto: used
+								// to render an empty link, and the separator before the profile
+								// link was left orphaned.
+								$law_sp_email = (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' );
+								$law_sp_meta  = implode( ' · ', array_filter( array( $law_card['job_title'], $law_card['organisation'] ) ) );
 								?>
 								<li>
 									<?php if ( $law_card['photo'] ) : ?>
@@ -234,9 +295,13 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 										<strong><?php echo esc_html( $law_card['name'] ); ?></strong>
 										<?php $law_card_role = law_speaker_role_display( $law_card['role'] ); ?>
 										<?php if ( '' !== $law_card_role ) : ?><span class="law-dashboard__person-role">(<?php echo esc_html( $law_card_role ); ?>)</span><?php endif; ?>
-										<?php echo esc_html( implode( ' · ', array_filter( array( $law_card['job_title'], $law_card['organisation'] ) ) ) ); ?>
-										<br><a href="mailto:<?php echo esc_attr( (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' ) ); ?>"><?php echo esc_html( (string) law_event_meta( $law_speaker->ID, '_law_speaker_email' ) ); ?></a>
-										<?php if ( $law_sp_web ) : ?> · <a href="<?php echo esc_url( $law_sp_web ); ?>" target="_blank" rel="noopener">Profile ↗</a><?php endif; ?>
+										<?php if ( '' !== $law_sp_meta ) : ?><?php echo esc_html( $law_sp_meta ); ?><?php endif; ?>
+										<?php if ( '' !== $law_sp_email || '' !== $law_sp_web ) : ?>
+											<br>
+											<?php if ( '' !== $law_sp_email ) : ?><a href="mailto:<?php echo esc_attr( $law_sp_email ); ?>"><?php echo esc_html( $law_sp_email ); ?></a><?php endif; ?>
+											<?php if ( '' !== $law_sp_email && '' !== $law_sp_web ) : ?> · <?php endif; ?>
+											<?php if ( '' !== $law_sp_web ) : ?><a href="<?php echo esc_url( $law_sp_web ); ?>" target="_blank" rel="noopener">Profile ↗</a><?php endif; ?>
+										<?php endif; ?>
 										<?php // Rich text (functions/events/rich-text.php): the host wrote this in a WYSIWYG editor, so the preview has to show the formatting rather than the source. ?>
 										<?php if ( $law_sp_bio ) : ?><div class="law-dashboard__person-bio"><?php echo law_rich_text_render( $law_sp_bio ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- wp_kses'd against the rich-text allowlist. ?></div><?php endif; ?>
 									</div>
@@ -390,8 +455,11 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					<p class="law-form-field"><label for="law-dash-capacity">Venue capacity</label>
 						<select id="law-dash-capacity" name="law_venue_capacity" data-law-capacity>
 							<option value="">(not set)</option>
-							<?php foreach ( $law_dash_bands as $law_dash_band => $law_dash_band_max ) : ?>
-								<option value="<?php echo esc_attr( $law_dash_band ); ?>" data-law-max="<?php echo esc_attr( null === $law_dash_band_max ? '' : (string) $law_dash_band_max ); ?>" <?php selected( $law_dash_capacity, $law_dash_band ); ?>><?php echo esc_html( $law_dash_band ); ?></option>
+							<?php
+							foreach ( $law_dash_bands as $law_dash_band => $law_dash_band_max ) :
+								$law_dash_band_min = law_events_venue_capacity_band_floor( $law_dash_band );
+								?>
+								<option value="<?php echo esc_attr( $law_dash_band ); ?>" data-law-max="<?php echo esc_attr( null === $law_dash_band_max ? '' : (string) $law_dash_band_max ); ?>" data-law-min="<?php echo esc_attr( null === $law_dash_band_min ? '' : (string) $law_dash_band_min ); ?>" <?php selected( $law_dash_capacity, $law_dash_band ); ?>><?php echo esc_html( $law_dash_band ); ?></option>
 							<?php endforeach; ?>
 						</select></p>
 
@@ -399,7 +467,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 						<input type="number" id="law-dash-places" name="law_tickets_available" min="1"
 							<?php echo null === $law_dash_max ? '' : 'max="' . esc_attr( (string) $law_dash_max ) . '"'; ?>
 							data-law-tickets value="<?php echo esc_attr( '0' === $law_dash_places ? '' : $law_dash_places ); ?>">
-						<small>Places cannot exceed the band, and "251+" and "TBC" set no ceiling at all. Leave this blank for an event with no limit. Raising it offers the new places to anyone on the waitlist.</small></p>
+						<small>Places must fall inside the band; only "TBC" sets no bounds. Leave this blank to keep bookings closed. Raising it offers the new places to anyone on the waitlist.</small></p>
 
 					<p class="law-form-field"><label for="law-dash-assignee">Assignee</label>
 						<select id="law-dash-assignee" name="law_assignee">
@@ -418,7 +486,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					// that class is coloured #d7d7ea for the dark host form and only
 					// repainted under .law-event-form--light, so it would render pale
 					// lilac on this white panel.
-					$law_is_law_event   = (bool) law_event_meta( $law_id, '_law_is_law_event' );
+					$law_is_external   = (bool) law_event_meta( $law_id, '_law_is_external' );
 					$law_agenda_on      = (bool) law_event_meta( $law_id, '_law_session_agenda' );
 					$law_session_count  = count( law_event_session_ids( $law_id ) );
 					?>
@@ -426,9 +494,9 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 
 					<div class="law-form-field">
 						<div class="law-choices">
-							<label><input type="checkbox" name="law_is_law_event" value="1" <?php checked( $law_is_law_event ); ?>> Run by LAW, not an external host</label>
+							<label><input type="checkbox" name="law_is_external" value="1" <?php checked( $law_is_external ); ?>> External: booked on the organiser&rsquo;s own website</label>
 						</div>
-						<small>Tick this for an event LAW organises itself. It adds a LAW tag to the events list and the exports, and it lets visitors pick &ldquo;LAW events&rdquo; from the Organiser filter on the public programme.</small>
+						<small>Tick this for an event a third party runs and takes bookings for itself. It adds an External tag to the events list and the exports, it lets visitors pick &ldquo;External events&rdquo; from the Organiser filter on the public programme, and it replaces the Register button with a link out to the organiser. Events created with &ldquo;Create an external event&rdquo; are ticked already.</small>
 					</div>
 
 					<div class="law-form-field">
@@ -737,6 +805,39 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 			<div class="law-form-notice" role="status">Event moved to trash. It can be restored from the wp-admin Events list.</div>
 		<?php endif; ?>
 		<?php
+		// The external-event form redirects back here with its own notice.
+		$law_list_notice  = sanitize_key( $_GET['law_notice'] ?? '' );
+		$law_list_notices = function_exists( 'law_external_event_notices' ) ? law_external_event_notices() : array();
+		?>
+		<?php if ( isset( $law_list_notices[ $law_list_notice ] ) ) : ?>
+			<div class="law-form-notice <?php echo esc_attr( $law_list_notices[ $law_list_notice ][0] ); ?>" role="status">
+				<?php echo esc_html( $law_list_notices[ $law_list_notice ][1] ); ?>
+			</div>
+		<?php endif; ?>
+
+		<?php
+		// Above the filter bar, the placement the receptions and discounts
+		// dashboards use for their own "add" button. A full page rather than a
+		// dialog, unlike the smaller add-forms on this site: this one carries a
+		// repeating speakers table and a whole session agenda, and the two
+		// events migrated from form 10 (Event > external events) that have an
+		// agenda have eight sessions and thirteen.
+		?>
+		<?php $law_slotchart = law_slotchart_is_active(); ?>
+		<p class="law-dashboard__actions">
+			<a class="button orange" href="<?php echo esc_url( law_external_event_url( 'new' ) ); ?>"><?php esc_html_e( 'Create an external event', 'law' ); ?></a>
+			<?php
+			// One control with two states, not two controls: the outlined base
+			// .button (app.css) against the filled orange one, so the create
+			// action stays primary and the view switch reads as secondary. The
+			// current filters travel with it (law_slotchart_url()), so pressing
+			// it changes how the events are drawn and never which events.
+			?>
+			<a class="button" href="<?php echo esc_url( law_slotchart_url( $law_slotchart ? '' : LAW_SLOTCHART_VIEW ) ); ?>">
+				<?php echo $law_slotchart ? esc_html__( 'Back to list view', 'law' ) : esc_html__( 'Timeline view', 'law' ); ?>
+			</a>
+		</p>
+		<?php
 		// The filter bar reuses the programme page's markup, CSS and JS
 		// (parts/calendar-filters.php, assets/js/calendar-filters.js): keyword
 		// and status filter over AJAX, mobile filters modal, GET fallback.
@@ -744,7 +845,6 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 		$law_current  = sanitize_key( $_GET['law_status'] ?? '' );
 		$law_kw       = sanitize_text_field( wp_unslash( $_GET['law_kw'] ?? '' ) );
 		$law_run_by   = sanitize_key( $_GET['law_run_by'] ?? '' );
-		$law_agenda   = sanitize_key( $_GET['law_agenda'] ?? '' );
 		$law_page_url = get_permalink();
 		?>
 		<div class="law-cal-controls" data-law-cal-controls data-page-url="<?php echo esc_url( $law_page_url ); ?>">
@@ -761,6 +861,21 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 					</div>
 
 					<form class="law-cal-filter-form" id="law-cal-filter-form" method="get" action="<?php echo esc_url( $law_page_url ); ?>">
+						<?php
+						// Load-bearing, and not obviously so. filterParams() in
+						// assets/js/calendar-filters.js builds BOTH the replaced
+						// URL and the &law_partial=1 fetch URL from the named
+						// inputs inside this form, and silently drops every other
+						// query argument. Without this hidden field the first
+						// keystroke in the keyword box would fetch the table
+						// partial, swap the chart for it, and strip the view from
+						// the address bar. assets/js/export-buttons.js reads the
+						// form by the same rule, so the exports keep the view too.
+						?>
+						<?php if ( $law_slotchart ) : ?>
+							<input type="hidden" name="<?php echo esc_attr( LAW_SLOTCHART_ARG ); ?>" value="<?php echo esc_attr( LAW_SLOTCHART_VIEW ); ?>">
+						<?php endif; ?>
+
 						<p class="law-cal-filter-form__field law-cal-filter-form__field--keyword">
 							<label class="show-for-sr" for="law-dash-kw"><?php esc_html_e( 'Keyword', 'law' ); ?></label>
 							<input
@@ -777,38 +892,38 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 							<label class="show-for-sr" for="law-dash-status"><?php esc_html_e( 'Status', 'law' ); ?></label>
 							<select id="law-dash-status" name="law_status">
 								<option value=""><?php esc_html_e( 'All statuses', 'law' ); ?></option>
-								<?php foreach ( law_event_statuses() as $law_status_key => $law_config ) :
-									if ( 'law-draft' === $law_status_key ) { continue; } ?>
+								<?php
+								foreach ( law_event_statuses() as $law_status_key => $law_config ) :
+									// Draft is here only for external events, which the
+									// committee creates and can leave off the programme. A
+									// host's draft is still their own private data and is
+									// never listed (law_committee_events()), so the option
+									// says which drafts it means.
+									$law_status_label = 'law-draft' === $law_status_key
+										? __( 'Draft (external)', 'law' )
+										: $law_config['label'];
+									?>
 									<option value="<?php echo esc_attr( $law_status_key ); ?>" <?php selected( $law_current, $law_status_key ); ?>>
-										<?php echo esc_html( $law_config['label'] . ' (' . ( $law_counts[ $law_status_key ] ?? 0 ) . ')' ); ?></option>
+										<?php echo esc_html( $law_status_label . ' (' . ( $law_counts[ $law_status_key ] ?? 0 ) . ')' ); ?></option>
 								<?php endforeach; ?>
 							</select>
 						</p>
 
 						<?php
-						// Two selects, not one mixing the axes: "run by LAW" and "has an
-						// agenda" are not mutually exclusive, and a single select would
-						// make "which of our own events have an agenda?" unanswerable.
+						// A select, never checkboxes: calendar-filters.js reads
+						// field.value for every named input regardless of checked, so a
+						// checkbox here would filter permanently once rendered.
 						//
-						// Selects, never checkboxes: calendar-filters.js reads field.value
-						// for every named input regardless of checked, so a checkbox here
-						// would filter permanently once rendered.
+						// 'law' was this option's value until 15 September 2026 and is
+						// still accepted by law_committee_events(), so a bookmarked link
+						// keeps filtering; only the value written out here has changed.
 						?>
 						<p class="law-cal-filter-form__field">
 							<label class="show-for-sr" for="law-dash-run-by"><?php esc_html_e( 'Run by', 'law' ); ?></label>
 							<select id="law-dash-run-by" name="law_run_by">
 								<option value=""><?php esc_html_e( 'Run by anyone', 'law' ); ?></option>
-								<option value="law" <?php selected( $law_run_by, 'law' ); ?>><?php esc_html_e( 'Run by LAW', 'law' ); ?></option>
-								<option value="host" <?php selected( $law_run_by, 'host' ); ?>><?php esc_html_e( 'Run by a host', 'law' ); ?></option>
-							</select>
-						</p>
-
-						<p class="law-cal-filter-form__field">
-							<label class="show-for-sr" for="law-dash-agenda"><?php esc_html_e( 'Session agenda', 'law' ); ?></label>
-							<select id="law-dash-agenda" name="law_agenda">
-								<option value=""><?php esc_html_e( 'Any agenda', 'law' ); ?></option>
-								<option value="yes" <?php selected( $law_agenda, 'yes' ); ?>><?php esc_html_e( 'With an agenda', 'law' ); ?></option>
-								<option value="no" <?php selected( $law_agenda, 'no' ); ?>><?php esc_html_e( 'Without an agenda', 'law' ); ?></option>
+								<option value="external" <?php selected( in_array( $law_run_by, array( 'external', 'law' ), true ) ); ?>><?php esc_html_e( 'External events', 'law' ); ?></option>
+								<option value="host" <?php selected( $law_run_by, 'host' ); ?>><?php esc_html_e( 'Hosted events', 'law' ); ?></option>
 							</select>
 						</p>
 
@@ -826,7 +941,7 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 			// them with the live values (assets/js/export-buttons.js). PDF is
 			// built client-side by pdfmake, so it only renders with JS.
 			$law_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_committee_export' ), 'law_committee_export' );
-			$law_export_args = array_filter( array( 'law_kw' => $law_kw, 'law_status' => $law_current, 'law_run_by' => $law_run_by, 'law_agenda' => $law_agenda ) );
+			$law_export_args = array_filter( array( 'law_kw' => $law_kw, 'law_status' => $law_current, 'law_run_by' => $law_run_by ) );
 			?>
 			<div class="law-cal-export" data-law-export data-export-url="<?php echo esc_url( $law_export_base ); ?>">
 				<span class="law-cal-export__label"><?php esc_html_e( 'Export:', 'law' ); ?></span>
@@ -836,8 +951,45 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 			</div>
 		</div>
 
-		<div class="law-cal-events" id="law-cal-events" aria-live="polite" data-law-skeleton="table">
-			<?php get_template_part( 'parts/events/dashboard-list' ); ?>
+		<?php if ( $law_slotchart ) : ?>
+			<?php
+			// The programme's day tabs, reused whole. The bar is sticky and a
+			// sticky element only sticks within its parent's box, so it has to
+			// be a SIBLING of the results it scrolls over, not a child of the
+			// controls above them.
+			//
+			// Its counts have to be this dashboard's, not the programme's: the
+			// two filter different sets, and the programme excludes the flagship
+			// that this view exists partly to show.
+			$law_chart_days = law_slotchart_days( law_slotchart_items() );
+			$law_chart_week = law_calendar_week_days();
+			$law_chart_counts = array();
+			foreach ( $law_chart_days['days'] as $law_chart_date => $law_chart_items ) {
+				$law_chart_counts[ $law_chart_date ] = count( $law_chart_items );
+				if ( ! isset( $law_chart_week[ $law_chart_date ] ) ) {
+					// A day outside the configured programme week still gets a
+					// tab. The committee can produce one (the flagship screen
+					// warns about it), and a planning view must account for every
+					// event rather than hide the misfiled ones.
+					$law_chart_week[ $law_chart_date ] = law_calendar_day_heading( $law_chart_date );
+				}
+			}
+			ksort( $law_chart_week );
+			get_template_part(
+				'parts/calendar-daynav',
+				null,
+				array(
+					'days'          => $law_chart_week,
+					'counts'        => $law_chart_counts,
+					'flagship_date' => function_exists( 'law_flagship_date' ) ? (string) law_flagship_date() : '',
+					'label'         => __( 'Programme days', 'law' ),
+				)
+			);
+			?>
+		<?php endif; ?>
+
+		<div class="law-cal-events" id="law-cal-events" aria-live="polite" data-law-skeleton="<?php echo $law_slotchart ? 'chart' : 'table'; ?>">
+			<?php get_template_part( $law_slotchart ? 'parts/events/slot-chart' : 'parts/events/dashboard-list' ); ?>
 		</div>
 	<?php endif; ?>
 

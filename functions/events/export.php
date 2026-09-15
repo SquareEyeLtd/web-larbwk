@@ -26,9 +26,15 @@ function law_committee_export_columns() {
 		'Payment status',
 		'Submitted',
 		'Sector',
+		// The host's own words for the firm, required at submission and so the
+		// most complete firm data the module holds. It was absent from every
+		// export until 15 September 2026, while the quieter committee-set
+		// 'Linked organisations' below was already here.
+		'Host organisation(s)',
 		'Linked organisations',
 		'Sponsored',
-		'Run by LAW',
+		'External',
+		'External booking URL',
 		'Session agenda',
 		'Event fee',
 		'Discounted fee',
@@ -67,10 +73,12 @@ function law_committee_export_row( WP_Post $post ) {
 		ucfirst( (string) law_event_meta( $id, '_law_payment_status' ) ),
 		mysql2date( 'Y-m-d H:i', $post->post_date ),
 		law_event_sector_summary( $id ),
+		(string) law_event_meta( $id, '_law_host_organisations' ),
 		implode( '; ', law_event_organisation_names( $id ) ),
 		law_events_post_is_sponsored( $post ) ? 'Yes' : '',
 		// Yes/blank, matching Sponsored above rather than Yes/No.
-		law_event_meta( $id, '_law_is_law_event' ) ? 'Yes' : '',
+		law_event_meta( $id, '_law_is_external' ) ? 'Yes' : '',
+		(string) law_event_meta( $id, '_law_external_url' ),
 		law_event_meta( $id, '_law_session_agenda' ) ? 'Yes' : '',
 		law_events_format_pence( $fee_pence ),
 		law_event_meta( $id, '_law_fee_override' ) ? '£' . number_format( (float) law_event_meta( $id, '_law_fee_override_amount' ), 2 ) : '',

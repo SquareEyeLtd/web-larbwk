@@ -48,7 +48,7 @@ places, and the brief wins.
 | §4.4: automatic promotion when a place opens | **No automatic promotion.** Approval is a committee judgement, so a freed place is offered by the committee approving the next applicant |
 | §4.3: after a failed charge the place goes to the next applicant | The retry window expiring raises a **committee alert**. It never auto-declines and never reassigns, matching the module's standing "a human decides" posture |
 | §7.6: Stripe's standard receipt | A Stripe **invoice**: VAT line, LAW's VAT number, hosted URL and PDF |
-| §3.4: "Register" | The control reads **"Apply"**. Spec §3.4 itself reserves "Register" for free events, and this button does not book a place. Denis asked for "Register" on 14 September 2026 and reverted the change the same day, so "Apply" stands |
+| §3.4: "Register" | **Superseded on 15 September 2026: the control reads "Register".** The client asked for "Register" and "Ticket" in place of "apply" and "application" everywhere, the flagship included, which overrides both spec §3.4's reservation of "Register" for free events and the earlier reading that this button does not book a place. Three words, because the mechanism did not change: **Register** is the verb and every call to action, **registration** is the record while the committee has not decided, **ticket** is the confirmed and paid place. Nothing undecided is called a ticket. The code keeps the application vocabulary (`law-applied`, `law_flagship_apply()`, `?law_flagship_apply=1`, the `_law_application_*` meta); see EVENTS_FUNC.md, "Register and ticket replace apply and application on screen". History: "Apply" was the 10 September decision, Denis asked for "Register" on 14 September 2026 and reverted it the same day, and the client settled it on 15 September |
 
 Also settled:
 
@@ -179,7 +179,7 @@ new status for the happy path. Three are added:
 
 | Status | Label | Meaning |
 |---|---|---|
-| `law-applied` | Awaiting review | Submitted; card saved, or free via a 100% code |
+| `law-applied` | Pending approval | Submitted; card saved, or free via a 100% code |
 | `law-declined` | Declined | Committee declined; saved card detached |
 | `law-payment-failed` | Payment failed | Approved, but the off-session charge failed or needs authentication |
 

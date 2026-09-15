@@ -12,7 +12,7 @@ const LAW_CALENDAR_YEAR    = 2026;
  */
 function law_calendar_week_days() {
 	// The events module settings drive the week when configured
-	// (LAW → Events settings); the hardcoded 2026 week is the fallback.
+	// (Events → Settings); the hardcoded 2026 week is the fallback.
 	if ( function_exists( 'law_events_setting' ) ) {
 		$start = strtotime( (string) law_events_setting( 'week_start', '' ) );
 		$end   = strtotime( (string) law_events_setting( 'week_end', '' ) );
@@ -82,21 +82,23 @@ function law_calendar_status_badge( $event ) {
 }
 
 /**
- * The "LAW" identity tag for an event LAW runs itself, for committee views.
+ * The "External" identity tag for an event a third party runs and books on its
+ * own website, for committee views.
  *
- * Deliberately NOT one of the status colours: --law is an outline pill, where
- * every status variant is filled. A solid navy tag would be pixel-identical to
- * --confirmed, and the committee would read an identity tag as a status.
+ * Deliberately NOT one of the status colours: --external is an outline pill,
+ * where every status variant is filled. A solid navy tag would be
+ * pixel-identical to --confirmed, and the committee would read an identity tag
+ * as a status.
  *
  * @param int $event_id law_event post ID.
  */
-function law_event_law_badge( $event_id ) {
-	if ( ! law_event_meta( $event_id, '_law_is_law_event' ) ) {
+function law_event_external_badge( $event_id ) {
+	if ( ! law_event_meta( $event_id, '_law_is_external' ) ) {
 		return;
 	}
-	// "LAW" alone is guessable at best, and the badge component uppercases for
-	// us, so the visible text stays short and the screen-reader text explains.
-	echo '<span class="law-cal-card__badge law-cal-card__badge--law">LAW<span class="show-for-sr"> event, run by LAW</span></span>';
+	// The badge component uppercases for us, so the visible text stays short and
+	// the screen-reader text says what it actually means for the reader.
+	echo '<span class="law-cal-card__badge law-cal-card__badge--external">External<span class="show-for-sr"> event, booked on the organiser\'s own website</span></span>';
 }
 
 /**
@@ -160,9 +162,15 @@ function law_calendar_filters( $reset = false ) {
 	// Organiser is a fixed vocabulary, not typed text like the keyword: anything
 	// else is dropped rather than carried into the link-preserving query args,
 	// so a junk value filters nothing instead of emptying the programme. The
-	// 'law' / 'host' pair is the committee dashboard's, deliberately — one
-	// vocabulary in the URL wherever the switch is filtered on.
-	if ( ! in_array( $filters['run_by'], array( 'law', 'host' ), true ) ) {
+	// 'external' / 'host' pair is the committee dashboard's, deliberately — one
+	// vocabulary in the URL wherever the switch is filtered on. 'law' is still
+	// accepted and read as 'external' so a link bookmarked before 15 September
+	// 2026, when the switch meant "run by LAW", still filters to something
+	// rather than silently returning the whole programme.
+	if ( 'law' === $filters['run_by'] ) {
+		$filters['run_by'] = 'external';
+	}
+	if ( ! in_array( $filters['run_by'], array( 'external', 'host' ), true ) ) {
 		$filters['run_by'] = '';
 	}
 
@@ -212,10 +220,10 @@ function law_calendar_event_matches_filters( $event, $filters ) {
 	// Organiser. empty() rather than a strict test so the legacy Gravity Forms
 	// map, which has no switch to read, degrades to "every event is hosted"
 	// instead of matching nothing.
-	if ( 'law' === $filters['run_by'] && empty( $event['is_law'] ) ) {
+	if ( 'external' === $filters['run_by'] && empty( $event['is_external'] ) ) {
 		return false;
 	}
-	if ( 'host' === $filters['run_by'] && ! empty( $event['is_law'] ) ) {
+	if ( 'host' === $filters['run_by'] && ! empty( $event['is_external'] ) ) {
 		return false;
 	}
 
@@ -876,10 +884,12 @@ function law_calendar_map_entry( $entry, $allowed = null ) {
 		'unscheduled'  => '' === $slot['date'],
 		// The flagship is a CPT-only feature (there is no legacy entry for it),
 		// carried here purely so both maps return the same shape. Same for
-		// is_law: "Run by LAW" is post meta on a law_event, with no Form 2
-		// field behind it, so every legacy entry reads as hosted.
+		// is_external: external events are a CPT-only kind built from form 10
+		// (Event > external events), which this legacy map never read, so every
+		// legacy entry reads as hosted.
 		'is_flagship'  => false,
-		'is_law'       => false,
+		'is_external'  => false,
+		'external_url' => '',
 		'is_sponsored' => law_calendar_is_sponsored_event( $entry ),
 		'sort'         => ( $slot['date'] ? $slot['date'] : '9999-99-99' ) . ' ' . ( $slot['start'] ? $slot['start'] : '99:99' ) . ' ' . strtolower( $title ),
 	);
@@ -1736,23 +1746,32 @@ function law_calendar_maps_embed_url( $venue ) {
 }
 
 /**
- * Dashboard entry URL. Administrators and editors only; others get an empty string.
+ * Where the committee's “Edit” link on the programme goes. Empty for anyone
+ * who may not edit other people's events.
  *
- * @param int $entry_id Gravity Forms entry ID.
+ * In CPT mode this is a front-end dashboard URL, never post.php: the committee
+ * manages events from the site's own screens, and sending them into wp-admin
+ * from the programme dropped them out of that UI entirely
+ * (Denis, 15 September 2026). law_committee_event_url() picks the right one of
+ * the four dashboards for the event. Pre-cutover (GF mode) there is no such
+ * screen, so the Form 2 entry in wp-admin stays the only answer.
+ *
+ * @param int $entry_id law_event post ID, or a Gravity Forms entry ID in GF mode.
  */
 function law_calendar_entry_admin_url( $entry_id ) {
 	$entry_id = (int) $entry_id;
 	if ( $entry_id < 1 ) {
 		return '';
 	}
+	// CPT mode: the id is a law_event post; edit it on the committee dashboard.
+	if ( 'cpt' === law_events_source() ) {
+		if ( ! function_exists( 'law_user_is_committee' ) || ! law_user_is_committee() ) {
+			return '';
+		}
+		return function_exists( 'law_committee_event_url' ) ? law_committee_event_url( $entry_id ) : '';
+	}
 	if ( ! function_exists( 'law_user_may_use_wp_admin' ) || ! law_user_may_use_wp_admin() ) {
 		return '';
-	}
-	// CPT mode: the id is a law_event post; edit it on the module's screen.
-	if ( 'cpt' === law_events_source() ) {
-		return get_post_type( $entry_id ) === LAW_EVENT_CPT
-			? admin_url( 'post.php?post=' . $entry_id . '&action=edit' )
-			: '';
 	}
 	return admin_url(
 		sprintf(
@@ -1764,7 +1783,8 @@ function law_calendar_entry_admin_url( $entry_id ) {
 }
 
 /**
- * Discreet “Edit” link to the Form 2 entry in wp-admin.
+ * Discreet “Edit” link: the committee dashboard screen that manages this
+ * event (the Form 2 entry in wp-admin pre-cutover).
  *
  * @param array|int $event Mapped calendar event or entry ID.
  */
@@ -1777,7 +1797,7 @@ function law_calendar_edit_link( $event ) {
 	printf(
 		'<a class="law-cal-edit" href="%s" aria-label="%s">%s</a>',
 		esc_url( $url ),
-		esc_attr__( 'Edit this event in the dashboard', 'law' ),
+		esc_attr__( 'Edit this event in the committee dashboard', 'law' ),
 		esc_html__( 'Edit', 'law' )
 	);
 }

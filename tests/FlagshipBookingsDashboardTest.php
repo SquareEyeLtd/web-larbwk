@@ -158,7 +158,7 @@ class FlagshipBookingsDashboardTest extends LAW_Test_Case {
 
 		$data = law_flagship_bookings_export_rows( law_flagship_bookings_filters( array() ) );
 
-		$this->assertSame( 'Application', $data['columns'][0] );
+		$this->assertSame( 'Registration', $data['columns'][0] );
 		$this->assertContains( 'Amount charged', $data['columns'] );
 		$this->assertContains( 'Stripe invoice', $data['columns'] );
 		$this->assertContains( 'Accessibility', $data['columns'] );

@@ -55,7 +55,7 @@ if ( $law_flagship ) {
 
 <?php
 // A flagship whose date falls outside the configured programme week (someone
-// moved the week in LAW → Events settings, or typed the wrong year) has no day
+// moved the week in Events → Settings, or typed the wrong year) has no day
 // section to sit under. Rendered here rather than dropped, so a configuration
 // mistake is visible instead of silently costing the site its main event.
 if ( $law_flagship && ! isset( $law_days[ $law_flagship_date ] ) ) {

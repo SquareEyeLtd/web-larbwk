@@ -208,7 +208,7 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 				<input type="checkbox" name="law_reception[included]" value="1" <?php checked( ! empty( $law_rm_values['included'] ) ); ?>>
 				<?php esc_html_e( 'Included with the flagship place', 'law' ); ?>
 			</label>
-			<span class="law-form-hint"><?php esc_html_e( 'A delegate with a confirmed flagship place can add this reception to their bookings at no cost, and is offered it when they apply. They still get a place when the reception is full; the committee sizes the room.', 'law' ); ?></span>
+			<span class="law-form-hint"><?php esc_html_e( 'A delegate with a confirmed flagship place can add this reception to their bookings at no cost, and is offered it when they register. They still get a place when the reception is full; the committee sizes the room.', 'law' ); ?></span>
 		</p>
 	</fieldset>
 

@@ -388,18 +388,23 @@ class SpeakerNamesTest extends LAW_Test_Case {
 		$this->assertSame( 'Firm B', law_event_meta( $event_b, '_law_speakers' )[0]['organisation'], 'The appearance is per event and stays put.' );
 	}
 
-	public function test_a_started_speaker_row_must_have_both_names(): void {
-		$host = $this->make_user();
-		wp_set_current_user( $host );
-		$event = get_post( $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed', $host ) );
-
+	/**
+	 * A complete, valid non-draft form input carrying the given speaker rows.
+	 * The rest of the form has to be valid or the speaker errors are lost among
+	 * everyone else's.
+	 *
+	 * @param string $title   The event title, so two events in one test differ.
+	 * @param array  $rows    The speakers[] rows to post.
+	 * @return array Input for law_events_form_save().
+	 */
+	private function speaker_form_input( string $title, array $rows ): array {
 		// A real configured slot label: the save drops anything that is not one,
 		// and a Proposed event does not have preferred slots locked.
 		$slot_labels = array_keys( law_events_slot_choices( array() ) );
 
-		$input = array(
+		return array(
 			'law_form_action'     => 'update',
-			'event_title'         => 'Half a speaker',
+			'event_title'         => $title,
 			'description'         => 'A description.',
 			'event_type'          => 'Social event',
 			'host_organisations'  => 'Test Org LLP',
@@ -413,9 +418,20 @@ class SpeakerNamesTest extends LAW_Test_Case {
 			'invoice_city'        => 'London',
 			'invoice_postal_code' => 'EC1A 1AA',
 			'invoice_country'     => 'United Kingdom',
-			'speakers'            => array(
+			'speakers'            => $rows,
+		);
+	}
+
+	public function test_a_started_speaker_row_must_have_both_names(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+		$event = get_post( $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed', $host ) );
+
+		$input = $this->speaker_form_input(
+			'Half a speaker',
+			array(
 				array( 'first_name' => 'Onlyfirst', 'last_name' => '', 'email' => 'half@example.test', 'organisation' => 'Firm F', 'job_title' => 'Partner' ),
-			),
+			)
 		);
 
 		$result = law_events_form_save( $input, array(), $event, $host );
@@ -429,6 +445,84 @@ class SpeakerNamesTest extends LAW_Test_Case {
 		$speaker       = law_speaker_find_existing( 'half@example.test', '' );
 		$this->posts[] = $speaker;
 		$this->assertSame( 'Onlyfirst Testperson', get_the_title( $speaker ) );
+	}
+
+	/**
+	 * The organisation and the job title stopped being required on 15 September
+	 * 2026 (Denis), as the role select never was: a host often knows who is
+	 * speaking long before they know which hat that person will wear. The email
+	 * stays required, because it is the dedupe key that keeps two people of the
+	 * same name apart (functions/events/speakers.php:110-121).
+	 */
+	public function test_a_speaker_row_needs_no_role_organisation_or_job_title(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+		$event = get_post( $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed', $host ) );
+
+		$input = $this->speaker_form_input(
+			'A speaker with a name and an address',
+			array(
+				array( 'first_name' => 'Sparse', 'last_name' => 'Testspeaker', 'email' => 'sparse@example.test' ),
+			)
+		);
+
+		$saved = law_events_form_save( $input, array(), $event, $host );
+		$this->assertSame( (int) $event->ID, $saved, 'A row carrying only the two names and an email is complete.' );
+
+		$speaker       = law_speaker_find_existing( 'sparse@example.test', '' );
+		$this->posts[] = $speaker;
+		$this->assertNotSame( 0, $speaker );
+
+		$row = law_event_meta( $event->ID, '_law_speakers' )[0];
+		$this->assertSame( $speaker, (int) $row['speaker_id'] );
+		$this->assertSame( '', $row['role'] );
+		$this->assertSame( '', $row['organisation'] );
+		$this->assertSame( '', $row['job_title'] );
+
+		// A blank role still reads as Speaker on every card, so the public page
+		// says something sensible rather than nothing.
+		$this->assertSame( 'Speaker', law_speaker_role_display( $row['role'] ) );
+
+		// The email is the one detail of the three that is still demanded.
+		$input['speakers'][0]['email'] = '';
+		$result = law_events_form_save( $input, array(), $event, $host );
+		$this->assertInstanceOf( WP_Error::class, $result, 'The dedupe key is still required.' );
+		$this->assertStringContainsString( 'an email address', $result->get_error_message( 'speakers' ) );
+	}
+
+	/**
+	 * A blank email must never delete the one on file (15 September 2026).
+	 * law_event_update_meta() turns '' into a delete_post_meta(), and the
+	 * record is shared with every event the speaker appears at, so losing the
+	 * address quietly drops the dedupe key for all of them. Clearing an email
+	 * on purpose is a Manage Speakers action, which writes identity directly
+	 * rather than through the upsert.
+	 */
+	public function test_a_blank_email_never_clears_the_stored_one(): void {
+		$speaker       = law_speaker_upsert( array( 'first_name' => 'Keepmy', 'last_name' => 'Testaddress', 'email' => 'keep-address@example.test', 'website' => 'https://keep.example.test' ) );
+		$this->posts[] = $speaker;
+
+		$event = $this->make_event();
+		law_event_update_meta( $event, '_law_speakers', array( array( 'speaker_id' => $speaker ) ) );
+
+		// The overwrite mode the event form uses when it re-saves a speaker the
+		// event already holds, with the email box posted empty.
+		law_speaker_upsert(
+			array( 'first_name' => 'Keepmy', 'last_name' => 'Testaddress', 'email' => '', 'website' => '' ),
+			array( 'event_id' => $event ),
+			array( 'speaker_id' => $speaker, 'overwrite_identity' => true )
+		);
+
+		$this->assertSame( 'keep-address@example.test', (string) law_event_meta( $speaker, '_law_speaker_email' ), 'The dedupe key survives an empty box.' );
+		$this->assertSame( '', (string) law_event_meta( $speaker, '_law_website' ), 'The website has no such rule: an emptied box there is an ordinary correction.' );
+
+		// A real new address still replaces the old one.
+		law_speaker_upsert(
+			array( 'first_name' => 'Keepmy', 'last_name' => 'Testaddress', 'email' => 'new-address@example.test' ),
+			array( 'event_id' => $event ),
+			array( 'speaker_id' => $speaker, 'overwrite_identity' => true )
+		);
+		$this->assertSame( 'new-address@example.test', (string) law_event_meta( $speaker, '_law_speaker_email' ) );
 	}
 
 	public function test_speaker_cards_are_listed_alphabetically_by_surname(): void {

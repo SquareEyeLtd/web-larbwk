@@ -927,6 +927,23 @@ view, above the cards, after the notices) and from `templates/account-hub.php`
 (above the tiles, below the "Signed in as" line), because the hub is where a
 signed-in delegate now lands (§0.4 item 9).
 
+**Two surfaces means two sets of assets**, and the hub was short of two of them
+until 15 September 2026. `.law-strip__cta` sat under `.law-cal`, a wrapper only
+My bookings puts round its list, so the hub drew the theme's small base button
+with a white label on orange (~2.8:1, under AA) instead of the enlarged
+navy-labelled one. And `.law-hp`, which hides the honeypot
+`law_events_honeypot_field()` prints inside the banner's form, lived only in
+`event-form.css`, which the hub does not enqueue, so a "Leave this field empty"
+text input rendered in the middle of the navy panel. `.law-strip__cta` is now
+un-scoped in `calendar.css` (prefixed `.law-strip` for weight over
+`.law-cal .button:hover`, not for scope, and with the hover background pinned
+orange, because outside `.law-cal` the theme's `.button.orange:hover` flips to
+navy and would have hidden the navy label) and `.law-hp` moved to `style.css`,
+which every page loads. Nothing else is missing: the dialog is `law-modal.css`
+throughout, and `account-bookings.php` already enqueues the modal component and
+`booking-form.js` for this template when `law_reception_banner_state()` is
+non-empty.
+
 Copy built from the missing receptions' titles and days:
 "Your flagship place includes {Opening drinks on Monday and the Wednesday
 reception}. Add the ones you would like to attend at no cost." Button **Add
@@ -1309,7 +1326,7 @@ from the letter of the document, and why.
    said the flagship's map moves wholesale into `bookings.php` with `included`
    added, leaving `law_flagship_payment_states()` a one-line wrapper. Doing
    that would have changed three words on the Flagship bookings screen:
-   "Payment method saved, awaiting review" → "Payment details saved",
+   "Payment method saved, pending approval" → "Payment details saved",
    "Awaiting the delegate's bank" → "Bank confirmation needed", and "No charge"
    → "Complimentary". Those three carry the flagship's REVIEW semantics, which
    a reception has none of. So the shared map holds the generic wording and the

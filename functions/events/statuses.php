@@ -44,7 +44,7 @@ function law_event_statuses() {
 function law_booking_statuses() {
 	return array(
 		'publish'             => 'Confirmed',
-		'law-applied'         => 'Awaiting review',
+		'law-applied'         => 'Pending approval',
 		// A priced reception's place while the delegate is on Stripe's hosted
 		// page (RECEPTIONS.md §1.3). It HOLDS the place — it is in
 		// law_booking_holding_statuses() and, on a priced event only, in the
@@ -62,7 +62,7 @@ function law_booking_statuses() {
 /**
  * The subset a flagship application can hold. Hosted-event surfaces keep the
  * smaller Confirmed / Waitlisted / Cancelled vocabulary, so only the flagship
- * views ever show "Awaiting review", "Payment failed" or "Declined".
+ * views ever show "Pending approval", "Payment failed" or "Declined".
  *
  * @return array<string,string> status => label.
  */

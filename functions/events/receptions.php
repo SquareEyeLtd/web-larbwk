@@ -150,7 +150,6 @@ function law_reception_seed_map() {
 			'day'   => 'Monday',
 			'meta'  => array(
 				'_law_is_reception'      => 1,
-				'_law_is_law_event'      => 1,
 				'_law_flagship_included' => 1,
 				'_law_registration_state' => 'free',
 				'_law_attendee_price_pence' => 0,
@@ -161,7 +160,6 @@ function law_reception_seed_map() {
 			'day'   => 'Wednesday',
 			'meta'  => array(
 				'_law_is_reception'      => 1,
-				'_law_is_law_event'      => 1,
 				'_law_flagship_included' => 1,
 				'_law_registration_state' => 'free',
 				'_law_attendee_price_pence' => 0,
@@ -172,7 +170,6 @@ function law_reception_seed_map() {
 			'day'   => 'Friday',
 			'meta'  => array(
 				'_law_is_reception'       => 1,
-				'_law_is_law_event'       => 1,
 				'_law_registration_state' => 'invitation',
 				'_law_attendee_price_pence' => 0,
 			),
@@ -440,7 +437,7 @@ function law_reception_save( array $input, $actor = 0, array $args = array() ) {
 		$created = law_event_ensure_managed_post(
 			sanitize_title( $input['title'] ),
 			$input['title'],
-			array( '_law_is_reception' => 1, '_law_is_law_event' => 1 )
+			array( '_law_is_reception' => 1 )
 		);
 		$event_id = (int) $created['id'];
 		if ( ! $event_id ) {
@@ -477,13 +474,10 @@ function law_reception_save( array $input, $actor = 0, array $args = array() ) {
 	}
 
 	law_event_update_meta( $event_id, '_law_is_reception', 1 );
-	if ( ! $partial ) {
-		// A reception is LAW's own event, never a host submission, which is
-		// what keeps it out of the "hosted" filter. Asserted on a full save
-		// only: the wp-admin box renders the Classification tick separately,
-		// and overriding it from here would undo what somebody had just done.
-		law_event_update_meta( $event_id, '_law_is_law_event', 1 );
-	}
+	// Until 15 September 2026 a full save also asserted _law_is_law_event, the
+	// old "LAW runs this itself" tag. That key now means the opposite — an
+	// event a third party runs and books elsewhere — so a reception must NOT
+	// carry it: LAW runs the receptions and books them here.
 
 	// The date and the two times are written straight into _law_start and
 	// _law_end, and _law_slot_label stays empty: a reception is not one of the
@@ -2341,8 +2335,8 @@ function law_reception_require_own_booking( $is_ajax, array $statuses = array() 
  *
  * Most refusals here are the delegate's to act on and are quoted verbatim:
  * "that code has expired", "please accept the terms", "the price changed". A
- * CONFIGURATION error is not — "no Stripe tax rate ID is configured in LAW →
- * Events settings" tells somebody trying to buy a drink where our admin menu
+ * CONFIGURATION error is not — "no Stripe tax rate ID is configured in Events →
+ * Settings" tells somebody trying to buy a drink where our admin menu
  * is, and that our payment setup is currently broken. The detail stays in the
  * activity log, which is where somebody who can fix it is looking.
  *
@@ -3099,6 +3093,11 @@ function law_reception_banner_state( $user_id ) {
  * signed-in delegate now lands (ROLES_AND_ACCOUNT_HUB.md), and a free place
  * they have not claimed is exactly the thing a landing page should be telling
  * them. One function, so the copy can never differ between the two.
+ *
+ * Both surfaces have to carry the assets, which is the thing to check when
+ * adding a third: calendar.css paints .law-strip (enqueue.php lists the
+ * templates), and law-modal.css plus booking-form.js run the dialog and its
+ * fetch submit (account-bookings.php, gated on law_reception_banner_state()).
  *
  * @return string Markup, or '' when there is nothing to offer.
  */

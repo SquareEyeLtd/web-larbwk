@@ -38,8 +38,8 @@ add_action( 'manage_' . LAW_EVENT_CPT . '_posts_custom_column', function ( $colu
 			// The committee's two switches. Nothing printed for the ordinary case
 			// (a hosted event with no agenda), so the column stays scannable.
 			$flags = array();
-			if ( law_event_meta( $post_id, '_law_is_law_event' ) ) {
-				$flags[] = 'Run by LAW';
+			if ( law_event_meta( $post_id, '_law_is_external' ) ) {
+				$flags[] = 'External';
 			}
 			$agenda = function_exists( 'law_event_agenda_summary' ) ? law_event_agenda_summary( $post_id ) : '';
 			if ( '' !== $agenda ) {

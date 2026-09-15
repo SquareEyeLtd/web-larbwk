@@ -203,7 +203,7 @@ function law_flagship_apply( $user_id, array $input ) {
 	$event_id = law_flagship_event_id();
 
 	if ( ! $user ) {
-		return new WP_Error( 'law_flagship_no_user', 'You need to be signed in to apply.' );
+		return new WP_Error( 'law_flagship_no_user', 'You need to be signed in to register.' );
 	}
 	$open = law_flagship_guard_open( $event_id );
 	if ( is_wp_error( $open ) ) {
@@ -212,7 +212,7 @@ function law_flagship_apply( $user_id, array $input ) {
 	if ( empty( $input['consent'] ) ) {
 		return new WP_Error(
 			'law_flagship_no_consent',
-			'Please confirm you agree to your card being saved and charged if your application is approved.',
+			'Please confirm you agree to your card being saved and charged if your registration is approved.',
 			array( 'field' => 'law_consent' )
 		);
 	}
@@ -234,7 +234,7 @@ function law_flagship_apply( $user_id, array $input ) {
 		return new WP_Error(
 			'law_flagship_profile_incomplete',
 			sprintf(
-				'Please add your %s to your profile before applying.',
+				'Please add your %s to your profile before registering.',
 				wp_sprintf_l( '%l', $missing )
 			)
 		);
@@ -253,7 +253,7 @@ function law_flagship_apply( $user_id, array $input ) {
 	// side.
 	$list_pence = law_flagship_price_pence( 0, $event_id );
 	if ( $list_pence < 1 ) {
-		return new WP_Error( 'law_flagship_not_on_sale', 'Applications are not open for this event yet.' );
+		return new WP_Error( 'law_flagship_not_on_sale', 'Registration is not open for this event yet.' );
 	}
 
 	// The form posts the price it displayed. If it no longer matches — the
@@ -267,7 +267,7 @@ function law_flagship_apply( $user_id, array $input ) {
 		return new WP_Error(
 			'law_flagship_price_changed',
 			sprintf(
-				'The price changed to %s while you were filling this in, so nothing has been submitted. Please check the new price and apply again.',
+				'The price changed to %s while you were filling this in, so nothing has been submitted. Please check the new price and register again.',
 				law_events_price_label( $list_pence )
 			)
 		);
@@ -330,11 +330,11 @@ function law_flagship_apply( $user_id, array $input ) {
 	}
 
 	// Everything slow happens after the lock: Stripe and the emails, so one
-	// applicant is never queued behind another's network.
+	// delegate is never queued behind another's network.
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Flagship application #%d received from %s (%s).',
+			'Flagship registration #%d received from %s (%s).',
 			$number,
 			$person['name'],
 			law_events_format_pence( law_events_gross_pence( $list_pence ) )
@@ -352,7 +352,7 @@ function law_flagship_apply( $user_id, array $input ) {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'Flagship application #%d asked for the included receptions: %s.',
+				'Flagship registration #%d asked for the included receptions: %s.',
 				$number,
 				implode( ', ', array_map( 'get_the_title', $receptions ) )
 			),
@@ -377,14 +377,14 @@ function law_flagship_guard_open( $event_id = 0 ) {
 	$post     = $event_id ? get_post( $event_id ) : null;
 
 	if ( ! $post || LAW_EVENT_CPT !== $post->post_type || 'cpt' !== law_events_source() ) {
-		return new WP_Error( 'law_flagship_missing', 'The flagship conference is not open for applications.' );
+		return new WP_Error( 'law_flagship_missing', 'The flagship conference is not open for registration.' );
 	}
 	if ( 'publish' !== $post->post_status ) {
-		return new WP_Error( 'law_flagship_unpublished', 'The flagship conference is not open for applications yet.' );
+		return new WP_Error( 'law_flagship_unpublished', 'The flagship conference is not open for registration yet.' );
 	}
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' !== $start && strtotime( $start ) <= current_time( 'timestamp' ) ) {
-		return new WP_Error( 'law_flagship_started', 'This event has taken place, so applications are closed.' );
+		return new WP_Error( 'law_flagship_started', 'This event has taken place, so registration is closed.' );
 	}
 
 	// Deliberately no capacity check (Denis, 10 September 2026): a full
@@ -519,7 +519,7 @@ function law_flagship_on_card_saved( $booking_id ) {
 		law_event_log(
 			(int) $booking->post_parent,
 			sprintf(
-				'A payment event reached the flagship handler for booking #%d, which is not a flagship application. Nothing was changed: this flow needs its own handler.',
+				'A payment event reached the flagship handler for booking #%d, which is not a flagship registration. Nothing was changed: this flow needs its own handler.',
 				(int) law_event_meta( $booking->ID, '_law_booking_number' )
 			),
 			array( 'source' => 'stripe_webhook', 'action' => 'flagship_handler_wrong_booking', 'booking' => (int) $booking->ID )
@@ -540,7 +540,7 @@ function law_flagship_on_card_saved( $booking_id ) {
 
 	law_event_log(
 		$event_id,
-		sprintf( 'Flagship application #%d is ready for review.', law_event_meta( $booking_id, '_law_booking_number' ) ),
+		sprintf( 'Flagship registration #%d is ready for review.', law_event_meta( $booking_id, '_law_booking_number' ) ),
 		array( 'source' => 'flagship', 'action' => 'flagship_ready', 'booking' => $booking_id ),
 		array( 'user_id' => 0 )
 	);
@@ -561,7 +561,7 @@ function law_flagship_on_card_setup_failed( $booking_id, $message = '' ) {
 	law_event_log(
 		(int) $booking->post_parent,
 		sprintf(
-			'Card details could not be saved for flagship application #%d: %s',
+			'Card details could not be saved for flagship registration #%d: %s',
 			law_event_meta( $booking->ID, '_law_booking_number' ),
 			$message ?: 'no reason given'
 		),
@@ -583,7 +583,7 @@ function law_flagship_on_card_setup_failed( $booking_id, $message = '' ) {
 function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 	$booking = get_post( (int) $booking_id );
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
-		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship application.' );
+		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship registration.' );
 	}
 	$booking_id = (int) $booking->ID;
 	$event_id   = (int) $booking->post_parent;
@@ -610,12 +610,12 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 	}
 	if ( ! in_array( $booking->post_status, array( 'law-applied', 'law-payment-failed' ), true ) ) {
 		$release();
-		return new WP_Error( 'law_flagship_not_reviewable', 'That application has already been decided.' );
+		return new WP_Error( 'law_flagship_not_reviewable', 'That registration has already been decided.' );
 	}
 	$payment_state = (string) law_event_meta( $booking_id, '_law_payment_status' );
 	if ( 'pending_setup' === $payment_state ) {
 		$release();
-		return new WP_Error( 'law_flagship_no_card', 'That applicant has not given their payment details yet, so there is nothing to charge.' );
+		return new WP_Error( 'law_flagship_no_card', 'That delegate has not given their payment details yet, so there is nothing to charge.' );
 	}
 	// A charge Stripe has accepted but not settled. The booking is still
 	// law-applied — it holds its place while the money travels — so without
@@ -627,7 +627,7 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 		$release();
 		return new WP_Error(
 			'law_flagship_payment_in_flight',
-			'A payment for this application is already on its way. It will confirm itself when the money lands.'
+			'A payment for this registration is already on its way. It will confirm itself when the money lands.'
 		);
 	}
 
@@ -641,7 +641,7 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 			return new WP_Error(
 				'law_flagship_full',
 				sprintf(
-					'The conference is full (%d of %d places taken). Approving this application over-books it.',
+					'The conference is full (%d of %d places taken). Approving this registration over-books it.',
 					$places['confirmed'],
 					$places['available']
 				),
@@ -667,7 +667,7 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 		$release();
 		return new WP_Error(
 			'law_flagship_charging',
-			'A payment for this application is already being taken. Give it a moment and reload before trying again.'
+			'A payment for this registration is already being taken. Give it a moment and reload before trying again.'
 		);
 	}
 	$release();
@@ -681,14 +681,14 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 	if ( is_wp_error( $invoice ) ) {
 		// Whose fault is it? A card decline is the delegate's to fix and they
 		// are told so. A missing tax rate or an unconfigured key is OURS, and
-		// telling forty applicants their card was declined because a settings
+		// telling forty delegates their card was declined because a settings
 		// field is blank would be both false and alarming. Those stop here,
 		// loudly, with the application untouched.
 		if ( law_flagship_is_configuration_error( $invoice ) ) {
 			law_event_log(
 				$event_id,
 				sprintf(
-					'ACTION NEEDED: flagship application #%d could not be charged because of a configuration problem, so nothing was changed: %s',
+					'ACTION NEEDED: flagship registration #%d could not be charged because of a configuration problem, so nothing was changed: %s',
 					$number,
 					$invoice->get_error_message()
 				),
@@ -708,7 +708,7 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'Flagship application #%d approved, but the card was declined: %s',
+				'Flagship registration #%d approved, but the card was declined: %s',
 				$number,
 				$invoice->get_error_message()
 			),
@@ -751,7 +751,7 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'OVER-BOOKED: approving application #%d takes the flagship to %d confirmed places against %d available.',
+				'OVER-BOOKED: approving registration #%d takes the flagship to %d confirmed places against %d available.',
 				$number,
 				law_event_attendee_total( $event_id ),
 				$places['available']
@@ -822,7 +822,7 @@ function law_flagship_mark_paid( $booking_id, array $invoice = array(), $stripe_
 		law_event_log(
 			(int) $booking->post_parent,
 			sprintf(
-				'A payment event reached the flagship handler for booking #%d, which is not a flagship application. Nothing was changed: this flow needs its own handler.',
+				'A payment event reached the flagship handler for booking #%d, which is not a flagship registration. Nothing was changed: this flow needs its own handler.',
 				(int) law_event_meta( $booking->ID, '_law_booking_number' )
 			),
 			array( 'source' => 'stripe_webhook', 'action' => 'flagship_handler_wrong_booking', 'booking' => (int) $booking->ID )
@@ -862,7 +862,7 @@ function law_flagship_mark_paid( $booking_id, array $invoice = array(), $stripe_
 		law_event_log(
 			(int) $booking->post_parent,
 			sprintf(
-				'PAYMENT ON A %1$s APPLICATION: #%2$d was paid (%3$s) after it was %4$s. The place has NOT been given. Review in Stripe and refund.',
+				'PAYMENT ON A %1$s REGISTRATION: #%2$d was paid (%3$s) after it was %4$s. The place has NOT been given. Review in Stripe and refund.',
 				'law-declined' === $booking->post_status ? 'DECLINED' : 'WITHDRAWN',
 				$number,
 				law_events_format_pence( (int) ( $invoice['amount_paid'] ?? 0 ) ),
@@ -912,8 +912,8 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 	law_event_log(
 		$event_id,
 		'complimentary' === $how
-			? sprintf( 'Flagship application #%d approved as a complimentary place.', $number )
-			: sprintf( 'Flagship application #%d approved and paid (%s).', $number, law_events_format_pence( $price['gross'] ) ),
+			? sprintf( 'Flagship registration #%d approved as a complimentary place.', $number )
+			: sprintf( 'Flagship registration #%d approved and paid (%s).', $number, law_events_format_pence( $price['gross'] ) ),
 		array(
 			'source'       => $stripe_event_id ? 'stripe_webhook' : 'flagship',
 			'action'       => 'flagship_approved',
@@ -954,7 +954,7 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 	$booking = get_post( (int) $booking_id );
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
-		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship application.' );
+		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship registration.' );
 	}
 	$booking_id = (int) $booking->ID;
 	$event_id   = (int) $booking->post_parent;
@@ -973,7 +973,7 @@ function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 	if ( 'processing' === (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
 		return new WP_Error(
 			'law_flagship_payment_in_flight',
-			'A payment for this application is already on its way. Wait for it to land before deciding, or it will need refunding by hand.'
+			'A payment for this registration is already on its way. Wait for it to land before deciding, or it will need refunding by hand.'
 		);
 	}
 
@@ -991,7 +991,7 @@ function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 		law_booking_unlock( $event_id );
 	}
 
-	// Outside the lock: network calls must not hold up other applicants.
+	// Outside the lock: network calls must not hold up other delegates.
 	// BOTH are needed. Detaching the card stops us charging them; voiding the
 	// invoice stops THEM paying us from the hosted page whose link is already
 	// in their inbox, which would otherwise reverse this decision.
@@ -1001,7 +1001,7 @@ function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Flagship application #%d declined%s.',
+			'Flagship registration #%d declined%s.',
 			law_event_meta( $booking_id, '_law_booking_number' ),
 			'' !== $reason ? ': ' . $reason : ''
 		),
@@ -1022,7 +1022,7 @@ function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 function law_flagship_withdraw( $booking_id, $actor_id ) {
 	$booking = get_post( (int) $booking_id );
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
-		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship application.' );
+		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship registration.' );
 	}
 	$booking_id = (int) $booking->ID;
 	$event_id   = (int) $booking->post_parent;
@@ -1060,7 +1060,7 @@ function law_flagship_withdraw( $booking_id, $actor_id ) {
 
 	law_event_log(
 		$event_id,
-		sprintf( 'Flagship application #%d withdrawn by the applicant.', law_event_meta( $booking_id, '_law_booking_number' ) ),
+		sprintf( 'Flagship registration #%d withdrawn by the delegate.', law_event_meta( $booking_id, '_law_booking_number' ) ),
 		array( 'source' => 'flagship', 'action' => 'flagship_withdrawn', 'booking' => $booking_id ),
 		array( 'user_id' => (int) $actor_id )
 	);
@@ -1121,7 +1121,7 @@ function law_flagship_mark_payment_processing( $booking_id, $invoice_url = '', $
 	law_event_log(
 		(int) $booking->post_parent,
 		sprintf(
-			'Flagship application #%1$d approved and charged with %2$s. The payment has not settled yet, so the place is held until it does.',
+			'Flagship registration #%1$d approved and charged with %2$s. The payment has not settled yet, so the place is held until it does.',
 			law_event_meta( $booking_id, '_law_booking_number' ),
 			law_booking_payment_method_label( $booking_id ) ?: 'the saved payment method'
 		),
@@ -1149,7 +1149,7 @@ function law_flagship_mark_payment_failed( $booking_id, $message, $status = 'fai
 		law_event_log(
 			(int) $booking->post_parent,
 			sprintf(
-				'A payment event reached the flagship handler for booking #%d, which is not a flagship application. Nothing was changed: this flow needs its own handler.',
+				'A payment event reached the flagship handler for booking #%d, which is not a flagship registration. Nothing was changed: this flow needs its own handler.',
 				(int) law_event_meta( $booking->ID, '_law_booking_number' )
 			),
 			array( 'source' => 'stripe_webhook', 'action' => 'flagship_handler_wrong_booking', 'booking' => (int) $booking->ID )
@@ -1181,8 +1181,8 @@ function law_flagship_mark_payment_failed( $booking_id, $message, $status = 'fai
 		$event_id,
 		sprintf(
 			'action_required' === $status
-				? 'Flagship application #%1$d: the bank asked the delegate to confirm the payment. %2$s'
-				: 'Flagship application #%1$d: the card was declined. %2$s',
+				? 'Flagship registration #%1$d: the bank asked the delegate to confirm the payment. %2$s'
+				: 'Flagship registration #%1$d: the card was declined. %2$s',
 			law_event_meta( $booking_id, '_law_booking_number' ),
 			$message
 		),
@@ -1207,10 +1207,10 @@ function law_flagship_mark_payment_failed( $booking_id, $message, $status = 'fai
 function law_flagship_retry_charge( $booking_id, $actor_id = 0 ) {
 	$booking = get_post( (int) $booking_id );
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
-		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship application.' );
+		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship registration.' );
 	}
 	if ( 'law-payment-failed' !== $booking->post_status ) {
-		return new WP_Error( 'law_flagship_not_failed', 'That application is not waiting on a payment.' );
+		return new WP_Error( 'law_flagship_not_failed', 'That registration is not waiting on a payment.' );
 	}
 
 	return law_flagship_approve( (int) $booking->ID, $actor_id, array( 'confirm_overbook' => true ) );
@@ -1240,8 +1240,8 @@ function law_flagship_mark_refunded( $booking_id, $refunded, $charged, $partial 
 		$event_id,
 		sprintf(
 			$partial
-				? 'PARTIAL REFUND on flagship application #%1$d: %2$s of %3$s refunded. The place is unchanged; review in Stripe.'
-				: 'Flagship application #%1$d refunded in full (%2$s of %3$s). The place is NOT cancelled automatically.',
+				? 'PARTIAL REFUND on flagship registration #%1$d: %2$s of %3$s refunded. The place is unchanged; review in Stripe.'
+				: 'Flagship registration #%1$d refunded in full (%2$s of %3$s). The place is NOT cancelled automatically.',
 			law_event_meta( $booking->ID, '_law_booking_number' ),
 			law_events_format_pence( (int) $refunded ),
 			law_events_format_pence( (int) $charged )
@@ -1445,13 +1445,13 @@ function law_flagship_require_own_booking( $is_ajax, array $statuses = array() )
 	$booking    = $booking_id ? get_post( $booking_id ) : null;
 
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That application could not be found.', 'status' => 404 ), 'flagship-failed' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'That registration could not be found.', 'status' => 404 ), 'flagship-failed' );
 	}
 	if ( (int) $booking->post_author !== get_current_user_id() ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That application belongs to someone else.', 'status' => 403 ), 'flagship-denied' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'That registration belongs to someone else.', 'status' => 403 ), 'flagship-denied' );
 	}
 	if ( $statuses && ! in_array( $booking->post_status, $statuses, true ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That application cannot be changed now.', 'status' => 409 ), 'flagship-failed' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'That registration cannot be changed now.', 'status' => 409 ), 'flagship-failed' );
 	}
 
 	return $booking;
@@ -1460,12 +1460,12 @@ function law_flagship_require_own_booking( $is_ajax, array $statuses = array() )
 /** Load a booking the committee may act on, or respond and exit. */
 function law_flagship_require_committee_booking( $is_ajax ) {
 	if ( ! law_user_is_committee() ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, reviewing applications is for the committee.', 'status' => 403 ), 'flagship-denied' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, reviewing registrations is for the committee.', 'status' => 403 ), 'flagship-denied' );
 	}
 	$booking_id = absint( $_POST['booking_id'] ?? 0 );
 	$booking    = $booking_id ? get_post( $booking_id ) : null;
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That application could not be found.', 'status' => 404 ), 'flagship-failed' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'That registration could not be found.', 'status' => 404 ), 'flagship-failed' );
 	}
 
 	return $booking;
@@ -1484,13 +1484,13 @@ function law_flagship_apply_handler() {
 			// person is taking places", and a separate, larger per-IP budget so
 			// a law firm behind one NAT cannot lock its own colleagues out.
 			'rate'            => array( 'booking', 10, 600, 100 ),
-			'honeypot_json'   => array( 'message' => 'Thank you, your application has been received.' ),
+			'honeypot_json'   => array( 'message' => 'Thank you, your registration has been received.' ),
 			'honeypot_notice' => 'flagship-applied',
 		)
 	);
 
 	if ( ! is_user_logged_in() ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Please sign in to apply.', 'status' => 401 ), 'flagship-denied' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'Please sign in to register.', 'status' => 401 ), 'flagship-denied' );
 	}
 
 	$input  = law_flagship_input_from_request();
@@ -1506,7 +1506,7 @@ function law_flagship_apply_handler() {
 		true,
 		array(
 			'title'    => 'Taking you to our payment page',
-			'message'  => 'Stripe will ask for your card details. Nothing is charged unless your application is approved.',
+			'message'  => 'Stripe will ask for your card details. Nothing is charged unless your registration is approved.',
 			'redirect' => $result['redirect'],
 		),
 		'flagship-applied'
@@ -1598,8 +1598,8 @@ function law_flagship_withdraw_handler() {
 		$is_ajax,
 		true,
 		array(
-			'title'    => 'Application withdrawn',
-			'message'  => 'Your application has been withdrawn and the card details we held have been removed.',
+			'title'    => 'Registration withdrawn',
+			'message'  => 'Your registration has been withdrawn and the card details we held have been removed.',
 			'redirect' => law_account_url( 'my_bookings' ),
 		),
 		'flagship-withdrawn'
@@ -1623,7 +1623,7 @@ function law_flagship_review_handler() {
 	);
 
 	if ( ! law_user_is_committee() ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, reviewing applications is for the committee.', 'status' => 403 ), 'flagship-denied' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, reviewing registrations is for the committee.', 'status' => 403 ), 'flagship-denied' );
 	}
 
 	$decision = sanitize_key( (string) ( $_POST['decision'] ?? '' ) );
@@ -1640,7 +1640,7 @@ function law_flagship_review_handler() {
 	// of guards rather than two that can drift.
 	$ids = array_values( array_filter( array_map( 'absint', (array) ( $_POST['booking_id'] ?? array() ) ) ) );
 	if ( ! $ids ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'Choose at least one application.', 'status' => 400 ), 'flagship-failed' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'Choose at least one registration.', 'status' => 400 ), 'flagship-failed' );
 	}
 
 	$result = law_flagship_review_bulk( $ids, $decision, $actor, $reason, $confirm );
@@ -1662,7 +1662,7 @@ function law_flagship_review_handler() {
 		$is_ajax,
 		true,
 		array(
-			'title'    => 'approve' === $decision ? 'Applications approved' : 'Applications declined',
+			'title'    => 'approve' === $decision ? 'Registrations approved' : 'Registrations declined',
 			'message'  => $result['message'],
 			'redirect' => law_flagship_bookings_url(),
 		),
@@ -1738,7 +1738,7 @@ function law_flagship_review_bulk( array $booking_ids, $decision, $actor_id, $re
 
 	$message = sprintf(
 		/* translators: 1: number decided, 2: approved|declined */
-		_n( '%1$d application %2$s.', '%1$d applications %2$s.', $done, 'law' ),
+		_n( '%1$d registration %2$s.', '%1$d registrations %2$s.', $done, 'law' ),
 		$done,
 		'approve' === $decision ? 'approved' : 'declined'
 	);
@@ -1817,7 +1817,7 @@ function law_flagship_resend_payment_handler() {
 
 	$booking = law_flagship_require_committee_booking( $is_ajax );
 	if ( 'law-payment-failed' !== $booking->post_status ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That application is not waiting on a payment.', 'status' => 409 ), 'flagship-failed' );
+		law_events_respond( $is_ajax, false, array( 'message' => 'That registration is not waiting on a payment.', 'status' => 409 ), 'flagship-failed' );
 	}
 
 	$state = (string) law_event_meta( $booking->ID, '_law_payment_status' );
@@ -2020,7 +2020,7 @@ function law_flagship_run_daily() {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'Flagship application #%d closed: no card details were given within %d hours.',
+				'Flagship registration #%d closed: no card details were given within %d hours.',
 				law_event_meta( $post->ID, '_law_booking_number' ),
 				LAW_FLAGSHIP_SETUP_GRACE_HOURS
 			),
@@ -2038,7 +2038,7 @@ function law_flagship_run_daily() {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'Flagship application #%d is still unpaid past its deadline. The committee has been alerted; nothing has been decided automatically.',
+				'Flagship registration #%d is still unpaid past its deadline. The committee has been alerted; nothing has been decided automatically.',
 				law_event_meta( $post->ID, '_law_booking_number' )
 			),
 			array( 'source' => 'flagship', 'action' => 'flagship_payment_overdue', 'booking' => (int) $post->ID ),
@@ -2066,7 +2066,7 @@ function law_flagship_run_daily() {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'ACTION NEEDED: the payment for flagship application #%1$d has been in progress since %2$s and has not settled. Check it in Stripe: it needs confirming or refunding by hand. Nothing has been decided automatically.',
+				'ACTION NEEDED: the payment for flagship registration #%1$d has been in progress since %2$s and has not settled. Check it in Stripe: it needs confirming or refunding by hand. Nothing has been decided automatically.',
 				law_event_meta( $post->ID, '_law_booking_number' ),
 				law_event_meta( $post->ID, '_law_payment_processing_at' )
 			),

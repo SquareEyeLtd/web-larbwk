@@ -364,12 +364,30 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 			if ( $value === $stored ) {
 				continue;
 			}
+			// A blank email means "not given", never "delete the one on file"
+			// (15 September 2026). law_event_update_meta() turns '' into a
+			// delete_post_meta(), so without this the record loses its dedupe
+			// key — and the record is shared with every other event this person
+			// appears at, so every future match for them silently falls back to
+			// name matching. The host event form cannot post a blank (the field
+			// is required there), but the committee's external-event form
+			// validates no speaker rows at all (law_external_event_validate()),
+			// and a row rebuilt by hand or by a later caller can. Clearing an
+			// address outright is a Manage Speakers action, where a committee
+			// member means it: law_speakers_dashboard_write_identity() writes
+			// identity directly rather than through this function, exactly so
+			// that it can. The website has no such rule — it is nobody's
+			// identity, and an emptied box there is an ordinary correction.
+			if ( 'email' === $field && '' === $value ) {
+				continue;
+			}
 			// The email is the dedupe key, so it must never be moved onto an
 			// address another record already owns: that would quietly merge two
 			// people. Same guard the Manage Speakers screen applies, except that
 			// here the rest of the row still saves — the host gets their name
-			// change, and the clashing email is simply left alone.
-			if ( 'email' === $field && '' !== $value ) {
+			// change, and the clashing email is simply left alone. $value is
+			// non-empty by the check above.
+			if ( 'email' === $field ) {
 				$clash = law_speaker_find_existing( $value, '' );
 				if ( $clash && (int) $clash !== (int) $post_id ) {
 					continue;

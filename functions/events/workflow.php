@@ -142,6 +142,17 @@ function law_event_is_managed_by_law( $post_id ) {
 		return true;
 	}
 
+	// External events (functions/events/external-events.php). Managed in the
+	// same sense the receptions are: the committee owns the post, no host
+	// workflow sits behind it, and its two statuses mean only "on the
+	// programme" and "not yet". Including it here is also what stops
+	// law_event_apply_slot_label() clearing _law_start and _law_end on an
+	// ordinary save from a screen with no slot select, which is the bug the
+	// receptions hit on 14 September 2026.
+	if ( get_post_meta( $post_id, '_law_is_external', true ) ) {
+		return true;
+	}
+
 	return (bool) get_post_meta( $post_id, '_law_is_reception', true );
 }
 
@@ -552,11 +563,11 @@ function law_event_log_organisation_change( $event_id, array $before_ids, $actor
  */
 function law_event_log_flag_change( $event_id, array $before_flags, $actor ) {
 	$after = array(
-		'_law_is_law_event'   => (int) law_event_meta( $event_id, '_law_is_law_event' ),
+		'_law_is_external'   => (int) law_event_meta( $event_id, '_law_is_external' ),
 		'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
 	);
 	$before = array(
-		'_law_is_law_event'   => (int) ( $before_flags['_law_is_law_event'] ?? 0 ),
+		'_law_is_external'   => (int) ( $before_flags['_law_is_external'] ?? 0 ),
 		'_law_session_agenda' => (int) ( $before_flags['_law_session_agenda'] ?? 0 ),
 	);
 	if ( $before === $after ) {
@@ -566,7 +577,7 @@ function law_event_log_flag_change( $event_id, array $before_flags, $actor ) {
 	// Plain language, in the same words as the dashboard controls: the activity
 	// log is read by committee members, not developers.
 	$sentences = array(
-		'_law_is_law_event'   => array( 'No longer marked as run by LAW.', 'Marked as run by LAW.' ),
+		'_law_is_external'    => array( 'No longer marked as an external event.', 'Marked as an external event, booked on the organiser\'s own website.' ),
 		'_law_session_agenda' => array( 'Session agenda turned off.', 'Session agenda turned on.' ),
 	);
 	$changed = array();

@@ -29,10 +29,10 @@ if ( ! $law_fs_id ) {
 	<div class="law-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="law-flagship-success-title" tabindex="-1">
 		<h2 class="law-modal__title" id="law-flagship-success-title"><?php esc_html_e( 'Taking you to our payment page', 'law' ); ?></h2>
 		<p class="law-modal__copy">
-			<?php esc_html_e( 'Stripe will ask how you would like to pay. Your payment details are saved but not charged: we only take payment if the committee approves your application, and we email you either way.', 'law' ); ?>
+			<?php esc_html_e( 'Stripe will ask how you would like to pay. Your payment details are saved but not charged: we only take payment if the committee approves your registration, and we email you either way.', 'law' ); ?>
 		</p>
 		<p class="law-modal__copy">
-			<?php esc_html_e( 'If nothing happens in a moment, your application is safe. Open My bookings and add your payment details from there.', 'law' ); ?>
+			<?php esc_html_e( 'If nothing happens in a moment, your registration is safe. Open My bookings and add your payment details from there.', 'law' ); ?>
 		</p>
 		<p class="law-modal__actions">
 			<a class="button second" href="<?php echo esc_url( law_account_url( 'my_bookings' ) ); ?>"><?php esc_html_e( 'My bookings', 'law' ); ?></a>
