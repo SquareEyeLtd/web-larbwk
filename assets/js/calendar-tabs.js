@@ -80,8 +80,10 @@
 			});
 	}
 
-	/* Mirrors law_calendar_day_count_text(): cards only, a flagship-only day
-	   leaves the count blank (its pill says what is on), an empty day says so. */
+	/* Mirrors law_calendar_day_count_text(): each section's data-count already
+	   includes the flagship on its day, so the count covers it; an empty day
+	   says so, and a flagship day can only fall to the blank if a section ever
+	   reports 0 (its pill says what is on). */
 	function countText(count, day) {
 		if (count === 1) {
 			return '1 event';

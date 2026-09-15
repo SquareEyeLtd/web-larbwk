@@ -3393,7 +3393,7 @@ click to find that out.
   Emitting the programme's markup contract is the whole of the support.
   `parts/calendar-daynav.php` gained optional `days` / `counts` /
   `flagship_date` / `label` args, because its own counts are the public
-  programme's — a differently filtered set that excludes the flagship.
+  programme's — a differently filtered set.
 - **The one trap.** `filterParams()` in `assets/js/calendar-filters.js` builds
   both the replaced URL and the `&law_partial=1` fetch URL from the named inputs
   inside `#law-cal-filter-form` and **silently drops every other query
@@ -4358,8 +4358,8 @@ These predate the rebuild and now branch on `law_events_source()`.
   the timeline was deleted. What the layout is, and where it lives:
   - `parts/calendar-daynav.php` (new): the five day links as a **sticky tab
     bar** with a count per day ("32 events", via
-    `law_calendar_day_count_text()` — blank on a day carrying only the
-    flagship, whose tab carries a "Flagship" pill instead) rendered by
+    `law_calendar_day_count_text()`; the flagship's day also carries a
+    "Flagship" pill) rendered by
     `parts/calendar-body.php` *between* the filters and the results as a
     direct child of `.law-cal`, not inside `.law-cal-controls`: a sticky
     element only sticks within its parent's box, so the bar has to share a
@@ -4385,6 +4385,22 @@ These predate the rebuild and now branch on `law_events_source()`.
     links up document-wide now and its own scroll-to-day click handler stands
     down when the nav carries `data-law-daynav`, which is how the old layout
     below keeps scrolling. Without JavaScript every day renders stacked.
+  - **The flagship counts as one of its day's events** (Denis, 15 September
+    2026). It was excluded at first, on the reasoning that the count is of
+    cards and the block is not a card, so a Wednesday holding the conference
+    and one reception read "1 event" while two things were plainly on it.
+    `law_calendar_events()` still excludes the flagship — that exclusion is
+    what keeps it out of the card list, the slot bars and the day grouping —
+    so the 1 is added in the two places that produce a count:
+    `parts/calendar-daynav.php` when it builds its own counts, and each day
+    section's `data-count` in `parts/calendar-events.php`, which
+    `calendar-tabs.js` re-reads after a filter fetch. Both must agree or the
+    tab label would change the moment a filter was touched. The dashboard's
+    timeline passes its own counts and needs no such addition: its
+    `law_slotchart_items()` asks for the flagship explicitly. The blank
+    count that `law_calendar_day_count_text()` returns for a flagship day is
+    therefore unreachable from the programme now, and is kept only for a
+    caller that supplies a 0 of its own.
   - `parts/events/flagship-strip.php` (new): one navy line above the days —
     "Flagship event · LAW Flagship Conference · Wednesday 2 December ·
     9:00am - 2:45pm · London · Event details" — linking to the flagship's

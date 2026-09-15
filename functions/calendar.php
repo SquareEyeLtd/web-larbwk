@@ -1067,13 +1067,15 @@ function law_calendar_day_nav_label( $date ) {
 }
 
 /**
- * The day tab's count line (parts/calendar-daynav.php). Cards only: a day
- * carrying nothing but the flagship leaves the count blank, because its pill
- * already says what is on, and an empty day says so rather than "0 events".
+ * The day tab's count line (parts/calendar-daynav.php). The count it is given
+ * already includes the flagship on its day, so the conference and one reception
+ * read "2 events"; an empty day says "No events" rather than "0 events". The
+ * flagship-day case only reaches the blank fallback when a caller supplies its
+ * own counts and puts 0 on that day, where the tab's pill says what is on.
  * Mirrored in assets/js/calendar-tabs.js, which refreshes the counts from each
  * day section's data-count after a filter fetch, so the two must agree.
  *
- * @param int  $count           Cards on the day.
+ * @param int  $count           Events on the day, flagship included.
  * @param bool $is_flagship_day The flagship block is pinned to this day.
  * @return string
  */
