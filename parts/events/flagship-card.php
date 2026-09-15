@@ -10,9 +10,9 @@
  * It does reuse .law-event-card__actions and .law-event-card__button for the
  * calls to action, so the buttons' mobile full-width rule and their focus styles
  * cannot drift from every other card on the page. Since 11 September 2026 that
- * is two buttons: Event details, and the application control
- * (law_flagship_card_action()), matching the Register button the ordinary cards
- * gained at the same time.
+ * is two buttons: Event details, and the registration control
+ * (law_flagship_card_action()), which since 15 September 2026 carries the same
+ * Register label the ordinary cards do.
  *
  * get_template_part( 'parts/events/flagship-card', null, array(
  *   'event'       => <hydrated calendar event array>, // required
@@ -54,13 +54,20 @@ $law_fc_sessions = isset( $law_fc_event['sessions'] ) && is_array( $law_fc_event
 
 $law_fc_meta = array_filter( array( $law_fc_time, $law_fc_venue ), 'strlen' );
 
-// Apply, or whatever this viewer's application state offers instead (their
-// booking, their unpaid charge, their application under review). The same
+// Register, or whatever this viewer's own state offers instead (their ticket,
+// their unpaid charge, their registration under review). The same
 // decision the conference page's own control reads, so the two cannot disagree,
 // and like the ordinary cards this carries the button but NO dialog:
-// booking-form.js fetches the apply dialog on the press. See
+// booking-form.js fetches the registration dialog on the press. See
 // law_flagship_card_action().
 $law_fc_action = function_exists( 'law_flagship_card_action' ) ? law_flagship_card_action( $law_fc_event ) : null;
+
+// Nothing to press -- registration has not opened, or the conference has been
+// and gone. The block keeps its second button and draws it disabled with the
+// reason on it, exactly as the ordinary cards do (parts/loop/event.php).
+if ( ! $law_fc_action && function_exists( 'law_flagship_card_inert_action' ) ) {
+	$law_fc_action = law_flagship_card_inert_action( $law_fc_event );
+}
 ?>
 <article class="law-flagship-card" aria-labelledby="law-flagship-card-title">
 	<div class="law-flagship-card__media">
@@ -118,7 +125,15 @@ $law_fc_action = function_exists( 'law_flagship_card_action' ) ? law_flagship_ca
 		<?php endif; ?>
 		<div class="law-event-card__actions law-flagship-card__actions">
 			<a class="button law-event-card__button" href="<?php echo esc_url( $law_fc_url ); ?>"><?php esc_html_e( 'Event details', 'law' ); ?></a>
-			<?php if ( $law_fc_action ) : ?>
+			<?php if ( $law_fc_action && ! empty( $law_fc_action['disabled'] ) ) : ?>
+				<?php /* A real disabled <button>: an anchor with aria-disabled is still followed on click and on Enter, and this one has nowhere to go. */ ?>
+				<button
+					type="button"
+					class="button law-event-card__button <?php echo esc_attr( (string) ( $law_fc_action['class'] ?? '' ) ); ?>"
+					disabled
+					aria-disabled="true"
+				><?php echo esc_html( (string) $law_fc_action['label'] ); ?></button>
+			<?php elseif ( $law_fc_action ) : ?>
 				<a
 					class="button law-event-card__button <?php echo esc_attr( (string) $law_fc_action['class'] ); ?>"
 					href="<?php echo esc_url( (string) $law_fc_action['url'] ); ?>"

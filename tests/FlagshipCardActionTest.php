@@ -88,7 +88,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		$event = $this->make_flagship();
 		$state = law_flagship_action_state( $event, array( 'user_id' => 0 ) );
 		$this->assertSame( 'apply', $state['state'] );
-		$this->assertSame( 'Apply', law_flagship_action_link( $state )['label'] );
+		$this->assertSame( 'Register', law_flagship_action_link( $state )['label'] );
 	}
 
 	public function test_an_unpriced_conference_is_not_open(): void {
@@ -122,7 +122,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => $user ) );
 		$this->assertSame( 'in-review', $state['state'] );
-		$this->assertSame( 'View my application', law_flagship_action_link( $state )['label'] );
+		$this->assertSame( 'View my registration', law_flagship_action_link( $state )['label'] );
 	}
 
 	public function test_a_failed_charge_offers_to_sort_the_payment_out(): void {
@@ -185,7 +185,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 		$state = law_flagship_action_state( $event, array( 'user_id' => 0 ) );
 		$this->assertSame( 'apply', $state['state'] );
-		$this->assertSame( 'Apply', law_flagship_action_link( $state )['label'] );
+		$this->assertSame( 'Register', law_flagship_action_link( $state )['label'] );
 	}
 
 	public function test_an_ordinary_event_is_not_resolved_here_at_all(): void {
@@ -201,7 +201,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		wp_set_current_user( $this->make_user() );
 
 		$action = $this->card( $event );
-		$this->assertSame( 'Apply', $action['label'] );
+		$this->assertSame( 'Register', $action['label'] );
 		$this->assertStringContainsString( 'law_flagship_apply=1', $action['url'] );
 		$this->assertStringContainsString( 'orange', $action['class'] );
 		$this->assertSame( $event, $action['dialog'] );
@@ -316,7 +316,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		$html = (string) ob_get_clean();
 
 		$this->assertStringContainsString( 'data-law-book="' . $event . '"', $html );
-		$this->assertStringContainsString( 'Apply', $html );
+		$this->assertStringContainsString( 'Register', $html );
 		$this->assertStringNotContainsString( 'law-booking-state', $html );
 	}
 
@@ -354,7 +354,115 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 		ob_start();
 		law_booking_render_action_buttons( law_events_map_post( get_post( $event ) ) );
-		$this->assertStringContainsString( 'Apply', (string) ob_get_clean() );
+		$this->assertStringContainsString( 'Register', (string) ob_get_clean() );
+	}
+
+	/* The conference as an ordinary row (parts/loop/event.php) _____________ */
+
+	/**
+	 * A speaker profile's "Speaking at" list, My bookings and My events render
+	 * the conference through the ordinary card partial, which asks
+	 * law_booking_card_action() for its button -- and that deliberately returns
+	 * nothing for the flagship. Until 15 September 2026 those lists were
+	 * therefore the only places on the site showing the conference with no way
+	 * into it: the partial now routes the flagship to this action instead.
+	 */
+	public function test_the_ordinary_card_partial_gives_the_conference_its_register_button(): void {
+		$event = $this->make_flagship();
+		wp_set_current_user( $this->make_user() );
+		law_calendar_reset_caches();
+
+		$html = $this->render_row( law_events_map_post( get_post( $event ) ) );
+
+		$this->assertStringContainsString( 'law-event-card--flagship', $html, 'Guard: this is the flagship row.' );
+		$this->assertStringContainsString( 'Register', $html );
+		$this->assertStringContainsString( 'law_flagship_apply=1', $html, 'A real link, for the no-JS path.' );
+		$this->assertStringContainsString( 'data-law-book="' . $event . '"', $html, 'And the fetch hook, so the press opens the dialog.' );
+	}
+
+	/** A signed-out visitor gets it too: the dialog is where the account requirement is explained. */
+	public function test_the_ordinary_card_partial_offers_register_to_a_signed_out_visitor(): void {
+		$event = $this->make_flagship();
+		wp_set_current_user( 0 );
+		law_calendar_reset_caches();
+
+		$this->assertStringContainsString( 'data-law-book="' . $event . '"', $this->render_row( law_events_map_post( get_post( $event ) ) ) );
+	}
+
+	/**
+	 * My bookings and My events pass booking => 'action': their own actions
+	 * already link to the viewer's registration, so a second link to it on the
+	 * same row would be noise.
+	 */
+	public function test_the_action_scope_drops_a_link_to_a_registration_the_row_already_shows(): void {
+		$event = $this->make_flagship();
+		$user  = $this->make_user();
+		$this->make_application( $event, $user, 'publish' );
+		wp_set_current_user( $user );
+
+		$full = law_flagship_card_action( array( 'id' => $event, 'title' => get_the_title( $event ) ), 'full' );
+		$this->assertSame( 'View my booking', $full['label'] );
+		$this->assertNull( law_flagship_card_action( array( 'id' => $event, 'title' => get_the_title( $event ) ), 'action' ) );
+	}
+
+	/** Register itself survives that scope: a host who has not registered yet still can, from the row. */
+	public function test_the_action_scope_keeps_register(): void {
+		$event = $this->make_flagship();
+		wp_set_current_user( $this->make_user() );
+
+		$action = law_flagship_card_action( array( 'id' => $event, 'title' => get_the_title( $event ) ), 'action' );
+		$this->assertSame( 'Register', $action['label'] );
+		$this->assertSame( $event, $action['dialog'] );
+	}
+
+	/**
+	 * The fetch layer and the placeholder dialog are enqueued per SURFACE, and
+	 * the speaker profile is not a page template -- it is swapped in by a
+	 * template_include filter -- so is_page_template() would never match it.
+	 * Without this branch the Register button on a profile would be a plain
+	 * link to the inline form instead of opening the dialog.
+	 */
+	public function test_the_speaker_profile_counts_as_a_card_view_for_the_booking_assets(): void {
+		$source = file_get_contents( get_theme_file_path( 'functions/account-bookings.php' ) );
+		$this->assertStringContainsString( 'law_speakers_is_single()', $source );
+		$this->assertStringContainsString( 'is_singular( LAW_SPEAKER_CPT )', $source );
+	}
+
+	/**
+	 * The conference's own inert button: registration not open yet, or over.
+	 * The wording is the conference page's ("Registration opens soon"), not the
+	 * hosted events' "Bookings open soon", because a place here is registered
+	 * for rather than booked (Denis, 15 September 2026).
+	 */
+	public function test_the_conference_names_its_reason_when_there_is_nothing_to_press(): void {
+		$not_open = $this->make_flagship( array( '_law_flagship_price_pence' => 0, '_law_flagship_price_late_pence' => 0 ) );
+		$inert    = law_flagship_card_inert_action( array( 'id' => $not_open ) );
+		$this->assertSame( 'Registration opens soon', $inert['label'] );
+		$this->assertTrue( $inert['disabled'] );
+
+		// And the block itself draws it, as a real disabled <button>.
+		law_calendar_reset_caches();
+		ob_start();
+		get_template_part( 'parts/events/flagship-card', null, array( 'event' => law_events_map_post( get_post( $not_open ) ) ) );
+		$html = (string) ob_get_clean();
+		$this->assertStringContainsString( 'Registration opens soon', $html );
+		$this->assertMatchesRegularExpression( '/<button[^>]+disabled/', $html );
+	}
+
+	/** On sale: the slot belongs to the live button, so there is no inert one. */
+	public function test_a_conference_on_sale_gets_no_inert_button(): void {
+		$this->assertNull( law_flagship_card_inert_action( array( 'id' => $this->make_flagship() ) ) );
+	}
+
+	/** One row, rendered the way the speaker profile renders it. */
+	private function render_row( array $event ): string {
+		ob_start();
+		get_template_part(
+			'parts/loop/event',
+			null,
+			array( 'event' => $event, 'url' => get_permalink( (int) $event['id'] ), 'show_date' => true, 'stacked' => true )
+		);
+		return (string) ob_get_clean();
 	}
 
 	public function test_the_placeholder_dialog_has_a_heading_for_the_application_too(): void {
@@ -363,6 +471,6 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		$html = (string) ob_get_clean();
 		// Matching parts/events/flagship-apply-modal.php's own heading, so
 		// nothing jumps when the fetched dialog replaces the placeholder.
-		$this->assertStringContainsString( 'data-law-loading-apply="Apply to attend"', $html );
+		$this->assertStringContainsString( 'data-law-loading-apply="Register to attend"', $html );
 	}
 }

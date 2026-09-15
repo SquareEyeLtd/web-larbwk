@@ -168,6 +168,57 @@ class BookingCardActionTest extends LAW_Test_Case {
 		$this->assertNull( $this->card( $this->bookable_event( array(), 'law-proposed' ) ) );
 	}
 
+	/* The inert second button (law_booking_card_inert_action()) ____________ */
+
+	/**
+	 * Every card carries two buttons. Where there is nothing to press, the
+	 * second one is drawn disabled with the reason on it, so a row whose
+	 * places are not out yet reads as "not yet" rather than as a card that
+	 * forgot its button (Denis, 15 September 2026).
+	 */
+	public function test_the_states_with_nothing_to_press_each_name_their_reason(): void {
+		$cases = array(
+			'Bookings open soon' => $this->bookable_event( array( '_law_tickets_available' => 0 ) ),
+			'Bookings closed'    => $this->bookable_event( array( '_law_start' => gmdate( 'Y-m-d H:i', strtotime( '-1 hour' ) ) ) ),
+			'Bookings not open'  => $this->bookable_event( array(), 'law-proposed' ),
+		);
+		foreach ( $cases as $label => $event ) {
+			$inert = law_booking_card_inert_action( array( 'id' => $event ) );
+			$this->assertSame( $label, $inert['label'] );
+			$this->assertTrue( $inert['disabled'] );
+			$this->assertStringContainsString( 'orange', $inert['class'], 'The live button\'s shape, so the row does not change colour with its state.' );
+		}
+	}
+
+	/** A state that HAS an action never gets one: it is the action's slot. */
+	public function test_a_bookable_event_gets_no_inert_button(): void {
+		$this->assertNull( law_booking_card_inert_action( array( 'id' => $this->bookable_event() ) ) );
+	}
+
+	/** The legacy source has no booking system, so it gets no dead button explaining one. */
+	public function test_the_legacy_source_gets_no_inert_button(): void {
+		$event = $this->bookable_event( array( '_law_tickets_available' => 0 ) );
+		update_option( 'law_events_source', 'gf' );
+		$this->assertNull( law_booking_card_inert_action( array( 'id' => $event ) ) );
+	}
+
+	/** And the card partial actually puts it on the row, as a real disabled button. */
+	public function test_the_card_partial_renders_the_second_button_disabled(): void {
+		$event = $this->bookable_event( array( '_law_tickets_available' => 0 ) );
+		law_calendar_reset_caches();
+
+		ob_start();
+		get_template_part( 'parts/loop/event', null, array( 'event' => law_events_map_post( get_post( $event ) ) ) );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Event details', $html );
+		$this->assertStringContainsString( 'Bookings open soon', $html );
+		// A real disabled <button>: an anchor with aria-disabled is still
+		// followed on click and on Enter.
+		$this->assertMatchesRegularExpression( '/<button[^>]+disabled/', $html );
+		$this->assertSame( 2, substr_count( $html, 'class="button law-event-card__button' ), 'Two buttons on the row, always.' );
+	}
+
 	/**
 	 * The flagship is applied for, not booked, and it has its own card. A
 	 * Register button here would be a second, wrong route into it -- which

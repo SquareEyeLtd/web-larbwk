@@ -1,6 +1,6 @@
 <?php
 /**
- * One delegate's view of their own flagship application
+ * One delegate's view of their own flagship registration
  * (?law_booking=<id> on /account/bookings/, FLAGSHIP_PAYMENTS.md §4.4, §6).
  *
  * Reached from parts/events/booking-manage.php, which hands a flagship
@@ -24,7 +24,7 @@ $law_fm_booking = $law_fm_id ? get_post( $law_fm_id ) : null;
 if ( ! $law_fm_booking
 	|| LAW_BOOKING_CPT !== $law_fm_booking->post_type
 	|| (int) $law_fm_booking->post_author !== get_current_user_id() ) {
-	echo '<p class="law-cal__empty">' . esc_html__( 'Sorry, this application is not yours to view.', 'law' ) . '</p>';
+	echo '<p class="law-cal__empty">' . esc_html__( 'Sorry, this registration is not yours to view.', 'law' ) . '</p>';
 	return;
 }
 
@@ -38,11 +38,11 @@ $law_fm_card     = law_booking_payment_method_label( $law_fm_id );
 $law_fm_invoice  = (string) law_event_meta( $law_fm_id, '_law_stripe_invoice_url' );
 $law_fm_error    = (string) law_event_meta( $law_fm_id, '_law_payment_error' );
 $law_fm_deadline = law_flagship_payment_deadline_ts( $law_fm_id );
-// Read LIVE from the profile, not from the booking. The application form
+// Read LIVE from the profile, not from the booking. The registration form
 // collects nothing (Denis, 10 September 2026), so the profile is the single
 // copy of these details — and reading it live means a delegate who corrects
 // their job title sees the correction here rather than a snapshot of what it
-// said the day they applied.
+// said the day they registered.
 $law_fm_profile  = law_profile_values( (int) $law_fm_booking->post_author );
 $law_fm_answers  = array_filter(
 	array(
@@ -75,7 +75,19 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 	<?php echo esc_html( $law_fm_event ? $law_fm_event->post_title : __( 'Flagship conference', 'law' ) ); ?>
 </h2>
 <p class="law-booking-substate">
-	<?php echo esc_html( sprintf( __( 'Application #%d', 'law' ), $law_fm_number ) ); ?>
+	<?php
+	// Registration until it is approved and paid for, a ticket after: the
+	// same record, and this page renders both (the client, via Denis,
+	// 15 September 2026). Nothing undecided is called a ticket, because the
+	// committee can still decline it.
+	echo esc_html(
+		'publish' === $law_fm_status
+			/* translators: %d: the booking number. */
+			? sprintf( __( 'Ticket #%d', 'law' ), $law_fm_number )
+			/* translators: %d: the booking number. */
+			: sprintf( __( 'Registration #%d', 'law' ), $law_fm_number )
+	);
+	?>
 </p>
 
 <?php law_flagship_notice_render(); ?>
@@ -102,8 +114,8 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 			<?php
 			echo esc_html(
 				$law_fm_sca
-					? __( 'Your application has been approved and your place is held. There is nothing wrong with the payment method you saved: your bank is asking you to confirm the payment before it goes through.', 'law' )
-					: __( 'Your application has been approved and your place is held while you sort this out.', 'law' )
+					? __( 'Your registration has been approved and your place is held. There is nothing wrong with the payment method you saved: your bank is asking you to confirm the payment before it goes through.', 'law' )
+					: __( 'Your registration has been approved and your place is held while you sort this out.', 'law' )
 			);
 			?>
 		</p>
@@ -162,7 +174,7 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 	?>
 	<div class="law-form-notice law-flagship-processing" role="status">
 		<p><strong><?php esc_html_e( 'Your payment is on its way.', 'law' ); ?></strong></p>
-		<p><?php esc_html_e( 'The committee has approved your application and your place is held. Some payment methods take a little longer to clear than a card does. We will email you as soon as the payment lands, and there is nothing you need to do in the meantime.', 'law' ); ?></p>
+		<p><?php esc_html_e( 'The committee has approved your registration and your place is held. Some payment methods take a little longer to clear than a card does. We will email you as soon as the payment lands, and there is nothing you need to do in the meantime.', 'law' ); ?></p>
 	</div>
 <?php endif; ?>
 
@@ -176,11 +188,11 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 						<?php echo esc_html( law_booking_status_label( $law_fm_booking ) ); ?>
 					</span>
 					<?php if ( 'law-applied' === $law_fm_status && 'pending_setup' === $law_fm_pay ) : ?>
-						<span class="law-booking-table__sub"><?php esc_html_e( 'We cannot put your application to the committee until your payment details are saved.', 'law' ); ?></span>
+						<span class="law-booking-table__sub"><?php esc_html_e( 'We cannot put your registration to the committee until your payment details are saved.', 'law' ); ?></span>
 					<?php elseif ( 'processing' === $law_fm_pay ) : ?>
-						<span class="law-booking-table__sub"><?php esc_html_e( 'Approved. Your place is confirmed as soon as the payment clears.', 'law' ); ?></span>
+						<span class="law-booking-table__sub"><?php esc_html_e( 'Approved. Your ticket is confirmed as soon as the payment clears.', 'law' ); ?></span>
 					<?php elseif ( 'law-applied' === $law_fm_status ) : ?>
-						<span class="law-booking-table__sub"><?php esc_html_e( 'The committee will decide shortly and we will email you either way.', 'law' ); ?></span>
+						<span class="law-booking-table__sub"><?php esc_html_e( 'If you register by 16 October, you’ll receive confirmation of your ticket status by 30 October. Registrations after this, will be notified within 14 days.', 'law' ); ?></span>
 					<?php endif; ?>
 				</td>
 			</tr>
@@ -199,7 +211,7 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 							} elseif ( 'processing' === $law_fm_pay ) {
 								echo esc_html__( 'Payment in progress.', 'law' );
 							} else {
-								echo esc_html__( 'Not charged. We only take payment if your application is approved.', 'law' );
+								echo esc_html__( 'Not charged. We only take payment if your registration is approved.', 'law' );
 							}
 							?>
 						</span>
@@ -293,7 +305,7 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 			// destructive choice on a page about cancelling.
 			?>
 			<button type="submit" class="button alert" data-law-modal-open="law-flagship-withdraw-<?php echo esc_attr( (string) $law_fm_id ); ?>">
-				<?php esc_html_e( 'Withdraw my application', 'law' ); ?>
+				<?php esc_html_e( 'Withdraw my registration', 'law' ); ?>
 			</button>
 			<?php
 			get_template_part(
@@ -301,21 +313,21 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 				null,
 				array(
 					'id'      => 'law-flagship-withdraw-' . $law_fm_id,
-					'title'   => __( 'Withdraw your application?', 'law' ),
+					'title'   => __( 'Withdraw your registration?', 'law' ),
 					'copy'    => array(
 						// Future tense throughout: this dialog describes what
 						// confirming WILL do. The present tense read as a
 						// statement that it had already happened, which on a
 						// dialog with a Cancel button is alarming.
-						__( 'This will withdraw your application and delete the payment details we hold. You have not been charged, and you will not be.', 'law' ),
-						__( 'You can apply again while applications are open, but you would go to the back of the queue.', 'law' ),
+						__( 'This will withdraw your registration and delete the payment details we hold. You have not been charged, and you will not be.', 'law' ),
+						__( 'You can register again while registration is open, but you would go to the back of the queue.', 'law' ),
 					),
 					'confirm' => array(
-						'label' => __( 'Withdraw my application', 'law' ),
+						'label' => __( 'Withdraw my registration', 'law' ),
 						'class' => 'button alert',
 						'busy'  => __( 'Withdrawing…', 'law' ),
 					),
-					'close'   => __( 'Keep my application', 'law' ),
+					'close'   => __( 'Keep my registration', 'law' ),
 				)
 			);
 			?>

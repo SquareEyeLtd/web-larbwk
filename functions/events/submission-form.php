@@ -313,8 +313,12 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 				$errors->add( 'tickets_available', 'Please give the number of places available.' );
 			}
 		}
-		// Places can never exceed the venue capacity band, and the pair is
-		// checked whichever of the two this submitter is allowed to move.
+		// The band and the places must agree, and each bound is judged on the
+		// half this submitter is actually setting. The rules themselves are
+		// law_events_venue_pair_error()'s (settings.php, beside the band list);
+		// what belongs here is deciding which half is in play and which field
+		// can carry the refusal, because an error on a field the submitter
+		// cannot reach is a dead end.
 		//
 		// - The band is locked after approval and a disabled <select> posts
 		//   nothing, so there the stored band is the one to check against.
@@ -322,43 +326,67 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		//   the stored places are the ones to check — against the band they are
 		//   posting, because under review they may still lower it. The refusal
 		//   then belongs on the band, the only half of the pair they can change.
+		// - The FLOOR (15 September 2026) is checked only when the places are
+		//   the posted half. Overselling a room is a real problem, so the
+		//   ceiling is enforced whichever half moved; a band merely bigger than
+		//   the places released is not, and refusing it would take away the one
+		//   correction law_events_locked_fields() deliberately leaves a host
+		//   under review — telling us they have moved to a bigger room. See
+		//   test_a_host_under_review_may_still_change_the_band().
 		// - A submitter who was never asked for places is not judged on them at
 		//   all: their posted value is ignored on save, so refusing it here
 		//   would block the rest of their form over a field they cannot see.
-		$tickets_locked = in_array( 'tickets_available', $locked, true );
+		// - A submitter who can move NEITHER half is not judged either. A host
+		//   on an approved event posts no band and no places, so this would
+		//   otherwise run stored-against-stored and refuse every unrelated edit
+		//   they make — description, speakers, agenda, contacts — with the
+		//   message on a control they cannot see. That is the same dead end the
+		//   two rules above exist to avoid, and it was live before this guard:
+		//   any approved event whose stored pair breaches the ceiling locked its
+		//   host out of their own form entirely. The committee, who can always
+		//   move both halves, is still refused on any save.
+		$tickets_locked  = in_array( 'tickets_available', $locked, true );
+		$capacity_locked = in_array( 'venue_capacity', $locked, true );
 		$tickets = '';
-		if ( law_events_venue_details_visible( $venue_answer, $user_id ) ) {
+		if ( law_events_venue_details_visible( $venue_answer, $user_id ) && ! ( $tickets_locked && $capacity_locked ) ) {
 			$tickets = $tickets_locked && $post
 				? trim( (string) law_event_meta( $post->ID, '_law_tickets_available' ) )
 				: trim( (string) ( $input['tickets_available'] ?? '' ) );
 		}
 		if ( '' !== $tickets ) {
-			$capacity = in_array( 'venue_capacity', $locked, true ) && $post
+			$capacity = $capacity_locked && $post
 				? (string) law_event_meta( $post->ID, '_law_venue_capacity' )
 				: (string) ( $input['venue_capacity'] ?? '' );
-			$bands = law_events_venue_capacity_bands();
-			$limit = $bands[ $capacity ] ?? null;
-			if ( (int) $tickets < 1 ) {
+
+			list( $law_venue_half, $law_venue_message ) = law_events_venue_pair_error( $capacity, $tickets, ! $tickets_locked );
+
+			if ( 'band' === $law_venue_half ) {
+				// An unrecognised band, which this form never checked before
+				// 15 September 2026: a stale or crafted select value was stored
+				// and then read as "no ceiling" everywhere, quietly uncapping
+				// the allocation. The panel has refused it since 9 September.
+				$errors->add( 'venue_capacity', $law_venue_message );
+			} elseif ( 'places' === $law_venue_half && (int) $tickets < 1 ) {
 				// Only ever the posted value: a stored 0 is the committee's to
 				// fix, and refusing it would trap a host on their own form.
 				if ( ! $tickets_locked ) {
-					$errors->add( 'tickets_available', 'Tickets available must be at least 1.' );
+					$errors->add( 'tickets_available', $law_venue_message );
 				}
-			} elseif ( null !== $limit && (int) $tickets > $limit ) {
+			} elseif ( 'places' === $law_venue_half && $tickets_locked ) {
+				// The places are stored and out of reach, so the refusal lands
+				// on the band and is worded against it. Only a ceiling breach
+				// can arrive here — the floor is not checked when the places
+				// are the locked half.
 				$errors->add(
-					$tickets_locked ? 'venue_capacity' : 'tickets_available',
-					$tickets_locked
-						? sprintf(
-							'%1$s is below the %2$d places already released for this event. Please choose a band that covers them, or ask us to lower the places first.',
-							$capacity,
-							(int) $tickets
-						)
-						: sprintf(
-							'Tickets available cannot exceed the venue capacity you chose (%1$s allows at most %2$d).',
-							$capacity,
-							$limit
-						)
+					'venue_capacity',
+					sprintf(
+						'%1$s is below the %2$d places already released for this event. Please choose a band that covers them, or ask us to lower the places first.',
+						$capacity,
+						(int) $tickets
+					)
 				);
+			} elseif ( 'places' === $law_venue_half ) {
+				$errors->add( 'tickets_available', $law_venue_message );
 			}
 		}
 		$tier = sanitize_key( $input['fee_tier'] ?? '' );
@@ -401,11 +429,28 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		}
 		// Repeater rows. The groups themselves are optional (their Gravity Forms
 		// nested-form fields 112, 106, 94 and 115 are not required), but a row
-		// that has been started must be complete, exactly as the nested forms 8
+		// that has been started must be complete, as the nested forms 8
 		// (Event > speaker), 6 (Event > co-owner), 4 (Event > host contact) and
 		// 9 (Event > session) required their own fields.
+		//
+		// A speaker row is the one place that no longer matches its nested form
+		// (Denis, 15 September 2026): form 8 required field 3 (Organisation /
+		// firm / chambers) and field 4 (Job title / role), and both are now
+		// optional here, as field 9 (Role) always was. A host often knows who is
+		// speaking long before they know which hat that person will wear, and
+		// every surface that prints the pair already drops a blank cleanly
+		// (parts/events/speaker-card.php builds the line with array_filter).
+		//
+		// What remains is deliberate and should not be relaxed without reading
+		// why. Both names, because law_events_form_save_speakers() silently
+		// drops a row with no name, so a nameless row would vanish rather than
+		// be reported. And the email, because it is the speaker dedupe key:
+		// with it blank law_speaker_find_existing() falls back to matching on
+		// the name, which would attach a new person to an existing, publicly
+		// displayed profile that happens to share their name. The reasoning is
+		// in full at functions/events/speakers.php:110-121.
 		$row_rules = array(
-			'speakers'  => array( 'label' => 'speaker', 'fields' => array( 'first_name' => 'a first name', 'last_name' => 'a last name', 'email' => 'an email address', 'organisation' => 'an organisation', 'job_title' => 'a job title' ) ),
+			'speakers'  => array( 'label' => 'speaker', 'fields' => array( 'first_name' => 'a first name', 'last_name' => 'a last name', 'email' => 'an email address' ) ),
 			'co_owners' => array( 'label' => 'additional event owner', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
 			'contacts'  => array( 'label' => 'event contact', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
 			'sessions'  => array( 'label' => 'session', 'fields' => array( 'title' => 'a title', 'start' => 'a start time', 'description' => 'a description' ) ),

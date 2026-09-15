@@ -2,7 +2,7 @@
 /**
  * Template Name: Flagship bookings (committee)
  *
- * The committee's view of who has applied to the flagship conference, what
+ * The committee's view of who has registered for the flagship conference, what
  * they are being charged and where each one has got to
  * (functions/events/flagship-bookings-dashboard.php).
  *
@@ -35,15 +35,15 @@ $law_fb_url    = get_permalink();
 
 		<?php
 		$law_fb_notices = array(
-			'flagship-approved'    => array( 'is-success', __( 'The applications have been approved and the payments taken.', 'law' ) ),
-			'flagship-declined'    => array( 'is-success', __( 'The applications have been declined and the applicants emailed. Their saved payment details have been removed.', 'law' ) ),
-			'flagship-partly-done' => array( 'is-error', __( 'Some applications could not be decided. Check the rows below for the reason.', 'law' ) ),
+			'flagship-approved'    => array( 'is-success', __( 'The registrations have been approved and the payments taken.', 'law' ) ),
+			'flagship-declined'    => array( 'is-success', __( 'The registrations have been declined and the delegates emailed. Their saved payment details have been removed.', 'law' ) ),
+			'flagship-partly-done' => array( 'is-error', __( 'Some registrations could not be decided. Check the rows below for the reason.', 'law' ) ),
 			'flagship-full'        => array( 'is-error', __( 'The conference is full. Approving anyway over-books it, so please confirm.', 'law' ) ),
 			'flagship-retried'     => array( 'is-success', __( 'The payment was attempted again.', 'law' ) ),
 			'flagship-resent'      => array( 'is-success', __( 'The delegate has been emailed again.', 'law' ) ),
 			'flagship-added'       => array( 'is-success', __( 'The attendee has a confirmed place with no charge.', 'law' ) ),
 			'flagship-failed'      => array( 'is-error', __( 'That could not be done. Please check the details and try again.', 'law' ) ),
-			'flagship-denied'      => array( 'is-error', __( 'Sorry, reviewing applications is for the committee.', 'law' ) ),
+			'flagship-denied'      => array( 'is-error', __( 'Sorry, reviewing registrations is for the committee.', 'law' ) ),
 			'rate-limited'         => array( 'is-error', __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ) ),
 		);
 		?>
@@ -95,7 +95,7 @@ $law_fb_url    = get_permalink();
 
 					<form class="law-cal-filter-form" id="law-cal-filter-form" method="get" action="<?php echo esc_url( $law_fb_url ); ?>">
 						<p class="law-cal-filter-form__field law-cal-filter-form__field--keyword">
-							<label class="show-for-sr" for="law-fb-kw"><?php esc_html_e( 'Search applications', 'law' ); ?></label>
+							<label class="show-for-sr" for="law-fb-kw"><?php esc_html_e( 'Search registrations', 'law' ); ?></label>
 							<input type="search" id="law-fb-kw" name="law_kw" value="<?php echo esc_attr( $law_fb_filters['kw'] ); ?>"
 								placeholder="<?php esc_attr_e( 'Name, email, organisation or number', 'law' ); ?>" autocomplete="off">
 						</p>

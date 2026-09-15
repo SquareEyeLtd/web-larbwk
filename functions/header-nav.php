@@ -414,7 +414,7 @@ function law_header_nav() {
 			'label'       => __( 'Flagship bookings', 'law' ),
 			'group'       => 'committee',
 			'icon'        => 'price',
-			'description' => __( 'Applications and payments for the flagship', 'law' ),
+			'description' => __( 'Registrations and payments for the flagship', 'law' ),
 		);
 		// The discount-code catalogue (functions/events/discounts.php). Codes
 		// are accepted when booking a paid reception (RECEPTIONS.md §8.4);

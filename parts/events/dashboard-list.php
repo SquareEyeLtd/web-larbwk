@@ -46,13 +46,20 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 				?>
 				<tr>
 					<td><strong><a href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, get_permalink() ) ); ?>"><?php echo esc_html( $law_row->post_title ); ?></a></strong>
-						<?php law_event_law_badge( $law_row->ID ); ?><br>
+						<?php law_event_external_badge( $law_row->ID ); ?><br>
 						<code><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_reference' ) ); ?></code>
 						<?php $law_row_agenda = law_event_agenda_summary( $law_row->ID ); ?>
 						<?php if ( '' !== $law_row_agenda ) : ?>
 							<br><span class="law-dashboard__row-note"><?php echo esc_html( $law_row_agenda ); ?></span>
 						<?php endif; ?></td>
-					<td><?php echo esc_html( $law_row_author ? $law_row_author->display_name : '—' ); ?></td>
+					<?php // Person and firm together: the keyword box searches the firm
+					// (functions/events/committee.php), so a "Mayer Brown" search whose
+					// results never printed those words would read as a broken filter. ?>
+					<td><?php echo esc_html( $law_row_author ? $law_row_author->display_name : '—' ); ?>
+						<?php $law_row_firm = (string) law_event_meta( $law_row->ID, '_law_host_organisations' ); ?>
+						<?php if ( '' !== $law_row_firm ) : ?>
+							<br><span class="law-dashboard__row-note"><?php echo esc_html( $law_row_firm ); ?></span>
+						<?php endif; ?></td>
 					<?php // Date on one line, time under it: the label is the widest thing
 					// in the column otherwise, and the two halves read faster stacked. ?>
 					<?php $law_row_slot = law_events_split_slot_label( law_event_meta( $law_row->ID, '_law_slot_label' ) ); ?>
@@ -82,7 +89,13 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 					$law_row_available = (int) law_event_meta( $law_row->ID, '_law_tickets_available' );
 					$law_row_left      = function_exists( 'law_event_tickets_remaining' ) ? law_event_tickets_remaining( $law_row->ID ) : null;
 					$law_row_waiting   = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $law_row->ID ) : 0;
-					$law_row_bookable  = 'publish' === $law_row->post_status;
+					// An external event is booked on the organiser's own website, so it
+					// can never hold one here. Both the count and the Bookings button
+					// would otherwise offer a way into an empty list on every row
+					// (Denis, 15 September 2026), and a hollow "0" reads as "nobody has
+					// booked" rather than as "bookings do not happen here".
+					$law_row_external  = function_exists( 'law_event_is_external' ) && law_event_is_external( $law_row->ID );
+					$law_row_bookable  = 'publish' === $law_row->post_status && ! $law_row_external;
 					?>
 					<td>
 						<?php if ( ! $law_row_bookable ) : ?>

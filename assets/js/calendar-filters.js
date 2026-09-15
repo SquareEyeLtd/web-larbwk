@@ -8,7 +8,14 @@
  * (parts/calendar-events.php, or parts/events/dashboard-list.php on the
  * dashboard), so Members access rules still apply. The filter fields are read
  * from the form generically, so each page brings its own set; the results
- * container picks its skeleton with data-law-skeleton="table" for list tables.
+ * container picks its skeleton with data-law-skeleton="table" for list tables
+ * and "chart" for the committee's timeline view.
+ *
+ * Note for anyone adding a query argument to one of these pages: the fetch and
+ * the replaced URL are both built from the NAMED inputs inside
+ * #law-cal-filter-form and nothing else, so an argument that has to survive
+ * filtering (the dashboard's view switch, for one) belongs in that form as a
+ * hidden field.
  */
 (function () {
 	'use strict';
@@ -54,7 +61,19 @@
 
 	function skeletonHtml() {
 		var section = '';
-		if (results.getAttribute('data-law-skeleton') === 'table') {
+		var kind = results.getAttribute('data-law-skeleton');
+		if (kind === 'chart') {
+			/* The timeline view (parts/events/slot-chart.php): a ruler and a
+			   few lanes. The card skeleton below would flash the shape of a
+			   different page while the fetch is in flight. */
+			section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--day"></div>';
+			section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--ruler"></div>';
+			for (var l = 0; l < 5; l++) {
+				section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--lane"></div>';
+			}
+			return '<div class="law-cal-skeleton" aria-hidden="true">' + section + '</div>';
+		}
+		if (kind === 'table') {
 			section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--table-head"></div>';
 			for (var r = 0; r < 6; r++) {
 				section += '<div class="law-cal-skeleton__bar law-cal-skeleton__bar--table-row"></div>';

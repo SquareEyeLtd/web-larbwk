@@ -208,7 +208,7 @@ class FlagshipDashboardTest extends LAW_Test_Case {
 
 	/**
 	 * The committee can set the attendee terms link from Manage flagship,
-	 * and it is the SAME value as the one on LAW → Events settings.
+	 * and it is the SAME value as the one on Events → Settings.
 	 */
 	public function test_the_terms_link_is_editable_from_the_flagship_form(): void {
 		$event_id = law_flagship_ensure_post()['id'];

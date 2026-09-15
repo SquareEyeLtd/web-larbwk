@@ -33,7 +33,7 @@ function law_stripe_create_and_send_invoice( $event_id ) {
 	// would silently bill net-only, so it fails loudly instead. A missing
 	// rendering template only costs branding: warn and continue.
 	if ( law_event_meta( $event_id, '_law_vat' ) && '' === (string) law_events_setting( 'tax_rate_id', '' ) ) {
-		$error = new WP_Error( 'law_no_tax_rate', 'VAT applies to this fee but no Stripe tax rate ID is configured in LAW → Events settings. Invoice not created.' );
+		$error = new WP_Error( 'law_no_tax_rate', 'VAT applies to this fee but no Stripe tax rate ID is configured in Events → Settings. Invoice not created.' );
 		law_stripe_record_failure( $event_id, $error );
 		return $error;
 	}

@@ -31,7 +31,7 @@ function law_migration_admin_page() {
 		// submittable through GF's REST API (/gf/v2/forms/<id>/submissions),
 		// which would run the LEGACY feeds and workflow. Form 7 (Contact)
 		// stays active. Flipping back to GF reactivates them.
-		$module_forms = array( 1, 2, 3, 4, 5, 6, 8, 9 );
+		$module_forms = law_migration_module_form_ids();
 		if ( class_exists( 'GFAPI' ) && class_exists( 'GFFormsModel' ) ) {
 			foreach ( $module_forms as $form_id ) {
 				GFFormsModel::update_form_active( $form_id, 'cpt' === $new ? 0 : 1 );

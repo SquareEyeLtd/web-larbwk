@@ -106,6 +106,11 @@ function law_events_terms_url() {
  * "Under 50" then "51-100", so a strict 49 would leave exactly 50 with no band
  * that accepts it. "251+" and "TBC" have no ceiling to check against (null).
  *
+ * **Keep this list in ascending order.** Since 15 September 2026 the band
+ * floors are derived from it by law_events_venue_capacity_band_floor() rather
+ * than restated, so each band's lower bound is the previous one's ceiling plus
+ * one. Reordering the list would silently rewrite every floor.
+ *
  * @return array<string,int|null> Band label => maximum tickets, or null when uncapped.
  */
 function law_events_venue_capacity_bands() {
@@ -117,6 +122,131 @@ function law_events_venue_capacity_bands() {
 		'251+'     => null,
 		'TBC'      => null,
 	);
+}
+
+/**
+ * The smallest audience a venue capacity band allows.
+ *
+ * Derived from law_events_venue_capacity_bands() rather than restated, so the
+ * two halves of a band can never drift: a band's floor is the previous band's
+ * ceiling plus one, the first band's floor is 1, and a band that follows an
+ * uncapped one has no floor of its own. That gives 1, 51, 101, 151 and 251 for
+ * the five numbered bands, and no floor for "TBC".
+ *
+ * The derivation only holds while the band list stays in ascending order,
+ * which it already must for the ceilings to mean anything.
+ *
+ * Note that "251+" is bounded below (251) where it used to carry no constraint
+ * at all: it is uncapped above, not unbounded. "TBC" remains the one band that
+ * constrains nothing, which is the point of it — a submitter who does not know
+ * the numbers yet still has an answer to give.
+ *
+ * An unrecognised band has no floor. Callers refuse it outright anyway
+ * (law_events_venue_pair_error()), and inventing a floor for it would be worse
+ * than having none.
+ *
+ * @param string $band Band label.
+ * @return int|null Minimum places, or null when the band has no floor.
+ */
+function law_events_venue_capacity_band_floor( $band ) {
+	$floor = 1;
+	foreach ( law_events_venue_capacity_bands() as $label => $ceiling ) {
+		if ( (string) $band === (string) $label ) {
+			return $floor;
+		}
+		// A band that follows an uncapped one cannot have a derived floor:
+		// there is no ceiling to count up from. "TBC" is the only band this
+		// reaches today.
+		$floor = ( null === $ceiling ) ? null : $ceiling + 1;
+	}
+	return null;
+}
+
+/**
+ * Check a venue capacity band and places-available pair.
+ *
+ * The single home of the rule, shared by the host/committee event form
+ * (law_events_form_save()) and the committee dashboard panel
+ * (law_committee_venue_input_error()) so the two cannot drift — they held a
+ * copy each until 15 September 2026, and only one of them would have grown the
+ * floor.
+ *
+ * It names which HALF of the pair is at fault rather than a form field,
+ * because the two callers name their fields differently and the form has the
+ * further job of deciding which half this submitter is allowed to move: an
+ * error on a field they cannot reach is a dead end.
+ *
+ * Both bounds are inclusive — places may equal the band's floor and its
+ * ceiling, never fall outside them.
+ *
+ * A blank places value is always acceptable and never meets the floor.
+ * `_law_tickets_available` is an int field, so blank stores 0, and
+ * law_event_tickets_remaining() reads 0 or unset as "not open for booking": an
+ * event with no places released has no allocation to judge against the band.
+ *
+ * $check_floor exists because the two bounds are not symmetrical in
+ * consequence. Releasing MORE places than the room holds oversells the event,
+ * so the ceiling is checked whichever half of the pair the submitter posted.
+ * A band that is merely bigger than the places released harms nothing, so the
+ * floor is checked only when the PLACES are the half being set. Without that,
+ * a host under review who moved to a bigger room could not say so: the
+ * committee's places would hold their band down, which is the one correction
+ * law_events_locked_fields() deliberately leaves them (Denis, 14 September
+ * 2026). The event form passes false when the places are locked; the committee
+ * panel, which always posts both halves, never does.
+ *
+ * @param string $band        Posted band, '' for "not set".
+ * @param string $places      Posted places, '' for none released.
+ * @param bool   $check_floor Whether the band's lower bound applies.
+ * @return array{0:string,1:string} array( '', '' ) when the pair is acceptable,
+ *                                  else array( 'band'|'places', $message ).
+ */
+function law_events_venue_pair_error( $band, $places, $check_floor = true ) {
+	$bands  = law_events_venue_capacity_bands();
+	$band   = (string) $band;
+	$places = trim( (string) $places );
+
+	// Only reachable from a tampered or stale select. Refused rather than
+	// stored, because an unrecognised band is read as "no ceiling" everywhere it
+	// is checked, which silently uncaps the ticket allocation.
+	// array_key_exists, not isset: "251+" and "TBC" map to NULL (no ceiling),
+	// and isset() reads a null value as an absent key, so isset() would refuse
+	// the two perfectly valid uncapped bands.
+	if ( '' !== $band && ! array_key_exists( $band, $bands ) ) {
+		return array( 'band', 'That is not one of the venue capacity bands. Please reload the page and try again.' );
+	}
+	if ( '' === $places ) {
+		return array( '', '' );
+	}
+	if ( ! ctype_digit( $places ) || (int) $places < 1 ) {
+		return array( 'places', 'Places available must be a whole number of 1 or more, or blank to keep bookings closed.' );
+	}
+	$places  = (int) $places;
+	$ceiling = $bands[ $band ] ?? null;
+	if ( null !== $ceiling && $places > $ceiling ) {
+		return array(
+			'places',
+			sprintf(
+				'Places available cannot exceed the venue capacity band (%1$s allows at most %2$d).',
+				$band,
+				$ceiling
+			),
+		);
+	}
+	// No band chosen means nothing to measure against, so the floor is skipped
+	// for the same reason the ceiling already was.
+	$floor = ( ! $check_floor || '' === $band ) ? null : law_events_venue_capacity_band_floor( $band );
+	if ( null !== $floor && $places < $floor ) {
+		return array(
+			'places',
+			sprintf(
+				'Places available must be at least %1$d to match the venue capacity band you chose (%2$s). Choose a smaller band, or release more places.',
+				$floor,
+				$band
+			),
+		);
+	}
+	return array( '', '' );
 }
 
 /**
@@ -352,10 +482,24 @@ function law_events_stripe_mode() {
 	return str_starts_with( $key, 'sk_live_' ) || str_starts_with( $key, 'rk_live_' ) ? 'live' : 'test';
 }
 
-/* Admin screen: LAW → Events settings ______________________________________ */
+/* Admin screen: Events → Settings _________________________________________ */
 
+/**
+ * The screen lives under the Events CPT menu rather than under LAW (Denis,
+ * 15 September 2026): everything it configures is the events module, so it
+ * belongs next to All events and Flagship, and the menu label is just
+ * "Settings" because the parent already says Events. The slug is unchanged,
+ * so admin.php?page=law-events-settings and every link to it still resolve.
+ */
 function law_events_register_settings_page() {
-	law_events_register_law_subpage( 'law-events-settings', 'Events settings', 'law_events_settings_page' );
+	law_events_register_law_subpage(
+		'law-events-settings',
+		'Events settings',
+		'law_events_settings_page',
+		'manage_options',
+		'edit.php?post_type=' . LAW_EVENT_CPT,
+		'Settings'
+	);
 }
 add_action( 'admin_menu', 'law_events_register_settings_page', 999 );
 
@@ -364,24 +508,30 @@ add_action( 'admin_menu', 'law_events_register_settings_page', 999 );
  * exists, then seed $_registered_pages for the possible Admin Menu Editor
  * parents. Same AME-proof pattern as law_register_migrate_speakers_page().
  *
- * @param string   $slug     Page slug.
- * @param string   $title    Page title.
- * @param callable $callback Render callback.
- * @param string   $cap      Required capability.
+ * @param string      $slug       Page slug.
+ * @param string      $title      Page (document) title.
+ * @param callable    $callback   Render callback.
+ * @param string      $cap        Required capability.
+ * @param string      $parent     Parent menu slug or file the visible item hangs off.
+ * @param string|null $menu_title Menu label; defaults to $title.
  */
-function law_events_register_law_subpage( $slug, $title, $callback, $cap = 'manage_options' ) {
-	// The VISIBLE menu item, under the LAW parent.
-	add_submenu_page( 'law-settings', $title, $title, $cap, $slug, $callback );
+function law_events_register_law_subpage( $slug, $title, $callback, $cap = 'manage_options', $parent = 'law-settings', $menu_title = null ) {
+	$menu_title = null === $menu_title ? $title : $menu_title;
+
+	// The VISIBLE menu item, under the given parent.
+	add_submenu_page( $parent, $title, $menu_title, $cap, $slug, $callback );
 
 	// Access resilience: Admin Menu Editor rewrites the LAW parent file, so
 	// the page must also exist as a hidden options.php child and be seeded in
 	// $_registered_pages for every parent AME might use, or WordPress's
 	// access check refuses the URL (the migrate-speakers workaround).
-	add_submenu_page( 'options.php', $title, $title, $cap, $slug, $callback );
+	add_submenu_page( 'options.php', $title, $menu_title, $cap, $slug, $callback );
+
+	$parents = array( $parent, 'law-settings', 'admin.php?page=law-settings', 'admin.php' );
 
 	global $_registered_pages;
-	foreach ( array( 'law-settings', 'admin.php?page=law-settings', 'admin.php' ) as $parent ) {
-		$hook = get_plugin_page_hookname( $slug, $parent );
+	foreach ( array_unique( $parents ) as $page_parent ) {
+		$hook = get_plugin_page_hookname( $slug, $page_parent );
 		if ( $hook && empty( $_registered_pages[ $hook ] ) ) {
 			$_registered_pages[ $hook ] = true;
 			add_action( $hook, $callback );
@@ -446,9 +596,9 @@ function law_events_settings_page() {
 					<td><input name="rendering_template_id" id="law-template" type="text" class="regular-text code" value="<?php echo esc_attr( $s['rendering_template_id'] ); ?>" placeholder="inrtem_…"></td></tr>
 				<tr><th scope="row"><label for="law-attendee-terms">Attendee registration terms</label></th>
 					<td><input name="attendee_terms_page" id="law-attendee-terms" type="text" class="regular-text" value="<?php echo esc_attr( $s['attendee_terms_page'] ); ?>" placeholder="Page ID, or https://…">
-					<p class="description">The terms someone accepts when they apply for or book a place. A page ID or an absolute URL.
+					<p class="description">The terms someone accepts when they register for or book a place. A page ID or an absolute URL.
 					<?php if ( ! law_events_attendee_terms_configured() ) : ?>
-						<strong>Not set: the flagship application currently links to the Policies index.</strong> It deliberately does NOT fall back to the host terms, which are about arranging a venue and paying a host fee and do not apply to an attendee.
+						<strong>Not set: the flagship registration form currently links to the Policies index.</strong> It deliberately does NOT fall back to the host terms, which are about arranging a venue and paying a host fee and do not apply to an attendee.
 					<?php endif; ?></p></td></tr>
 				<tr><th scope="row">Host edits to published events</th>
 					<td><label><input type="radio" name="host_edit_review" value="immediate" <?php checked( $s['host_edit_review'], 'immediate' ); ?>> Publish immediately</label><br>

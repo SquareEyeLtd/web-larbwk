@@ -6,7 +6,7 @@
  *
  * A separate page from Manage bookings, on purpose (Denis, 10 September
  * 2026): hosted-event bookings and paid places are different things. A hosted
- * booking is free, instant and reversible; a flagship application is a
+ * booking is free, instant and reversible; a flagship registration is a
  * request with money attached, reviewed one at a time, that can be approved,
  * declined, charged, refused by a bank and chased. Putting the two in one
  * table would mean a dozen columns that are blank for most rows and two sets
@@ -69,7 +69,7 @@ function law_flagship_bookings_filters( ?array $source = null ) {
 /** The payment states the filter offers, in the order they happen. */
 function law_flagship_payment_states() {
 	// The shared vocabulary (law_booking_payment_states(), bookings.php), with
-	// the three states an APPLICATION reads differently laid over it: on this
+	// the three states a REGISTRATION reads differently laid over it: on this
 	// screen a saved method means "ready for the committee", and a
 	// complimentary place is a decision the committee made rather than a price
 	// of zero. One map of states, two sets of words for three of them, rather
@@ -77,7 +77,7 @@ function law_flagship_payment_states() {
 	return array_merge(
 		law_booking_payment_states(),
 		array(
-			'ready'           => 'Payment method saved, awaiting review',
+			'ready'           => 'Payment method saved, pending approval',
 			'action_required' => 'Awaiting the delegate\'s bank',
 			'complimentary'   => 'No charge',
 		)
@@ -85,7 +85,7 @@ function law_flagship_payment_states() {
 }
 
 /**
- * One flat row per application: everything the committee needs to decide,
+ * One flat row per registration: everything the committee needs to decide,
  * plus the Stripe references that make a refund findable (spec §7.5).
  */
 function law_flagship_bookings_rows( array $filters ) {
@@ -145,7 +145,7 @@ function law_flagship_bookings_rows( array $filters ) {
 /** Columns, rows and title for the export trio. */
 function law_flagship_bookings_export_rows( array $filters ) {
 	$columns = array(
-		'Application',
+		'Registration',
 		'Status',
 		'First name',
 		'Second name',
@@ -158,7 +158,7 @@ function law_flagship_bookings_export_rows( array $filters ) {
 		'Amount charged',
 		'Payment',
 		'Stripe invoice',
-		'Applied',
+		'Registered',
 		'Decided',
 		'Accessibility',
 		'Dietary',
@@ -195,7 +195,7 @@ function law_flagship_bookings_export_rows( array $filters ) {
 		'columns' => $columns,
 		'rows'    => $rows,
 		'title'   => sprintf(
-			'Flagship applications for %s, %s',
+			'Flagship registrations for %s, %s',
 			$event_id ? get_post_field( 'post_title', $event_id ) : 'the flagship conference',
 			wp_date( 'j F Y' )
 		),
@@ -250,7 +250,7 @@ function law_flagship_bookings_export_handler() {
 	}
 
 	$data     = law_flagship_bookings_export_rows( law_flagship_bookings_filters() );
-	$basename = 'flagship-applications-' . gmdate( 'Ymd-His' );
+	$basename = 'flagship-registrations-' . gmdate( 'Ymd-His' );
 
 	if ( 'xlsx' === $format ) {
 		law_events_send_xlsx( $data['columns'], $data['rows'], $basename . '.xlsx', $data['title'] );

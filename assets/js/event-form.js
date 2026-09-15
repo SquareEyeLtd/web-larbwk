@@ -295,30 +295,89 @@
 		if (confirmField) { confirmField.addEventListener('input', update); }
 	}
 
-	/* Tickets available can never exceed the chosen venue capacity band: keep the
-	   number field's max in step with the select, and trim a value that no longer
-	   fits so the host sees the ceiling before they submit. The server checks the
-	   same rule (a locked band is read from the saved event, not this select). */
+	/* Places available has to fall inside the chosen venue capacity band, at both
+	   ends. The server holds the real rule (law_events_venue_pair_error()); this
+	   just says so before the form is submitted.
+
+	   Until 15 September 2026 this silently rewrote an over-band number down to
+	   the ceiling, so a host who typed 900 watched it become 50 with no idea
+	   why. It now leaves the number alone and shows a message instead. Nothing
+	   here ever writes to the field: on the committee panel, quietly RAISING the
+	   places would run law_event_tickets_changed() on save, which offers the new
+	   places to the waitlist and emails people. */
 	(function () {
 		var capacity = document.querySelector('[data-law-capacity]');
 		var tickets = document.querySelector('[data-law-tickets]');
 		if (!capacity || !tickets) { return; }
-		capacity.addEventListener('change', function () {
+
+		function bound(name) {
 			var option = capacity.options[capacity.selectedIndex];
-			var max = option ? option.getAttribute('data-law-max') : '';
-			if (max) {
-				tickets.max = max;
-				// Never rewrite a locked field: from submission onwards the
-				// places belong to the committee, the disabled input posts
-				// nothing, and clamping it here would show the host a number
-				// the event does not have. The server refuses the band instead.
-				if (!tickets.disabled && tickets.value && parseInt(tickets.value, 10) > parseInt(max, 10)) {
-					tickets.value = max;
-				}
-			} else {
-				tickets.removeAttribute('max');
+			var value = option ? option.getAttribute(name) : '';
+			return value ? parseInt(value, 10) : null;
+		}
+
+		/* The message node, built and torn down the way photoError() does it.
+
+		   It takes over whatever .law-form-error the field already holds rather
+		   than adding a second one: on an error re-render the server has printed
+		   its own message there, and two lines saying nearly the same thing is
+		   worse than one. A span, not a p — the field is a <p class="law-form-field">
+		   and a nested <p> would be auto-closed, which is why the PHP helper
+		   uses a span too. */
+		function bandError(message) {
+			var holder = (tickets.closest && tickets.closest('.law-form-field')) || tickets.parentNode;
+			if (!holder) { return; }
+			var box = holder.querySelector('.law-form-error');
+			if (!message) {
+				if (box && box.parentNode) { box.parentNode.removeChild(box); }
+				return;
 			}
+			if (!box) {
+				box = document.createElement('span');
+				box.className = 'law-form-error law-band-error';
+				box.setAttribute('role', 'alert');
+				holder.appendChild(box);
+			}
+			box.textContent = message;
+		}
+
+		function check() {
+			// A locked field posts nothing and is not the submitter's to fix,
+			// so it is never flagged. The server skips it for the same reason.
+			if (tickets.disabled || !tickets.value) { return bandError(''); }
+			var places = parseInt(tickets.value, 10);
+			var min = bound('data-law-min');
+			var max = bound('data-law-max');
+			if (isNaN(places)) { return bandError(''); }
+			if (max !== null && places > max) {
+				return bandError('That is more places than this band allows (at most ' + max + ').');
+			}
+			if (min !== null && places < min) {
+				return bandError('That is fewer places than this band allows (at least ' + min + ').');
+			}
+			bandError('');
+		}
+
+		/* The min/max attributes are only maintained where a stale value cannot
+		   do harm. On the host form the field is the one being edited, and a
+		   locked one is disabled and so exempt from constraint validation. The
+		   committee panel opts out (no data-law-strict): its Approve, Send back,
+		   Reject, Mark paid, Cancel and Delete buttons all submit the same form,
+		   so an attribute the stored value violates would block every one of
+		   them behind a validation bubble. */
+		function syncBounds() {
+			if (!tickets.hasAttribute('data-law-strict')) { return; }
+			var min = bound('data-law-min');
+			var max = bound('data-law-max');
+			if (max === null) { tickets.removeAttribute('max'); } else { tickets.max = max; }
+			if (min === null) { tickets.min = 1; } else { tickets.min = min; }
+		}
+
+		capacity.addEventListener('change', function () {
+			syncBounds();
+			check();
 		});
+		tickets.addEventListener('input', check);
 	})();
 
 	/* Invalid fields: the red border comes off as soon as the host touches the

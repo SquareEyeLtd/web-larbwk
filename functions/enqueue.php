@@ -115,7 +115,23 @@ add_action( 'wp_enqueue_scripts', function () {
 	// The programme's day tabs (parts/calendar-daynav.php): one day at a time.
 	// After calendar-filters.js, whose law:partial-rendered event it listens
 	// for. Exits on its own where the nav is not a tablist (the old layout).
-	if ( law_calendar_is_calendar_page() ) {
+	//
+	// The committee's timeline view renders the same nav and the same
+	// .law-cal-day-section panels, which is the whole of its day-tab support:
+	// the script is generic about what a day contains, so it needs no change,
+	// only loading. It exits harmlessly on the dashboard's table view, where
+	// there is no nav.
+	$law_slotchart_view = function_exists( 'law_slotchart_is_active' )
+		&& law_slotchart_is_active()
+		&& is_page_template( 'templates/account-dashboard.php' );
+
+	if ( law_calendar_is_calendar_page() || $law_slotchart_view ) {
 		wp_enqueue_script( 'law-calendar-tabs', $uri . '/assets/js/calendar-tabs.js', array( 'law-calendar-filters' ), $v( '/assets/js/calendar-tabs.js' ), true );
+	}
+
+	// The timeline itself. Its own file rather than more of the 2,900-line
+	// calendar.css, and loaded only on the view that draws it.
+	if ( $law_slotchart_view ) {
+		wp_enqueue_style( 'law-slot-chart', $uri . '/assets/css/slot-chart.css', array(), $v( '/assets/css/slot-chart.css' ) );
 	}
 }, 20 );

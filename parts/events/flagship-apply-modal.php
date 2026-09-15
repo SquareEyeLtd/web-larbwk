@@ -1,8 +1,8 @@
 <?php
 /**
- * The flagship application form (FLAGSHIP_PAYMENTS.md §4.2), in two contexts:
+ * The flagship registration form (FLAGSHIP_PAYMENTS.md §4.2), in two contexts:
  *
- * - 'modal': the .law-modal skeleton the Apply button opens (law-modal.js
+ * - 'modal': the .law-modal skeleton the Register button opens (law-modal.js
  *   supplies open/close/focus-trap off the shared classes; deliberately NOT
  *   parts/layout/modal.php, whose args are confirm-dialog shaped). Hidden
  *   without JS, because the opener is then a real link to the inline context.
@@ -10,20 +10,20 @@
  *   the no-JS path, repopulated from law_flagship_form_state() after a
  *   refused submission.
  *
- * Three states inside: logged out, a profile too incomplete to apply with,
+ * Three states inside: logged out, a profile too incomplete to register with,
  * and the consent step.
  *
  * **It collects nothing.** Denis, 10 September 2026: everything the committee
- * reviews an applicant on — name, organisation, job title, country, dietary
+ * reviews a delegate on — name, organisation, job title, country, dietary
  * and access requirements — is already on their profile, and asking for it
  * again is friction, a second copy to drift, and a longer form between
- * someone and a decision they have already made. So the application reads
+ * someone and a decision they have already made. So the registration reads
  * from the profile, and this dialog is the consent step and nothing else.
  * If the profile is missing what the committee needs, it says so and links
- * there rather than quietly accepting a nameless application.
+ * there rather than quietly accepting a nameless registration.
  *
  * Unlike the hosted-event booking form there is no colleague repeater: one
- * application per person (EVENTS_4.2_SPECS.md §5.1), so that the committee
+ * registration per person (EVENTS_4.2_SPECS.md §5.1), so that the committee
  * reviews each individually and each payment method is charged separately.
  *
  * Args: event (the calendar-mapped array), context ('modal' | 'inline').
@@ -44,7 +44,7 @@ $law_fa_permalink = get_permalink( $law_fa_id );
 $law_fa_price     = law_flagship_price_pence( 0, $law_fa_id );
 $law_fa_places    = law_flagship_places();
 $law_fa_dialog    = 'law-flagship-modal';
-$law_fa_heading   = __( 'Apply to attend', 'law' );
+$law_fa_heading   = __( 'Register to attend', 'law' );
 $law_fa_when      = trim(
 	( ! empty( $law_fa_event['date'] ) ? law_calendar_day_heading( $law_fa_event['date'] ) : '' )
 	. ( ! empty( $law_fa_event['time_label'] ) && 'Slot not confirmed' !== $law_fa_event['time_label'] ? ', ' . $law_fa_event['time_label'] : '' ),
@@ -65,7 +65,7 @@ $law_fa_missing = is_user_logged_in() ? law_flagship_profile_gaps( get_current_u
 ob_start();
 if ( ! is_user_logged_in() ) :
 	?>
-	<p class="law-modal__copy"><?php esc_html_e( 'You need an account to apply for a place at the conference. It only takes a minute, and you will come straight back here.', 'law' ); ?></p>
+	<p class="law-modal__copy"><?php esc_html_e( 'You need an account to register for a place at the conference. It only takes a minute, and you will come straight back here.', 'law' ); ?></p>
 	<p class="law-modal__actions law-booking-auth">
 		<a class="button second" href="<?php echo esc_url( wp_login_url( $law_fa_permalink ) ); ?>"><?php esc_html_e( 'Sign in', 'law' ); ?></a>
 		<a class="button orange" href="<?php echo esc_url( add_query_arg( array( 'redirect_to' => $law_fa_permalink ), home_url( '/register/' ) ) ); ?>"><?php esc_html_e( 'Create an account', 'law' ); ?></a>
@@ -80,7 +80,7 @@ elseif ( $law_fa_missing ) :
 		echo esc_html(
 			sprintf(
 				/* translators: %s: a list of missing profile details. */
-				__( 'Before you apply, please add your %s to your profile. The committee reviews applications on those details, and we take them from your profile so you never have to type them twice.', 'law' ),
+				__( 'Before you register, please add your %s to your profile. The committee reviews registrations on those details, and we take them from your profile so you never have to type them twice.', 'law' ),
 				wp_sprintf_l( '%l', $law_fa_missing )
 			)
 		);
@@ -109,7 +109,7 @@ else :
 		<?php law_events_honeypot_field(); ?>
 
 		<?php
-		// What they are applying for, as a highlighted block rather than two
+		// What they are registering for, as a highlighted block rather than two
 		// grey lines above a wall of prose (Denis, 10 September 2026). The
 		// price is one of those facts, so it sits here as a labelled row
 		// instead of in a paragraph of its own — which is the paragraph that
@@ -120,7 +120,7 @@ else :
 		// This is the one place the full arithmetic is spelled out. Nothing
 		// is said about the price rising later (the switch is silent), which
 		// is safe because the figure shown is always the figure charged: it
-		// is snapshotted onto the application at this moment, and
+		// is snapshotted onto the registration at this moment, and
 		// law_flagship_apply() refuses outright if it has moved since.
 		?>
 		<div class="law-booking-summary law-event-summary">
@@ -135,7 +135,7 @@ else :
 		</div>
 
 		<?php if ( $law_fa_places['full'] ) : ?>
-			<p class="law-booking-substate"><?php esc_html_e( 'The conference is currently full, so your application joins the queue for a place.', 'law' ); ?></p>
+			<p class="law-booking-substate"><?php esc_html_e( 'The conference is currently full, so your registration joins the queue for a place.', 'law' ); ?></p>
 		<?php endif; ?>
 
 		<?php if ( $law_fa_errors ) : ?>
@@ -150,7 +150,7 @@ else :
 		// The receptions a confirmed place includes (RECEPTIONS.md §7.1). Asked
 		// HERE rather than later because it is one tick at the moment somebody
 		// is already deciding to come, and because the answer has somewhere to
-		// live: it rides on the application as _law_reception_choices and is
+		// live: it rides on the registration as _law_reception_choices and is
 		// granted when the place is confirmed. Unticked by default — a place
 		// nobody asked for is a place somebody else could have had — and the
 		// line says they can add them later, so nothing is lost by leaving
@@ -163,9 +163,9 @@ else :
 				<p class="law-form-hint"><?php esc_html_e( 'Included at no cost with your place. Tick the ones you would like to attend; you can add them later from My bookings.', 'law' ); ?></p>
 				<?php foreach ( $law_fa_receptions as $law_fa_reception ) : ?>
 					<?php
-					// A reception this applicant ALREADY holds a place at is ticked and
+					// A reception this delegate ALREADY holds a place at is ticked and
 					// DISABLED with a tag saying why, never hidden and never offered
-					// again: they may well have bought Monday before deciding to apply,
+					// again: they may well have bought Monday before deciding to register,
 					// and the engine skips a place somebody already has rather than
 					// granting a second (Denis, 14 September 2026).
 					$law_fa_held = law_booking_user_booking_for_event( get_current_user_id(), $law_fa_reception, law_booking_holding_statuses() );
@@ -208,7 +208,7 @@ else :
 		// here made the paragraph harder to read, not clearer.
 		?>
 		<p class="law-booking-note">
-			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your application we take the payment and confirm your place; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
+			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your registration we take the payment and confirm your ticket; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
 		</p>
 
 		<p class="law-form-field">
@@ -218,7 +218,7 @@ else :
 				echo esc_html(
 					sprintf(
 						/* translators: %s: the total price. */
-						__( 'I agree to my payment details being saved securely and charged %s if my application is approved. *', 'law' ),
+						__( 'I agree to my payment details being saved securely and charged %s if my registration is approved. *', 'law' ),
 						law_events_format_pence( law_events_gross_pence( $law_fa_price ) )
 					)
 				);

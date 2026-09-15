@@ -12,6 +12,77 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 const LAW_MIGRATION_MAP_OPTION = 'law_events_entry_map';
 
+/**
+ * How many rows a single read takes. Neither reader pages, so these numbers are
+ * also the point at which the migrator would start dropping rows without saying
+ * so: past them the surplus is simply never seen. That is why the preflight
+ * blocks on them rather than trusting whoever presses Migrate to have checked.
+ */
+const LAW_MIGRATION_ENTRY_PAGE_SIZE = 500;
+const LAW_MIGRATION_CHILD_PAGE_SIZE = 100;
+
+/**
+ * The forms the events module owns: their entries migrate, and the source flip
+ * marks them inactive so nothing can still be posted to them
+ * (migration/page.php). Form 7 (Contact) is deliberately absent: it stays on
+ * Gravity Forms indefinitely.
+ *
+ * @return int[]
+ */
+function law_migration_module_form_ids() {
+	return array( 1, 2, 3, 4, 5, 6, 8, 9, 10 );
+}
+
+/**
+ * Every form this migrator has an opinion about. Anything active and outside
+ * this list is a form somebody added after the plan was written, which the
+ * preflight reports rather than silently ignoring.
+ *
+ * @return int[]
+ */
+function law_migration_known_form_ids() {
+	return array_merge( law_migration_module_form_ids(), array( 7 ) );
+}
+
+/**
+ * Source forms read whole through law_migration_entries(), i.e. the ones
+ * subject to LAW_MIGRATION_ENTRY_PAGE_SIZE. Form 4 (Event > host contact) is
+ * not here because it is only ever read as children of a form 2 entry, so the
+ * child cap is what covers it.
+ *
+ * @return int[]
+ */
+function law_migration_paged_form_ids() {
+	return array( 2, 5, 6, 8, 9, 10 );
+}
+
+/**
+ * Forms whose entries are nested children, resolved through their
+ * gpnf_entry_parent meta. Usually the parent is a form 2 (Event > submit an
+ * event) entry, but not always: form 10 (Event > external events) embeds the
+ * same nested forms, so nothing here may assume the parent's form.
+ *
+ * @return int[]
+ */
+function law_migration_child_form_ids() {
+	return array( 4, 5, 6, 8, 9 );
+}
+
+/**
+ * "form 8 (Event > speaker)". A bare ID forces whoever reads a preflight line
+ * to go and look the form up, so every message pairs the two. The title is read
+ * from Gravity Forms rather than from a table in here, because a form can be
+ * renamed and a hard-coded name would then be a lie.
+ *
+ * @param int $form_id Form ID.
+ * @return string
+ */
+function law_migration_form_name( $form_id ) {
+	$form  = class_exists( 'GFAPI' ) ? GFAPI::get_form( (int) $form_id ) : null;
+	$title = is_array( $form ) ? trim( (string) $form['title'] ) : '';
+	return $title ? sprintf( 'form %d (%s)', (int) $form_id, $title ) : sprintf( 'form %d (untitled)', (int) $form_id );
+}
+
 /** Ordered step definitions. */
 function law_migration_steps() {
 	return array(
@@ -20,6 +91,13 @@ function law_migration_steps() {
 		'co_owners'     => array( 'label' => 'Step 1: co-owner users (approved events)', 'gated' => true ),
 		'speakers'      => array( 'label' => 'Step 2: speakers', 'gated' => true ),
 		'events'        => array( 'label' => 'Step 3: events', 'gated' => true ),
+		// Before the sessions on purpose, not merely tidily: 21 of the 31 active
+		// form 9 (Event > session) entries are children of a form 10 (Event >
+		// external events) entry, and step 4 resolves a session's parent through
+		// $map['events']. Put the external events in that map first and step 4
+		// picks their agendas up with no change to it at all; run it after and
+		// those 21 sessions are skipped and lost.
+		'external_events' => array( 'label' => 'Step 3b: external events (form 10, published straight to the programme)', 'gated' => true ),
 		'sessions'      => array( 'label' => 'Step 4: sessions', 'gated' => true ),
 		'speaker_appearances' => array( 'label' => 'Step 4b: speaker appearance details (role, organisation, job title, photo, biography per event, refreshed from the source entries)', 'gated' => true ),
 		'comments'      => array( 'label' => 'Step 5: comment threads', 'gated' => true ),
@@ -48,7 +126,7 @@ function law_migration_map_set( $kind, $entry_id, $post_id ) {
 }
 
 /** Active GF entries for a form, ordered by id. */
-function law_migration_entries( $form_id, $offset = 0, $page_size = 200 ) {
+function law_migration_entries( $form_id, $offset = 0, $page_size = LAW_MIGRATION_ENTRY_PAGE_SIZE ) {
 	if ( ! class_exists( 'GFAPI' ) ) {
 		return array();
 	}
@@ -75,7 +153,7 @@ function law_migration_children( $form_id, $parent_id ) {
 			),
 		),
 		array( 'key' => 'id', 'direction' => 'ASC' ),
-		array( 'offset' => 0, 'page_size' => 100 )
+		array( 'offset' => 0, 'page_size' => LAW_MIGRATION_CHILD_PAGE_SIZE )
 	);
 	return is_wp_error( $entries ) ? array() : (array) $entries;
 }
@@ -244,6 +322,9 @@ function law_migration_preflight() {
 			6 => array( '1' => 'name', '3' => 'text', '4' => 'email' ),
 			8 => array( '1' => 'name', '3' => 'text', '4' => 'text', '5' => 'website', '6' => 'fileupload', '7' => 'textarea', '8' => 'email' ),
 			9 => array( '1' => 'time', '3' => 'time', '4' => 'text', '5' => 'textarea', '6' => 'multiselect' ),
+			// Form 10 (Event > external events): a near-clone of form 2 with the
+			// slot fields replaced by a date and two times, plus the booking URL.
+			10 => array( '17' => 'text', '23' => 'textarea', '63' => 'select', '105' => 'text', '112' => 'form', '115' => 'form', '118' => 'website', '119' => 'date', '120' => 'time', '121' => 'time' ),
 		);
 		foreach ( $expected as $form_id => $fields ) {
 			$form    = GFAPI::get_form( $form_id );
@@ -288,23 +369,118 @@ function law_migration_preflight() {
 
 		// Source counts.
 		$counts = array();
-		foreach ( array( 2, 4, 5, 6, 8, 9 ) as $form_id ) {
+		foreach ( array( 2, 4, 5, 6, 8, 9, 10 ) as $form_id ) {
 			$counts[ $form_id ] = (int) GFAPI::count_entries( $form_id, array( 'status' => 'active' ) );
 		}
 		$check( 'Source counts', $counts[2] > 0, wp_json_encode( $counts ) );
+
+		// Read limits. Neither law_migration_entries() nor law_migration_children()
+		// pages, so a form or a parent that reaches its cap loses the surplus with
+		// no error anywhere: the run reports success and the rows simply are not
+		// there. Blocking, because on a one-shot production migration a silent
+		// partial is the worst outcome available.
+		$over       = array();
+		$largest    = array( 'form' => 0, 'count' => 0 );
+		foreach ( law_migration_paged_form_ids() as $form_id ) {
+			$count = (int) ( $counts[ $form_id ] ?? GFAPI::count_entries( $form_id, array( 'status' => 'active' ) ) );
+			if ( $count > $largest['count'] ) {
+				$largest = array( 'form' => $form_id, 'count' => $count );
+			}
+			if ( $count >= LAW_MIGRATION_ENTRY_PAGE_SIZE ) {
+				$over[] = sprintf(
+					'%s has %d active entries but only the first %d are read',
+					law_migration_form_name( $form_id ),
+					$count,
+					LAW_MIGRATION_ENTRY_PAGE_SIZE
+				);
+			}
+		}
+
+		$child_forms = implode( ',', array_map( 'absint', law_migration_child_form_ids() ) );
+		// The parent's own form is carried through rather than assumed to be
+		// form 2: nested children can hang off any form that embeds them, and
+		// naming the wrong parent form in a preflight failure sends whoever reads
+		// it to the wrong place.
+		$child_rows  = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT e.form_id, em.meta_value AS parent_id, p.form_id AS parent_form, COUNT(*) AS children
+				 FROM {$wpdb->prefix}gf_entry e
+				 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id AND em.meta_key = 'gpnf_entry_parent'
+				 LEFT JOIN {$wpdb->prefix}gf_entry p ON p.id = em.meta_value
+				 WHERE e.form_id IN ({$child_forms}) AND e.status = 'active'
+				 GROUP BY e.form_id, em.meta_value, p.form_id
+				 HAVING children >= %d",
+				LAW_MIGRATION_CHILD_PAGE_SIZE
+			)
+		);
+		$largest_child = (int) $wpdb->get_var(
+			"SELECT COUNT(*) AS children
+			 FROM {$wpdb->prefix}gf_entry e
+			 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id AND em.meta_key = 'gpnf_entry_parent'
+			 WHERE e.form_id IN ({$child_forms}) AND e.status = 'active'
+			 GROUP BY e.form_id, em.meta_value
+			 ORDER BY children DESC
+			 LIMIT 1"
+		);
+		foreach ( (array) $child_rows as $row ) {
+			$over[] = sprintf(
+				'%s has %d children under %s entry %d but only the first %d are read',
+				law_migration_form_name( (int) $row->form_id ),
+				(int) $row->children,
+				$row->parent_form ? law_migration_form_name( (int) $row->parent_form ) : 'a missing',
+				(int) $row->parent_id,
+				LAW_MIGRATION_CHILD_PAGE_SIZE
+			);
+		}
+
+		$check(
+			'Entry counts within the read limits',
+			empty( $over ),
+			$over
+				? implode( '; ', $over ) . '. Page the reads in law_migration_entries()/law_migration_children() before migrating, or the surplus is lost silently.'
+				: sprintf(
+					'Largest source form is %s at %d of %d; largest child set is %d of %d.',
+					law_migration_form_name( $largest['form'] ?: 2 ),
+					$largest['count'],
+					LAW_MIGRATION_ENTRY_PAGE_SIZE,
+					$largest_child,
+					LAW_MIGRATION_CHILD_PAGE_SIZE
+				)
+		);
+
+		// Forms nobody told the migrator about. A form added after this plan was
+		// written is not migrated AND is not deactivated by the source flip, so it
+		// stays submittable through GF's REST endpoint with its feeds live. That
+		// can be the right answer (form 7, Contact, is exactly that), so this
+		// reports rather than blocks.
+		$known   = law_migration_known_form_ids();
+		$unknown = array();
+		foreach ( (array) GFAPI::get_forms( true, false ) as $form ) {
+			if ( ! in_array( (int) $form['id'], $known, true ) ) {
+				$unknown[] = law_migration_form_name( (int) $form['id'] );
+			}
+		}
+		$check(
+			'Unknown active forms',
+			empty( $unknown ),
+			$unknown
+				? implode( ', ', $unknown ) . ' active and unknown to the migrator: the entries are not migrated, and the form stays submittable after the source flip. Decide whether it belongs in law_migration_module_form_ids().'
+				: 'Every active form is one the migrator knows about.',
+			true
+		);
 
 		// Orphaned children.
 		$orphans = (int) $wpdb->get_var(
 			"SELECT COUNT(*) FROM {$wpdb->prefix}gf_entry e
 			 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id AND em.meta_key = 'gpnf_entry_parent'
 			 LEFT JOIN {$wpdb->prefix}gf_entry p ON p.id = em.meta_value
-			 WHERE e.form_id IN (4,5,6,8,9) AND e.status = 'active' AND (p.id IS NULL OR p.status != 'active')"
+			 WHERE e.form_id IN ({$child_forms}) AND e.status = 'active' AND (p.id IS NULL OR p.status != 'active')"
 		);
 		$check( 'Orphaned child entries', 0 === $orphans, $orphans . ' active children have a missing/trashed parent (they will be skipped and reported)', true );
 
 		// Slot parseability across every field 68 value.
 		$bad_slots = array();
-		foreach ( law_migration_entries( 2, 0, 500 ) as $entry ) {
+		foreach ( law_migration_entries( 2, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $entry ) {
 			$raw = trim( (string) rgar( $entry, '68' ) );
 			if ( '' !== $raw && ! law_calendar_parse_slot( $raw ) ) {
 				$bad_slots[] = 'entry ' . $entry['id'];
@@ -319,7 +495,7 @@ function law_migration_preflight() {
 		// and will not tick a checkbox on the host form.
 		$slot_keys = array_map( 'law_events_slot_label_key', law_migration_slot_labels() );
 		$unmatched = array();
-		foreach ( law_migration_entries( 2, 0, 500 ) as $entry ) {
+		foreach ( law_migration_entries( 2, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $entry ) {
 			$preferred = json_decode( (string) rgar( $entry, '77' ), true );
 			foreach ( (array) ( is_array( $preferred ) ? $preferred : array() ) as $raw ) {
 				$raw = trim( (string) $raw );
@@ -338,7 +514,7 @@ function law_migration_preflight() {
 		$missing_photos = 0;
 		$with_photos    = 0;
 		$uploads        = wp_upload_dir();
-		foreach ( law_migration_entries( 8, 0, 500 ) as $entry ) {
+		foreach ( law_migration_entries( 8, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $entry ) {
 			$url = law_calendar_speaker_photo_url( rgar( $entry, '6' ) );
 			if ( '' === $url ) {
 				continue;
@@ -361,7 +537,7 @@ function law_migration_preflight() {
 
 		// Stripe invoice config: without a tax rate ID a VAT-liable approval
 		// would raise a net-only invoice.
-		$check( 'Stripe tax rate ID configured', '' !== (string) law_events_setting( 'tax_rate_id', '' ), (string) law_events_setting( 'tax_rate_id', '(empty — set it in LAW → Events settings before approving paid events)' ), true );
+		$check( 'Stripe tax rate ID configured', '' !== (string) law_events_setting( 'tax_rate_id', '' ), (string) law_events_setting( 'tax_rate_id', '(empty — set it in Events → Settings before approving paid events)' ), true );
 		$check( 'Stripe rendering template configured', '' !== (string) law_events_setting( 'rendering_template_id', '' ), (string) law_events_setting( 'rendering_template_id', '(empty — invoices will use Stripe\'s default look)' ), true );
 	}
 
@@ -376,7 +552,7 @@ function law_migration_run_co_owners( $dry ) {
 	$created = 0;
 	$matched = 0;
 	$deferred = 0;
-	foreach ( law_migration_entries( 6, 0, 500 ) as $child ) {
+	foreach ( law_migration_entries( 6, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $child ) {
 		$ref       = 'form 6 entry ' . $child['id'];
 		$parent_id = (int) rgar( $child, 'gpnf_entry_parent' );
 		$parent    = $parent_id && class_exists( 'GFAPI' ) ? GFAPI::get_entry( $parent_id ) : null;
@@ -456,7 +632,7 @@ function law_migration_run_speakers( $dry ) {
 	$created = 0;
 	$merged  = 0;
 
-	foreach ( law_migration_entries( 8, 0, 500 ) as $child ) {
+	foreach ( law_migration_entries( 8, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $child ) {
 		$entry_id = (int) $child['id'];
 		$ref      = 'form 8 entry ' . $entry_id;
 
@@ -591,7 +767,7 @@ function law_migration_run_events( $dry ) {
 	$map     = law_migration_map();
 	$created = 0;
 
-	foreach ( law_migration_entries( 2, 0, 500 ) as $entry ) {
+	foreach ( law_migration_entries( 2, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $entry ) {
 		$entry_id = (int) $entry['id'];
 		$ref      = 'form 2 entry ' . $entry_id;
 
@@ -628,7 +804,18 @@ function law_migration_run_events( $dry ) {
 				'post_type'    => LAW_EVENT_CPT,
 				'post_status'  => $status,
 				'post_title'   => $title,
-				'post_content' => wp_kses_post( (string) rgar( $entry, '23' ) ),
+				// law_rich_text_sanitize(), not wp_kses_post(): it is the
+				// allowlist every OTHER write path for this field uses (the host
+				// form, the committee form, wp-admin), and the wider one lets
+				// through structural wrappers — div, article, main — pasted in
+				// from an organiser's own website. Those are layout noise in our
+				// listing, and the first time anybody opened the event and saved
+				// it the editor round trip would strip them anyway, silently
+				// changing content nobody had edited. One field, one allowlist
+				// (security review, 15 September 2026). It bites: 23 of the 99
+				// form 2 descriptions and 3 of the 4 form 10 ones differ between
+				// the two.
+				'post_content' => law_rich_text_sanitize( (string) rgar( $entry, '23' ) ),
 				'post_author'  => $author ?: 0,
 				'post_date'    => (string) rgar( $entry, 'date_created' ),
 			),
@@ -1050,7 +1237,7 @@ function law_migration_user_by_display_name( $name ) {
 
 function law_migration_run_legacy_lists( $dry ) {
 	$created = 0;
-	foreach ( law_migration_entries( 2, 0, 500 ) as $entry ) {
+	foreach ( law_migration_entries( 2, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $entry ) {
 		if ( law_migration_children( 8, (int) $entry['id'] ) ) {
 			continue; // Nested speakers exist; the list is already superseded.
 		}
@@ -1085,13 +1272,203 @@ function law_migration_run_legacy_lists( $dry ) {
 	return $created;
 }
 
+/* Step 3b: external events __________________________________________________ */
+
+/**
+ * Form 10 (Event > external events) entries become published law_event posts
+ * carrying the external flag.
+ *
+ * These are the events LAW neither runs nor books — LCIA's Tylney Symposium,
+ * GAR Live, the CIArb Alexander Lecture, Law Rocks — captured on a form a
+ * colleague built in September 2026 and curated onto the programme by the
+ * committee. They arrive PUBLISHED because they are already live: form 10 has
+ * no status field, every active entry is on the programme today, and migrating
+ * them as drafts would take four events off it at cutover.
+ *
+ * Nothing here touches the workflow. wp_insert_post() on a NEW post passes
+ * straight through the status guard (functions/events/workflow.php), so no
+ * transition fires, no email is sent and no invoice is raised — which is right:
+ * an external event has no fee, no invoice contact and nobody to approve it.
+ */
+function law_migration_run_external_events( $dry ) {
+	$map     = law_migration_map();
+	$created = 0;
+
+	foreach ( law_migration_entries( 10, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $entry ) {
+		$entry_id = (int) $entry['id'];
+		$ref      = 'form 10 entry ' . $entry_id;
+
+		if ( ! empty( $map['events'][ $entry_id ] ) && get_post( $map['events'][ $entry_id ] ) ) {
+			law_migration_log( 'external_events', 'skipped', $ref, 'Already migrated to post ' . $map['events'][ $entry_id ] . '.' );
+			continue;
+		}
+
+		$title = trim( (string) rgar( $entry, '17' ) );
+		if ( '' === $title ) {
+			law_migration_log( 'external_events', 'warning', $ref, 'No event title; skipped.' );
+			continue;
+		}
+
+		$when = law_migration_external_when( $entry );
+
+		if ( $dry ) {
+			law_migration_log( 'external_events', 'dry-run', $ref, sprintf(
+				'Would create "%s" published, %s, %d session(s), booking link %s.',
+				$title,
+				'' !== $when['start'] ? $when['start'] . ( '' !== $when['end'] ? ' to ' . substr( $when['end'], 11 ) : ' onwards' ) : 'no date',
+				count( law_migration_children( 9, $entry_id ) ),
+				trim( (string) rgar( $entry, '118' ) ) ?: '(none yet)'
+			) );
+			if ( $when['dropped_end'] ) {
+				law_migration_log( 'external_events', 'warning', $ref, $when['dropped_end'] );
+			}
+			continue;
+		}
+
+		$author  = (int) rgar( $entry, 'created_by' );
+		$post_id = wp_insert_post(
+			array(
+				'post_type'    => LAW_EVENT_CPT,
+				'post_status'  => 'publish',
+				'post_title'   => $title,
+				'post_content' => law_rich_text_sanitize( (string) rgar( $entry, '23' ) ),
+				'post_author'  => $author ?: 0,
+				'post_date'    => (string) rgar( $entry, 'date_created' ),
+			),
+			true
+		);
+		if ( is_wp_error( $post_id ) || ! $post_id ) {
+			law_migration_log( 'external_events', 'error', $ref, 'wp_insert_post failed: ' . ( is_wp_error( $post_id ) ? $post_id->get_error_message() : 'unknown' ) );
+			continue;
+		}
+		$post_id = (int) $post_id;
+
+		// Into the SAME map half the form 2 events use: step 4 (sessions) and
+		// step 8 (the redirect map) both read $map['events'], and the entry IDs
+		// cannot collide because they come from one wp_gf_entry table.
+		law_migration_map_set( 'events', $entry_id, $post_id );
+		law_migration_populate_external_event( $post_id, $entry, $when );
+		$created++;
+
+		law_migration_log( 'external_events', 'created', $ref, sprintf(
+			'Created external event post %d "%s", published, %s.',
+			$post_id,
+			$title,
+			'' !== $when['start'] ? $when['start'] : 'no date'
+		) );
+		if ( $when['dropped_end'] ) {
+			law_migration_log( 'external_events', 'warning', $ref, $when['dropped_end'] );
+		}
+	}
+
+	return array( 'done' => true, 'summary' => $created . ' external events created.' );
+}
+
+/**
+ * The date and the two times from form 10 fields 119, 120 and 121, in the
+ * _law_start / _law_end shape.
+ *
+ * An end earlier than its start is dropped rather than stored backwards. Real
+ * data: entry 1559, Law Rocks! LONDON 2026, was captured as 19:45 to 11:30 — a
+ * night that runs past midnight, which this model has no way to express and
+ * must not guess a second date for. The programme then reads "7:45pm onwards",
+ * which is true, and the report says so, which is how the committee finds out.
+ *
+ * @return array{start:string,end:string,dropped_end:string}
+ */
+function law_migration_external_when( array $entry ) {
+	$date  = trim( (string) rgar( $entry, '119' ) );
+	$start = law_calendar_normalise_time( (string) rgar( $entry, '120' ) );
+	$end   = law_calendar_normalise_time( (string) rgar( $entry, '121' ) );
+
+	if ( '' === $date ) {
+		return array( 'start' => '', 'end' => '', 'dropped_end' => '' );
+	}
+
+	$dropped = '';
+	if ( '' !== $end && '' !== $start && $end <= $start ) {
+		$dropped = sprintf(
+			'End time %1$s is not after the start time %2$s, so it was not migrated and the programme will read "%2$s onwards". Check whether this event runs past midnight.',
+			$end,
+			$start
+		);
+		$end = '';
+	}
+
+	return array(
+		'start'       => '' !== $start ? $date . ' ' . $start : $date . ' 00:00',
+		'end'         => '' !== $end ? $date . ' ' . $end : '',
+		'dropped_end' => $dropped,
+	);
+}
+
+/**
+ * Write one migrated external event's meta, terms and speaker rows.
+ *
+ * Deliberately a short list next to law_migration_populate_event()'s: no fee,
+ * no invoice contact, no payment status, no slot, no assignee, no co-owners, no
+ * contacts and no tickets, because an external event has none of those and all
+ * four production entries left every one of the corresponding form 10 fields
+ * empty.
+ */
+function law_migration_populate_external_event( $post_id, array $entry, array $when ) {
+	$map = law_migration_map();
+
+	law_event_update_meta( $post_id, '_law_is_external', 1 );
+	law_event_update_meta( $post_id, '_law_registration_state', 'external' );
+	law_event_update_meta( $post_id, '_law_external_url', trim( (string) rgar( $entry, '118' ) ) );
+
+	law_event_update_meta( $post_id, '_law_start', $when['start'] );
+	law_event_update_meta( $post_id, '_law_end', $when['end'] );
+	// Empty on purpose: an external event holds no programme slot, and
+	// law_event_is_managed_by_law() is what stops a later save reading that
+	// emptiness as "clear the dates".
+	law_event_update_meta( $post_id, '_law_slot_label', '' );
+
+	law_event_update_meta( $post_id, '_law_host_organisations', (string) rgar( $entry, '105' ) );
+	law_event_update_meta( $post_id, '_law_venue', (string) rgar( $entry, '21' ) );
+	law_event_update_meta( $post_id, '_law_sector_jurisdiction', (string) rgar( $entry, '61' ) );
+	law_event_update_meta( $post_id, '_law_sector_other', (string) rgar( $entry, '62' ) );
+	law_event_update_meta( $post_id, '_law_gf_entry_id', (int) $entry['id'] );
+	// The reference is the entry ID under the 14 September 2026 rule, the same
+	// as every other migrated event; field 70 is not carried across.
+	law_event_update_meta( $post_id, '_law_reference', (string) (int) $entry['id'] );
+
+	$sectors = array();
+	foreach ( $entry as $key => $value ) {
+		if ( 0 === strpos( (string) $key, '60.' ) && '' !== $value ) {
+			$sectors[] = law_events_sector_term_name( $value );
+		}
+	}
+	law_events_set_terms_by_name( $post_id, 'law_sector', $sectors );
+	law_events_set_terms_by_name( $post_id, 'law_event_type', array( (string) rgar( $entry, '63' ) ) );
+	wp_set_object_terms( $post_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
+
+	// Speakers, through the step 2 map, exactly as a form 2 event's are. None of
+	// the four production entries has any, but the form offers the section and
+	// the committee can add them here afterwards, so the path has to work.
+	law_event_update_meta( $post_id, '_law_speakers', law_migration_speaker_rows( $entry, $map ) );
+
+	// The dashboard's "With an agenda" filter reads this switch. Set from the
+	// source children rather than after step 4, because step 4 writes sessions
+	// and never comes back to the event.
+	law_event_update_meta( $post_id, '_law_session_agenda', law_migration_children( 9, (int) $entry['id'] ) ? 1 : 0 );
+
+	law_event_log(
+		$post_id,
+		'Migrated from Gravity Forms form 10 (Event > external events) entry ' . (int) $entry['id'] . ', published to the programme.',
+		array( 'action' => 'migrated', 'source' => 'migration', 'entry' => (int) $entry['id'] ),
+		array( 'user_id' => 0 )
+	);
+}
+
 /* Step 4: sessions __________________________________________________________ */
 
 function law_migration_run_sessions( $dry ) {
 	$map     = law_migration_map();
 	$created = 0;
 
-	foreach ( law_migration_entries( 9, 0, 500 ) as $child ) {
+	foreach ( law_migration_entries( 9, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $child ) {
 		$entry_id = (int) $child['id'];
 		$ref      = 'form 9 entry ' . $entry_id;
 
@@ -1104,7 +1481,16 @@ function law_migration_run_sessions( $dry ) {
 		$parent_entry = (int) rgar( $child, 'gpnf_entry_parent' );
 		$parent_post  = (int) ( $map['events'][ $parent_entry ] ?? 0 );
 		if ( ! $parent_post ) {
-			law_migration_log( 'sessions', 'skipped', $ref, 'Parent event not migrated (orphan or trashed parent).' );
+			// Sessions also hang off form 10 (Event > external events), which this
+			// migrator does not read. Saying so beats "orphan or trashed parent",
+			// which sends whoever reads the report looking for damage that is not
+			// there: the parent is perfectly healthy, it is just on a form that is
+			// out of scope until external events are built.
+			$parent = $parent_entry && class_exists( 'GFAPI' ) ? GFAPI::get_entry( $parent_entry ) : null;
+			$reason = ( is_array( $parent ) && ! in_array( (int) $parent['form_id'], law_migration_module_form_ids(), true ) )
+				? sprintf( 'Parent entry %d is on %s, which is not migrated.', $parent_entry, law_migration_form_name( (int) $parent['form_id'] ) )
+				: 'Parent event not migrated (orphan or trashed parent).';
+			law_migration_log( 'sessions', 'skipped', $ref, $reason );
 			continue;
 		}
 
@@ -1269,7 +1655,7 @@ function law_migration_run_comments( $dry ) {
 	$map     = law_migration_map();
 	$created = 0;
 
-	foreach ( law_migration_entries( 5, 0, 500 ) as $child ) {
+	foreach ( law_migration_entries( 5, 0, LAW_MIGRATION_ENTRY_PAGE_SIZE ) as $child ) {
 		$entry_id = (int) $child['id'];
 		$ref      = 'form 5 entry ' . $entry_id;
 
@@ -2203,6 +2589,8 @@ function law_migration_run_step( $step, $dry ) {
 			return $result;
 		case 'events':
 			return law_migration_run_events( $dry );
+		case 'external_events':
+			return law_migration_run_external_events( $dry );
 		case 'sessions':
 			return law_migration_run_sessions( $dry );
 		case 'speaker_appearances':
@@ -2239,19 +2627,33 @@ function law_migration_verification() {
 		$contact_rows += count( law_event_meta( $event_id, '_law_contacts' ) );
 	}
 
-	$orphans = (int) $wpdb->get_var(
+	$child_forms = implode( ',', array_map( 'absint', law_migration_child_form_ids() ) );
+	$orphans     = (int) $wpdb->get_var(
 		"SELECT COUNT(*) FROM {$wpdb->prefix}gf_entry e
 		 JOIN {$wpdb->prefix}gf_entry_meta em ON em.entry_id = e.id AND em.meta_key = 'gpnf_entry_parent'
 		 LEFT JOIN {$wpdb->prefix}gf_entry p ON p.id = em.meta_value
-		 WHERE e.form_id IN (4,5,6,8,9) AND e.status = 'active' AND (p.id IS NULL OR p.status != 'active')"
+		 WHERE e.form_id IN ({$child_forms}) AND e.status = 'active' AND (p.id IS NULL OR p.status != 'active')"
 	);
+
+	// External events are counted on their own line. Without it the panel's
+	// first comparison — form 2 entries against law_event posts — would read as
+	// four events too many, and somebody would go looking for a bug.
+	$external = 0;
+	foreach ( $event_ids as $event_id ) {
+		if ( law_event_meta( $event_id, '_law_is_external' ) ) {
+			$external++;
+		}
+	}
 
 	return array(
 		'form 2 active entries'  => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 2, array( 'status' => 'active' ) ) : 0,
+		'form 10 active entries (external events)' => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 10, array( 'status' => 'active' ) ) : 0,
 		'law_event posts'        => count( $event_ids ),
+		'law_event posts flagged external' => $external,
 		'mapped events'          => count( $map['events'] ),
 		'law_speaker posts'      => count( get_posts( array( 'post_type' => LAW_SPEAKER_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => 2000 ) ) ),
 		'mapped speaker entries (more than posts = dedupe merges)' => count( $map['speakers'] ),
+		'form 9 active entries (sessions)' => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 9, array( 'status' => 'active' ) ) : 0,
 		'law_session posts'      => count( get_posts( array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => 1000 ) ) ),
 		'migrated comments'      => (int) get_comments( array( 'type' => LAW_EVENT_COMMENT_TYPE, 'count' => true, 'meta_key' => '_law_gf_entry_id' ) ),
 		'form 4 contact children (active parents excluded from count when orphaned)' => class_exists( 'GFAPI' ) ? (int) GFAPI::count_entries( 4, array( 'status' => 'active' ) ) : 0,

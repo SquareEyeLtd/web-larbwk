@@ -77,7 +77,7 @@ function law_event_box_workflow( $post ) {
  * does not belong beside the irreversible Approve / Reject / Cancel radios.
  */
 function law_event_box_flags( $post ) {
-	law_field_checkbox( 'law_is_law_event', 'Run by LAW, not an external host', (bool) law_event_meta( $post->ID, '_law_is_law_event' ) );
+	law_field_checkbox( 'law_is_external', 'External: booked on the organiser\'s own website', (bool) law_event_meta( $post->ID, '_law_is_external' ) );
 	law_field_checkbox( 'law_session_agenda', 'This event has a session agenda', (bool) law_event_meta( $post->ID, '_law_session_agenda' ) );
 
 	$sessions = count( law_event_session_ids( $post->ID ) );
@@ -381,7 +381,7 @@ function law_event_admin_save( $post_id, $post ) {
 	$before_tier     = (string) law_event_meta( $post_id, '_law_fee_tier' );
 	$before_orgs     = (array) law_event_meta( $post_id, '_law_organisation_ids' );
 	$before_flags    = array(
-		'_law_is_law_event'   => (int) law_event_meta( $post_id, '_law_is_law_event' ),
+		'_law_is_external'   => (int) law_event_meta( $post_id, '_law_is_external' ),
 		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
 	);
 
@@ -489,7 +489,7 @@ function law_event_admin_save( $post_id, $post ) {
 	// nothing, so a flag could be switched on here and then never off. The
 	// nonce gate at the top of this handler already guarantees the box was on
 	// the form (quick edit and bulk edit never carry law_event_admin_nonce).
-	law_event_update_meta( $post_id, '_law_is_law_event', ! empty( $_POST['law_is_law_event'] ) );
+	law_event_update_meta( $post_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 	law_event_log_flag_change( $post_id, $before_flags, $actor );
 

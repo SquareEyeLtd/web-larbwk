@@ -1,6 +1,6 @@
 <?php
 /**
- * The flagship applications table, for
+ * The flagship registrations table, for
  * templates/account-dashboard-flagship-bookings.php, and the whole response
  * of the &law_partial=1 endpoint, so filtering swaps it in place.
  *
@@ -11,7 +11,7 @@
  * - each row's Approve and Decline are their own small form carrying their
  *   own hidden `decision`, rather than one shared form with a hidden default
  *   that a script is trusted to flip. (It was the latter, and no such script
- *   existed, so Decline approved the applicant and charged them.)
+ *   existed, so Decline approved the delegate and charged them.)
  * - the bulk form lives OUTSIDE the table and the tick boxes join it with the
  *   HTML `form` attribute, so the per-row forms are siblings rather than
  *   illegally nested inside it;
@@ -120,18 +120,18 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 				'field'   => $approve ? array() : array(
 					'name'     => 'reason',
 					'label'    => __( 'Reason (optional)', 'law' ),
-					'help'     => __( 'Included in the email to the applicant. Leave it empty to say nothing beyond the decision.', 'law' ),
+					'help'     => __( 'Included in the email to the delegate. Leave it empty to say nothing beyond the decision.', 'law' ),
 					'rows'     => 3,
 					'required' => false,
 				),
 				'confirm' => array(
 					'label' => $approve
 						? ( $row['complimentary'] ? __( 'Confirm the place', 'law' ) : sprintf( __( 'Charge %s and confirm', 'law' ), $amount ) )
-						: __( 'Decline the application', 'law' ),
+						: __( 'Decline the registration', 'law' ),
 					'class' => $approve ? 'button orange' : 'button alert',
 					'busy'  => $approve ? __( 'Charging…', 'law' ) : __( 'Declining…', 'law' ),
 				),
-				'close'   => $approve ? __( 'Leave it for now', 'law' ) : __( 'Keep the application', 'law' ),
+				'close'   => $approve ? __( 'Leave it for now', 'law' ) : __( 'Keep the registration', 'law' ),
 			)
 		);
 		?>
@@ -141,15 +141,15 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 ?>
 
 <?php if ( ! $law_fbl_rows ) : ?>
-	<p class="law-cal__empty"><?php esc_html_e( 'No applications match.', 'law' ); ?></p>
+	<p class="law-cal__empty"><?php esc_html_e( 'No registrations match.', 'law' ); ?></p>
 <?php else : ?>
 
 	<p class="law-flagship-bookings__summary">
 		<?php
 		echo esc_html(
 			sprintf(
-				/* translators: %s: number of applications. */
-				_n( '%s application.', '%s applications.', count( $law_fbl_rows ), 'law' ),
+				/* translators: %s: number of registrations. */
+				_n( '%s registration.', '%s registrations.', count( $law_fbl_rows ), 'law' ),
 				number_format_i18n( count( $law_fbl_rows ) )
 			)
 		);
@@ -181,7 +181,7 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 			null,
 			array(
 				'id'      => 'law-fb-bulk-approve',
-				'title'   => __( 'Approve the selected applications?', 'law' ),
+				'title'   => __( 'Approve the selected registrations?', 'law' ),
 				'copy'    => array_filter(
 					array(
 						__( 'Each one will have the payment method they saved charged and their place confirmed straight away. Everyone will be emailed a confirmation with a VAT invoice and a calendar invitation.', 'law' ),
@@ -212,9 +212,9 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 			null,
 			array(
 				'id'      => 'law-fb-bulk-decline',
-				'title'   => __( 'Decline the selected applications?', 'law' ),
+				'title'   => __( 'Decline the selected registrations?', 'law' ),
 				'copy'    => array(
-					__( 'Nobody will be charged. Each applicant will be emailed to say they have not been offered a place.', 'law' ),
+					__( 'Nobody will be charged. Each delegate will be emailed to say they have not been offered a place.', 'law' ),
 					__( 'The payment details each of them saved will be deleted and any unpaid invoice voided, so it can no longer be paid.', 'law' ),
 				),
 				'field'   => array(
@@ -231,7 +231,7 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 					'class' => 'button alert',
 					'busy'  => __( 'Declining…', 'law' ),
 				),
-				'close'   => __( 'Keep the applications', 'law' ),
+				'close'   => __( 'Keep the registrations', 'law' ),
 			)
 		);
 		?>
@@ -264,12 +264,12 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 			<thead><tr>
 				<th class="law-flagship-bookings__tick">
 					<label>
-						<input type="checkbox" data-law-check-all aria-label="<?php esc_attr_e( 'Select every application', 'law' ); ?>">
+						<input type="checkbox" data-law-check-all aria-label="<?php esc_attr_e( 'Select every registration', 'law' ); ?>">
 						<span class="show-for-sr"><?php esc_html_e( 'Select', 'law' ); ?></span>
 					</label>
 				</th>
-				<th><?php esc_html_e( 'Application', 'law' ); ?></th>
-				<th class="law-flagship-bookings__applicant"><?php esc_html_e( 'Applicant', 'law' ); ?></th>
+				<th><?php esc_html_e( 'Registration', 'law' ); ?></th>
+				<th class="law-flagship-bookings__applicant"><?php esc_html_e( 'Delegate', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Email', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Price', 'law' ); ?></th>
 				<th class="law-flagship-bookings__payment"><?php esc_html_e( 'Payment', 'law' ); ?></th>
@@ -346,7 +346,7 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 						// printing under it (Denis, 10 September 2026): it is
 						// free text the committee typed, so one long one set
 						// the height of the row and pushed everything else
-						// about the application out of view. It is still on
+						// about the registration out of view. It is still on
 						// the row for anyone who wants it, and it is in full
 						// in the exports and on the wp-admin booking screen.
 						?>

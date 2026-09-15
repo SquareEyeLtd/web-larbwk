@@ -777,7 +777,12 @@ Update in the same piece of work:
   includes. My bookings renders the same helper above its cards. One function, two surfaces
   (RECEPTIONS.md §7.3), and the filled navy panel it uses is `.law-strip` — the generalisation
   of `.law-flagship-strip`, which the My events empty state folded into at the same time rather
-  than staying a third near-copy of the same navy.
+  than staying a third near-copy of the same navy. **A second surface means second assets**, and
+  on 15 September 2026 the hub was found to be missing two: `.law-strip__cta` was scoped under
+  `.law-cal`, a wrapper only My bookings has, so the hub drew the theme's small base button; and
+  `.law-hp`, which hides the spam honeypot, lived only in `event-form.css`, which the hub does
+  not load, so the honeypot showed as a visible "Leave this field empty" input. Both rules were
+  un-scoped (`calendar.css`, `style.css`).
 - §4 templates: `templates/account-hub.php`, `parts/layout/account-tiles.php`,
   `assets/css/account-hub.css`, `law_icon()` / `law_icon_paths()` in helpers.php;
   `templates/account.php` now serves the confirmation page only.

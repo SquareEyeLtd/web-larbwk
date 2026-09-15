@@ -48,8 +48,11 @@
  *                                 filled navy panel. The flagship page sets it:
  *                                 its agenda is the substance of the page, and
  *                                 the panel marks it out as the one day-long
- *                                 paid event. The description stays above the
- *                                 panel either way.
+ *                                 paid event. The same flag also moves the
+ *                                 timeline OUT of the reading column to the
+ *                                 full width of the article below both
+ *                                 columns, a panel that wide having no business
+ *                                 in two thirds of the row.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -238,23 +241,77 @@ if ( $event ) {
 				?>
 
 				<?php
-				// The speakers column renders only for an event without sessions. When
-				// there are sessions, each speaker already appears in the session panel
-				// they speak in, and a sidebar copy would print every card (and its bio
-				// dialog) twice on the page.
+				// What goes in the sidebar beside the reading column (Denis, 15
+				// September 2026): reference -- who is on, where it is -- rather than
+				// part of the thread the reader follows down the page, which is the
+				// description and then the running order.
+				//
+				// The Speakers list renders only for an event WITHOUT sessions. When
+				// there are sessions each speaker already appears in the session panel
+				// they speak in, and a sidebar copy would print every card (and its
+				// bio dialog) twice on the page. Before this the list sat under the
+				// running order, where it pushed everything else down the page.
 				$law_cal_speakers_aside = empty( $event['sessions'] ) && ! empty( $event['speakers'] );
+
+				// The venue is in the SIDEBAR on the flagship and in the reading
+				// column on every other event (Denis, 15 September 2026). The two
+				// pages read differently: the flagship's reading column holds the
+				// description and nothing else, since its agenda is a panel below
+				// both columns, so an address under it would sit in a half-empty
+				// column with the sidebar beside it; a hosted event's column carries
+				// the description and then the running order, and the address reads
+				// as the last fact of that run, which is where it has lived since 9
+				// September 2026.
+				//
+				// Keyed off $law_cal_sessions_panel so ONE flag carries the whole
+				// flagship layout -- the panel, its placement below the columns, and
+				// the venue beside the description -- and no part of it can disagree
+				// with another.
+				$law_cal_venue_in_main = ! $law_cal_sessions_panel;
+
+				$law_cal_has_venue  = '' !== trim( (string) $event['venue'] );
+				$law_cal_venue_side = $law_cal_has_venue && ! $law_cal_venue_in_main;
+				$law_cal_has_aside  = $law_cal_speakers_aside || $law_cal_venue_side;
+
+				// The flagship's agenda is a filled panel the width of the article, so
+				// it renders BELOW the two columns rather than inside the left one
+				// (Denis, 15 September 2026): the flagship page reads description
+				// (with the venue beside it), then the day. Every other event keeps
+				// its sessions in the reading column, under the description they
+				// belong to. $law_cal_sessions_panel is the flagship's own flag
+				// (templates/flagship-event.php), so the two cannot disagree.
+				$law_cal_sessions_full = $law_cal_sessions_panel;
+
+				// One closure per movable section, called from either of its two
+				// positions, so no placement can drift into rendering a different
+				// agenda or a different address from the other.
+				$law_cal_render_sessions = static function () use ( $event, $law_cal_sessions_heading, $law_cal_sessions_panel ) {
+					get_template_part(
+						'parts/events/session-timeline',
+						null,
+						array(
+							'sessions' => $event['sessions'],
+							'heading'  => $law_cal_sessions_heading,
+							'panel'    => $law_cal_sessions_panel,
+						)
+					);
+				};
+
+				$law_cal_render_venue = static function () use ( $event ) {
+					get_template_part( 'parts/events/event-venue', null, array( 'venue' => $event['venue'] ) );
+				};
 				?>
 				<article class="law-cal-detail">
 					<div class="grid-x grid-padding-x">
 						<?php
-						// large-8 only when the speakers sidebar is beside it. Without the
-						// sidebar (an event with sessions) the column takes the whole row
-						// rather than leaving a third of it empty, which is what gives each
-						// session room to put its speakers beside its description. The prose
-						// keeps its own 65ch measure either way (calendar.css), so the wider
-						// column does not make anything harder to read.
+						// large-8 only when the sidebar is beside it. With nothing to put
+						// in the sidebar -- no speakers to list and no venue stated -- the
+						// column takes the whole row rather than leaving a third of it
+						// empty. The prose keeps its own 65ch measure either way
+						// (calendar.css), so the wider column does not make anything
+						// harder to read.
 						?>
-						<div class="<?php echo $law_cal_speakers_aside ? 'large-8' : 'large-12'; ?> cell law-cal-detail__main">
+						<div class="<?php echo $law_cal_has_aside ? 'large-8' : 'large-12'; ?> cell law-cal-detail__main">
 							<?php if ( $law_cal_show_status || law_calendar_entry_admin_url( $event['id'] ) ) : ?>
 								<p class="law-cal-detail__admin">
 									<?php if ( $law_cal_show_status ) : ?>
@@ -267,55 +324,76 @@ if ( $event ) {
 							<div class="law-cal-detail__body">
 								<?php echo wp_kses_post( wpautop( $event['description'] ) ); ?>
 							</div>
-							<?php if ( ! empty( $event['sessions'] ) ) : ?>
+							<?php if ( ! empty( $event['sessions'] ) && ! $law_cal_sessions_full ) : ?>
 								<?php
 								// Every event's running order renders as an open timeline
 								// (Denis, 11 September 2026). The accordion this used to be
 								// collapsed the one thing a reader scans a programme for, and
 								// having two layouts for the same four sessions was a
 								// difference with no reason behind it. Only the heading
-								// differs: the flagship calls its day an Agenda.
-								get_template_part(
-									'parts/events/session-timeline',
-									null,
-									array(
-										'sessions' => $event['sessions'],
-										'heading'  => $law_cal_sessions_heading,
-										'panel'    => $law_cal_sessions_panel,
-									)
-								);
+								// differs: the flagship calls its day an Agenda, and renders
+								// it below this row instead (see $law_cal_sessions_full).
+								$law_cal_render_sessions();
 								?>
 							<?php endif; ?>
 							<?php
-							// Venue last, after the sessions and speakers: the running
-							// order and the people are what the reader came for, and the
-							// address is a detail they need once (Denis, 9 September
-							// 2026). The details box in the hero links down to this
-							// section, so the address is still one click from the top.
+							// The address at the foot of the reading column, below the
+							// sessions: the running order is what the reader came for and
+							// the venue is a detail they need once (Denis, 9 September
+							// 2026). The facts box in the hero links down to it, so it is
+							// still one click from the top. The flagship renders it in the
+							// sidebar instead.
 							?>
-							<?php get_template_part( 'parts/events/event-venue', null, array( 'venue' => $event['venue'] ) ); ?>
+							<?php if ( $law_cal_venue_in_main ) : ?>
+								<?php $law_cal_render_venue(); ?>
+							<?php endif; ?>
 						</div>
-						<?php if ( $law_cal_speakers_aside ) : ?>
+						<?php if ( $law_cal_has_aside ) : ?>
 							<div class="large-4 cell law-cal-detail__sidebar">
 								<?php
-								// The speakers sit beside the running order, not under it (Denis,
-								// 11 September 2026): the description, sessions and venue are the
-								// reader's path through the event, and a column of faces alongside
-								// them answers "who is this?" without pushing the venue further
-								// down the page. One card per row in here (calendar.css): the
-								// two-per-row list is sized for the full-width column.
+								// The reference column: things to look up rather than things
+								// to read through (Denis, 15 September 2026). On a hosted
+								// event that is the Speakers list, which answers "who is
+								// this?" where the reader is already looking instead of
+								// pushing the running order down the page. On the flagship
+								// it is the venue, beside a description that would otherwise
+								// have half a row to itself.
+								//
+								// A plain wrapper, not an <aside> labelled by the speakers
+								// heading: it can hold either section or both, and each
+								// carries its own heading and its own aria-labelledby.
 								?>
-								<aside class="law-cal-detail__aside" aria-labelledby="law-cal-speakers-heading">
-									<h2 id="law-cal-speakers-heading" class="law-cal-acc__heading">Speakers</h2>
-									<ul class="law-cal-speakers law-cal-speakers--cards">
-										<?php foreach ( $event['speakers'] as $speaker ) : ?>
-											<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $speaker ) ); ?>
-										<?php endforeach; ?>
-									</ul>
-								</aside>
+								<div class="law-cal-detail__aside">
+									<?php if ( $law_cal_speakers_aside ) : ?>
+										<?php
+										// One card per row in here (calendar.css): the
+										// two-per-row list is sized for a full-width column.
+										?>
+										<section class="law-cal-detail__aside-section" aria-labelledby="law-cal-speakers-heading">
+											<h2 id="law-cal-speakers-heading" class="law-cal-acc__heading">Speakers</h2>
+											<ul class="law-cal-speakers law-cal-speakers--cards">
+												<?php foreach ( $event['speakers'] as $speaker ) : ?>
+													<?php get_template_part( 'parts/events/speaker-card', null, array( 'speaker' => $speaker ) ); ?>
+												<?php endforeach; ?>
+											</ul>
+										</section>
+									<?php endif; ?>
+									<?php if ( $law_cal_venue_side ) : ?>
+										<?php $law_cal_render_venue(); ?>
+									<?php endif; ?>
+								</div>
 							</div>
 						<?php endif; ?>
 					</div>
+					<?php if ( ! empty( $event['sessions'] ) && $law_cal_sessions_full ) : ?>
+						<?php
+						// The flagship's agenda, at the full width of the article and
+						// below both columns. Same call as the one in the reading
+						// column above, so the two placements cannot render different
+						// agendas.
+						$law_cal_render_sessions();
+						?>
+					<?php endif; ?>
 					<div class="law-cal-detail__actions law-cal-detail__foot law-booking-actions">
 						<?php
 						// The booking control itself -- the state wording plus the

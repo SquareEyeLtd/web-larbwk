@@ -1,8 +1,10 @@
 <?php
 /**
- * The committee's two classification switches: _law_is_law_event ("run by
- * LAW") and _law_session_agenda, which together replaced the removed
- * law_event_category taxonomy (Denis, 9 September 2026).
+ * The committee's two classification switches: _law_is_external ("a third
+ * party runs this and books it on its own website") and _law_session_agenda,
+ * which together replaced the removed law_event_category taxonomy (Denis, 9
+ * September 2026). _law_is_external was _law_is_law_event, meaning the
+ * opposite, until 15 September 2026.
  *
  * The switches are quiet booleans, but the agenda one GATES a form section
  * whose saver deletes any session the posted form did not claim, so the
@@ -61,10 +63,10 @@ class EventFlagsTest extends LAW_Test_Case {
 		$_POST = array_merge( array( 'law_flags_present' => '1' ), $post );
 
 		$before = array(
-			'_law_is_law_event'   => (int) law_event_meta( $event_id, '_law_is_law_event' ),
+			'_law_is_external'   => (int) law_event_meta( $event_id, '_law_is_external' ),
 			'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
 		);
-		law_event_update_meta( $event_id, '_law_is_law_event', ! empty( $_POST['law_is_law_event'] ) );
+		law_event_update_meta( $event_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 		law_event_update_meta( $event_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 		law_event_log_flag_change( $event_id, $before, $actor );
 
@@ -230,14 +232,14 @@ class EventFlagsTest extends LAW_Test_Case {
 		wp_set_current_user( $this->make_committee_user() );
 		$event = $this->make_event();
 
-		$this->committee_saves_flags( $event, array( 'law_is_law_event' => '1', 'law_session_agenda' => '1' ) );
-		$this->assertSame( 1, (int) law_event_meta( $event, '_law_is_law_event' ) );
+		$this->committee_saves_flags( $event, array( 'law_is_external' => '1', 'law_session_agenda' => '1' ) );
+		$this->assertSame( 1, (int) law_event_meta( $event, '_law_is_external' ) );
 		$this->assertSame( 1, (int) law_event_meta( $event, '_law_session_agenda' ) );
 
 		// Unticked boxes post nothing, which is what the sentinel is for: absent
 		// must mean "off", not "leave it alone".
 		$this->committee_saves_flags( $event, array() );
-		$this->assertSame( 0, (int) law_event_meta( $event, '_law_is_law_event' ) );
+		$this->assertSame( 0, (int) law_event_meta( $event, '_law_is_external' ) );
 		$this->assertSame( 0, (int) law_event_meta( $event, '_law_session_agenda' ) );
 	}
 
@@ -246,14 +248,14 @@ class EventFlagsTest extends LAW_Test_Case {
 		$event = $this->make_event();
 
 		$before = count( $this->log_messages( $event ) );
-		$this->committee_saves_flags( $event, array( 'law_is_law_event' => '1', 'law_session_agenda' => '1' ) );
+		$this->committee_saves_flags( $event, array( 'law_is_external' => '1', 'law_session_agenda' => '1' ) );
 		$messages = $this->log_messages( $event );
 
 		// One entry, not one per flag: law_event_log_entries() orders by
 		// comment_date_gmt with no tie-break, so two in the same second would
 		// display in arbitrary order.
 		$this->assertCount( $before + 1, $messages );
-		$this->assertStringContainsString( 'Marked as run by LAW.', $messages[0] );
+		$this->assertStringContainsString( 'Marked as an external event', $messages[0] );
 		$this->assertStringContainsString( 'Session agenda turned on.', $messages[0] );
 	}
 
@@ -261,10 +263,10 @@ class EventFlagsTest extends LAW_Test_Case {
 		wp_set_current_user( $this->make_committee_user() );
 		$event = $this->make_event();
 
-		$this->committee_saves_flags( $event, array( 'law_is_law_event' => '1' ) );
+		$this->committee_saves_flags( $event, array( 'law_is_external' => '1' ) );
 		$after_first = count( $this->log_messages( $event ) );
 
-		$this->committee_saves_flags( $event, array( 'law_is_law_event' => '1' ) );
+		$this->committee_saves_flags( $event, array( 'law_is_external' => '1' ) );
 		$this->assertCount( $after_first, $this->log_messages( $event ), 'Re-saving the same values must not log.' );
 	}
 
@@ -279,9 +281,9 @@ class EventFlagsTest extends LAW_Test_Case {
 		// 0 rather than deleting it ('' === 0 is false under PHP 8), so an
 		// event the committee has saved with the box unticked has a row, while
 		// one never opened has none. A NOT EXISTS-only query would lose the first.
-		law_event_update_meta( $saved_off, '_law_is_law_event', 0 );
-		law_event_update_meta( $law_run, '_law_is_law_event', 1 );
-		$this->assertSame( '0', get_post_meta( $saved_off, '_law_is_law_event', true ), 'Guard: the 0 must actually be stored.' );
+		law_event_update_meta( $saved_off, '_law_is_external', 0 );
+		law_event_update_meta( $law_run, '_law_is_external', 1 );
+		$this->assertSame( '0', get_post_meta( $saved_off, '_law_is_external', true ), 'Guard: the 0 must actually be stored.' );
 
 		$_GET['law_run_by'] = 'host';
 		$ids                = wp_list_pluck( law_committee_events(), 'ID' );
@@ -295,7 +297,7 @@ class EventFlagsTest extends LAW_Test_Case {
 	public function test_the_run_by_law_filter_matches_only_flagged_events(): void {
 		$hosted  = $this->make_event();
 		$law_run = $this->make_event();
-		law_event_update_meta( $law_run, '_law_is_law_event', 1 );
+		law_event_update_meta( $law_run, '_law_is_external', 1 );
 
 		$_GET['law_run_by'] = 'law';
 		$ids                = wp_list_pluck( law_committee_events(), 'ID' );
@@ -318,7 +320,7 @@ class EventFlagsTest extends LAW_Test_Case {
 			'publish'
 		);
 		if ( $run_by_law ) {
-			law_event_update_meta( $event_id, '_law_is_law_event', 1 );
+			law_event_update_meta( $event_id, '_law_is_external', 1 );
 		}
 		return $event_id;
 	}
@@ -356,8 +358,8 @@ class EventFlagsTest extends LAW_Test_Case {
 		// deleting the row. The programme filters mapped arrays in PHP, so the
 		// bool cast in law_events_map_post() has to do the same job.
 		$saved_off = $this->make_programme_event( false );
-		law_event_update_meta( $saved_off, '_law_is_law_event', 0 );
-		$this->assertSame( '0', get_post_meta( $saved_off, '_law_is_law_event', true ), 'Guard: the 0 must actually be stored.' );
+		law_event_update_meta( $saved_off, '_law_is_external', 0 );
+		$this->assertSame( '0', get_post_meta( $saved_off, '_law_is_external', true ), 'Guard: the 0 must actually be stored.' );
 
 		$this->assertContains( $saved_off, $this->programme_ids( 'host' ) );
 		$this->assertNotContains( $saved_off, $this->programme_ids( 'law' ) );
@@ -375,19 +377,35 @@ class EventFlagsTest extends LAW_Test_Case {
 	}
 
 	public function test_the_organiser_filter_survives_a_link_back_from_an_event(): void {
-		$_GET['law_run_by'] = 'law';
+		$_GET['law_run_by'] = 'external';
 		law_calendar_reset_caches();
 		$args = law_calendar_search_query_args();
 		unset( $_GET['law_run_by'] );
 		law_calendar_reset_caches();
 
-		$this->assertSame( 'law', $args['law_run_by'] ?? '' );
+		$this->assertSame( 'external', $args['law_run_by'] ?? '' );
+	}
+
+	/**
+	 * 'law' was this filter's word until 15 September 2026, when the switch it
+	 * reads came to mean "external" instead. A link bookmarked before then must
+	 * still filter to something rather than silently returning the whole
+	 * programme, which is the failure nobody would notice.
+	 */
+	public function test_the_old_organiser_value_still_filters(): void {
+		$_GET['law_run_by'] = 'law';
+		law_calendar_reset_caches();
+		$filters = law_calendar_filters();
+		unset( $_GET['law_run_by'] );
+		law_calendar_reset_caches();
+
+		$this->assertSame( 'external', $filters['run_by'] );
 	}
 
 	public function test_the_organiser_select_renders_with_nothing_flagged_yet(): void {
-		// Drawn regardless of the data: "LAW events" can return no cards, but
-		// never an empty page, because the flagship block is pinned to its day
-		// outside the filtered list.
+		// Drawn regardless of the data: "External events" can return no cards,
+		// but never an empty page, because the flagship block is pinned to its
+		// day outside the filtered list.
 		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
 		law_calendar_reset_caches();
 
@@ -399,47 +417,25 @@ class EventFlagsTest extends LAW_Test_Case {
 		law_calendar_reset_caches();
 
 		$this->assertStringContainsString( 'name="law_run_by"', $html );
-		$this->assertStringContainsString( '>LAW events<', $html );
+		$this->assertStringContainsString( '>External events<', $html );
 		$this->assertStringContainsString( '>Hosted events<', $html );
 	}
 
-	public function test_the_agenda_filter_matches_the_switch_in_both_directions(): void {
+	// The dashboard's "Session agenda" select was removed on 15 September 2026,
+	// so there is no agenda filter to test. The switch itself is covered by the
+	// gate and admin-column tests; what matters here is that the session-agenda
+	// meta no longer narrows the committee list at all.
+	public function test_the_agenda_switch_no_longer_filters_the_dashboard(): void {
 		$with    = $this->make_event();
 		$without = $this->make_event();
 		law_event_update_meta( $with, '_law_session_agenda', 1 );
 
 		$_GET['law_agenda'] = 'yes';
 		$ids                = wp_list_pluck( law_committee_events(), 'ID' );
-		$this->assertContains( $with, $ids );
-		$this->assertNotContains( $without, $ids );
-
-		$_GET['law_agenda'] = 'no';
-		$ids                = wp_list_pluck( law_committee_events(), 'ID' );
 		unset( $_GET['law_agenda'] );
+
+		$this->assertContains( $with, $ids );
 		$this->assertContains( $without, $ids );
-		$this->assertNotContains( $with, $ids );
-	}
-
-	public function test_the_two_filters_compose_rather_than_overriding(): void {
-		$law_with_agenda = $this->make_event();
-		$law_no_agenda   = $this->make_event();
-		$host_with_agenda = $this->make_event();
-
-		law_event_update_meta( $law_with_agenda, '_law_is_law_event', 1 );
-		law_event_update_meta( $law_with_agenda, '_law_session_agenda', 1 );
-		law_event_update_meta( $law_no_agenda, '_law_is_law_event', 1 );
-		law_event_update_meta( $host_with_agenda, '_law_session_agenda', 1 );
-
-		// "Our own events that have an agenda" is the question a single mixed
-		// select could not answer, which is why there are two.
-		$_GET['law_run_by'] = 'law';
-		$_GET['law_agenda'] = 'yes';
-		$ids                = wp_list_pluck( law_committee_events(), 'ID' );
-		unset( $_GET['law_run_by'], $_GET['law_agenda'] );
-
-		$this->assertContains( $law_with_agenda, $ids );
-		$this->assertNotContains( $law_no_agenda, $ids );
-		$this->assertNotContains( $host_with_agenda, $ids );
 	}
 
 	/* The export _____________________________________________________________ */
@@ -447,13 +443,14 @@ class EventFlagsTest extends LAW_Test_Case {
 	public function test_the_export_reports_both_flags(): void {
 		$event   = $this->make_event();
 		$columns = law_committee_export_columns();
-		law_event_update_meta( $event, '_law_is_law_event', 1 );
+		law_event_update_meta( $event, '_law_is_external', 1 );
 
 		$row = law_committee_export_row( get_post( $event ) );
 		$this->assertCount( count( $columns ), $row, 'The row and the header must stay the same length.' );
 
 		$by_column = array_combine( $columns, $row );
-		$this->assertSame( 'Yes', $by_column['Run by LAW'] );
+		$this->assertSame( 'Yes', $by_column['External'] );
+		$this->assertSame( '', $by_column['External booking URL'], 'No booking link set yet.' );
 		$this->assertSame( '', $by_column['Session agenda'], 'Blank, not "No", matching the Sponsored column.' );
 	}
 

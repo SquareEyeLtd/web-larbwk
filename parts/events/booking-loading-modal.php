@@ -19,7 +19,7 @@
  *
  * The status line is screen-reader-only and stays generic for the same reason it
  * is one line: it has to be true of a booking, a waitlist place and a flagship
- * application alike.
+ * registration alike.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -35,7 +35,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 			id="law-booking-loading-title"
 			data-law-loading-book="<?php esc_attr_e( 'Book your place', 'law' ); ?>"
 			data-law-loading-waitlist="<?php esc_attr_e( 'Join the waitlist', 'law' ); ?>"
-			data-law-loading-apply="<?php esc_attr_e( 'Apply to attend', 'law' ); ?>"
+			data-law-loading-apply="<?php esc_attr_e( 'Register to attend', 'law' ); ?>"
 			data-law-loading-include="<?php esc_attr_e( 'Add to my bookings', 'law' ); ?>"
 		><?php esc_html_e( 'Book your place', 'law' ); ?></h2>
 		<?php

@@ -52,14 +52,33 @@ function law_event_meta_schema() {
 		'_law_speakers'             => 'speaker_rows',
 		'_law_registration_state'   => 'registration_state',
 		// Committee-only classification switches (Denis, 9 September 2026).
-		// _law_is_law_event: LAW runs this event itself rather than an external
-		// host. Absent or 0 means hosted, which is every host submission, so
-		// nothing is written at submission time and the "hosted" filter has to
-		// treat a missing key as false.
+		// _law_is_external: a third party runs this event and takes its
+		// bookings on its own website, and the committee curates it onto the
+		// programme (functions/events/external-events.php). Absent or 0 means
+		// hosted, which is every host submission, so nothing is written at
+		// submission time and the "hosted" filter has to treat a missing key as
+		// false.
+		//
+		// This key was _law_is_law_event until 15 September 2026, when it meant
+		// the opposite: "LAW runs this itself". Nothing distinguished LAW's own
+		// events in behaviour — law_event_is_managed_by_law() reads the flagship
+		// and reception flags, never this one — so the switch was only ever an
+		// identity tag, and the identity the committee actually needed to tag
+		// was the external one (Denis, 15 September 2026). The polarity is
+		// inverted, not preserved: the three receptions that used to set the old
+		// key no longer set anything here.
+		//
+		// _law_external_url: where an external event's Register button goes.
+		// Empty is a legitimate state, not a defect — the committee lists an
+		// event before its organiser opens registration — and the listing then
+		// shows a disabled "Registration opening soon" button rather than
+		// nothing at all.
+		//
 		// _law_session_agenda: this event has a session-level agenda, which is
 		// what puts the Session agenda section on the event form
 		// (law_event_has_session_agenda() in submission-form.php).
-		'_law_is_law_event'         => 'flag',
+		'_law_is_external'          => 'flag',
+		'_law_external_url'         => 'url',
 		'_law_session_agenda'       => 'flag',
 		// The flagship conference (functions/events/flagship.php). Exactly one
 		// law_event post carries _law_is_flagship; it is edited on the Flagship

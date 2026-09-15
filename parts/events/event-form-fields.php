@@ -149,103 +149,15 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 	</div>
 </fieldset>
 
-<fieldset id="law-section-speakers">
-	<legend>Speakers</legend>
-	<p class="law-form-hint">Add each speaker once. If they have spoken at LAW before, the email address links them to their existing profile automatically.</p>
-		<?php foreach ( $law_errors as $law_ekey => $law_evals ) : ?>
-			<?php if ( 0 === strpos( (string) $law_ekey, 'speaker_photo_' ) && isset( $law_evals[0] ) ) : ?>
-				<p class="law-form-error" role="alert"><?php echo esc_html( $law_evals[0] ); ?></p>
-			<?php endif; ?>
-		<?php endforeach; ?>
-	<div class="law-rows" data-law-rows-group="speakers">
-		<?php
-		// array_values first: a re-render after a failed save carries the POSTED
-		// row indexes, which are not contiguous once a row has been removed, and
-		// the "last row is the template" test below counts rather than reads keys.
-		$law_speaker_rows   = array_values( (array) $law_value( 'speakers', array() ) );
-		$law_speaker_rows[] = array(); // Blank template row.
-		foreach ( $law_speaker_rows as $law_i => $law_row ) :
-			$law_is_template = $law_i === count( $law_speaker_rows ) - 1;
-			?>
-			<div class="law-row" <?php echo $law_is_template ? 'data-law-row-template hidden' : ''; ?>>
-				<button type="button" class="law-row-remove" aria-label="Remove speaker">×</button>
-				<?php
-				// The speaker post this row edits. Round-tripped so a corrected name
-				// or email updates the right record instead of matching a new one;
-				// the save honours it only for a speaker this event already holds,
-				// so a forged ID reaches nothing. Blank on the template row: a newly
-				// added speaker is matched or created, never edited.
-				if ( ! $law_is_template && ! empty( $law_row['speaker_id'] ) ) :
-					?>
-					<input type="hidden" name="speakers[<?php echo esc_attr( $law_i ); ?>][speaker_id]" value="<?php echo esc_attr( (string) (int) $law_row['speaker_id'] ); ?>">
-				<?php endif; ?>
-				<div class="law-row-grid">
-					<?php
-					// First and last name, separately (Denis, 9 September 2026), the
-					// shape form 8 (Event > speaker) always had: field 1.3 (Name, First)
-					// and field 1.6 (Name, Last). A row saved before the split falls back
-					// to the stored full name split on its last word.
-					$law_row_name = law_speaker_row_name_parts( (array) $law_row );
-					?>
-					<label>First name *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][first_name]" value="<?php echo esc_attr( $law_row_name['first'] ); ?>"></label>
-					<label>Last name *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][last_name]" value="<?php echo esc_attr( $law_row_name['last'] ); ?>"></label>
-					<?php
-					// The role at THIS event (Speaker / Host / Moderator), a per-appearance
-					// detail like the organisation. There is no default (Denis,
-					// 9 September 2026): a row with no role selects the blank "Select role"
-					// placeholder rather than implying Speaker. The placeholder is also what
-					// a cloned template row lands on, since event-form.js resets a cloned
-					// select to its first option rather than to ''.
-					$law_row_role = law_speaker_role_key( $law_row['role'] ?? '' );
-					?>
-					<label>Role<select <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][role]">
-						<option value="" <?php selected( $law_row_role, '' ); ?>>Select role</option>
-						<?php foreach ( law_speaker_roles() as $law_role_key => $law_role_label ) : ?>
-							<option value="<?php echo esc_attr( $law_role_key ); ?>" <?php selected( $law_row_role, $law_role_key ); ?>><?php echo esc_html( $law_role_label ); ?></option>
-						<?php endforeach; ?>
-					</select></label>
-					<label>Email *<input type="email" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][email]" value="<?php echo esc_attr( (string) ( $law_row['email'] ?? '' ) ); ?>"></label>
-					<label>Organisation / firm / chambers *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][organisation]" value="<?php echo esc_attr( (string) ( $law_row['organisation'] ?? '' ) ); ?>"></label>
-					<label>Job title *<input type="text" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][job_title]" value="<?php echo esc_attr( (string) ( $law_row['job_title'] ?? '' ) ); ?>"></label>
-					<label>Website profile URL<input type="url" autocomplete="off" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speakers[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][website]" value="<?php echo esc_attr( (string) ( $law_row['website'] ?? '' ) ); ?>"></label>
-					<?php
-					// The photo already on this event's row (display only: the save
-					// carries it forward by speaker, it never trusts a posted ID).
-					$law_row_photo = ! $law_is_template && ! empty( $law_row['photo_id'] ) ? wp_get_attachment_image_url( (int) $law_row['photo_id'], 'thumbnail' ) : '';
-					?>
-					<label>Photo<input type="file" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="speaker_photo[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>]" accept="<?php echo esc_attr( law_events_photo_accept() ); ?>"><button type="button" class="law-file-clear" hidden>Clear photo</button>
-						<?php if ( $law_row_photo ) : ?>
-							<input type="hidden" name="speakers[<?php echo esc_attr( $law_i ); ?>][photo_id]" value="<?php echo esc_attr( (string) (int) $law_row['photo_id'] ); ?>">
-							<span class="law-current-photo"><img src="<?php echo esc_url( $law_row_photo ); ?>" alt="" width="40" height="40"> Current photo for this event (upload a new file to replace it)</span>
-						<?php endif; ?>
-						<?php
-						/* The limits, spelled out under the whole control rather than
-						   crammed into the label: the pixel bounds were enforced but
-						   never mentioned, so a big photo failed on a rule nobody had
-						   been shown. */
-						?>
-						<span class="law-form-hint"><?php echo esc_html( law_events_photo_hint() ); ?></span>
-					</label>
-					<div class="law-row-wide"><span class="law-form-label">Biography</span>
-						<?php
-						law_rich_text_field(
-							array(
-								'name'     => 'speakers[' . ( $law_is_template ? '__i__' : $law_i ) . '][bio]',
-								'value'    => (string) ( $law_row['bio'] ?? '' ),
-								'rows'     => 3,
-								'template' => $law_is_template,
-								'label'    => 'Biography',
-							)
-						);
-						?>
-					</div>
-				</div>
-			</div>
-		<?php endforeach; ?>
-	</div>
-	<?php $law_error_message( 'speakers' ); ?>
-	<button type="button" class="button law-row-add" data-law-add="speakers">Add a speaker</button>
-</fieldset>
+<?php
+// The Speakers repeater lives in its own partial so the committee's
+// external-event form renders the same one (parts/events/external-manage.php).
+get_template_part(
+	'parts/events/event-form-speakers',
+	null,
+	array( 'post' => $law_post, 'values' => $law_values, 'errors' => $law_errors, 'locked' => $law_locked, 'context' => $law_context )
+);
+?>
 
 <?php
 // Which Venue needed answer this form is rendering. The field is in the host
@@ -306,8 +218,11 @@ $law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_ava
 		<p class="law-form-field <?php echo $law_capacity_locked ? 'is-locked' : ''; ?>"><label for="law-capacity">Venue capacity<?php echo $law_capacity_locked ? ' (locked)' : esc_html( $law_venue_star ); ?></label>
 			<select id="law-capacity" name="venue_capacity" data-law-capacity <?php disabled( $law_capacity_locked ); ?>>
 				<option value="">Choose…</option>
-				<?php foreach ( law_events_venue_capacity_bands() as $law_choice => $law_band_max ) : ?>
-					<option value="<?php echo esc_attr( $law_choice ); ?>" data-law-max="<?php echo esc_attr( null === $law_band_max ? '' : (string) $law_band_max ); ?>" <?php selected( $law_capacity_value, $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
+				<?php
+				foreach ( law_events_venue_capacity_bands() as $law_choice => $law_band_max ) :
+					$law_band_min = law_events_venue_capacity_band_floor( $law_choice );
+					?>
+					<option value="<?php echo esc_attr( $law_choice ); ?>" data-law-max="<?php echo esc_attr( null === $law_band_max ? '' : (string) $law_band_max ); ?>" data-law-min="<?php echo esc_attr( null === $law_band_min ? '' : (string) $law_band_min ); ?>" <?php selected( $law_capacity_value, $law_choice ); ?>><?php echo esc_html( $law_choice ); ?></option>
 				<?php endforeach; ?>
 			</select>
 			<?php if ( $law_capacity_locked ) : ?><span class="law-locked-note">Locked after approval</span><?php endif; ?>
@@ -315,13 +230,19 @@ $law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_ava
 		<p class="law-form-field <?php echo $law_tickets_locked ? 'is-locked' : ''; ?>">
 			<label for="law-tickets">Places available<?php echo $law_tickets_locked ? ' (locked)' : esc_html( $law_venue_star ); ?></label>
 			<?php
-			// max comes from the chosen capacity band and is kept in step by
-			// event-form.js; min is 1, as on form 2 field 54 (Tickets available).
+			// Both bounds come from the chosen capacity band and are kept in step
+			// by event-form.js. min was a flat 1 (form 2 field 54, Tickets
+			// available) until the band floor landed on 15 September 2026; it
+			// falls back to 1 for "TBC" and for no band chosen, which bound
+			// nothing. A disabled input is exempt from constraint validation, so
+			// a locked field carrying a stale stored value can never block the
+			// form — the same reason the server skips the pair check there.
 			$law_capacity_max = law_events_venue_capacity_bands()[ $law_capacity_value ] ?? null;
+			$law_capacity_min = law_events_venue_capacity_band_floor( $law_capacity_value );
 			?>
-			<input type="number" id="law-tickets" name="tickets_available" min="1"
+			<input type="number" id="law-tickets" name="tickets_available" min="<?php echo esc_attr( (string) ( $law_capacity_min ?? 1 ) ); ?>"
 				<?php echo null === $law_capacity_max ? '' : 'max="' . esc_attr( (string) $law_capacity_max ) . '"'; ?>
-				data-law-tickets value="<?php echo esc_attr( $law_tickets_value ); ?>" <?php disabled( $law_tickets_locked ); ?>>
+				data-law-tickets data-law-strict value="<?php echo esc_attr( $law_tickets_value ); ?>" <?php disabled( $law_tickets_locked ); ?>>
 			<?php if ( $law_tickets_locked ) : ?><span class="law-locked-note">Set by the committee once your event is submitted. Reply to any email from us if the number needs to change.</span><?php endif; ?>
 			<?php $law_error_message( 'tickets_available' ); ?>
 		</p>
@@ -431,114 +352,15 @@ $law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_ava
 // (law_event_has_session_agenda() in submission-form.php). The hidden sentinel
 // below is what tells the saver the section was really on the form, so an
 // absent section is never mistaken for "the host deleted every session".
-if ( law_event_has_session_agenda( $law_post ) ) :
-	?>
-<fieldset id="law-section-agenda">
-	<legend>Session agenda</legend>
-	<input type="hidden" name="law_sessions_present" value="1">
-	<?php if ( 'committee' === $law_context ) : ?>
-		<p class="law-form-hint">Break the running order into sessions, then tick which of the event's speakers appear in each one. The list follows the Speakers section above. The host can edit this too.</p>
-	<?php else : ?>
-		<p class="law-form-hint">The committee has enabled a session agenda for your event. Break the running order into sessions below, then tick which of your speakers appear in each one. The list follows the Speakers section above.</p>
-	<?php endif; ?>
-	<?php
-	// The speaker names this event currently has, from the same values
-	// the Speakers repeater renders. Sessions choose from THIS list
-	// (form 9 field 6 Speakers was a multiselect populated from the
-	// form 8 entries, never free text), and event-form.js keeps the
-	// list in step as speaker rows are typed, added or removed.
-	// Keyed by the speaker row's own index, not by the name: the name is what
-	// gets posted and matched, but it is also what a host may be editing, so a
-	// tick has to survive a rename. event-form.js rebuilds this list on every
-	// keystroke and re-ticks by the same key.
-	$law_session_speaker_names = array();
-	foreach ( array_values( (array) $law_value( 'speakers', array() ) ) as $law_sp_i => $law_sp_row ) {
-		// The full name, however the row spells it: the picker posts names and
-		// the saver matches them against the event's speaker rows by name.
-		$law_sp_parts = law_speaker_row_name_parts( (array) $law_sp_row );
-		$law_sp_name  = law_speaker_full_name( $law_sp_parts['first'], $law_sp_parts['last'] );
-		if ( '' !== $law_sp_name && ! in_array( $law_sp_name, $law_session_speaker_names, true ) ) {
-			$law_session_speaker_names[ (string) $law_sp_i ] = $law_sp_name;
-		}
-	}
-	?>
-	<div class="law-rows" data-law-rows-group="sessions">
-		<?php
-		$law_session_rows   = array_values( (array) $law_value( 'sessions', array() ) );
-		$law_session_rows[] = array();
-		foreach ( $law_session_rows as $law_i => $law_row ) :
-			$law_is_template = $law_i === count( $law_session_rows ) - 1;
-			?>
-			<div class="law-row" <?php echo $law_is_template ? 'data-law-row-template hidden' : ''; ?>>
-				<button type="button" class="law-row-remove" aria-label="Remove session">×</button>
-				<?php
-				// The session's post ID, so a save updates the existing law_session
-				// in place. Blank on a new row, and the clone blanks it again on the
-				// template row; the saver only honours an ID this event already owns.
-				$law_session_id = (int) ( $law_row['id'] ?? 0 );
-				?>
-				<input type="hidden" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][id]" value="<?php echo esc_attr( $law_session_id ?: '' ); ?>">
-				<div class="law-row-grid">
-					<label class="law-row-wide">Session title *<input type="text" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][title]" value="<?php echo esc_attr( (string) ( $law_row['title'] ?? '' ) ); ?>"></label>
-					<label>Start time *<input type="time" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][start]" value="<?php echo esc_attr( (string) ( $law_row['start'] ?? '' ) ); ?>"></label>
-					<label>End time<input type="time" <?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][end]" value="<?php echo esc_attr( (string) ( $law_row['end'] ?? '' ) ); ?>"></label>
-					<div class="law-row-wide"><span class="law-form-label">Description *</span>
-						<?php
-						law_rich_text_field(
-							array(
-								'name'     => 'sessions[' . ( $law_is_template ? '__i__' : $law_i ) . '][description]',
-								'value'    => (string) ( $law_row['description'] ?? '' ),
-								'rows'     => 3,
-								'template' => $law_is_template,
-								'label'    => 'Session description',
-							)
-						);
-						?>
-					</div>
-					<?php
-					// Two shapes reach here. A stored session exposes its speakers as a
-					// comma-separated string of names, which is matched on a normalised
-					// name (case, spacing and entity spelling all differ between the
-					// stored name and the picker's, and a tick that fails to render is
-					// a link the next save silently drops). A re-render after a failed
-					// save instead carries the raw POST, which is an array of
-					// "row:<index>" values matched on the key itself.
-					$law_row_speakers = array();
-					$law_row_keys     = array();
-					if ( is_array( $law_row['speakers'] ?? null ) ) {
-						foreach ( $law_row['speakers'] as $law_tick ) {
-							if ( preg_match( '/^row:(\d+)$/', trim( (string) $law_tick ), $law_tick_match ) ) {
-								$law_row_keys[] = $law_tick_match[1];
-							} else {
-								$law_row_speakers[] = law_speaker_normalise_name( $law_tick );
-							}
-						}
-					} else {
-						$law_row_speakers = array_map(
-							'law_speaker_normalise_name',
-							array_filter( array_map( 'trim', explode( ',', (string) ( $law_row['speakers'] ?? '' ) ) ) )
-						);
-					}
-					?>
-					<div class="law-row-wide law-session-speakers" data-law-session-speakers>
-						<span class="law-form-label">Speakers</span>
-						<div class="law-choices" data-law-session-speaker-list>
-							<?php foreach ( $law_session_speaker_names as $law_sp_key => $law_sp_name ) : ?>
-								<label><input type="checkbox"
-									<?php echo $law_is_template ? 'data-name' : 'name'; ?>="sessions[<?php echo esc_attr( $law_is_template ? '__i__' : $law_i ); ?>][speakers][]"
-									data-law-speaker-key="<?php echo esc_attr( (string) $law_sp_key ); ?>"
-									value="row:<?php echo esc_attr( (string) $law_sp_key ); ?>"
-									<?php checked( in_array( (string) $law_sp_key, $law_row_keys, true ) || in_array( law_speaker_normalise_name( $law_sp_name ), $law_row_speakers, true ) ); ?>>
-									<?php echo esc_html( $law_sp_name ); ?></label>
-							<?php endforeach; ?>
-						</div>
-						<p class="law-form-hint" data-law-session-speakers-empty <?php echo $law_session_speaker_names ? 'hidden' : ''; ?>>Add speakers in the Speakers section above and they will appear here.</p>
-					</div>
-				</div>
-			</div>
-		<?php endforeach; ?>
-	</div>
-	<?php $law_error_message( 'sessions' ); ?>
-	<button type="button" class="button law-row-add" data-law-add="sessions">Add a session</button>
-</fieldset>
-<?php endif; // law_event_has_session_agenda ?>
+if ( law_event_has_session_agenda( $law_post ) ) {
+	// Same partial the external-event form renders. The committee gate stays
+	// HERE rather than moving into it: an external event always has an agenda
+	// section, because the committee is transcribing a published running order,
+	// while a host only gets one once the committee has asked for it.
+	get_template_part(
+		'parts/events/event-form-agenda',
+		null,
+		array( 'post' => $law_post, 'values' => $law_values, 'errors' => $law_errors, 'locked' => $law_locked, 'context' => $law_context )
+	);
+}
+

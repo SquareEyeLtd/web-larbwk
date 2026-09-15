@@ -70,11 +70,50 @@ if ( ! $law_actions ) {
 // see whether you could book it (Denis, 11 September 2026). The card carries the
 // button but NO dialog -- see law_booking_card_action() for why, and for how the
 // dialog is fetched instead.
+//
+// The flagship is applied for rather than booked, so law_booking_card_action()
+// returns nothing for it and the button comes from law_flagship_card_action()
+// instead -- the same one its own programme block carries, so a conference
+// listed on a speaker profile, in My bookings or in My events can be registered
+// for from the row it is on (Denis, 15 September 2026).
 $law_booking_scope = array_key_exists( 'booking', $args ) ? $args['booking'] : 'full';
-if ( $law_booking_scope && function_exists( 'law_booking_card_action' ) ) {
-	$law_booking_action = law_booking_card_action( $event, 'action' === $law_booking_scope ? 'action' : 'full' );
+$law_is_flagship   = ! empty( $event['is_flagship'] );
+if ( $law_booking_scope ) {
+	$law_card_scope     = 'action' === $law_booking_scope ? 'action' : 'full';
+	$law_booking_action = null;
+	if ( $law_is_flagship ) {
+		$law_booking_action = function_exists( 'law_flagship_card_action' )
+			? law_flagship_card_action( $event, $law_card_scope )
+			: null;
+	} elseif ( function_exists( 'law_booking_card_action' ) ) {
+		$law_booking_action = law_booking_card_action( $event, $law_card_scope );
+	}
 	if ( $law_booking_action ) {
 		$law_actions[] = $law_booking_action;
+	}
+}
+
+// Two buttons, always. A card whose event offers nothing to press -- places not
+// released yet, invitation only, the event has been and gone -- used to drop to
+// Event details alone, which read as a card that had forgotten its button
+// rather than as an event you cannot book yet (Denis, 15 September 2026). The
+// second button is drawn disabled with the reason on it instead, so the row
+// says "Bookings open soon" without anybody opening the page.
+//
+// Only when the row is a button short: callers that pass their own actions (My
+// events, My bookings) already fill the slot, and a dead button beside four
+// live ones is noise, not information.
+if ( count( $law_actions ) < 2 ) {
+	$law_inert_action = null;
+	if ( $law_is_flagship ) {
+		$law_inert_action = function_exists( 'law_flagship_card_inert_action' )
+			? law_flagship_card_inert_action( $event )
+			: null;
+	} elseif ( function_exists( 'law_booking_card_inert_action' ) ) {
+		$law_inert_action = law_booking_card_inert_action( $event );
+	}
+	if ( $law_inert_action ) {
+		$law_actions[] = $law_inert_action;
 	}
 }
 
@@ -99,7 +138,8 @@ if ( ! empty( $args['stacked'] ) ) {
 // conference reads as the conference in every list it turns up in
 // (Denis, 14 September 2026). The programme itself never gets here: the
 // flagship is lifted out of the day lists and rendered as that block instead.
-$law_is_flagship = ! empty( $event['is_flagship'] );
+// $law_is_flagship is settled above, where it also decides which of the two
+// card actions this row's registration button comes from.
 if ( $law_is_flagship ) {
 	$law_card_classes .= ' law-event-card--flagship';
 }
@@ -115,6 +155,16 @@ if ( $law_is_flagship ) {
 		<?php if ( $law_is_flagship ) : ?>
 			<?php /* The same outline pill the programme block and the strip carry, so the fill is never the only thing saying which event this is. */ ?>
 			<span class="law-event-card__flagship-badge"><?php esc_html_e( 'Flagship event', 'law' ); ?></span>
+		<?php endif; ?>
+		<?php if ( ! empty( $event['is_external'] ) ) : ?>
+			<?php
+			/*
+			 * In the flow, not in the absolute corner the status badge occupies.
+			 * It says why this card's Register button leaves the site, which is
+			 * otherwise only discoverable by pressing it.
+			 */
+			?>
+			<span class="law-event-card__external-badge"><?php esc_html_e( 'External', 'law' ); ?></span>
 		<?php endif; ?>
 		<h4 class="law-event-card__title">
 			<a href="<?php echo esc_url( $law_event_url ); ?>"><?php echo esc_html( $event['title'] ); ?></a>
@@ -186,11 +236,27 @@ if ( $law_is_flagship ) {
 			<?php endif; ?>
 			<?php
 			$law_action_url = (string) ( $law_action['url'] ?? '' );
-			if ( '' === $law_action_url || '' === (string) ( $law_action['label'] ?? '' ) ) {
+			if ( '' === (string) ( $law_action['label'] ?? '' ) ) {
 				continue;
 			}
 			$law_action_arrow = ! empty( $law_action['arrow'] );
 			$law_action_class = trim( (string) ( $law_action['class'] ?? '' ) );
+			// A disabled action is a real disabled button, not a link wearing
+			// aria-disabled: an anchor with an href is still followed on click
+			// and on Enter, whatever the attribute says. This is also the only
+			// action allowed to have no URL — an external event whose organiser
+			// has not opened registration yet has nowhere to send anybody, and
+			// the control is shown disabled rather than omitted so the absence
+			// reads as "not yet" instead of "no way in".
+			if ( ! empty( $law_action['disabled'] ) ) :
+				?>
+				<button type="button" class="button law-event-card__button<?php echo '' !== $law_action_class ? ' ' . esc_attr( $law_action_class ) : ''; ?>" disabled aria-disabled="true"><?php echo esc_html( $law_action['label'] ); ?></button>
+				<?php
+				continue;
+			endif;
+			if ( '' === $law_action_url ) {
+				continue;
+			}
 			// A fuller accessible name, for a label that only makes sense next
 			// to its own card: fifty buttons all called "Register" is a useless
 			// list to read through. The visible label stays short.
@@ -206,7 +272,7 @@ if ( $law_is_flagship ) {
 			>
 				<?php echo esc_html( $law_action['label'] ); ?>
 				<?php if ( $law_action_arrow ) : ?>
-					<svg class="law-event-card__arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3h7v7"/><path d="M10 14 21 3"/></svg>
+					<?php echo law_icon( 'external', 'law-event-card__arrow', 24, 2.5 ); // phpcs:ignore WordPress.Security.EscapeOutput -- a fixed SVG string from law_icon_paths(). ?>
 				<?php endif; ?>
 			</a>
 		<?php endforeach; ?>

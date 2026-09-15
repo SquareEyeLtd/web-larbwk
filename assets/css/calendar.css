@@ -94,6 +94,11 @@
   letter-spacing: 0.02em;
   text-align: left;
   text-transform: uppercase;
+  /* A tab, not a link in a sentence. The theme underlines every anchor on
+     hover (a:hover, app.css), which drew a rule under the day name and its
+     count on whichever tab the pointer was over; the states below restate it
+     because that global rule outranks the bare class. */
+  text-decoration: none;
   scroll-snap-align: start;
   transition:
     background 0.2s ease,
@@ -104,6 +109,7 @@
 .law-cal-daynav__link:focus {
   background: #ececf1;
   color: #292459;
+  text-decoration: none;
 }
 
 .law-cal-daynav__link:focus-visible {
@@ -117,6 +123,7 @@
   background: #292459;
   color: #fff;
   border-bottom-color: #ef7d05;
+  text-decoration: none;
 }
 
 .law-cal-daynav__link.is-empty {
@@ -144,13 +151,15 @@
 .law-cal-daynav__flag {
   align-self: flex-start;
   margin-top: 0.15rem;
-  padding: 1px 6px;
+  padding: 2px 8px;
   border: 1px solid #ef7d05;
-  border-radius: 9px;
+  border-radius: 10px;
   color: #ef7d05;
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.06em;
+  text-indent: 0.06em;
   text-transform: uppercase;
 }
 
@@ -559,19 +568,49 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
-/* The identity pill, matching the block's and the strip's: an orange outline,
-   never a fill, so it cannot be mistaken for a status badge. */
-.law-event-card__flagship-badge {
+/* The identity pill: an orange outline, never a fill, so it cannot be mistaken
+   for a status badge. One shape for all four of them (the loop card's, the
+   strip's and the flagship block's), because they are the same pill seen on
+   different surfaces and they had drifted into four copies of the same
+   declarations. Only the colour and the spacing around them differ, below.
+
+   Two details keep the words centred inside the pill. Uppercase text with
+   letter-spacing leaves the trailing gap after the last letter inside the line
+   box, which drags the word visibly to the left, so the same value is added
+   back as a text-indent to push it off the left edge by as much. And the line
+   height is pinned to 1 rather than left to the font's own leading, which for
+   all-caps sits the letters low in the box (Denis, 15 September 2026). */
+.law-event-card__flagship-badge,
+.law-event-card__external-badge,
+.law-strip__badge,
+.law-flagship-strip__badge,
+.law-flagship-card__badge {
   display: inline-block;
-  margin: 0 0 0.4rem;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border: 1px solid #ef7d05;
-  border-radius: 10px;
+  border-radius: 11px;
   color: #ef7d05;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.04em;
+  text-indent: 0.04em;
   text-transform: uppercase;
+}
+
+.law-event-card__flagship-badge {
+  margin: 0 0 0.4rem;
+}
+
+/* The external event's pill is the same shape in navy rather than orange:
+   orange is the flagship's colour on a card, and two orange outline pills would
+   read as one thing. In the flow, not in the absolute corner, because that slot
+   is the committee's status badge and two absolutely positioned badges would
+   sit on top of each other. */
+.law-event-card__external-badge {
+  margin: 0 0 0.4rem;
+  border-color: #292459;
+  color: #292459;
 }
 
 /* The committee's status badge, which is navy-on-navy in its --confirmed form
@@ -758,14 +797,6 @@
 .law-strip__badge,
 .law-flagship-strip__badge {
   flex: 0 0 auto;
-  padding: 3px 8px;
-  border: 1px solid #ef7d05;
-  border-radius: 10px;
-  color: #ef7d05;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 /* The strip's words: title on its own line, the rest under it. Its flex basis
@@ -799,16 +830,33 @@
   margin: 0;
 }
 
-/* .law-cal sets its own link colour, which would repaint the button's label
-   (the same reason .law-cal .law-flagship-strip__link exists). Bigger than the
-   theme's base button too: it is the only action in the panel. */
-.law-cal .law-strip__cta,
-.law-cal .law-strip__cta:hover,
-.law-cal .law-strip__cta:focus {
+/* Deliberately NOT scoped under .law-cal. The receptions banner renders on two
+   surfaces and only My bookings has that wrapper, so while these rules sat
+   under it the Account hub got the theme's small base button with a white label
+   on orange — the wrong size, and about 2.8:1 against the orange, where the
+   navy is comfortably past AA. Bigger than the base button because it is the
+   only action in the panel, and navy-labelled to match the sibling panel's CTA
+   (.law-account-events__empty-cta) (Denis, 15 September 2026).
+   The .law-strip prefix is there for weight, not for scope: it is what keeps
+   the hover rule ahead of .law-cal .button:hover below, which would otherwise
+   repaint the label white on My bookings. */
+.law-strip .law-strip__cta {
   width: auto;
   margin: 0;
   padding: 0.85rem 1.75rem;
   font-size: 1rem;
+  color: #292459;
+}
+
+/* The hover has to be pinned as well as the rest. The theme's
+   .button.orange:hover flips the background to navy, which under a navy label
+   is an invisible button; inside .law-cal, .law-cal .button:hover was already
+   holding it orange, so this is what My bookings has always drawn and the hub
+   now draws too. */
+.law-strip .law-strip__cta:hover,
+.law-strip .law-strip__cta:focus {
+  background: #ef7d05;
+  border-color: #ef7d05;
   color: #292459;
 }
 
@@ -876,7 +924,7 @@
   }
 
   .law-strip__action,
-  .law-cal .law-strip__cta {
+  .law-strip .law-strip__cta {
     width: 100%;
     text-align: center;
   }
@@ -1055,10 +1103,24 @@
    AA. */
 
 .law-timeline-section--panel {
-  margin: 1.75rem 0 0.5rem;
+  margin-bottom: 0.5rem;
   padding: 1.25rem 1.25rem 1.5rem;
   background: #292459;
   color: #fff;
+}
+
+/* The air between the description and the venue above and the agenda below
+   them (Denis, 15 September 2026). Declared with BOTH of the section's classes,
+   which is the whole point of this rule: .law-cal-sessions further down this
+   file sets margin-top: 0.5rem at the same specificity as .law-timeline-
+   section--panel, so at one class it wins on source order and the gap stayed at
+   8px however large a number was written here. (Same trap as .law-cal-speakers'
+   margin shorthand and the space above a session's speaker cards.)
+
+   It also collapses with whatever margin the block above it carries, so this is
+   the whole gap rather than an addition to one. */
+.law-timeline-section.law-timeline-section--panel {
+  margin-top: 3.5rem;
 }
 
 @media print, screen and (min-width: 40em) {
@@ -1171,16 +1233,7 @@
 }
 
 .law-flagship-card__badge {
-  display: inline-block;
   margin: 0 0 0.6rem;
-  padding: 3px 8px;
-  border: 1px solid #ef7d05;
-  border-radius: 10px;
-  color: #ef7d05;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .law-flagship-card__title {
@@ -1628,11 +1681,11 @@
   border: 1px solid #c9c5d6;
 }
 
-/* Identity, not status: LAW runs this event itself. Deliberately the only
-   OUTLINE badge in the set — a filled navy pill would be pixel-identical to
-   --confirmed, and an identity tag that looks like a status tag is worse than
-   no tag at all. */
-.law-cal-card__badge--law {
+/* Identity, not status: a third party runs this event and books it on its own
+   website. Deliberately the only OUTLINE badge in the set — a filled navy pill
+   would be pixel-identical to --confirmed, and an identity tag that looks like
+   a status tag is worse than no tag at all. */
+.law-cal-card__badge--external {
   background: #fff;
   color: #292459;
   border: 1px solid #292459;
@@ -1809,10 +1862,10 @@
   line-height: 1.45;
 }
 
-/* max-width, not just 100%: the main column is full width on an event with
-   sessions, and a 16/9 map stretched across the whole container would be a
-   650px-tall billboard for one address. 48rem keeps it the size it has always
-   been in the large-8 column. */
+/* max-width, not just 100%: the venue is full width in the reading column on a
+   hosted event, and stacks to the full width of the page below 64em wherever it
+   sits, and a 16/9 map across the whole container would be a 650px-tall
+   billboard for one address. */
 .law-cal-venue__map {
   position: relative;
   width: 100%;
@@ -1885,21 +1938,24 @@
   }
 }
 
-/* --- The speakers sidebar (parts/calendar-body.php) ---
-   Speakers sit in a large-4 column beside the description, sessions and venue,
-   so the two-per-row rule above does not apply in here: at a third of the
-   container each card would be about 10rem wide, which folds the photo and the
-   name on top of each other. One per row at every width, which also keeps the
-   stacked mobile layout identical to the desktop column. */
+/* --- The reference sidebar (parts/calendar-body.php) ---
+   A large-4 column beside the reading column: the Speakers list on a hosted
+   event, the Venue and its map on the flagship (Denis, 15 September 2026). The
+   two-per-row rule
+   above does not apply in here: at a third of the container each card would be
+   about 10rem wide, which folds the photo and the name on top of each other.
+   One per row at every width, which also keeps the stacked mobile layout
+   identical to the desktop column. */
 .law-cal-detail__aside .law-cal-speakers--cards {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* The cards carry their own left rule, so the column needs no box of its own;
-   it needs only to start level with the description rather than with the
-   heading padding .law-cal-acc__heading is given for the accordion bars it
-   normally introduces. */
-.law-cal-detail__aside > .law-cal-acc__heading {
+/* Each block in the column carries its own heading, and .law-cal-acc__heading's
+   padding-top is sized for the accordion bars it normally introduces. On the
+   FIRST block that space is wrong -- the column should start level with the
+   description beside it -- while between blocks it is what would separate them,
+   so only the first one loses it. */
+.law-cal-detail__aside > :first-child > .law-cal-acc__heading {
   padding-top: 0;
 }
 

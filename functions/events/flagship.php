@@ -569,7 +569,7 @@ function law_flagship_form_values( $event_id ) {
 			: law_flagship_default_price_switch(),
 		// The registration terms a delegate ticks when they apply. Not event
 		// meta: it is the site-wide `attendee_terms_page` setting, the same
-		// one on LAW → Events settings, edited here because the committee
+		// one on Events → Settings, edited here because the committee
 		// lives on this screen and wp-admin is where it went unnoticed. One
 		// value, two doors, so the two cannot disagree.
 		'attendee_terms'   => (string) law_events_setting( 'attendee_terms_page', '' ),

@@ -10,10 +10,100 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Event IDs matching a dashboard keyword, across all three haystacks.
+ *
+ * The box was a bare WP_Query `s` until 15 September 2026, so it searched the
+ * post's title, excerpt and content and nothing else. The firm that runs an
+ * event is meta, not content, so "Mayer Brown" returned nothing while two of
+ * its events sat on the list (Emily O'Callaghan, 15 September 2026). Every
+ * other dashboard in the module already matched on organisation -- bookings,
+ * flagship bookings, speakers -- and so did the PUBLIC programme filter
+ * (law_calendar_event_matches_filters()), which reads the same
+ * _law_host_organisations through source.php's `host` key. The committee's own
+ * list was the one place it did not.
+ *
+ * Each limb is its own fields => ids query over EVERY status, law-draft
+ * included: the status rules (drafts are owner-only, external drafts are
+ * merged back) belong to law_committee_events() and are applied by the outer
+ * queries, so widening them here would be two places to keep in step.
+ *
+ * @param string $keyword Raw keyword, already sanitised by the caller.
+ * @return int[] Matching event IDs, unique, unordered.
+ */
+function law_committee_keyword_event_ids( $keyword ) {
+	$keyword = trim( (string) $keyword );
+	if ( '' === $keyword ) {
+		return array();
+	}
+
+	$base = array(
+		'post_type'      => LAW_EVENT_CPT,
+		'post_status'    => law_event_all_status_keys(),
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+		'no_found_rows'  => true,
+		'orderby'        => 'none',
+	);
+
+	// 1. Core search: title, excerpt and content, with core's own term
+	// splitting. Delegated rather than reimplemented so the behaviour the
+	// committee already has does not quietly change under them.
+	$ids = get_posts( array_merge( $base, array( 's' => $keyword ) ) );
+
+	// 2. The host's own words for the firm. Free text in a plain meta row, so a
+	// LIKE here is not the LIKE-over-serialised-meta the module refuses
+	// elsewhere; it is an ordinary column comparison.
+	$ids = array_merge(
+		$ids,
+		get_posts(
+			array_merge(
+				$base,
+				array(
+					'meta_query' => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+						array( 'key' => '_law_host_organisations', 'value' => $keyword, 'compare' => 'LIKE' ),
+					),
+				)
+			)
+		)
+	);
+
+	// 3. Linked organisations, matched by NAME. _law_organisation_ids is an
+	// int_array, which law_event_update_meta() stores as one serialised row, so
+	// there is no meta_query that can reach a member of it and a serialised
+	// LIKE is out. Fetch the events carrying the key at all -- a handful, the
+	// field is committee-only and quiet -- and resolve their names in PHP
+	// through the memoised law_events_organisation_titles() map, which costs no
+	// query per row.
+	$linked = get_posts(
+		array_merge(
+			$base,
+			array(
+				'meta_query' => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+					array( 'key' => '_law_organisation_ids', 'compare' => 'EXISTS' ),
+				),
+			)
+		)
+	);
+	foreach ( $linked as $linked_id ) {
+		foreach ( law_event_organisation_names( $linked_id ) as $org_name ) {
+			if ( false !== stripos( $org_name, $keyword ) ) {
+				$ids[] = $linked_id;
+				break;
+			}
+		}
+	}
+
+	return array_values( array_unique( array_map( 'intval', $ids ) ) );
+}
+
+/**
  * Events for the committee list, filtered by ?law_status= and ?law_kw=.
  *
  * @param array $overrides Query overrides, e.g. the export passes
  *                         posts_per_page -1 to escape the 300-row screen cap.
+ *                         The non-query key 'law_include_flagship' keeps the
+ *                         flagship in the results; see below for why it is
+ *                         normally out.
  * @return WP_Post[]
  */
 function law_committee_events( array $overrides = array() ) {
@@ -28,41 +118,43 @@ function law_committee_events( array $overrides = array() ) {
 		'orderby'        => 'modified',
 		'order'          => 'DESC',
 	);
+	// Read here, applied further down: the keyword resolves to an explicit
+	// post__in ID set, and that set has to know which events the flagship rule
+	// has already taken out. See the block below the flagship lookup.
 	$keyword = sanitize_text_field( wp_unslash( $_GET['law_kw'] ?? '' ) );
-	if ( '' !== $keyword ) {
-		$query['s'] = $keyword;
-	}
 
-	// The two committee flag filters. The "off" side of each needs BOTH limbs:
-	// an event the committee has never saved has no meta row at all, while one
-	// saved with the box unticked carries a literal '0', because
-	// law_event_update_meta() only deletes on '' and the 'flag' sanitiser
-	// returns integer 0. With only NOT EXISTS, every event the committee has
-	// ever opened would drop out of the "Run by a host" filter.
+	// The "Run by" filter. Its "hosted" side needs BOTH limbs: an event the
+	// committee has never saved has no meta row at all, while one saved with the
+	// box unticked carries a literal '0', because law_event_update_meta() only
+	// deletes on '' and the 'flag' sanitiser returns integer 0. With only
+	// NOT EXISTS, every event the committee has ever opened would drop out of
+	// the "Hosted events" filter.
+	//
+	// There was a second select here, "Session agenda", until 15 September 2026.
+	// It was dropped as noise on a dashboard that already prints the agenda's
+	// session count in the event cell; the meta it read (_law_session_agenda)
+	// is untouched and still drives the form gate and the admin column.
 	$meta_query = array();
 	$run_by     = sanitize_key( $_GET['law_run_by'] ?? '' );
+	// 'law' was this filter's word for the switch until 15 September 2026, when
+	// it came to mean "external" instead. Accepted still, so a bookmarked
+	// dashboard link filters to something rather than to everything.
 	if ( 'law' === $run_by ) {
-		$meta_query[] = array( 'key' => '_law_is_law_event', 'value' => '1' );
+		$run_by = 'external';
+	}
+	if ( 'external' === $run_by ) {
+		$meta_query[] = array( 'key' => '_law_is_external', 'value' => '1' );
 	} elseif ( 'host' === $run_by ) {
 		$meta_query[] = array(
 			'relation' => 'OR',
-			array( 'key' => '_law_is_law_event', 'compare' => 'NOT EXISTS' ),
-			array( 'key' => '_law_is_law_event', 'value' => '1', 'compare' => '!=' ),
-		);
-	}
-	$agenda = sanitize_key( $_GET['law_agenda'] ?? '' );
-	if ( 'yes' === $agenda ) {
-		$meta_query[] = array( 'key' => '_law_session_agenda', 'value' => '1' );
-	} elseif ( 'no' === $agenda ) {
-		$meta_query[] = array(
-			'relation' => 'OR',
-			array( 'key' => '_law_session_agenda', 'compare' => 'NOT EXISTS' ),
-			array( 'key' => '_law_session_agenda', 'value' => '1', 'compare' => '!=' ),
+			array( 'key' => '_law_is_external', 'compare' => 'NOT EXISTS' ),
+			array( 'key' => '_law_is_external', 'value' => '1', 'compare' => '!=' ),
 		);
 	}
 	if ( $meta_query ) {
-		// AND so the two axes compose: "our own events that have an agenda" is
-		// the question a single mixed filter could not answer.
+		// Still AND-wrapped with one clause in it: the external-drafts query
+		// below merges its own clause into the same array, and a relation-less
+		// list would leave that merge's meaning to WP_Query's default.
 		$query['meta_query'] = array_merge( array( 'relation' => 'AND' ), $meta_query ); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
 	}
 
@@ -72,15 +164,85 @@ function law_committee_events( array $overrides = array() ) {
 	// rather than a NOT EXISTS meta clause deliberately: the meta_query above is
 	// replaced wholesale by a caller's own, and a second LEFT JOIN on every
 	// dashboard query buys nothing over one memoised ID lookup.
+	//
+	// The timeline view (functions/events/slot-chart.php) is the one caller that
+	// asks for it back, with $overrides['law_include_flagship']: it draws a day
+	// at a time to show clashes, and the flagship occupies a whole day, so
+	// omitting it there would hide the biggest clash on the programme. The key is
+	// consumed here rather than passed on, because everything left in $overrides
+	// is merged into WP_Query's arguments.
+	//
+	// NB the flagship carries no _law_is_external meta, so it answers the
+	// "Hosted events" filter. That is the wrong word for it, but it is the same
+	// answer law_event_is_external() gives everywhere else, and a special case
+	// here would make the chart disagree with the table it switches from.
+	$include_flagship = ! empty( $overrides['law_include_flagship'] );
+	unset( $overrides['law_include_flagship'] );
+
 	$flagship = function_exists( 'law_flagship_event_id' ) ? law_flagship_event_id() : 0;
-	if ( $flagship ) {
-		$query['post__not_in'] = array( $flagship );
+	$excluded = $flagship && ! $include_flagship ? array( $flagship ) : array();
+
+	// The keyword, as an explicit ID set (law_committee_keyword_event_ids()
+	// above says what it matches and why it is no longer a bare `s`). Two
+	// WP_Query traps dictate the shape of this block, both verified in
+	// WP_Query::get_posts():
+	//
+	// - post__in and post__not_in are an if/elseif, not two AND clauses, so
+	//   setting post__in would silently disable the flagship exclusion. The
+	//   flagship is therefore subtracted from the matched set instead.
+	// - an EMPTY post__in is skipped rather than matching nothing, so a keyword
+	//   no event answers must return early. Left to WP_Query it would hand the
+	//   committee every event on the site as the result for a typo.
+	if ( '' !== $keyword ) {
+		$matched = array_diff( law_committee_keyword_event_ids( $keyword ), $excluded );
+		if ( ! $matched ) {
+			return array();
+		}
+		$query['post__in'] = array_values( $matched );
+	} elseif ( $excluded ) {
+		$query['post__not_in'] = $excluded;
 	}
 
 	// NB: a caller passing its own meta_query in $overrides would replace the
 	// filters above, not add to them. The export (the only caller that passes
 	// anything) only overrides posts_per_page.
-	return get_posts( array_merge( $query, $overrides ) );
+	$args = array_merge( $query, $overrides );
+
+	// External drafts. A law-draft is normally a host's private, unsubmitted
+	// data, which is why the status list above excludes it; an external event is
+	// the opposite, committee-owned from the moment it is created, and its draft
+	// state means only "not on the programme yet". Excluding it would leave the
+	// committee unable to find something it had just saved, so it is fetched
+	// separately and merged rather than the shared rule being relaxed for
+	// everyone.
+	$draft_args                = $args;
+	$draft_args['post_status'] = 'law-draft';
+	$draft_args['meta_query']  = array_merge( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+		array( 'relation' => 'AND' ),
+		$meta_query,
+		array( array( 'key' => '_law_is_external', 'value' => '1' ) )
+	);
+
+	// An explicit ?law_status=law-draft asks for exactly this set and nothing
+	// else: $args still carries the full status list, so running both would
+	// return every event.
+	if ( 'law-draft' === $status ) {
+		return get_posts( $draft_args );
+	}
+
+	$rows = array_merge( get_posts( $args ), get_posts( $draft_args ) );
+
+	// Both queries are ordered, the concatenation is not. Re-sort on the same
+	// key rather than trusting either half's order.
+	usort(
+		$rows,
+		static function ( $a, $b ) {
+			return strcmp( (string) $b->post_modified, (string) $a->post_modified );
+		}
+	);
+
+	$limit = (int) ( $args['posts_per_page'] ?? 300 );
+	return $limit > 0 ? array_slice( $rows, 0, $limit ) : $rows;
 }
 
 /** Count per status for the dashboard filter chips. */
@@ -91,6 +253,22 @@ function law_committee_status_counts() {
 	$counts = array();
 	foreach ( array_keys( law_event_statuses() ) as $status ) {
 		if ( 'law-draft' === $status ) {
+			// Host drafts are not the committee's to see, so the total from
+			// wp_count_posts() would be wrong here. The only drafts this
+			// dashboard lists are external ones (law_committee_events()), so
+			// that is what the chip counts.
+			$counts[ $status ] = count(
+				get_posts(
+					array(
+						'post_type'      => LAW_EVENT_CPT,
+						'post_status'    => 'law-draft',
+						'fields'         => 'ids',
+						'posts_per_page' => 300,
+						'meta_key'       => '_law_is_external', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+						'meta_value'     => '1', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+					)
+				)
+			);
 			continue;
 		}
 		$counts[ $status ] = (int) ( $totals->{$status} ?? 0 );
@@ -108,6 +286,53 @@ function law_committee_status_counts() {
 	}
 
 	return $counts;
+}
+
+/**
+ * The committee dashboard URL that manages one event.
+ *
+ * The committee works from the site, not from wp-admin (Denis, 15 September
+ * 2026), so every "Edit" affordance the committee sees -- on the programme, on
+ * the day list, on the flagship card -- has to land on the dashboard screen
+ * that actually edits that event rather than on post.php. Which screen that is
+ * depends on what the event is, and the answer lives here once so the callers
+ * do not each have to know the four cases:
+ *
+ *   - the flagship has its own dashboard (law_committee_requested_event()
+ *     refuses ?event=<flagship id> outright);
+ *   - a reception is edited on Manage receptions, which owns the reception
+ *     fields the generic form has no boxes for;
+ *   - an external event is edited on the committee's external-event form,
+ *     the same branch ?law_external=<id> opens;
+ *   - anything else is a host event, whose detail view is ?event=<id>.
+ *
+ * @param int $event_id law_event post ID.
+ * @return string URL, or '' when the ID is not a law_event.
+ */
+function law_committee_event_url( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( $event_id < 1 || LAW_EVENT_CPT !== get_post_type( $event_id ) ) {
+		return '';
+	}
+
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return function_exists( 'law_flagship_dashboard_url' ) ? law_flagship_dashboard_url() : '';
+	}
+	if ( function_exists( 'law_reception_is' ) && law_reception_is( $event_id ) ) {
+		return function_exists( 'law_receptions_dashboard_url' ) ? law_receptions_dashboard_url( $event_id ) : '';
+	}
+	if ( function_exists( 'law_external_event_is' ) && law_external_event_is( $event_id ) ) {
+		return function_exists( 'law_external_event_url' ) ? law_external_event_url( $event_id ) : '';
+	}
+
+	// The same base every other account screen resolves by path, so a page
+	// created with a different ID on another environment still works.
+	$base = function_exists( 'law_account_url' ) ? law_account_url( 'dashboard' ) : '';
+	if ( '' === $base ) {
+		$base = home_url( '/account/dashboard/' );
+	}
+
+	return add_query_arg( 'event', $event_id, $base );
 }
 
 /** The event opened in the dashboard detail view. */
@@ -129,8 +354,9 @@ function law_committee_requested_event() {
 
 /**
  * AJAX partial: the dashboard URL with &law_partial=1 returns only the event
- * list markup (parts/events/dashboard-list.php), so the filter bar can swap it
- * in place without a reload. Mirrors law_calendar_maybe_render_partial(); the
+ * markup -- the table (parts/events/dashboard-list.php), or the timeline
+ * (parts/events/slot-chart.php) when the view arg asks for it -- so the filter
+ * bar can swap it in place without a reload. Mirrors law_calendar_maybe_render_partial(); the
  * page's Members restriction and the committee check both still apply.
  */
 add_action( 'template_redirect', 'law_committee_maybe_render_partial' );
@@ -152,7 +378,10 @@ function law_committee_maybe_render_partial() {
 	status_header( 200 );
 	header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
 	nocache_headers();
-	get_template_part( 'parts/events/dashboard-list' );
+	// Whichever view the filters were applied from. The view arg rides along in
+	// the fetch because it is a hidden field inside #law-cal-filter-form, which
+	// is the only place assets/js/calendar-filters.js looks for parameters.
+	get_template_part( law_slotchart_is_active() ? 'parts/events/slot-chart' : 'parts/events/dashboard-list' );
 	exit;
 }
 
@@ -197,46 +426,25 @@ function law_committee_refuse( $event_id, $is_ajax, $message, $code = 400 ) {
 /**
  * Check a posted venue capacity band and places-available pair.
  *
- * Kept out of the handler so the rules can be tested (and reused) rather than
- * only exercised through a request that exits. The band ceiling is inclusive,
- * matching law_events_venue_capacity_bands(); "251+" and "TBC" map to null,
- * which means no ceiling.
+ * The rules themselves live in law_events_venue_pair_error() (settings.php,
+ * beside the band list) so this panel and the event form share one copy: they
+ * held one each until 15 September 2026, when the band floor was added and
+ * only one of them would have grown it. This wrapper survives because the
+ * panel shows a single message and has no field to key an error to, and
+ * because it is the shape the handler and the tests already call.
+ *
+ * Both bounds are inclusive. The pair is judged against the band being saved
+ * in this very post, not the stored one — the panel always posts both halves
+ * together, so there is no locked half to read from meta.
  *
  * @param string $capacity Posted band, '' for "not set".
- * @param string $tickets  Posted places, '' for "no limit".
+ * @param string $tickets  Posted places, '' for none released.
  * @return string An empty string when the pair is acceptable, else the message
  *                to refuse it with.
  */
 function law_committee_venue_input_error( $capacity, $tickets ) {
-	$bands    = law_events_venue_capacity_bands();
-	$capacity = (string) $capacity;
-	$tickets  = trim( (string) $tickets );
-
-	// Only reachable from a tampered or stale select. Refused rather than
-	// stored, because an unrecognised band is read as "no ceiling" everywhere it
-	// is checked, which silently uncaps the ticket allocation.
-	// array_key_exists, not isset: "251+" and "TBC" map to NULL (no ceiling),
-	// and isset() reads a null value as an absent key, so isset() would refuse
-	// the two perfectly valid uncapped bands.
-	if ( '' !== $capacity && ! array_key_exists( $capacity, $bands ) ) {
-		return 'That is not one of the venue capacity bands. Please reload the page and try again.';
-	}
-	if ( '' === $tickets ) {
-		return '';
-	}
-	if ( ! ctype_digit( $tickets ) || (int) $tickets < 1 ) {
-		return 'Places available must be a whole number of 1 or more, or blank for no limit.';
-	}
-	// Checked against the band being saved in this very post, not the stored one.
-	$limit = $bands[ $capacity ] ?? null;
-	if ( null !== $limit && (int) $tickets > $limit ) {
-		return sprintf(
-			'Places available cannot exceed the venue capacity band (%1$s allows at most %2$d).',
-			$capacity,
-			$limit
-		);
-	}
-	return '';
+	list( , $message ) = law_events_venue_pair_error( $capacity, $tickets );
+	return $message;
 }
 
 function law_committee_action_handler() {
@@ -334,7 +542,13 @@ function law_committee_action_handler() {
 		law_event_update_meta( $event_id, '_law_assignee', law_events_sanitize_assignee( wp_unslash( $_POST['law_assignee'] ) ) );
 		law_event_maybe_notify_assignee( $event_id, $before_assignee, $actor );
 	}
-	if ( isset( $_POST['law_slot_label'] ) ) {
+	// The slot select is not rendered for an event LAW manages itself, and
+	// law_event_apply_slot_label() reads an empty label as "clear the dates",
+	// which would delete _law_start and _law_end and drop the event off the
+	// programme. wp-admin has carried this guard since the receptions hit the
+	// bug on 14 September 2026 (admin/event-screen.php); this path never had
+	// one, and external events would have been its third victim.
+	if ( isset( $_POST['law_slot_label'] ) && ! law_event_is_managed_by_law( $event_id ) ) {
 		$slot_label = sanitize_text_field( wp_unslash( $_POST['law_slot_label'] ) );
 		$old_label  = (string) law_event_meta( $event_id, '_law_slot_label' );
 		law_event_update_meta( $event_id, '_law_slot_label', $slot_label );
@@ -384,10 +598,10 @@ function law_committee_action_handler() {
 	// could be switched on and then never off.
 	if ( ! empty( $_POST['law_flags_present'] ) ) {
 		$before_flags = array(
-			'_law_is_law_event'   => (int) law_event_meta( $event_id, '_law_is_law_event' ),
+			'_law_is_external'   => (int) law_event_meta( $event_id, '_law_is_external' ),
 			'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
 		);
-		law_event_update_meta( $event_id, '_law_is_law_event', ! empty( $_POST['law_is_law_event'] ) );
+		law_event_update_meta( $event_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 		law_event_update_meta( $event_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 		law_event_log_flag_change( $event_id, $before_flags, $actor );
 

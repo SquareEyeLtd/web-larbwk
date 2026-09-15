@@ -363,7 +363,7 @@ functions/events/
     webhook.php         REST route, signature verification
   notifications.php     email default templates, placeholder rendering, sending
   admin/emails-screen.php  LAW > Emails: list, edit, send test, reset
-  settings.php          LAW > Events settings: programme week/slots, committee
+  settings.php          Events > Settings: programme week/slots, committee
                         recipients, fee tiers, Stripe tax rate/template IDs
   migration/
     page.php            the Migration admin screen
@@ -893,8 +893,9 @@ The public templates keep their markup and CSS; only the data layer changes:
 
 ### 3.10 Settings
 
-One "Events settings" screen, a submenu of the existing LAW admin menu like
-every other screen in this module: programme year and week dates, the slot
+One settings screen, a submenu of the Events CPT menu next to All events and
+Flagship (moved there from the LAW menu on 15 September 2026, because
+everything it configures is the events module): programme year and week dates, the slot
 choices (currently hardcoded in two places), committee recipient emails, fee
 tier amounts, the Stripe tax rate and invoice rendering template IDs, and the
 toggle for which host-edit fields publish immediately vs route for review (the
@@ -1058,6 +1059,22 @@ submenus of LAW, no new top-level menus. The screen:
   target CPTs registered, the `law_events_source` flag still on GF, and
   Stripe key constants present. Failures list the exact items; warnings
   (e.g. missing photo files) do not block but are carried into the report.
+- **Read limits** (added 15 September 2026, blocking). Neither
+  `law_migration_entries()` nor `law_migration_children()` pages, so
+  `LAW_MIGRATION_ENTRY_PAGE_SIZE` (500 rows per source form) and
+  `LAW_MIGRATION_CHILD_PAGE_SIZE` (100 children per parent) are also the points
+  at which the migrator would start dropping rows with no error anywhere. The
+  "Entry counts within the read limits" check fails when any of forms 2, 5, 6,
+  8, 9 reaches the first cap or any parent reaches the second, naming each form
+  and parent. On a one-shot production migration a silent partial is the worst
+  outcome available, which is why this one blocks rather than warns.
+- **Unknown active forms** (added 15 September 2026, warn-only). Any active
+  form outside `law_migration_known_form_ids()` is listed by ID and title. Such
+  a form is not migrated *and* is not deactivated by the source flip, so it
+  stays submittable through GF's REST endpoint with its feeds live. That can be
+  the right answer (form 7, Contact, is exactly that, and so is form 10, Event >
+  external events, until external events are built), so the check reports the
+  decision rather than forcing it.
 
 ### 5.3 Migration steps, in dependency order
 
@@ -1094,9 +1111,21 @@ The migrator never relies on ID ordering, only on `gpnf_entry_parent`.)
    it: Confirmed + fee 0 → `free`; Confirmed + fee > 0 → `paid`; Approved with
    an invoice URL → `unpaid`; and report each derivation for committee
    sign-off.
-4. **Sessions.** Form 9 (Event > session) children (4 rows) → `law_session`
-   posts under their events, speaker multiselect values resolved through the
-   step 2 map.
+3b. **External events** (added 15 September 2026). The active form 10
+   (Event > external events) entries — a form a colleague built in September
+   2026, after this plan was written — become **published** `law_event` posts
+   flagged `_law_is_external`, with their date and typed times written straight
+   into `_law_start` / `_law_end` and their booking link into
+   `_law_external_url` (see `functions/events/external-events.php`). Published
+   rather than drafted because form 10 has no status field and every active
+   entry is already on the programme. **This step must run before step 4**: 21
+   of the 31 active form 9 (Event > session) entries are children of a form 10
+   entry, and step 4 resolves a session's parent through the event map, so
+   running it afterwards would skip 21 sessions with no error anywhere.
+
+4. **Sessions.** Form 9 (Event > session) children (31 rows, 10 under form 2
+   and 21 under form 10) → `law_session` posts under their events, speaker
+   multiselect values resolved through the step 2 map.
 5. **Comments.** Form 5 (Comments) children (43 rows) → `law_event_comment`
    comments on the right event, authored to the matching user where the email
    resolves, timestamped from the entry date.

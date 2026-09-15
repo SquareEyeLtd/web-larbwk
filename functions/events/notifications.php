@@ -439,53 +439,53 @@ function law_events_email_registry() {
 			'subject' => 'Welcome to {site_name}',
 			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can submit an event for the programme, then follow it through review, payment and publication: {submit_link}\n\nYour events live here, along with the bookings people make for them: {dashboard_link}\n\nYou can also book places at other events in the programme. Those appear under My bookings: {bookings_link}. If you do book, please add any dietary or accessibility requirements to your profile so the organisers can look after you: {profile_link}",
 		),
-		/* The flagship conference's approval-gated application and payment
+		/* The flagship conference's approval-gated registration and payment
 		 * (FLAGSHIP_PAYMENTS.md §8). Every one of these is addressed to a
 		 * single person, so 'to' is dynamic and the caller passes the
 		 * address; the committee copy is the one exception.
 		 *
 		 * House rule, doubly binding here: never interpolate anything the
-		 * applicant typed into a SUBJECT. Subjects are not escaped, and these
+		 * delegate typed into a SUBJECT. Subjects are not escaped, and these
 		 * carry {event_title} only. */
 		'user_flagship_applied' => array(
-			'name'    => 'Email to delegate > flagship application received',
-			'trigger' => 'Payment details saved on a flagship application',
+			'name'    => 'Email to delegate > flagship registration received',
+			'trigger' => 'Payment details saved on a flagship registration',
 			'to'      => 'dynamic',
 			'active'  => true,
-			'subject' => 'We have your application for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThank you for applying to attend {event_title} (application #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your application now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT). Your payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your application is approved, and it is removed if it is not.\n\nYou can see your application, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
+			'subject' => 'We have your registration for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT). Your payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your registration is approved, and it is removed if it is not.\n\nYou can see your registration, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
 		),
 		'committee_flagship_application' => array(
-			'name'    => 'Email to committee > new flagship application',
-			'trigger' => 'A flagship application is ready for review',
+			'name'    => 'Email to committee > new flagship registration',
+			'trigger' => 'A flagship registration is ready for review',
 			'to'      => 'committee',
 			'active'  => true,
-			'subject' => 'New application for {event_title}',
-			'body'    => "A new application has been received for {event_title}.\n\nApplication: #{booking_number}\nApplicant: {attendee_list}\nPrice: {price_total} ({price} plus {price_vat} VAT)\n\nReview it, with everyone else waiting, on the flagship bookings dashboard: {flagship_bookings_link}",
+			'subject' => 'New registration for {event_title}',
+			'body'    => "A new registration has been received for {event_title}.\n\nRegistration: #{booking_number}\nDelegate: {attendee_list}\nPrice: {price_total} ({price} plus {price_vat} VAT)\n\nReview it, with everyone else waiting, on the flagship bookings dashboard: {flagship_bookings_link}",
 		),
 		'user_flagship_approved' => array(
-			'name'    => 'Email to delegate > flagship application approved',
+			'name'    => 'Email to delegate > flagship registration approved',
 			'trigger' => 'Approved and the payment taken',
 			'to'      => 'dynamic',
 			'active'  => true,
-			'subject' => 'Your place at {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour application to attend {event_title} has been approved and your place is confirmed (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. Your VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
+			'subject' => 'Your ticket for {event_title} is confirmed',
+			'body'    => "Dear {attendee_name},\n\nYour registration to attend {event_title} has been approved and your ticket is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. Your VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_complimentary' => array(
 			'name'    => 'Email to delegate > flagship place, no charge',
 			'trigger' => 'A complimentary place added by the committee',
 			'to'      => 'dynamic',
 			'active'  => true,
-			'subject' => 'Your place at {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} is confirmed (booking #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
+			'subject' => 'Your ticket for {event_title} is confirmed',
+			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_declined' => array(
-			'name'    => 'Email to delegate > flagship application declined',
-			'trigger' => 'The committee declined the application',
+			'name'    => 'Email to delegate > flagship registration declined',
+			'trigger' => 'The committee declined the registration',
 			'to'      => 'dynamic',
 			'active'  => true,
-			'subject' => 'Your application for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThank you for applying to attend {event_title}. We are sorry to say that the committee is not able to offer you a place this year (application #{booking_number}).\n\n{decline_reason}\n\nYou have not been charged, and the payment details you gave us have been removed.\n\nThe rest of the London Arbitration Week programme is open to everyone, and many events are free: {bookings_link}",
+			'subject' => 'Your registration for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title}. We are sorry to say that the committee is not able to offer you a place this year (registration #{booking_number}).\n\n{decline_reason}\n\nYou have not been charged, and the payment details you gave us have been removed.\n\nThe rest of the London Arbitration Week programme is open to everyone, and many events are free: {bookings_link}",
 		),
 		'user_flagship_payment_failed' => array(
 			'name'    => 'Email to delegate > flagship payment failed',
@@ -493,7 +493,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'We could not take payment for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nGood news first: your application to attend {event_title} has been approved (application #{booking_number}).\n\nWe were not able to take the payment of {price_total}, though. The payment method we had on file ({payment_method}) was declined:\n\n{payment_error}\n\nPlease add another way to pay and we will take the payment straight away, which confirms your place:\n\n{update_payment_link}\n\nPlease do this by {payment_deadline}. After that we may not be able to hold your place.",
+			'body'    => "Dear {attendee_name},\n\nGood news first: your registration to attend {event_title} has been approved (registration #{booking_number}).\n\nWe were not able to take the payment of {price_total}, though. The payment method we had on file ({payment_method}) was declined:\n\n{payment_error}\n\nPlease add another way to pay and we will take the payment straight away, which confirms your place:\n\n{update_payment_link}\n\nPlease do this by {payment_deadline}. After that we may not be able to hold your place.",
 		),
 		'user_flagship_action_required' => array(
 			'name'    => 'Email to delegate > flagship payment needs confirming',
@@ -501,15 +501,15 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Please confirm your payment for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nYour application to attend {event_title} has been approved (application #{booking_number}), and we tried to take the payment of {price_total}.\n\nYour bank needs you to confirm the payment before it will go through. There is nothing wrong with your payment method: this is a routine security check.\n\nConfirm the payment here, and your place is confirmed straight away:\n\n{invoice_link}\n\nPlease do this by {payment_deadline}. After that we may not be able to hold your place.",
+			'body'    => "Dear {attendee_name},\n\nYour registration to attend {event_title} has been approved (registration #{booking_number}), and we tried to take the payment of {price_total}.\n\nYour bank needs you to confirm the payment before it will go through. There is nothing wrong with your payment method: this is a routine security check.\n\nConfirm the payment here, and your place is confirmed straight away:\n\n{invoice_link}\n\nPlease do this by {payment_deadline}. After that we may not be able to hold your place.",
 		),
 		'user_flagship_withdrawn' => array(
-			'name'    => 'Email to delegate > flagship application withdrawn',
+			'name'    => 'Email to delegate > flagship registration withdrawn',
 			'trigger' => 'The delegate withdrew before being charged',
 			'to'      => 'dynamic',
 			'active'  => true,
-			'subject' => 'Your application for {event_title} has been withdrawn',
-			'body'    => "Dear {attendee_name},\n\nThis confirms that you have withdrawn your application to attend {event_title} (application #{booking_number}).\n\nYou have not been charged, and the payment details you gave us have been removed.\n\nIf you change your mind, you can apply again from the event page while applications are open.",
+			'subject' => 'Your registration for {event_title} has been withdrawn',
+			'body'    => "Dear {attendee_name},\n\nThis confirms that you have withdrawn your registration to attend {event_title} (registration #{booking_number}).\n\nYou have not been charged, and the payment details you gave us have been removed.\n\nIf you change your mind, you can register again from the event page while registration is open.",
 		),
 		'committee_flagship_payment_failed' => array(
 			'name'    => 'Email to committee > flagship payment still unpaid',
@@ -517,15 +517,15 @@ function law_events_email_registry() {
 			'to'      => 'committee',
 			'active'  => true,
 			'subject' => 'ACTION NEEDED: unpaid place at {event_title}',
-			'body'    => "An approved application for {event_title} is still unpaid after {payment_deadline}.\n\nApplication: #{booking_number}\nApplicant: {attendee_list}\nAmount: {price_total}\nLast error: {payment_error}\n\nNothing has been done automatically: the place has not been given away and the application has not been declined. Decide what to do on the flagship bookings dashboard: {flagship_bookings_link}",
+			'body'    => "An approved registration for {event_title} is still unpaid after {payment_deadline}.\n\nRegistration: #{booking_number}\nDelegate: {attendee_list}\nAmount: {price_total}\nLast error: {payment_error}\n\nNothing has been done automatically: the place has not been given away and the registration has not been declined. Decide what to do on the flagship bookings dashboard: {flagship_bookings_link}",
 		),
 		'committee_flagship_paid' => array(
 			'name'    => 'Email to committee > flagship payment after a decision',
-			'trigger' => 'A charge landed on a declined or withdrawn application',
+			'trigger' => 'A charge landed on a declined or withdrawn registration',
 			'to'      => 'committee',
 			'active'  => true,
 			'subject' => 'ACTION NEEDED: payment received after a decision on {event_title}',
-			'body'    => "A payment has arrived for an application that had already been declined or withdrawn, so it was NOT confirmed and no place has been given.\n\nApplication: #{booking_number}\nApplicant: {attendee_list}\nAmount: {price_total}\nInvoice: {invoice_link}\n\nThis usually means the delegate paid from the hosted invoice link in an earlier email before it could be voided. Review it in Stripe and refund if appropriate: nothing has been done automatically.\n\nThe application is on the flagship bookings dashboard: {flagship_bookings_link}",
+			'body'    => "A payment has arrived for a registration that had already been declined or withdrawn, so it was NOT confirmed and no place has been given.\n\nRegistration: #{booking_number}\nDelegate: {attendee_list}\nAmount: {price_total}\nInvoice: {invoice_link}\n\nThis usually means the delegate paid from the hosted invoice link in an earlier email before it could be voided. Review it in Stripe and refund if appropriate: nothing has been done automatically.\n\nThe registration is on the flagship bookings dashboard: {flagship_bookings_link}",
 		),
 		/* The drinks receptions (RECEPTIONS.md §10). Monday and Wednesday are
 		 * paid and pay-now; both are also free with a confirmed flagship
@@ -718,7 +718,10 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{rejection_reason}' => (string) law_event_meta( $event_id, '_law_rejection_reason' ),
 		'{cancellation_reason}' => (string) law_event_meta( $event_id, '_law_cancellation_reason' ),
 		'{event_link}'       => $post && 'publish' === $post->post_status ? get_permalink( $post ) : '',
-		'{edit_link}'        => admin_url( 'post.php?post=' . (int) $event_id . '&action=edit' ),
+		// The committee dashboard screen that edits this event, not post.php:
+		// the committee works from the site rather than wp-admin, so no email
+		// may drop them into it (Denis, 15 September 2026).
+		'{edit_link}'        => function_exists( 'law_committee_event_url' ) ? law_committee_event_url( $event_id ) : $committee,
 		'{dashboard_link}'   => $dashboard,
 		'{comments_link}'    => $dashboard . '?law_thread=' . (int) $event_id,
 		'{committee_link}'   => $committee,
@@ -764,7 +767,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{promoted_list}'     => '',
 		'{blocked_reason}'    => '',
 		'{waitlist_count}'    => '',
-		// The flagship's application and payment (FLAGSHIP_PAYMENTS.md §8).
+		// The flagship's registration and payment (FLAGSHIP_PAYMENTS.md §8).
 		// Declared here so an admin editing a template on the Emails screen
 		// sees the tag exists, and so a template using one on an email that
 		// does not supply it renders empty rather than printing the raw tag.

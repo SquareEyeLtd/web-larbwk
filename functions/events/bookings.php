@@ -731,6 +731,21 @@ function law_event_is_invitation_only( $event_id ) {
 }
 
 /**
+ * An external event: a third party runs it and takes its bookings on its own
+ * website, and the committee curates it onto the programme
+ * (functions/events/external-events.php).
+ *
+ * Keyed on the classification flag rather than on _law_registration_state,
+ * which is the softer of the two: the state says how a place is obtained and a
+ * committee member could plausibly change it, while the flag says what kind of
+ * thing this event is. Both are written together by the external-event saver,
+ * and this reads the one that cannot drift.
+ */
+function law_event_is_external( $event_id ) {
+	return (bool) law_event_meta( (int) $event_id, '_law_is_external' );
+}
+
+/**
  * How many places on this event are held by somebody who is part-way through
  * paying for them.
  *
@@ -849,6 +864,16 @@ function law_booking_guard_form_open( $event_id, array $args = array() ) {
 		return new WP_Error(
 			'law_booking_invitation_only',
 			'Places at this reception are by invitation from LAW.'
+		);
+	}
+	// External events are booked on the organiser's own website, so there is no
+	// place here to take. Hiding the button is not a control: this is the
+	// refusal the create handler, the add-attendee path, register-on-behalf and
+	// the ?law_dialog=1 fragment server all run through.
+	if ( law_event_is_external( $event_id ) ) {
+		return new WP_Error(
+			'law_booking_external',
+			'This event is booked on the organiser\'s own website.'
 		);
 	}
 	if ( empty( $args['allow_priced'] ) && law_event_is_priced( $event_id ) ) {

@@ -185,7 +185,7 @@ function law_flagship_render_form( array $values, $event_id ) {
 	echo '</p>';
 
 	law_field_text( 'law_flagship[date]', 'Date', $values['date'], array( 'type' => 'date' ) );
-	echo '<p class="description">2 December by default. It must fall inside the programme week set in LAW → Events settings';
+	echo '<p class="description">2 December by default. It must fall inside the programme week set in Events → Settings';
 	if ( $week && ! isset( $week[ $values['date'] ] ) ) {
 		echo ' <strong>— the date below is outside that week, so the programme will show the flagship block above the days rather than under one</strong>';
 	}
@@ -203,7 +203,7 @@ function law_flagship_render_form( array $values, $event_id ) {
 	// because the committee sets these once and edits the agenda repeatedly.
 	echo '<h2>Bookings and pricing</h2>';
 	law_field_number( 'law_flagship[places]', 'Places available', $values['places'], array( 'min' => 0 ) );
-	echo '<p class="description">Applications are never refused when this runs out: the page tells the delegate the conference is full and that they will be queued, and you can still approve them. Zero means no number has been set yet.</p>';
+	echo '<p class="description">Registrations are never refused when this runs out: the page tells the delegate the conference is full and that they will be queued, and you can still approve them. Zero means no number has been set yet.</p>';
 
 	law_field_text( 'law_flagship[price]', 'Price before the switch (£, excluding VAT)', $values['price'], array( 'class' => 'small-text' ) );
 	law_field_text( 'law_flagship[price_late]', 'Price after the switch (£, excluding VAT)', $values['price_late'], array( 'class' => 'small-text' ) );

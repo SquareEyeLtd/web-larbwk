@@ -484,3 +484,47 @@ In short, Gravity Forms, Gravity Perks, GravityView and Stripe do most of the he
 Following the LAW committee review of 4.2.4, most decisions have been settled and are now reflected in the spec above. The following points remain open and sit with the LAW committee:
 
 Reception pricing needs confirming precisely — Monday reception was previously agreed at £25 (flagship) / £75 (general); Emily's latest reply mentions "£50" against Monday. Wednesday reception price for non-flagship purchasers is also still unconfirmed (£50 or £75). Neither affects build effort, only the price fields the committee configures once agreed. (§2)
+
+---
+
+## External events (added 15 September 2026)
+
+Events LAW neither runs nor books, listed on the programme because a delegate
+planning their week needs to see the whole week: LCIA's Tylney in Town
+Symposium, GAR Live: Women in Arbitration, the CIArb Alexander Lecture and Law
+Rocks! LONDON. A third party runs each one and takes its registrations on its
+own website.
+
+**How they behave**
+
+- Committee-managed only. Created from "Create an external event" above the
+  Manage events table, on a full page (the form carries a speakers table and a
+  session agenda; two of the four existing ones have eight sessions and
+  thirteen). Saved as a draft, or published straight to the programme with **no
+  approval step** — the committee is recording an event that already exists,
+  not reviewing a proposal.
+- **No slot.** The committee types a date and a start and end time, rather than
+  choosing one of the programme's fixed slots, and the event sits on the day
+  grid under its own times.
+- **Not bookable here.** The Register button opens the organiser's own booking
+  page in a new tab, with an external-link arrow. Where no link is set yet, the
+  button is shown **disabled** and reads "Registration opening soon", rather
+  than being hidden. The booking engine refuses a booking on one server-side;
+  hiding the button is not a control.
+- Tagged **External** on the card, in the committee table and in the exports,
+  and filterable as "External events" on the public programme's Organiser
+  filter, which previously read "LAW events".
+
+**What the tag used to mean.** The committee's "Run by LAW, not an external
+host" switch was repurposed rather than joined by a second one (Denis, 15
+September 2026). Nothing keyed any behaviour off it — the flagship and the
+receptions identify themselves by their own flags — so it was an identity tag
+with the wrong identity on it. The receptions no longer carry it: LAW runs and
+books those.
+
+**Migration.** The four events captured on Gravity Forms form 10 (Event >
+external events), and the 21 sessions belonging to them, are brought across by
+migration step 3b. One data quirk is handled explicitly rather than guessed at:
+Law Rocks! LONDON 2026 was captured as running 19:45 to 11:30, so its end time
+is dropped, the programme reads "7:45pm onwards", and the migration report says
+so for the committee to correct.
