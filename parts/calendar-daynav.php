@@ -15,10 +15,10 @@
  * attributes are what it reads. calendar-filters.js greys a day out after a
  * filter fetch leaves it empty.
  *
- * With no $args it reads the public programme's own data, which is what the
- * calendar pages want. The dashboard passes its own, because the programme's
- * counts are of a different, differently filtered set of events and exclude
- * the flagship:
+ * With no $args it reads the public programme's own data (its own counts
+ * include the flagship on its day), which is what the calendar pages want. The
+ * dashboard passes its own, because its counts are of a different, differently
+ * filtered set of events:
  *
  * get_template_part( 'parts/calendar-daynav', null, array(
  *   'days'          => array( 'Y-m-d' => 'Monday 30 November', ... ),
@@ -54,7 +54,15 @@ if ( array_key_exists( 'flagship_date', $args ) ) {
 if ( ! $law_has_counts ) {
 	$law_by_date = law_calendar_events_by_date();
 	foreach ( array_keys( $law_days ) as $law_date ) {
-		$law_counts[ $law_date ] = count( $law_by_date[ $law_date ] ?? array() );
+		// The flagship counts as one of its day's events. law_calendar_events()
+		// keeps it out of the card list because it is rendered as a block rather
+		// than a card, but to a reader it is still an event on that day, and a
+		// day holding the conference and one reception has to read "2 events".
+		// parts/calendar-events.php adds the same 1 to the day section's
+		// data-count, which is what calendar-tabs.js re-reads after a filter
+		// fetch, so the two agree.
+		$law_counts[ $law_date ] = count( $law_by_date[ $law_date ] ?? array() )
+			+ ( '' !== $law_flagship_date && $law_date === $law_flagship_date ? 1 : 0 );
 	}
 }
 ?>

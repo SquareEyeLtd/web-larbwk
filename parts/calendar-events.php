@@ -79,7 +79,15 @@ if ( $law_flagship && ! isset( $law_days[ $law_flagship_date ] ) ) {
 		continue;
 	}
 	?>
-	<section class="law-cal-day-section" id="day-<?php echo esc_attr( $law_date ); ?>" data-count="<?php echo (int) count( $law_by_date[ $law_date ] ?? array() ); ?>" aria-label="<?php echo esc_attr( law_calendar_day_heading( $law_date ) ); ?>">
+	<?php
+	// The flagship is one of its day's events in the count, even though it is
+	// not one of the cards: calendar-tabs.js re-reads this attribute for the tab
+	// labels after a filter fetch, and parts/calendar-daynav.php adds the same 1
+	// when it renders them server-side.
+	$law_day_count = count( $law_by_date[ $law_date ] ?? array() )
+		+ ( $law_flagship && $law_date === $law_flagship_date ? 1 : 0 );
+	?>
+	<section class="law-cal-day-section" id="day-<?php echo esc_attr( $law_date ); ?>" data-count="<?php echo (int) $law_day_count; ?>" aria-label="<?php echo esc_attr( law_calendar_day_heading( $law_date ) ); ?>">
 		<h2 class="law-cal-day-bar"><?php echo esc_html( law_calendar_day_heading( $law_date ) ); ?></h2>
 		<?php
 		// Above the day's slot bars: the flagship is the day, not one slot in it.
