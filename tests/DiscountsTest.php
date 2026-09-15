@@ -2,11 +2,12 @@
 /**
  * The discount-code catalogue (functions/events/discounts.php).
  *
- * Nothing on the site honours a code yet — Denis kept the catalogue for
- * future use and ruled it out for the flagship — so these tests are the only
- * thing exercising the rules. That is exactly why they are here: the day
- * something starts charging, the arithmetic and the usage counter have to be
- * right first time, not discovered against real money.
+ * Two flows honour a code: the paid receptions (14 September 2026) and the
+ * flagship conference (15 September 2026, reversing the exclusion this file
+ * used to enforce). Their own suites cover claiming and releasing against a
+ * real booking; these cover the catalogue itself — the arithmetic, the usage
+ * counter and the refusal messages — which is where a mistake costs real
+ * money and shows up nowhere until it does.
  */
 class DiscountsTest extends LAW_Test_Case {
 
@@ -133,6 +134,62 @@ class DiscountsTest extends LAW_Test_Case {
 		$this->assertWPError( law_discount_validate( law_discount_data( $gone )['code'], array( 'price_pence' => 55000 ) ), 'law_discount_expired' );
 	}
 
+	/**
+	 * Every refusal reads the same to the delegate, and differs only in the
+	 * error code the activity log records.
+	 *
+	 * Denis, 15 September 2026: "refusal message just should say that the code
+	 * is invalid and that's it." This reversed the receptions' deliberate
+	 * choice to keep "expired", "not yet" and "used up" apart, so the test
+	 * that used to pin the distinction now pins its opposite: a signed-in
+	 * member must not be able to learn that a guessed string is a real code,
+	 * or what state it is in.
+	 */
+	public function test_every_refusal_says_only_that_the_code_is_invalid(): void {
+		$scoped_to = $this->make_event( array(), 'publish' );
+		$elsewhere = $this->make_event( array(), 'publish' );
+
+		$refusals = array(
+			'law_discount_unknown'  => law_discount_validate( 'NOSUCHCODEATALL', array( 'price_pence' => 55000 ) ),
+			'law_discount_early'    => law_discount_validate(
+				law_discount_data( $this->make_code( array( 'starts' => gmdate( 'Y-m-d H:i', time() + DAY_IN_SECONDS ) ) ) )['code'],
+				array( 'price_pence' => 55000 )
+			),
+			'law_discount_expired'  => law_discount_validate(
+				law_discount_data( $this->make_code( array( 'expires' => gmdate( 'Y-m-d H:i', time() - DAY_IN_SECONDS ) ) ) )['code'],
+				array( 'price_pence' => 55000 )
+			),
+			'law_discount_wrong_event' => law_discount_validate(
+				law_discount_data( $this->make_code( array( 'events' => array( $scoped_to ) ) ) )['code'],
+				array( 'event_id' => $elsewhere, 'price_pence' => 55000 )
+			),
+			'law_discount_nothing_to_discount' => law_discount_validate(
+				law_discount_data( $this->make_code() )['code'],
+				array( 'price_pence' => 0 )
+			),
+		);
+
+		$messages = array();
+		foreach ( $refusals as $expected_code => $refused ) {
+			$this->assertWPError( $refused, $expected_code, 'The CODE still says why, for the activity log.' );
+			$messages[] = $refused->get_error_message();
+		}
+
+		$this->assertCount(
+			1,
+			array_unique( $messages ),
+			'But every message the delegate reads is the same one, or the field is an oracle for which codes exist.'
+		);
+		$this->assertSame( 'That discount code is not valid.', $messages[0] );
+
+		// An empty field is the one exception, and it leaks nothing: nobody
+		// guessed a code, so there is no state to reveal.
+		$this->assertSame(
+			'Enter a discount code.',
+			law_discount_validate( '', array( 'price_pence' => 55000 ) )->get_error_message()
+		);
+	}
+
 	public function test_a_scoped_code_is_refused_elsewhere(): void {
 		$event_id = $this->make_event( array(), 'publish' );
 		$other_id = $this->make_event( array(), 'publish' );
@@ -241,29 +298,30 @@ class DiscountsTest extends LAW_Test_Case {
 		$this->assertWPError( $refused, 'expires' );
 	}
 
-	/* Who honours a code, and who deliberately does not ______________________ */
+	/* Who honours a code ____________________________________________________ */
 
 	/**
-	 * Denis, 10 September 2026: codes are NOT used on the flagship, whose
-	 * price is the committee's decision at approval rather than the delegate's
-	 * at checkout. If the source grep ever fails, someone has wired a code
-	 * into that flow without asking, which is a pricing decision, not a
-	 * refactor.
+	 * Both priced flows offer themselves as a scope; nothing free does.
 	 *
-	 * The scope list is the other half of the same rule: the paid receptions
-	 * opt in (RECEPTIONS.md §8.4) and the flagship must never appear there,
-	 * because a scope the committee can tick is an invitation to try.
+	 * This test used to assert the opposite about the flagship. Denis ruled
+	 * codes out there on 10 September 2026 — a flagship place is priced by the
+	 * committee at approval, not by the delegate at checkout — and this file
+	 * grepped functions/events/flagship-bookings.php to make wiring one in
+	 * fail the build. On 15 September 2026 he asked for codes on the flagship,
+	 * so the grep is gone and the expectation is inverted.
+	 *
+	 * The rule that survived the reversal is the one still worth pinning: an
+	 * event only offers itself while it has a price. A scope the committee can
+	 * tick has to mean somewhere a code is actually read, and an event with
+	 * nothing to charge has nothing to discount.
 	 */
-	public function test_the_flagship_takes_no_code_and_a_priced_reception_does(): void {
-		$engine = file_get_contents( get_theme_file_path( 'functions/events/flagship-bookings.php' ) );
-		$this->assertStringNotContainsString( 'law_discount_validate', $engine );
-		$this->assertStringNotContainsString( 'law_discount_claim', $engine );
-
+	public function test_both_priced_flows_offer_themselves_as_a_scope(): void {
 		$flagship = $this->make_event(
 			array( '_law_is_flagship' => 1, '_law_flagship_price_pence' => 55000 ),
 			'publish'
 		);
-		$this->assertArrayNotHasKey( $flagship, law_discount_scope_events(), 'The flagship is never a scope.' );
+		add_filter( 'law_flagship_event_id', static fn() => $flagship );
+		law_flagship_event_id( true );
 
 		$reception = $this->make_event(
 			array(
@@ -273,15 +331,39 @@ class DiscountsTest extends LAW_Test_Case {
 			),
 			'publish'
 		);
-		$scope = law_discount_scope_events();
-		$this->assertArrayHasKey( $reception, $scope, 'A priced reception is.' );
-		$this->assertStringContainsString( get_the_title( $reception ), $scope[ $reception ] );
-
 		$free = $this->make_event(
 			array( '_law_is_reception' => 1, '_law_attendee_price_pence' => 0 ),
 			'publish'
 		);
-		$this->assertArrayNotHasKey( $free, law_discount_scope_events(), 'A free reception has nothing to discount.' );
+
+		$scope = law_discount_scope_events();
+
+		$this->assertArrayHasKey( $flagship, $scope, 'The flagship takes codes since 15 September 2026.' );
+		$this->assertStringContainsString( get_the_title( $flagship ), $scope[ $flagship ] );
+		$this->assertArrayHasKey( $reception, $scope, 'A priced reception does too.' );
+		$this->assertStringContainsString( get_the_title( $reception ), $scope[ $reception ] );
+		$this->assertArrayNotHasKey( $free, $scope, 'A free reception has nothing to discount.' );
+
+		remove_all_filters( 'law_flagship_event_id' );
+		law_flagship_event_id( true );
+	}
+
+	/**
+	 * A flagship priced at 0 is the committee saying "not on sale", not "free",
+	 * so it must not appear as something a code can be limited to either.
+	 */
+	public function test_a_flagship_that_is_not_on_sale_is_not_a_scope(): void {
+		$flagship = $this->make_event(
+			array( '_law_is_flagship' => 1, '_law_flagship_price_pence' => 0, '_law_flagship_price_late_pence' => 0 ),
+			'publish'
+		);
+		add_filter( 'law_flagship_event_id', static fn() => $flagship );
+		law_flagship_event_id( true );
+
+		$this->assertArrayNotHasKey( $flagship, law_discount_scope_events() );
+
+		remove_all_filters( 'law_flagship_event_id' );
+		law_flagship_event_id( true );
 	}
 
 	/**

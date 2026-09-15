@@ -174,6 +174,16 @@ function law_setup_account_pages() {
 			. 'Emails: per-booking host/committee notifications inactive';
 	}
 
+	// The flagship started accepting discount codes on 15 September 2026, and
+	// an unscoped code means "anywhere there is a price", so every code the
+	// committee wrote for a £45 reception became valid against a £550
+	// conference ticket at the moment of deploy. Pin those codes to what they
+	// were actually written for.
+	if ( function_exists( 'law_setup_scope_existing_discounts' ) ) {
+		$report[] = str_pad( strtoupper( law_setup_scope_existing_discounts() ), 9 )
+			. 'Discounts: pre-flagship unscoped codes limited to the paid receptions';
+	}
+
 	$login_page = get_page_by_path( 'login' );
 	if ( $login_page instanceof WP_Post ) {
 		$block   = "<!-- wp:shortcode -->\n[law_login]\n<!-- /wp:shortcode -->";
@@ -577,6 +587,89 @@ function law_setup_retire_booking_received_emails() {
 	}
 	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
 	return 'updated';
+}
+
+/**
+ * The moment the flagship started accepting discount codes, and with it the
+ * moment an empty "Applies to" changed meaning from "every paid reception" to
+ * "every paid event". Only codes written before it are backfilled.
+ */
+if ( ! defined( 'LAW_DISCOUNT_FLAGSHIP_CUTOVER' ) ) {
+	define( 'LAW_DISCOUNT_FLAGSHIP_CUTOVER', strtotime( '2026-09-15 00:00:00 UTC' ) );
+}
+
+/**
+ * Pin every code that predates the flagship to the receptions it was written
+ * for.
+ *
+ * An empty "Applies to" means "wherever a place is charged for" (Denis,
+ * 15 September 2026). That is the right rule going forward and the wrong one
+ * applied backwards: a code created when the receptions were the only priced
+ * thing would quietly have become valid against a conference ticket more than
+ * ten times the price. So, once, the priced receptions are ticked onto every
+ * code that has no scope at all.
+ *
+ * Idempotent twice over: a one-shot option flag, and it only ever touches
+ * codes whose scope is empty. Runs from BOTH the ?setup-account-pages trigger
+ * and migration step 10, because a git push alone has to be enough.
+ *
+ * @return string ok | skipped | updated
+ */
+function law_setup_scope_existing_discounts() {
+	if ( ! function_exists( 'law_discounts_all' ) || ! defined( 'LAW_DISCOUNT_CPT' ) ) {
+		return 'ok'; // The events module is not loaded on this environment.
+	}
+	if ( get_option( 'law_discounts_scoped_before_flagship' ) ) {
+		return 'ok';
+	}
+
+	// Whatever the receptions offer as a scope right now. If none of them is
+	// priced there is nothing to pin a code to, and the flag is NOT set, so
+	// this runs again once one goes on sale.
+	$receptions = array();
+	if ( function_exists( 'law_reception_ids' ) && function_exists( 'law_event_is_priced' ) ) {
+		foreach ( law_reception_ids() as $reception_id ) {
+			if ( law_event_is_priced( $reception_id ) ) {
+				$receptions[] = (int) $reception_id;
+			}
+		}
+	}
+	if ( ! $receptions ) {
+		return 'skipped';
+	}
+
+	$changed = 0;
+	foreach ( law_discounts_all() as $discount ) {
+		$data = law_discount_data( $discount );
+		if ( ! empty( $data['events'] ) ) {
+			continue;
+		}
+		// Only codes that PREDATE the reversal. The flag alone is not enough:
+		// this returns 'skipped' without setting it while nothing is priced,
+		// so on a site where the receptions go on sale later, a code written
+		// after 15 September with a deliberately empty scope — which now means
+		// "every paid event, the flagship included" — would be narrowed to the
+		// receptions it was never meant to be pinned to. (Security review,
+		// 15 September 2026.)
+		$created = get_post_field( 'post_date_gmt', (int) $data['id'] );
+		if ( $created && strtotime( $created . ' UTC' ) >= LAW_DISCOUNT_FLAGSHIP_CUTOVER ) {
+			continue;
+		}
+		law_event_update_meta( (int) $data['id'], '_law_discount_events', $receptions );
+		$changed++;
+		law_event_log(
+			(int) $data['id'],
+			sprintf(
+				'Discount code %s limited to the paid receptions. It had no "Applies to" set, and an empty scope now means every paid event including the flagship conference, which this code was written before.',
+				$data['code']
+			),
+			array( 'source' => 'discounts', 'action' => 'discount_scoped_on_upgrade', 'discount' => (int) $data['id'], 'events' => $receptions )
+		);
+	}
+
+	update_option( 'law_discounts_scoped_before_flagship', 1, false );
+
+	return $changed ? 'updated' : 'ok';
 }
 
 /** The Flagship bookings dashboard's Members restriction. */

@@ -430,14 +430,15 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 
 	/**
 	 * The conference's own inert button: registration not open yet, or over.
-	 * The wording is the conference page's ("Registration opens soon"), not the
-	 * hosted events' "Bookings open soon", because a place here is registered
-	 * for rather than booked (Denis, 15 September 2026).
+	 * The not-open label is the hosted events' "Open soon", shared because the
+	 * shortened words name neither booking nor registering, and two cards on
+	 * one programme should not name the same wait two ways (Denis, 15
+	 * September 2026). The page below keeps the conference's own sentence.
 	 */
 	public function test_the_conference_names_its_reason_when_there_is_nothing_to_press(): void {
 		$not_open = $this->make_flagship( array( '_law_flagship_price_pence' => 0, '_law_flagship_price_late_pence' => 0 ) );
 		$inert    = law_flagship_card_inert_action( array( 'id' => $not_open ) );
-		$this->assertSame( 'Registration opens soon', $inert['label'] );
+		$this->assertSame( 'Open soon', $inert['label'] );
 		$this->assertTrue( $inert['disabled'] );
 
 		// And the block itself draws it, as a real disabled <button>.
@@ -445,7 +446,7 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		ob_start();
 		get_template_part( 'parts/events/flagship-card', null, array( 'event' => law_events_map_post( get_post( $not_open ) ) ) );
 		$html = (string) ob_get_clean();
-		$this->assertStringContainsString( 'Registration opens soon', $html );
+		$this->assertStringContainsString( 'Open soon', $html );
 		$this->assertMatchesRegularExpression( '/<button[^>]+disabled/', $html );
 	}
 

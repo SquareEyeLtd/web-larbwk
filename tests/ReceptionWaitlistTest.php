@@ -104,6 +104,112 @@ class ReceptionWaitlistTest extends LAW_Test_Case {
 		);
 	}
 
+	/** A code, tracked for teardown. */
+	private function make_code( array $meta = array() ): array {
+		$code    = 'WLTEST' . strtoupper( wp_generate_password( 6, false ) );
+		$post_id = wp_insert_post(
+			array(
+				'post_type'   => LAW_DISCOUNT_CPT,
+				'post_status' => 'publish',
+				'post_title'  => $code,
+				'post_name'   => law_discount_match_key( $code ),
+			)
+		);
+		$this->posts[] = $post_id;
+		foreach ( array_merge( array( '_law_discount_type' => 'percent', '_law_discount_value' => 100 ), $meta ) as $key => $value ) {
+			law_event_update_meta( $post_id, $key, $value );
+		}
+		add_post_meta( $post_id, '_law_discount_used', 0, true );
+
+		return array( 'id' => (int) $post_id, 'code' => $code );
+	}
+
+	/* Nothing to pay means no payment step (Denis, 15 September 2026) _______ */
+
+	/**
+	 * A 100% code joins the queue with no Stripe call and no payment method.
+	 *
+	 * The empty Stripe queue IS the assertion: an unmocked call fails loudly
+	 * (tests/bootstrap.php), so opening a setup session would fail this.
+	 */
+	public function test_a_fully_discounted_join_never_goes_to_stripe(): void {
+		$event_id = $this->make_reception();
+		$this->fill( $event_id );
+		$code = $this->make_code();
+
+		$GLOBALS['law_test_stripe_queue'] = array();
+		$GLOBALS['law_test_stripe_calls'] = array();
+
+		$result = law_reception_waitlist_join(
+			$this->make_delegate(),
+			array( 'event_id' => $event_id, 'terms' => 1, 'consent' => 1, 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 0, 'ajax' => true )
+		);
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$entry         = (int) $result['booking'];
+		$this->posts[] = $entry;
+
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'Nothing to charge means nothing to ask Stripe.' );
+		$this->assertTrue( ! empty( $result['free'] ), 'The handler needs to know, so it does not promise a payment page.' );
+		$this->assertSame( 'law-waitlisted', get_post_status( $entry ) );
+		$this->assertSame( 'no_charge', (string) law_event_meta( $entry, '_law_payment_status' ) );
+		$this->assertSame( '', (string) law_event_meta( $entry, '_law_stripe_payment_method_id' ) );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
+		// The entry is honourable straight away: the "ready" step ran without
+		// a card, so it is not sitting in the queue in silence.
+		$this->assertSame( '1', (string) get_post_meta( $entry, '_law_waitlist_ready', true ) );
+	}
+
+	/**
+	 * And it is promotable, and is promoted without a charge.
+	 *
+	 * law_waitlist_check_promotable() used to demand 'ready' on any priced
+	 * event, which would have queued this person for ever behind a payment
+	 * method nobody was ever going to ask them for.
+	 */
+	public function test_a_fully_discounted_entry_is_promoted_with_no_charge(): void {
+		$event_id = $this->make_reception();
+		$seated   = $this->fill( $event_id );
+		$code     = $this->make_code();
+
+		$GLOBALS['law_test_stripe_queue'] = array();
+		$result = law_reception_waitlist_join(
+			$this->make_delegate(),
+			array( 'event_id' => $event_id, 'terms' => 1, 'consent' => 1, 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 0, 'ajax' => true )
+		);
+		$entry         = (int) $result['booking'];
+		$this->posts[] = $entry;
+
+		// A place frees up. No Stripe responses queued at all.
+		$GLOBALS['law_test_stripe_queue'] = array();
+		$GLOBALS['law_test_stripe_calls'] = array();
+		$mail   = array();
+		$filter = static function ( $atts ) use ( &$mail ) {
+			$mail[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $filter );
+
+		law_booking_cancel( $seated, 0, 'host_reject' );
+
+		remove_filter( 'wp_mail', $filter );
+
+		$this->assertSame( 'publish', get_post_status( $entry ), 'The place is theirs.' );
+		$this->assertSame( 'paid', (string) law_event_meta( $entry, '_law_payment_status' ), 'Paid, for nothing.' );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'No invoice is raised for £0.00.' );
+		$this->assertSame( '', (string) get_post_meta( $entry, '_law_charge_claim', true ), 'No charge was ever claimed for it.' );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ), 'A place that was taken keeps the use.' );
+
+		// ONE confirmation, not two. law_reception_mark_paid() would otherwise
+		// send the generic one as well as the promotion's own.
+		$to = array_merge( ...array_map( static fn( $atts ) => (array) ( $atts['to'] ?? array() ), $mail ) );
+		$delegate = (string) law_booking_attendee( $entry )['email'];
+		$this->assertSame(
+			1,
+			count( array_filter( $to, static fn( $address ) => $address === $delegate ) ),
+			'One place, one confirmation, one calendar invitation.'
+		);
+	}
+
 	public function test_joining_claims_the_code_and_opens_a_setup_session(): void {
 		$event_id = $this->make_reception();
 		$this->fill( $event_id );
@@ -150,13 +256,34 @@ class ReceptionWaitlistTest extends LAW_Test_Case {
 		$entry    = $this->join( $event_id )['booking'];
 		$this->make_ready( $entry );
 
+		$mail   = array();
+		$filter = static function ( $atts ) use ( &$mail ) {
+			$mail[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $filter );
+
 		$this->queue_charge( 'paid' );
 		law_booking_cancel( $seated, 0, 'host_reject' );
+
+		remove_filter( 'wp_mail', $filter );
 
 		$this->assertSame( 'publish', get_post_status( $entry ) );
 		$this->assertSame( 'paid', (string) law_event_meta( $entry, '_law_payment_status' ) );
 		$this->assertSame( 'https://invoice.stripe.test/in_test', (string) law_event_meta( $entry, '_law_stripe_invoice_url' ) );
 		$this->assertSame( '', (string) get_post_meta( $entry, '_law_charge_claim', true ), 'The claim is released whatever happened.' );
+
+		// ONE confirmation. law_reception_mark_paid() ends by sending the
+		// generic user_reception_confirmed, and the promotion sends its own on
+		// top, so a promoted delegate was getting two confirmations and two
+		// calendar invitations for one place (found 15 September 2026).
+		$to       = array_merge( ...array_map( static fn( $atts ) => (array) ( $atts['to'] ?? array() ), $mail ) );
+		$delegate = (string) law_booking_attendee( $entry )['email'];
+		$this->assertSame(
+			1,
+			count( array_filter( $to, static fn( $address ) => $address === $delegate ) ),
+			'One place, one confirmation, one calendar invitation.'
+		);
 	}
 
 	public function test_a_decline_frees_the_place_and_schedules_a_resume_rather_than_recursing(): void {

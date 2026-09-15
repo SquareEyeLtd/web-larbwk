@@ -81,10 +81,16 @@ Not put to Denis; built unless he says otherwise.
   exempts the flagship today; it has never needed it because
   `law_flagship_apply()` does not call the guard. The exemption goes **in the
   guard** because `law_waitlist_check_promotable()` calls it.
-- **Discount refusal wording**: keep the distinct "expired / not yet / used up"
-  messages (they help a real delegate) and put the quote endpoint on its own
-  rate-limit surface. This is the decision `FLAGSHIP_PAYMENTS.md` §12 left for
-  whoever wired the first priced flow; record it there when done.
+- **Discount refusal wording**: ~~keep the distinct "expired / not yet / used
+  up" messages (they help a real delegate)~~ — **reversed on 15 September 2026**.
+  Denis: "refusal message just should say that the code is invalid and that's
+  it." Every refusal from `law_discount_validate()` now reads "That discount
+  code is not valid." The `WP_Error` codes still differ and
+  `law_booking_log_refusal()` writes them into the activity log, so the
+  committee keeps the diagnosis. The quote endpoint's own rate-limit surface
+  stays. Losing the race for a code's LAST use at claim time is deliberately
+  still specific: the code has already validated by then, so there is nothing
+  left to leak.
 - **Flagship "add without payment"** (committee comp places) gets the same
   "Included receptions" checkboxes as the application form.
 
@@ -368,7 +374,14 @@ duplicate guard, event lock, recount, account resolve, log, email registry,
 ### 2.2 Quote
 
 `law_reception_quote( $event_id, $code, $user_id )` →
-`{ list_net, net, discount, vat, gross, code, discount_id, free }`.
+`{ list_net, list_gross, net, discount, vat, gross, code, discount_id, free }`.
+
+**Moved on 15 September 2026.** The body is now `law_booking_quote()` in
+`functions/events/bookings.php`, shared with the flagship, and this name is a
+one-line wrapper so no caller or test had to change. It needed no rewriting:
+`law_event_price_pence()` already routed the flagship's time-switched price, so
+the arithmetic was flow-agnostic all along. `list_gross` is new and is what a
+no-JS submission's `price_shown` is judged against (see §5.2).
 `law_event_price_pence()`, then when a code is given
 `law_discount_validate( $code, [ 'event_id', 'user_id', 'price_pence' ] )` and
 `law_discount_apply()`; VAT via `law_events_vat_pence()` /
@@ -507,7 +520,7 @@ carries `?law_notice=`.
 
 | Action | Who | Rate surface | Notes |
 |---|---|---|---|
-| `law_reception_quote` | signed in | new `discount_quote` 20/600 per user, 60 per IP | JSON only: `{ net, discount, vat, gross, label, free, code }` or `{ message, field: 'law_discount_code' }`. Never redirects. |
+| `law_quote` (was `law_reception_quote`, which stays registered as an alias) | signed in | `discount_quote` 20/600 per user, 60 per IP, shared with the flagship | JSON only: `{ net, discount, vat, gross, pence, label, free, code }` or `{ message, field: 'law_discount_code' }`. Never redirects. Refuses an event no flow has claimed through `law_booking_quote_guard()`. |
 | `law_reception_checkout` | signed in | `booking` (10/600/100) | posts `event_id`; refuses a non-reception, invitation-only or unpriced event |
 | `law_reception_continue` | signed in, own hold | `booking_edit` | **POST form, never a GET link** (hover-prefetch must not open sessions); returns the stored Checkout URL if unexpired, else expires it and opens a new session |
 | `law_reception_waitlist_join` | signed in | `booking` | §6.1 |
@@ -543,6 +556,7 @@ than stacking a third `_notice_render()` under the two at
 | `reception-paid` | ok | Thank you. Your payment has gone through and your place is confirmed. A confirmation with a calendar invitation and your VAT invoice is on its way. |
 | `reception-processing` | ok | Your payment is on its way. Your place is held and we will email you as soon as it clears. |
 | `reception-free-confirmed` | ok | Your place is confirmed. Your discount code covered the full price, so nothing was charged. |
+| `reception-waitlist-free` | ok | You are on the waitlist. Your discount code covers the full price, so there is nothing to pay and we have not asked for any payment details. |
 | `reception-cancelled` | error | No payment was taken and the place has been released. You can book again while places remain. |
 | `reception-expired` | error | Your booking was not completed in time and the place has been released. You can book again while places remain. |
 | `reception-return-failed` | error | We could not confirm your payment with Stripe. If money has left your account, contact LAW and we will sort it out. |
@@ -722,12 +736,18 @@ the profile-gaps branch (`law_booking_profile_gaps()`, links to
   `law_reception[applied_code]`.
 - The shared `.law-booking-summary.law-event-summary` block (title, when,
   ruled row with places left; on `waitlist` the row says the event is full).
-- A **price block** `.law-reception-price`: Price (net), Discount (hidden
+- A **price block** `.law-booking-price` (renamed from `.law-reception-price`
+  on 15 September 2026, when the flagship dialog started using it): Price (net),
+  Discount (hidden
   until applied), VAT, **Total** (gross), each line with `data-law-price=…`.
 - The **Discount code** field `law_reception[code]`,
   `data-law-field="law_discount_code"`, no native `required`; an **Apply**
   button (`type="button"`, `data-law-quote`); a `[data-law-quote-status]` line
-  with `role="status"`.
+  with `role="status"`. All of it inside a `fieldset.law-booking-fieldset`
+  whose legend is "Discount code" (Denis, 15 September 2026, so the two dialogs
+  match): the legend is the heading, so the `<label>` is `.show-for-sr` rather
+  than printed twice. The input and the Apply button share a `min-height` so
+  they are the same height whatever either inherits.
 - `waitlist` mode only: consent checkbox `law_reception[consent]`
   (`data-law-field="law_consent"`) "Save my payment method and charge
   {price_total} when a place opens up. You can leave the waitlist at any time
@@ -746,7 +766,10 @@ apply dialog does (`booking-form.js:692-702`).
 ### 5.2 `assets/js/booking-form.js`: the quote section
 
 - Apply, and Enter inside the code field (`preventDefault`), post
-  `action=law_reception_quote&event_id&code&_wpnonce&law_ajax=1` with `fetch`.
+  `action=law_quote&event_id&law_code&_wpnonce&law_ajax=1` with `fetch` (the
+  action, the code's key and the localised object were renamed on
+  15 September 2026, when the flagship started using the same block; the code
+  travels under one agreed key so each form keeps its own field name).
 - While in flight: Apply reads "Checking…" and is disabled; **the submit is
   disabled too** (a submit mid-quote would trip the `price_shown` guard and
   tell the delegate the price changed, which is untrue). A request token
@@ -764,19 +787,51 @@ apply dialog does (`booking-form.js:692-702`).
   applied), run the quote first, then submit.
 - Nothing in the client computes money. The server quote is the only source.
 
-No-JS: the code goes with the form and the server applies it (the
-`applied_code` check is skipped when the request is not AJAX and the field is
-empty; when a code is typed without JS the server quotes and, if the gross
-differs from `price_shown`, refuses once with the recalculated total shown, so
-the delegate re-submits knowingly). The inline `?law_reception_checkout=1`
+No-JS: the code goes with the form and the server applies it. The
+`applied_code` check is skipped when the request is not AJAX, because there is
+no Apply button to have pressed.
+
+**This paragraph used to describe a refusal, and the refusal was a bug** (found
+15 September 2026). The form is rendered at the LIST price, so a code typed
+into it without JavaScript posts the list gross; comparing that against the
+DISCOUNTED gross refused every no-JS redemption, and the inline form
+re-renders at the list price, so the refusal repeated for ever rather than
+letting the delegate "re-submit knowingly". `law_booking_quote_expected_gross()`
+now judges a no-JS submission against the list gross, which the delegate really
+did see. A code can only reduce a total, so nobody can be charged more than they
+were shown, which is the only thing that guard exists to prevent. The inline `?law_reception_checkout=1`
 form repopulates from a one-shot transient like `law_flagship_form_state()`.
 
-Styles: a `.law-reception-price` block added to `assets/css/calendar.css`
-beside the `.law-event-summary` rules; no new stylesheet.
+Styles: a `.law-booking-price` block in `assets/css/calendar.css` beside the
+`.law-event-summary` rules; no new stylesheet. The flagship registration dialog
+uses the same block.
 
 ## 6. The paid waitlist
 
 ### 6.1 Join
+
+**Nothing to pay means no payment step** (Denis, 15 September 2026). A code
+covering the whole price joins the queue with no Stripe call at all: the entry
+is inserted with `_law_payment_status = 'no_charge'` and
+`law_reception_mark_waitlist_ready( $booking_id, 'no_charge' )` runs at once,
+so it is offerable immediately rather than waiting for a payment method nobody
+will ever ask for. That function is the latch-log-email tail extracted from
+`law_reception_on_card_saved()`, for the same reason the flagship needed
+`law_flagship_mark_ready()`: nothing about that step was ever about the card,
+but it lived inside the card handler, so a free entry would have joined in
+silence.
+
+`law_waitlist_check_promotable()` accepts `ready` **or** `no_charge` on a
+priced event; testing `law_event_is_priced()` alone would have queued these
+people for ever. `law_waitlist_seat()` leaves a booking with nothing to pay
+alone — no `processing`, no charge claim — and
+`law_reception_charge_promoted()` confirms it with `law_reception_mark_paid()`
+and sends `user_reception_promoted_free`. Note the condition is the BOOKING's
+amount (`law_booking_price()['free']`), not the event's price, because
+`law_event_is_priced()` is true of a place a code has taken to nothing.
+
+The 48-hour no-card sweep filters on `pending_setup`, so a free entry is never
+closed for a card it was never asked for.
 
 `law_reception_waitlist_join( $user_id, array $input )`:
 `law_reception_guard_open()`; the event must be full
@@ -1090,7 +1145,9 @@ Denis's decision.
 ### 8.4 Discount catalogue
 
 `receptions.php` adds every priced reception to the `law_discount_scope_events`
-filter (label "Opening drinks, Mon 30 Nov"), so the checkboxes in
+filter (label "Opening drinks, Mon 30 Nov"); since 15 September 2026
+`flagship-bookings.php` adds the flagship the same way, so the catalogue copy
+no longer says codes are reception-only. The checkboxes in
 `parts/events/discounts-manage.php:209-226` appear and the list's "Applies to"
 prints the names. Copy updates: `templates/account-dashboard-discounts.php:68`
 → "Codes are accepted when booking a paid reception. Leave 'Applies to' empty
@@ -1436,15 +1493,14 @@ from the letter of the document, and why.
     has the same gap and was left alone as out of scope; worth closing next
     time that file is open.
 
-13. **The discount-code oracle is a recorded trade-off, not an oversight.**
-    `law_discount_validate()` gives one message for "no such code" and "that
-    code is disabled", so the field cannot be used to enumerate the catalogue,
-    but `wrong event`, `expired`, `not yet` and `used up` are distinct — which
-    tells a guesser that a code they tried exists somewhere. That is §0.3's
-    decision and the quote endpoint's own rate surface is the answer to it.
-    **It holds only while codes are hard to guess**: `LAW-01` … `LAW-99` would
-    be walkable. Worth a word to Denis before the committee starts inventing
-    codes.
+13. **The discount-code oracle was a recorded trade-off, and it is closed.**
+    `law_discount_validate()` used to give distinct messages for `wrong event`,
+    `expired`, `not yet` and `used up`, which told a guesser that a code they
+    tried exists somewhere. It was put to Denis, as this note said it should
+    be, and on 15 September 2026 he closed it: one message for every refusal.
+    The rate surface stays as a second line, and the reason the oracle mattered
+    — that `LAW-01` … `LAW-99` would be walkable — no longer depends on the
+    committee's naming discipline.
 
 9. **`law_booking_cancel()` gained an `included_revoked` context.** §2.6 said to
    reuse `event_cancelled` with adapted wording. That context sends

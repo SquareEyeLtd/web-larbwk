@@ -453,7 +453,20 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'We have your registration for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT). Your payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your registration is approved, and it is removed if it is not.\n\nYou can see your registration, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT). {discount_note}\n\nYour payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your registration is approved, and it is removed if it is not.\n\nYou can see your registration, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
+		),
+		/* The same acknowledgement for a registration a discount code covered
+		 * in full. It needs its own template rather than a placeholder in the
+		 * one above, because every sentence about a saved payment method is
+		 * false here: none was asked for, and none exists to charge or
+		 * remove. */
+		'user_flagship_applied_free' => array(
+			'name'    => 'Email to delegate > flagship registration received, nothing to pay',
+			'trigger' => 'A registration whose discount code covers the whole price',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'We have your registration for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\n{discount_note} That covers the whole price, so there is nothing to pay and we have not asked you for any payment details.\n\nYou can see your registration, or withdraw it, at any time under My bookings: {bookings_link}",
 		),
 		'committee_flagship_application' => array(
 			'name'    => 'Email to committee > new flagship registration',
@@ -461,7 +474,7 @@ function law_events_email_registry() {
 			'to'      => 'committee',
 			'active'  => true,
 			'subject' => 'New registration for {event_title}',
-			'body'    => "A new registration has been received for {event_title}.\n\nRegistration: #{booking_number}\nDelegate: {attendee_list}\nPrice: {price_total} ({price} plus {price_vat} VAT)\n\nReview it, with everyone else waiting, on the flagship bookings dashboard: {flagship_bookings_link}",
+			'body'    => "A new registration has been received for {event_title}.\n\nRegistration: #{booking_number}\nDelegate: {attendee_list}\nPrice: {price_total} ({price} plus {price_vat} VAT)\n{discount_note}\n\nReview it, with everyone else waiting, on the flagship bookings dashboard: {flagship_bookings_link}",
 		),
 		'user_flagship_approved' => array(
 			'name'    => 'Email to delegate > flagship registration approved',
@@ -469,7 +482,19 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your ticket for {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour registration to attend {event_title} has been approved and your ticket is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. Your VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nYour registration to attend {event_title} has been approved and your ticket is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. {discount_note}\n\nYour VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
+		),
+		/* Approved with a code covering the whole price. Deliberately NOT
+		 * user_flagship_complimentary: that one says "with our compliments",
+		 * which credits LAW with a gift the delegate's own code paid for.
+		 * No invoice link and no payment method, because neither exists. */
+		'user_flagship_approved_free' => array(
+			'name'    => 'Email to delegate > flagship ticket confirmed, covered by a discount code',
+			'trigger' => 'Approved, with a code covering the whole price',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your ticket for {event_title} is confirmed',
+			'body'    => "Dear {attendee_name},\n\nYour registration to attend {event_title} has been approved and your ticket is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{discount_note} That covered the whole price, so there was nothing to pay and nothing has been charged.\n\nA calendar invitation is attached. Your booking is always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_complimentary' => array(
 			'name'    => 'Email to delegate > flagship place, no charge',
@@ -590,6 +615,27 @@ function law_events_email_registry() {
 			'active'  => true,
 			'subject' => "You're on the waitlist for {event_title}",
 			'body'    => "Dear {attendee_name},\n\nYou are on the waitlist for {event_title} (booking #{booking_number}), and your payment details are saved.\n\nIf a place opens up we will charge {price_total} and confirm your place automatically, then email you straight away. You do not need to do anything else, and you will not be charged unless a place is yours.\n\nYou can leave the waitlist at any time before then, under My bookings: {bookings_link}",
+		),
+		/* The same two moments for an entry a discount code covers in full.
+		 * Their own templates rather than a placeholder in the ones above,
+		 * because every sentence there is about a saved payment method and an
+		 * amount to charge, and neither exists here: nothing to pay means no
+		 * payment step at all (Denis, 15 September 2026). */
+		'user_reception_waitlist_joined_free' => array(
+			'name'    => 'Email to delegate > reception waitlist joined, nothing to pay',
+			'trigger' => 'A waitlist entry whose discount code covers the whole price',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => "You're on the waitlist for {event_title}",
+			'body'    => "Dear {attendee_name},\n\nYou are on the waitlist for {event_title} (booking #{booking_number}).\n\n{discount_note} That covers the whole price, so there is nothing to pay and we have not asked you for any payment details.\n\nIf a place opens up we will confirm it automatically and email you straight away. You do not need to do anything else.\n\nYou can leave the waitlist at any time before then, under My bookings: {bookings_link}",
+		),
+		'user_reception_promoted_free' => array(
+			'name'    => 'Email to delegate > reception waitlist place confirmed, nothing to pay',
+			'trigger' => 'A waitlist entry whose code covered the price was promoted',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'A place has opened up: you are booked for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nGood news: a place has opened up at {event_title} and it is yours (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{discount_note} That covered the whole price, so there was nothing to pay and nothing has been charged.\n\nA calendar invitation is attached. Your booking is under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}",
 		),
 		'user_reception_waitlist_no_card' => array(
 			'name'    => 'Email to delegate > reception waitlist entry closed',

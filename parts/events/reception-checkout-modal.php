@@ -99,7 +99,7 @@ else :
 	?>
 	<form class="law-event-form law-event-form--light law-booking-form law-reception-checkout" method="post"
 		action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
-		data-law-reception-quote="<?php echo esc_attr( (string) $law_rc_id ); ?>">
+		data-law-quote-event="<?php echo esc_attr( (string) $law_rc_id ); ?>">
 		<input type="hidden" name="action" value="<?php echo esc_attr( $law_rc_action ); ?>">
 		<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_rc_id ); ?>">
 		<?php
@@ -136,7 +136,7 @@ else :
 		// and the Discount row starts hidden because there is nothing to say
 		// about a discount nobody has claimed.
 		?>
-		<div class="law-reception-price">
+		<div class="law-booking-price">
 			<?php
 			// Price is the LIST price, and the Discount line is what comes off
 			// it: the block reads like a receipt, and price − discount + VAT
@@ -144,51 +144,77 @@ else :
 			// reduction under it made the discount look as though it had been
 			// taken twice (browser pass, 14 September 2026).
 			?>
-			<p class="law-reception-price__row">
+			<p class="law-booking-price__row">
 				<span><?php esc_html_e( 'Price', 'law' ); ?></span>
 				<span data-law-price="net"><?php echo esc_html( law_events_format_pence( $law_rc_quote['list_net'] ) ); ?></span>
 			</p>
-			<p class="law-reception-price__row law-reception-price__row--discount" data-law-price-discount-row hidden>
+			<p class="law-booking-price__row law-booking-price__row--discount" data-law-price-discount-row hidden>
 				<span><?php esc_html_e( 'Discount', 'law' ); ?></span>
 				<span data-law-price="discount">&minus;<?php echo esc_html( law_events_format_pence( $law_rc_quote['discount'] ) ); ?></span>
 			</p>
-			<p class="law-reception-price__row">
+			<p class="law-booking-price__row">
 				<span><?php esc_html_e( 'VAT', 'law' ); ?></span>
 				<span data-law-price="vat"><?php echo esc_html( law_events_format_pence( $law_rc_quote['vat'] ) ); ?></span>
 			</p>
-			<p class="law-reception-price__row law-reception-price__row--total">
+			<p class="law-booking-price__row law-booking-price__row--total">
 				<span><?php esc_html_e( 'Total', 'law' ); ?></span>
 				<strong data-law-price="gross"><?php echo esc_html( law_events_format_pence( $law_rc_quote['gross'] ) ); ?></strong>
 			</p>
 		</div>
 
 		<?php
+		// The discount code sits in a bordered box, matching the flagship
+		// dialog's groups (Denis, 15 September 2026): the two dialogs are the
+		// same shape and must not diverge in how one field is presented. The
+		// legend IS the field's heading, so the label is there for a screen
+		// reader only — printing both would name the same control twice.
+		//
 		// No native `required` on anything in here: a required control inside a
 		// hidden dialog makes the whole form unsubmittable in Chrome. The
 		// script checks, and the server is the guard that holds.
 		?>
-		<p class="law-form-field law-reception-code">
-			<label for="law-rc-code-<?php echo esc_attr( (string) $law_rc_id ); ?>"><?php esc_html_e( 'Discount code', 'law' ); ?></label>
-			<input type="text" id="law-rc-code-<?php echo esc_attr( (string) $law_rc_id ); ?>"
-				name="law_reception[code]" autocomplete="off" spellcheck="false"
-				data-law-field="law_discount_code" data-law-quote-code>
-			<button type="button" class="button second" data-law-quote><?php esc_html_e( 'Apply', 'law' ); ?></button>
-		</p>
-		<p class="law-form-hint" role="status" data-law-quote-status></p>
+		<fieldset class="law-booking-fieldset">
+			<legend><?php esc_html_e( 'Discount code', 'law' ); ?></legend>
+			<p class="law-form-field law-booking-code">
+				<label class="show-for-sr" for="law-rc-code-<?php echo esc_attr( (string) $law_rc_id ); ?>"><?php esc_html_e( 'Discount code', 'law' ); ?></label>
+				<input type="text" id="law-rc-code-<?php echo esc_attr( (string) $law_rc_id ); ?>"
+					name="law_reception[code]" autocomplete="off" spellcheck="false"
+					data-law-field="law_discount_code" data-law-quote-code>
+				<button type="button" class="button second" data-law-quote><?php esc_html_e( 'Apply', 'law' ); ?></button>
+			</p>
+			<p class="law-form-hint" role="status" data-law-quote-status></p>
+		</fieldset>
 
+		<?php
+		// The consent sentence names the amount, and it is the record of what
+		// the delegate agreed to be charged. The Apply button rewrites it from
+		// the two templates below, because left alone it kept quoting the list
+		// price after a code had moved it (found 15 September 2026, while the
+		// flagship was learning the same trick).
+		?>
 		<?php if ( $law_rc_wait ) : ?>
+			<?php
+			$law_rc_consent_default = __( 'Save my payment details and charge %s when a place opens up. You can leave the waitlist at any time before then. *', 'law' );
+			$law_rc_consent_free    = __( 'Hold my place in the queue. My discount code covers the whole price, so there is nothing to pay and no payment details are needed. *', 'law' );
+			?>
 			<p class="law-form-field">
 				<label>
 					<input type="checkbox" name="law_reception[consent]" value="1" data-law-field="law_consent" aria-required="true">
-					<?php
-					echo esc_html(
-						sprintf(
-							/* translators: %s: the total price. */
-							__( 'Save my payment details and charge %s when a place opens up. You can leave the waitlist at any time before then. *', 'law' ),
-							law_events_format_pence( $law_rc_quote['gross'] )
-						)
-					);
-					?>
+					<span data-law-consent
+						data-law-consent-default="<?php echo esc_attr( $law_rc_consent_default ); ?>"
+						data-law-consent-free="<?php echo esc_attr( $law_rc_consent_free ); ?>">
+						<?php
+						echo esc_html(
+							$law_rc_quote['free']
+								? $law_rc_consent_free
+								: sprintf(
+									/* translators: %s: the total price. */
+									$law_rc_consent_default,
+									law_events_format_pence( $law_rc_quote['gross'] )
+								)
+						);
+						?>
+					</span>
 				</label>
 			</p>
 		<?php endif; ?>
@@ -224,9 +250,15 @@ else :
 				data-law-modal-busy="<?php echo esc_attr( $law_rc_busy ); ?>"
 				data-law-submit-default="<?php echo esc_attr( $law_rc_submit ); ?>"
 				data-law-submit-busy-default="<?php echo esc_attr( $law_rc_busy ); ?>"
-				data-law-submit-free="<?php esc_attr_e( 'Confirm my free place', 'law' ); ?>"
-				data-law-submit-busy-free="<?php esc_attr_e( 'Confirming…', 'law' ); ?>">
-				<?php echo esc_html( $law_rc_submit ); ?>
+				<?php
+				// A free quote in WAITLIST mode still joins a queue: nothing is
+				// confirmed, so "Confirm my free place" would promise a place
+				// that is not there. Only the checkout's free label says
+				// confirm.
+				?>
+				data-law-submit-free="<?php echo esc_attr( $law_rc_wait ? __( 'Join waitlist', 'law' ) : __( 'Confirm my free place', 'law' ) ); ?>"
+				data-law-submit-busy-free="<?php echo esc_attr( $law_rc_wait ? __( 'Joining…', 'law' ) : __( 'Confirming…', 'law' ) ); ?>">
+				<?php echo esc_html( $law_rc_quote['free'] && ! $law_rc_wait ? __( 'Confirm my free place', 'law' ) : $law_rc_submit ); ?>
 			</button>
 		</p>
 	</form>

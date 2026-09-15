@@ -646,56 +646,40 @@ function law_reception_guard_open( $event_id ) {
  * What one place costs this person right now, with an optional discount code
  * applied.
  *
- * PURE: it reads, it does not write and it claims nothing. That is what lets
- * the same function render the dialog, answer the live Apply endpoint AND be
- * re-run inside the checkout handler — which is the point, because it means
- * the client can never send its own price.
+ * The arithmetic moved to law_booking_quote() (bookings.php) on 15 September
+ * 2026, when the flagship started taking codes and the sum turned out to be
+ * the same sum. This name stays because a dozen call sites and three test
+ * files read better for it, and because "quote a reception" is the thing this
+ * file is about.
+ *
+ * PURE: it reads, it does not write and it claims nothing.
  *
  * @param int    $event_id law_event post ID.
  * @param string $code     As typed; '' for the list price.
  * @param int    $user_id  The delegate, for a future per-user code limit.
- * @return array{list_net:int,net:int,discount:int,vat:int,gross:int,code:string,discount_id:int,free:bool}|WP_Error
+ * @return array|WP_Error See law_booking_quote().
  */
 function law_reception_quote( $event_id, $code = '', $user_id = 0 ) {
-	$event_id = (int) $event_id;
-	$list_net = law_event_price_pence( $event_id );
-	$code     = trim( (string) $code );
-
-	$quote = array(
-		'list_net'    => $list_net,
-		'net'         => $list_net,
-		'discount'    => 0,
-		'vat'         => $list_net > 0 ? law_events_vat_pence( $list_net ) : 0,
-		'gross'       => $list_net > 0 ? law_events_gross_pence( $list_net ) : 0,
-		'code'        => '',
-		'discount_id' => 0,
-		'free'        => $list_net < 1,
-	);
-
-	if ( '' === $code ) {
-		return $quote;
-	}
-
-	$discount = law_discount_validate(
-		$code,
-		array( 'event_id' => $event_id, 'user_id' => (int) $user_id, 'price_pence' => $list_net )
-	);
-	if ( is_wp_error( $discount ) ) {
-		return $discount;
-	}
-
-	$applied = law_discount_apply( $list_net, $discount );
-
-	$quote['net']         = (int) $applied['net_pence'];
-	$quote['discount']    = (int) $applied['discount_pence'];
-	$quote['vat']         = $quote['net'] > 0 ? law_events_vat_pence( $quote['net'] ) : 0;
-	$quote['gross']       = $quote['net'] > 0 ? law_events_gross_pence( $quote['net'] ) : 0;
-	$quote['code']        = (string) $discount['code'];
-	$quote['discount_id'] = (int) $discount['id'];
-	$quote['free']        = (bool) $applied['is_free'];
-
-	return $quote;
+	return law_booking_quote( $event_id, $code, $user_id );
 }
+
+/**
+ * A reception answers for its own events when the shared quote asks whether
+ * one may be priced (bookings.php, law_booking_quote_guard()).
+ */
+add_filter(
+	'law_booking_quote_guard',
+	function ( $answer, $event_id ) {
+		if ( null !== $answer || ! law_reception_is( $event_id ) ) {
+			return $answer;
+		}
+		$open = law_reception_guard_open( $event_id );
+
+		return is_wp_error( $open ) ? $open : true;
+	},
+	10,
+	2
+);
 
 /* Checkout ___________________________________________________________________ */
 
@@ -764,9 +748,17 @@ function law_reception_checkout( $user_id, array $input ) {
 		return $quote;
 	}
 
+	// Without JavaScript the form was rendered at the LIST price and the code
+	// was typed straight into it, so the gross it posts is the list gross.
+	// Comparing that against the DISCOUNTED gross refused every no-JS
+	// redemption, and the inline form re-renders at the list price, so the
+	// refusal repeated for ever (found 15 September 2026).
 	$shown = law_booking_guard_price_shown(
 		(int) ( $input['price_shown'] ?? 0 ),
-		$quote['gross'],
+		law_booking_quote_expected_gross(
+			$quote,
+			law_discount_normalise_code( $code ) === law_discount_normalise_code( $applied )
+		),
 		'law_reception_price_changed'
 	);
 	if ( is_wp_error( $shown ) ) {
@@ -826,6 +818,11 @@ function law_reception_checkout( $user_id, array $input ) {
 	// claiming first means a lost race refuses with nothing written.
 	if ( $quote['discount_id'] && ! law_discount_claim( $quote['discount_id'] ) ) {
 		return $unlock(
+			// Deliberately specific, unlike every refusal from
+			// law_discount_validate(): by this point the code has already
+			// validated, so the delegate has proved they know it and there is
+			// nothing left to leak. "Not valid" here would be a lie about a
+			// code that was valid a second ago.
 			new WP_Error(
 				'law_discount_used_up',
 				__( 'That discount code has already been used the maximum number of times.', 'law' ),
@@ -1748,9 +1745,35 @@ function law_reception_on_card_saved( $booking_id ) {
 		return false;
 	}
 
-	// `ready` is what law_waitlist_check_promotable() looks for: until a
-	// method is saved the entry is skipped in place rather than promoted.
-	law_event_update_meta( $booking_id, '_law_payment_status', 'ready' );
+	return law_reception_mark_waitlist_ready( $booking_id, 'ready' );
+}
+
+/**
+ * A queue entry is now one a place can actually be offered to: record it, log
+ * it, and send the emails that say so.
+ *
+ * Its own function since 15 September 2026, when a discount code covering the
+ * whole price gave an entry a second way to become offerable. Nothing about
+ * this step was ever about the card itself — it is about the entry being
+ * honourable — but it lived inside the card-saved handler, so a free entry
+ * would have joined the queue in silence and then been skipped by
+ * law_waitlist_check_promotable() for ever.
+ *
+ * @param int    $booking_id The queue entry.
+ * @param string $state      'ready' when a payment method was saved,
+ *                           'no_charge' when there is nothing to pay. Both
+ *                           are promotable; nothing else is.
+ * @return bool Whether this call was the one that latched.
+ */
+function law_reception_mark_waitlist_ready( $booking_id, $state = 'ready' ) {
+	$booking_id = (int) $booking_id;
+	$event_id   = (int) get_post_field( 'post_parent', $booking_id );
+	$free       = 'no_charge' === $state;
+
+	// The state law_waitlist_check_promotable() looks for: until the entry is
+	// in one of these it is skipped IN PLACE rather than promoted, so the
+	// person keeps their position.
+	law_event_update_meta( $booking_id, '_law_payment_status', $free ? 'no_charge' : 'ready' );
 	delete_post_meta( $booking_id, '_law_waitlist_blocked' );
 
 	if ( ! law_booking_claim_latch( $booking_id, '_law_waitlist_ready' ) ) {
@@ -1760,14 +1783,20 @@ function law_reception_on_card_saved( $booking_id ) {
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Waitlist entry #%d is ready: a payment method is saved, so a place that opens up can be charged and confirmed automatically.',
+			$free
+				? 'Waitlist entry #%d is ready: a discount code covers the whole price, so a place that opens up can be confirmed automatically with nothing to charge.'
+				: 'Waitlist entry #%d is ready: a payment method is saved, so a place that opens up can be charged and confirmed automatically.',
 			(int) law_event_meta( $booking_id, '_law_booking_number' )
 		),
-		array( 'source' => 'receptions', 'action' => 'reception_waitlist_ready', 'booking' => $booking_id ),
+		array( 'source' => 'receptions', 'action' => 'reception_waitlist_ready', 'booking' => $booking_id, 'free' => $free ),
 		array( 'user_id' => 0 )
 	);
 
-	law_events_send( 'user_reception_waitlist_joined', $event_id, law_booking_email_extra( $booking_id ) );
+	law_events_send(
+		$free ? 'user_reception_waitlist_joined_free' : 'user_reception_waitlist_joined',
+		$event_id,
+		law_booking_email_extra( $booking_id )
+	);
 
 	// The first time a queue forms on this reception, the committee hears:
 	// their cue to consider releasing more places.
@@ -1982,9 +2011,17 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 	if ( is_wp_error( $quote ) ) {
 		return $quote;
 	}
+	// Without JavaScript the form was rendered at the LIST price and the code
+	// was typed straight into it, so the gross it posts is the list gross.
+	// Comparing that against the DISCOUNTED gross refused every no-JS
+	// redemption, and the inline form re-renders at the list price, so the
+	// refusal repeated for ever (found 15 September 2026).
 	$shown = law_booking_guard_price_shown(
 		(int) ( $input['price_shown'] ?? 0 ),
-		$quote['gross'],
+		law_booking_quote_expected_gross(
+			$quote,
+			law_discount_normalise_code( $code ) === law_discount_normalise_code( $applied )
+		),
 		'law_reception_price_changed'
 	);
 	if ( is_wp_error( $shown ) ) {
@@ -2028,6 +2065,11 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 	}
 	if ( $quote['discount_id'] && ! law_discount_claim( $quote['discount_id'] ) ) {
 		return $unlock(
+			// Deliberately specific, unlike every refusal from
+			// law_discount_validate(): by this point the code has already
+			// validated, so the delegate has proved they know it and there is
+			// nothing left to leak. "Not valid" here would be a lie about a
+			// code that was valid a second ago.
 			new WP_Error(
 				'law_discount_used_up',
 				__( 'That discount code has already been used the maximum number of times.', 'law' ),
@@ -2040,7 +2082,11 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 		'_law_price_pence'        => $quote['net'],
 		'_law_vat'                => $quote['net'] > 0 ? 1 : 0,
 		'_law_payment_consent_at' => gmdate( 'Y-m-d H:i' ),
-		'_law_payment_status'     => 'pending_setup',
+		// Nothing to pay means no payment step (Denis, 15 September 2026), so
+		// a code covering the whole price joins the queue already offerable
+		// rather than waiting on a payment method that will never be asked
+		// for and never charged.
+		'_law_payment_status'     => $quote['free'] ? 'no_charge' : 'pending_setup',
 		'_law_waitlist_position'  => law_waitlist_next_position( $event_id ),
 		'_law_waitlist_joined'    => current_time( 'mysql' ),
 	);
@@ -2068,7 +2114,9 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Waitlist entry #%d added at position %d: %s. %s will be charged automatically if a place opens up.',
+			$quote['free']
+				? 'Waitlist entry #%1$d added at position %2$d: %3$s. Their discount code covers the whole price, so a place that opens up costs them nothing.'
+				: 'Waitlist entry #%1$d added at position %2$d: %3$s. %4$s will be charged automatically if a place opens up.',
 			(int) law_event_meta( $booking_id, '_law_booking_number' ),
 			(int) law_event_meta( $booking_id, '_law_waitlist_position' ),
 			$person['name'],
@@ -2085,17 +2133,50 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 		array( 'user_id' => $user_id )
 	);
 
-	// The emails wait for the payment method: an entry with nothing saved is
-	// not yet a place in the queue that can be honoured
+	// A code covering the whole price: nothing to charge, so nothing to save
+	// and nowhere to send them. The entry is offerable immediately.
+	if ( $quote['free'] ) {
+		law_reception_mark_waitlist_ready( $booking_id, 'no_charge' );
+
+		return array(
+			'booking'  => $booking_id,
+			'free'     => true,
+			'redirect' => add_query_arg( 'law_notice', 'reception-waitlist-free', law_booking_manage_url( $booking_id ) ),
+		);
+	}
+
+	// Otherwise the emails wait for the payment method: an entry with nothing
+	// saved is not yet a place in the queue that can be honoured
 	// (law_reception_on_card_saved()).
 	$url = law_stripe_create_setup_session( $booking_id, 'waitlist' );
 	if ( is_wp_error( $url ) ) {
 		// The entry survives: the delegate can add their details from My
 		// bookings rather than typing everything again.
-		return array( 'booking' => $booking_id, 'redirect' => law_booking_manage_url( $booking_id ) );
+		return array( 'booking' => $booking_id, 'free' => false, 'redirect' => law_booking_manage_url( $booking_id ) );
 	}
 
-	return array( 'booking' => $booking_id, 'redirect' => $url );
+	return array( 'booking' => $booking_id, 'free' => false, 'redirect' => $url );
+}
+
+/**
+ * Take the generic confirmation's latch so a promoted entry is told ONCE.
+ *
+ * law_reception_mark_paid() ends by calling
+ * law_reception_maybe_send_confirmation(), which sends user_reception_confirmed
+ * with an .ics and the committee's copy. That is right for somebody who bought
+ * a place, and wrong on a promotion, which has its own email saying a place
+ * opened up — so a promoted delegate was getting BOTH, two confirmations and
+ * two calendar invitations for one place (found 15 September 2026 while adding
+ * the free path; it was already true of every paid promotion).
+ *
+ * Claiming the latch before the mark is the fix, rather than adding a flag to
+ * mark_paid(): the latch already exists to make "tell them once" true whatever
+ * arrives first, and the committee is not left out, because a promotion pass
+ * sends them one summary of the whole pass (law_waitlist_notify_host()) rather
+ * than a message per entry.
+ */
+function law_reception_claim_promotion_email( $booking_id ) {
+	law_booking_claim_latch( (int) $booking_id, '_law_confirmation_sent' );
 }
 
 /**
@@ -2122,6 +2203,18 @@ function law_reception_charge_promoted( $event_id, array $promoted, $source = 'a
 		if ( ! $booking || 'publish' !== $booking->post_status ) {
 			continue;
 		}
+
+		// Nothing to pay: law_waitlist_seat() left this one alone rather than
+		// claiming a charge for it, so confirm it here and move on. No Stripe
+		// call, no invoice, and its own email — the paid one names an amount
+		// and a payment method, neither of which exists.
+		if ( 'no_charge' === (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
+			law_reception_claim_promotion_email( $booking_id );
+			law_reception_mark_paid( $booking_id, array(), '', 0 );
+			law_booking_send_with_ics( 'user_reception_promoted_free', (int) $event_id, law_booking_email_extra( $booking_id ) );
+			continue;
+		}
+
 		if ( 'processing' !== (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
 			continue;
 		}
@@ -2149,6 +2242,7 @@ function law_reception_charge_promoted( $event_id, array $promoted, $source = 'a
 
 			$status = law_stripe_invoice_intent_status( $invoice );
 			if ( 'paid' === (string) ( $invoice['status'] ?? '' ) ) {
+				law_reception_claim_promotion_email( $booking_id );
 				law_reception_mark_paid( $booking_id, $invoice, '', 0 );
 				law_booking_send_with_ics( 'user_reception_promoted_paid', (int) $event_id, law_booking_email_extra( $booking_id ) );
 				continue;
@@ -2371,71 +2465,22 @@ function law_reception_input_from_request() {
 	);
 }
 
-/* The live discount quote */
-
-add_action( 'admin_post_law_reception_quote', 'law_reception_quote_handler' );
-add_action( 'admin_post_nopriv_law_reception_quote', 'law_events_nopriv_json' );
-
-/**
- * Price one place, with a code, without writing anything.
+/* The live discount quote ____________________________________________________
  *
- * JSON only, and never a redirect: it answers the Apply button, which has
- * nowhere to go. Its own rate surface, because a delegate trying three codes
- * must not spend the budget that lets them then book
- * (FLAGSHIP_PAYMENTS.md §12's open decision, settled here).
+ * The endpoint moved to law_booking_quote_handler() (bookings.php) on
+ * 15 September 2026, when the flagship started taking codes too and a second
+ * copy of the same 60 lines would have been the start of two that drift.
+ *
+ * This action stays registered so a reception dialog already open in
+ * somebody's browser keeps working across the deploy: the same courtesy
+ * law_flagship_update_card_handler() pays. It answers on the NEW nonce, so a
+ * page loaded before the deploy is refused rather than quoted wrongly — which
+ * is the right way round, because a stale page's worst outcome must be "please
+ * reload", never a price nobody checked.
  */
-function law_reception_quote_handler() {
-	$is_ajax = law_events_guard_post(
-		'law_reception_quote',
-		array(
-			'rate'          => array( 'discount_quote', 20, 600, 60 ),
-			'honeypot_json' => array( 'message' => 'Checked.' ),
-		)
-	);
 
-	if ( ! is_user_logged_in() ) {
-		wp_send_json_error( array( 'message' => __( 'Please sign in to book a place.', 'law' ) ), 401 );
-	}
-
-	$input = law_reception_input_from_request();
-	$open  = law_reception_guard_open( $input['event_id'] );
-	if ( is_wp_error( $open ) ) {
-		wp_send_json_error( array( 'message' => $open->get_error_message() ), 404 );
-	}
-
-	$quote = law_reception_quote( $input['event_id'], $input['code'], get_current_user_id() );
-	if ( is_wp_error( $quote ) ) {
-		$data = (array) $quote->get_error_data();
-		wp_send_json_error(
-			array( 'message' => $quote->get_error_message(), 'field' => (string) ( $data['field'] ?? 'law_discount_code' ) ),
-			400
-		);
-	}
-
-	wp_send_json_success(
-		array(
-			// The LIST price on the Price line, so the block reads like a
-			// receipt: price, less the discount, plus VAT, equals the total.
-			// Showing the discounted net there and the reduction under it made
-			// the discount look as though it had been taken twice.
-			'net'      => law_events_format_pence( $quote['list_net'] ),
-			'discount' => law_events_format_pence( $quote['discount'] ),
-			'vat'      => law_events_format_pence( $quote['vat'] ),
-			'gross'    => law_events_format_pence( $quote['gross'] ),
-			'pence'    => $quote['gross'],
-			'code'     => $quote['code'],
-			'free'     => (bool) $quote['free'],
-			'label'    => $quote['discount'] > 0
-				? sprintf(
-					/* translators: 1: the code, 2: the amount off. */
-					__( 'Code %1$s applied: %2$s off.', 'law' ),
-					$quote['code'],
-					law_events_format_pence( $quote['discount'] )
-				)
-				: '',
-		)
-	);
-}
+add_action( 'admin_post_law_reception_quote', 'law_booking_quote_handler' );
+add_action( 'admin_post_nopriv_law_reception_quote', 'law_events_nopriv_json' );
 
 /* Buying a place */
 
@@ -2556,12 +2601,19 @@ function law_reception_waitlist_join_handler() {
 	law_events_respond(
 		$is_ajax,
 		true,
-		array(
-			'title'    => __( 'Taking you to our payment page', 'law' ),
-			'message'  => __( 'Stripe will ask for the payment details we would charge if a place opens up.', 'law' ),
-			'redirect' => $result['redirect'],
-		),
-		'reception-card'
+		empty( $result['free'] )
+			? array(
+				'title'    => __( 'Taking you to our payment page', 'law' ),
+				'message'  => __( 'Stripe will ask for the payment details we would charge if a place opens up.', 'law' ),
+				'redirect' => $result['redirect'],
+			)
+			// A code covered the whole price, so nobody is going to Stripe.
+			: array(
+				'title'    => __( "You're on the waitlist", 'law' ),
+				'message'  => __( 'There is nothing to pay, so we have not asked you for any payment details. If a place opens up we will confirm it and email you straight away.', 'law' ),
+				'redirect' => $result['redirect'],
+			),
+		empty( $result['free'] ) ? 'reception-card' : 'reception-waitlist-free'
 	);
 }
 
@@ -3034,6 +3086,7 @@ add_filter(
 				'reception-paid'             => array( 'ok', __( 'Thank you. Your payment has gone through and your place is confirmed. A confirmation with a calendar invitation and your VAT invoice is on its way.', 'law' ) ),
 				'reception-processing'       => array( 'ok', __( 'Your payment is on its way. Your place is held and we will email you as soon as it clears.', 'law' ) ),
 				'reception-free-confirmed'   => array( 'ok', __( 'Your place is confirmed. Your discount code covered the full price, so nothing was charged.', 'law' ) ),
+				'reception-waitlist-free'    => array( 'ok', __( 'You are on the waitlist. Your discount code covers the full price, so there is nothing to pay and we have not asked for any payment details. If a place opens up we will confirm it and email you straight away.', 'law' ) ),
 				'reception-cancelled'        => array( 'error', __( 'No payment was taken and the place has been released. You can book again while places remain.', 'law' ) ),
 				'reception-expired'          => array( 'error', __( 'Your booking was not completed in time and the place has been released. You can book again while places remain.', 'law' ) ),
 				'reception-return-failed'    => array( 'error', __( 'We could not confirm your payment with Stripe. If money has left your account, contact LAW and we will sort it out.', 'law' ) ),

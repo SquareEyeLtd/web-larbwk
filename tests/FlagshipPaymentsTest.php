@@ -763,19 +763,31 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'law_flagship_apply[terms]', $form );
 	}
 
-	/** A price that moved under the delegate is refused, not silently applied. */
+	/**
+	 * A price that moved under the delegate is refused, not silently applied.
+	 *
+	 * price_shown is the GROSS since 15 September 2026, when the registration
+	 * form grew a discount code and a live quote: the script writes one figure
+	 * into that field and it is the total the delegate is looking at, which is
+	 * also the only figure they can be said to have consented to.
+	 */
 	public function test_a_price_that_changed_mid_form_is_refused(): void {
 		$this->make_flagship();
 		$user_id = $this->make_delegate();
 
 		$refused = law_flagship_apply(
 			$user_id,
-			array( 'answers' => array(), 'consent' => true, 'terms' => true, 'price_shown' => 50000 )
+			array( 'answers' => array(), 'consent' => true, 'terms' => true, 'price_shown' => 60000 )
 		);
 		$this->assertWPError( $refused, 'law_flagship_price_changed' );
+		$this->assertStringContainsString(
+			'£660.00',
+			$refused->get_error_message(),
+			'The refusal names the new TOTAL, which is what the delegate would have been asked for.'
+		);
 
-		// The figure it actually showed goes through.
-		$ok = $this->apply_as( $user_id, array( 'price_shown' => 55000 ) );
+		// The figure it actually showed goes through: £550 plus 20% VAT.
+		$ok = $this->apply_as( $user_id, array( 'price_shown' => 66000 ) );
 		$this->assertIsArray( $ok );
 	}
 
@@ -930,6 +942,369 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 			array( 'consent' => true, 'terms' => true, 'price_shown' => 50000 )
 		);
 		$this->assertWPError( $refused, 'law_flagship_price_changed' );
+	}
+
+	/* Discount codes (FLAGSHIP_PAYMENTS.md §13) _____________________________
+	 *
+	 * Reversal, recorded: codes were ruled out here on 10 September 2026 and
+	 * asked for on 15 September. What these pin is the part that is expensive
+	 * to get quietly wrong — the snapshot, the claim, and every path that has
+	 * to give a use back — because a code tied up by a registration nobody
+	 * decided on is a place somebody else could have had, and a code
+	 * subtracted twice is money.
+	 */
+
+	/** A code, published and ready to redeem. */
+	private function make_code( array $meta = array(), $prefix = 'FLAGTEST' ): array {
+		$code    = $prefix . strtoupper( wp_generate_password( 6, false ) );
+		$post_id = wp_insert_post(
+			array(
+				'post_type'   => LAW_DISCOUNT_CPT,
+				'post_status' => 'publish',
+				'post_title'  => $code,
+				'post_name'   => law_discount_match_key( $code ),
+			)
+		);
+		$this->posts[] = $post_id;
+		foreach ( array_merge( array( '_law_discount_type' => 'percent', '_law_discount_value' => 25 ), $meta ) as $key => $value ) {
+			law_event_update_meta( $post_id, $key, $value );
+		}
+		add_post_meta( $post_id, '_law_discount_used', 0, true );
+
+		return array( 'id' => (int) $post_id, 'code' => $code );
+	}
+
+	/**
+	 * The snapshot is the DISCOUNTED net, and the code is claimed before the
+	 * booking exists.
+	 *
+	 * Storing the discounted figure is what lets law_stripe_charge_booking()
+	 * stay untouched: it bills law_booking_price(), so a second subtraction is
+	 * impossible by construction rather than by everybody remembering.
+	 */
+	public function test_a_code_discounts_the_snapshot_and_is_claimed(): void {
+		$this->make_flagship();
+		$user_id = $this->make_delegate();
+		$code    = $this->make_code(); // 25% of £550 = £137.50 off, £412.50 net.
+
+		$result = $this->apply_as(
+			$user_id,
+			array( 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 49500 )
+		);
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+
+		$booking = (int) $result['booking'];
+		$this->assertSame( 41250, (int) law_event_meta( $booking, '_law_price_pence' ), 'The net is what a code left of it.' );
+		$this->assertSame( 13750, (int) law_event_meta( $booking, '_law_discount_pence' ) );
+		$this->assertSame( $code['code'], (string) law_event_meta( $booking, '_law_discount_code' ) );
+		$this->assertSame( $code['id'], (int) law_event_meta( $booking, '_law_discount_id' ) );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
+		$this->assertSame( 'pending_setup', (string) law_event_meta( $booking, '_law_payment_status' ), 'A part-paid place still needs a payment method.' );
+	}
+
+	/**
+	 * A code covering the whole price asks for no payment method at all, and
+	 * still goes to the committee.
+	 *
+	 * The empty Stripe queue IS the assertion: an unmocked call fails loudly
+	 * (tests/bootstrap.php), so reaching Checkout at all would fail this.
+	 */
+	public function test_a_hundred_per_cent_code_skips_the_payment_step_and_is_still_reviewed(): void {
+		$this->make_flagship();
+		$user_id = $this->make_delegate();
+		$code    = $this->make_code( array( '_law_discount_value' => 100 ) );
+
+		$GLOBALS['law_test_stripe_queue'] = array();
+		$GLOBALS['law_test_stripe_calls'] = array();
+
+		$result = law_flagship_apply(
+			$user_id,
+			array(
+				'answers'      => array(),
+				'consent'      => true,
+				'terms'        => true,
+				'code'         => $code['code'],
+				'applied_code' => $code['code'],
+				'price_shown'  => 0,
+			)
+		);
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$booking       = (int) $result['booking'];
+		$this->posts[] = $booking;
+
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'Nothing to charge means nothing to ask Stripe.' );
+		$this->assertTrue( ! empty( $result['free'] ), 'The handler needs to know, so it does not promise a payment page.' );
+		$this->assertSame( 'law-applied', get_post_status( $booking ), 'A code removes the payment, not the review.' );
+		$this->assertSame( 'no_charge', (string) law_event_meta( $booking, '_law_payment_status' ) );
+		$this->assertSame( 0, (int) law_event_meta( $booking, '_law_price_pence' ) );
+		$this->assertSame( 0, (int) law_event_meta( $booking, '_law_vat' ), 'Nothing to charge, nothing to tax.' );
+		$this->assertFalse( (bool) law_event_meta( $booking, '_law_is_complimentary' ), 'The committee gave nothing away; the delegate brought a code.' );
+		$this->assertSame( '1', (string) get_post_meta( $booking, '_law_application_ready', true ), 'It is in the queue, not waiting on a card.' );
+
+		// And the committee can see it: the default list hides only
+		// pending_setup, which is the state this deliberately is not.
+		$queued = array_map( static fn( $post ) => (int) $post->ID, law_flagship_applications() );
+		$this->assertContains( $booking, $queued );
+	}
+
+	/** Approving it confirms with no invoice, and says who paid for what. */
+	public function test_approving_a_code_covered_registration_charges_nothing(): void {
+		$this->make_flagship();
+		$user_id = $this->make_delegate();
+		$code    = $this->make_code( array( '_law_discount_value' => 100 ) );
+
+		$GLOBALS['law_test_stripe_queue'] = array();
+		$result = law_flagship_apply(
+			$user_id,
+			array( 'answers' => array(), 'consent' => true, 'terms' => true, 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 0 )
+		);
+		$booking       = (int) $result['booking'];
+		$this->posts[] = $booking;
+
+		$GLOBALS['law_test_stripe_calls'] = array();
+		// Captured on 'wp_mail', which runs before the bootstrap's
+		// pre_wp_mail short-circuit, so nothing is actually sent.
+		$mail   = array();
+		$filter = static function ( $atts ) use ( &$mail ) {
+			$mail[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $filter );
+
+		$approved = law_flagship_approve( $booking, 0 );
+
+		remove_filter( 'wp_mail', $filter );
+
+		$this->assertIsArray( $approved, is_wp_error( $approved ) ? $approved->get_error_message() : '' );
+		$this->assertSame( 'confirmed', $approved['status'] );
+		$this->assertSame( 'publish', get_post_status( $booking ) );
+		$this->assertSame( 'paid', (string) law_event_meta( $booking, '_law_payment_status' ), 'Paid, for nothing: the terminal state both free flows share.' );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'No invoice is raised for £0.00.' );
+		$this->assertSame( '', (string) law_event_meta( $booking, '_law_stripe_invoice_id' ) );
+
+		$bodies = implode( "\n", array_map( static fn( $atts ) => (string) ( $atts['message'] ?? '' ), $mail ) );
+		$this->assertStringContainsString( 'covered the whole price', $bodies );
+		$this->assertStringContainsString( $code['code'], $bodies, 'The delegate is told which code did it.' );
+		$this->assertStringNotContainsString(
+			'with our compliments',
+			$bodies,
+			"That credits LAW with a gift the delegate's own code paid for."
+		);
+	}
+
+	/**
+	 * Declining, withdrawing and the 48-hour sweep each give the use back, and
+	 * a second release is a no-op rather than a theft of somebody else's live
+	 * claim.
+	 */
+	public function test_every_path_that_ends_a_registration_gives_the_code_back(): void {
+		$this->make_flagship( array( '_law_tickets_available' => 10 ) );
+
+		foreach ( array( 'decline', 'withdraw', 'sweep' ) as $ending ) {
+			$code    = $this->make_code();
+			$user_id = $this->make_delegate();
+			$result  = $this->apply_as(
+				$user_id,
+				array( 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 49500 )
+			);
+			$booking = (int) $result['booking'];
+			$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ), $ending . ': claimed on registration.' );
+
+			if ( 'decline' === $ending ) {
+				$GLOBALS['law_test_stripe_queue'] = array( array( 'id' => 'pm_test', 'object' => 'payment_method' ) );
+				law_flagship_decline( $booking, 0, 'No room.' );
+			} elseif ( 'withdraw' === $ending ) {
+				$GLOBALS['law_test_stripe_queue'] = array( array( 'id' => 'pm_test', 'object' => 'payment_method' ) );
+				law_flagship_withdraw( $booking, $user_id );
+			} else {
+				// Older than LAW_FLAGSHIP_SETUP_GRACE_HOURS, and still waiting
+				// on a payment method, which is what the sweep closes.
+				law_event_update_meta( $booking, '_law_application_at', gmdate( 'Y-m-d H:i', time() - ( ( LAW_FLAGSHIP_SETUP_GRACE_HOURS + 2 ) * HOUR_IN_SECONDS ) ) );
+				law_flagship_run_daily();
+			}
+
+			$this->assertSame( 0, (int) get_post_meta( $code['id'], '_law_discount_used', true ), $ending . ': the use goes back with the place.' );
+			$this->assertSame( '', (string) get_post_meta( $booking, '_law_discount_id', true ), $ending . ': the claim key is deleted, so a second release is a no-op.' );
+			$this->assertSame( $code['code'], (string) law_event_meta( $booking, '_law_discount_code' ), $ending . ': the record of what happened stays.' );
+
+			// A second release must change nothing.
+			law_booking_release_discount( $booking );
+			$this->assertSame( 0, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
+		}
+	}
+
+	/**
+	 * A registration nobody paid for can still be declined and withdrawn, with
+	 * no Stripe call: there is no payment method to detach and no invoice to
+	 * void. The empty queue is the assertion.
+	 */
+	public function test_a_code_covered_registration_can_be_ended_without_stripe(): void {
+		$this->make_flagship( array( '_law_tickets_available' => 10 ) );
+
+		foreach ( array( 'decline', 'withdraw' ) as $ending ) {
+			$code    = $this->make_code( array( '_law_discount_value' => 100 ) );
+			$user_id = $this->make_delegate();
+
+			$GLOBALS['law_test_stripe_queue'] = array();
+			$result = law_flagship_apply(
+				$user_id,
+				array( 'answers' => array(), 'consent' => true, 'terms' => true, 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 0 )
+			);
+			$booking       = (int) $result['booking'];
+			$this->posts[] = $booking;
+
+			$GLOBALS['law_test_stripe_calls'] = array();
+			if ( 'decline' === $ending ) {
+				$this->assertTrue( law_flagship_decline( $booking, 0, 'Not this year.' ) );
+				$this->assertSame( 'law-declined', get_post_status( $booking ) );
+			} else {
+				$this->assertTrue( law_flagship_withdraw( $booking, $user_id ) );
+				$this->assertSame( 'law-cancelled', get_post_status( $booking ) );
+			}
+
+			$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], $ending . ': nothing was held, so there is nothing to undo.' );
+			$this->assertSame( 0, (int) get_post_meta( $code['id'], '_law_discount_used', true ), $ending . ': the use goes back.' );
+		}
+	}
+
+	/**
+	 * The dialog actually renders, in both contexts, with the receipt block
+	 * and the code field on it.
+	 *
+	 * Every other assertion about this file greps its source, which cannot see
+	 * a PHP notice or an undefined key — and the dialog is fetched over AJAX,
+	 * so a warning in it would surface as a blank modal and nothing else.
+	 */
+	public function test_the_registration_dialog_renders_with_its_price_block(): void {
+		$event_id = $this->make_flagship();
+		wp_set_current_user( $this->make_delegate() );
+
+		foreach ( array( 'modal', 'inline' ) as $context ) {
+			ob_start();
+			get_template_part(
+				'parts/events/flagship-apply-modal',
+				null,
+				array(
+					'event'   => array( 'id' => $event_id, 'title' => get_the_title( $event_id ) ),
+					'context' => $context,
+				)
+			);
+			$html = (string) ob_get_clean();
+
+			$this->assertStringContainsString( 'law-booking-price', $html, $context . ': the receipt block.' );
+			// The order Denis asked for on 15 September 2026: what is included
+			// with the place, then what it costs, then the field that changes
+			// what it costs. The code field is in the same bordered box as the
+			// included receptions, so the dialog reads as a stack of
+			// one-subject groups.
+			$this->assertSame(
+				2,
+				substr_count( $html, 'law-booking-fieldset' ),
+				$context . ': the receptions and the code are both boxed.'
+			);
+			$this->assertTrue(
+				strpos( $html, 'law-flagship-receptions' ) < strpos( $html, 'law-booking-price' )
+					&& strpos( $html, 'law-booking-price' ) < strpos( $html, 'law_flagship_apply[code]' ),
+				$context . ': included receptions, then the price, then the code.'
+			);
+			$this->assertStringContainsString( 'data-law-quote-event="' . $event_id . '"', $html, $context . ': the quote hook.' );
+			$this->assertStringContainsString( 'law_flagship_apply[code]', $html, $context . ': the code field.' );
+			$this->assertStringContainsString( 'data-law-applied-code', $html, $context );
+			$this->assertStringContainsString( 'data-law-consent', $html, $context . ': the consent sentence is swappable.' );
+			// price_shown is the GROSS now, so the form and the script agree
+			// on one figure.
+			$this->assertStringContainsString( 'value="66000" data-law-price-shown', $html, $context );
+			$this->assertStringContainsString( '£660.00', $html, $context . ': the total, spelled out.' );
+			$this->assertStringNotContainsString( 'Warning', $html, $context . ': no PHP notice leaked into the markup.' );
+		}
+
+		wp_set_current_user( 0 );
+	}
+
+	/**
+	 * The delegate's own panel names the code, and offers no payment method
+	 * for a registration that will never need one.
+	 */
+	public function test_the_delegates_panel_explains_a_code_covered_registration(): void {
+		$this->make_flagship();
+		$user_id = $this->make_delegate();
+		$code    = $this->make_code( array( '_law_discount_value' => 100 ) );
+
+		$GLOBALS['law_test_stripe_queue'] = array();
+		$result = law_flagship_apply(
+			$user_id,
+			array( 'answers' => array(), 'consent' => true, 'terms' => true, 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 0 )
+		);
+		$booking       = (int) $result['booking'];
+		$this->posts[] = $booking;
+
+		wp_set_current_user( $user_id );
+		ob_start();
+		get_template_part( 'parts/events/flagship-manage-application', null, array( 'booking_id' => $booking ) );
+		$html = (string) ob_get_clean();
+		wp_set_current_user( 0 );
+
+		$this->assertStringContainsString( 'Nothing to pay', $html );
+		$this->assertStringContainsString( $code['code'], $html, 'Which code did it.' );
+		$this->assertStringNotContainsString(
+			'Add payment details',
+			$html,
+			'No method is coming, so offering to add one invites a fix for something that is not broken.'
+		);
+		$this->assertStringNotContainsString(
+			'until your payment details are saved',
+			$html,
+			'That line is keyed on pending_setup and would be false here.'
+		);
+		$this->assertStringNotContainsString( 'Warning', $html, 'No PHP notice leaked into the markup.' );
+	}
+
+	/** A confirmed, paid place keeps its use: the code really was spent. */
+	public function test_a_paid_place_keeps_the_codes_use_when_it_is_cancelled(): void {
+		$this->make_flagship();
+		$code    = $this->make_code();
+		$user_id = $this->make_delegate();
+		$result  = $this->apply_as(
+			$user_id,
+			array( 'code' => $code['code'], 'applied_code' => $code['code'], 'price_shown' => 49500 )
+		);
+		$booking = (int) $result['booking'];
+
+		$this->give_card( $booking );
+		$this->queue_successful_charge( 49500 );
+		law_flagship_approve( $booking, 0 );
+		$this->assertSame( 'paid', (string) law_event_meta( $booking, '_law_payment_status' ) );
+
+		law_booking_release_discount( $booking );
+		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
+	}
+
+	/**
+	 * A code typed and never checked is refused on the fetch path, where there
+	 * was an Apply button to press, and honoured on the no-JS path, where
+	 * there was not.
+	 *
+	 * The no-JS half also pins the fix for a bug the receptions had: the form
+	 * was rendered at the LIST price, so comparing what it posts against the
+	 * DISCOUNTED total refused every redemption, for ever.
+	 */
+	public function test_a_typed_but_unapplied_code_asks_for_the_press_only_when_it_could_have_been_pressed(): void {
+		$this->make_flagship();
+		$code = $this->make_code();
+
+		$refused = law_flagship_apply(
+			$this->make_delegate(),
+			array( 'answers' => array(), 'consent' => true, 'terms' => true, 'code' => $code['code'], 'applied_code' => '', 'price_shown' => 66000, 'ajax' => true )
+		);
+		$this->assertWPError( $refused, 'law_flagship_code_unapplied' );
+
+		$ok = $this->apply_as(
+			$this->make_delegate(),
+			// No 'ajax', and the LIST gross in price_shown: the no-JS form.
+			array( 'code' => $code['code'], 'applied_code' => '', 'price_shown' => 66000 )
+		);
+		$this->assertIsArray( $ok, is_wp_error( $ok ) ? $ok->get_error_message() : '' );
+		$this->assertSame( 41250, (int) law_event_meta( (int) $ok['booking'], '_law_price_pence' ) );
 	}
 
 	/** An application counts as holding a place, so nobody applies twice. */

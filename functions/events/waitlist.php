@@ -404,8 +404,14 @@ function law_waitlist_check_promotable( $entry, ?array $taken = null ) {
 	// through the standing blocked-entry latch, so the person keeps their
 	// position and the queue moves on, and told once
 	// (RECEPTIONS.md §6.2).
+	//
+	// 'no_charge' is the second offerable state (15 September 2026): a
+	// discount code covering the whole price means there is nothing to charge,
+	// so no payment method was ever asked for and the entry is honourable
+	// without one. Testing law_event_is_priced() alone would have queued those
+	// people for ever behind a card nobody would ever request.
 	if ( law_event_is_priced( $event_id )
-		&& 'ready' !== (string) law_event_meta( $entry->ID, '_law_payment_status' ) ) {
+		&& ! in_array( (string) law_event_meta( $entry->ID, '_law_payment_status' ), array( 'ready', 'no_charge' ), true ) ) {
 		return new WP_Error(
 			'law_waitlist_no_payment_method',
 			__( 'A place opened up but we could not offer it to you because no payment method is saved. Add one to keep your place in the queue.', 'law' )
@@ -438,7 +444,13 @@ function law_waitlist_seat( $entry, $actor_id, $mode, $source ) {
 	// and the exclusive right to bill it are held together before anything
 	// slow runs; the charge itself happens after the unlock, on the
 	// law_waitlist_seated_after_unlock hook (RECEPTIONS.md §6.2).
-	if ( law_event_is_priced( $event_id ) ) {
+	//
+	// An entry with nothing to pay is deliberately left alone here: it keeps
+	// 'no_charge', takes no charge claim, and is confirmed by the same
+	// after-unlock pass without a Stripe call (law_reception_charge_promoted()).
+	// law_event_is_priced() is true of a place a code has taken to nothing, so
+	// the amount this booking owes is what decides, not the event's price.
+	if ( law_event_is_priced( $event_id ) && ! law_booking_price( (int) $entry->ID )['free'] ) {
 		law_event_update_meta( $entry->ID, '_law_payment_status', 'processing' );
 		law_event_update_meta( $entry->ID, '_law_payment_processing_at', gmdate( 'Y-m-d H:i' ) );
 		law_booking_claim_charge( (int) $entry->ID );

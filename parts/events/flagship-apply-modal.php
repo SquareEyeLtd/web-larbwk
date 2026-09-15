@@ -45,7 +45,29 @@ $law_fa_price     = law_flagship_price_pence( 0, $law_fa_id );
 $law_fa_places    = law_flagship_places();
 $law_fa_dialog    = 'law-flagship-modal';
 $law_fa_heading   = __( 'Register to attend', 'law' );
-$law_fa_when      = trim(
+
+// The money, from the server, exactly as the reception dialog does it: the
+// Apply button re-asks the same function and swaps the figures in place. The
+// codeless quote is what the form renders with, so the no-JS path is right on
+// first paint.
+$law_fa_quote = law_flagship_quote( $law_fa_id, '', get_current_user_id() );
+if ( is_wp_error( $law_fa_quote ) ) {
+	// Not on sale. The page's own guards say so; fall back to a quote shaped
+	// like the price, so nothing below has to test for an error.
+	$law_fa_quote = array(
+		'list_net'    => $law_fa_price,
+		'list_gross'  => law_events_gross_pence( $law_fa_price ),
+		'net'         => $law_fa_price,
+		'discount'    => 0,
+		'vat'         => law_events_vat_pence( $law_fa_price ),
+		'gross'       => law_events_gross_pence( $law_fa_price ),
+		'code'        => '',
+		'discount_id' => 0,
+		'free'        => $law_fa_price < 1,
+	);
+}
+
+$law_fa_when = trim(
 	( ! empty( $law_fa_event['date'] ) ? law_calendar_day_heading( $law_fa_event['date'] ) : '' )
 	. ( ! empty( $law_fa_event['time_label'] ) && 'Slot not confirmed' !== $law_fa_event['time_label'] ? ', ' . $law_fa_event['time_label'] : '' ),
 	', '
@@ -96,15 +118,23 @@ elseif ( $law_fa_missing ) :
 else :
 	?>
 	<form class="law-event-form law-event-form--light law-booking-form law-flagship-apply" method="post"
-		action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-law-booking-rows>
+		action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-law-booking-rows
+		data-law-quote-event="<?php echo esc_attr( (string) $law_fa_id ); ?>">
 		<input type="hidden" name="action" value="law_flagship_apply">
 		<?php
-		// The net price this form is showing. law_flagship_apply() refuses
-		// rather than repricing if it has moved since — a delegate who had
-		// the page open across the cutover must not be charged a figure they
-		// never saw and never consented to.
+		// The GROSS this form is showing (it was the net until the code field
+		// arrived, and one field can only hold one figure). law_flagship_apply()
+		// refuses rather than repricing if it has moved since — a delegate who
+		// had the page open across the cutover must not be charged a figure
+		// they never saw and never consented to.
 		?>
-		<input type="hidden" name="law_flagship_apply[price_shown]" value="<?php echo esc_attr( (string) $law_fa_price ); ?>">
+		<input type="hidden" name="law_flagship_apply[price_shown]" value="<?php echo esc_attr( (string) $law_fa_quote['gross'] ); ?>" data-law-price-shown>
+		<?php
+		// The code the last successful quote used. law_flagship_apply() asks
+		// for the press rather than silently applying a code nobody checked
+		// and then blaming the delegate for a price that moved.
+		?>
+		<input type="hidden" name="law_flagship_apply[applied_code]" value="" data-law-applied-code>
 		<?php wp_nonce_field( 'law_flagship_apply' ); ?>
 		<?php law_events_honeypot_field(); ?>
 
@@ -128,11 +158,8 @@ else :
 			<?php if ( '' !== $law_fa_when ) : ?>
 				<p class="law-event-summary__when"><?php echo esc_html( $law_fa_when ); ?></p>
 			<?php endif; ?>
-			<p class="law-event-summary__row">
-				<span class="law-event-summary__label"><?php esc_html_e( 'Price', 'law' ); ?></span>
-				<strong><?php echo esc_html( law_events_price_label( $law_fa_price ) ); ?></strong>
-			</p>
 		</div>
+
 
 		<?php if ( $law_fa_places['full'] ) : ?>
 			<p class="law-booking-substate"><?php esc_html_e( 'The conference is currently full, so your registration joins the queue for a place.', 'law' ); ?></p>
@@ -158,7 +185,7 @@ else :
 		$law_fa_receptions = function_exists( 'law_reception_included_ids' ) ? law_reception_included_ids() : array();
 		?>
 		<?php if ( $law_fa_receptions ) : ?>
-			<fieldset class="law-flagship-receptions">
+			<fieldset class="law-flagship-receptions law-booking-fieldset">
 				<legend><?php esc_html_e( 'Included receptions', 'law' ); ?></legend>
 				<p class="law-form-hint"><?php esc_html_e( 'Included at no cost with your place. Tick the ones you would like to attend; you can add them later from My bookings.', 'law' ); ?></p>
 				<?php foreach ( $law_fa_receptions as $law_fa_reception ) : ?>
@@ -199,30 +226,98 @@ else :
 		<?php endif; ?>
 
 		<?php
+		// The receipt block, shared with the reception checkout: every line
+		// carries data-law-price so Apply can swap the figures without the
+		// dialog moving. Price is the LIST price and Discount is a signed
+		// deduction under it, so price minus discount plus VAT equals the
+		// total. Showing the DISCOUNTED net here with the reduction beneath it
+		// made the discount look as though it had been taken twice (browser
+		// pass, 14 September 2026).
+		?>
+		<div class="law-booking-price">
+			<p class="law-booking-price__row">
+				<span><?php esc_html_e( 'Price', 'law' ); ?></span>
+				<span data-law-price="net"><?php echo esc_html( law_events_format_pence( $law_fa_quote['list_net'] ) ); ?></span>
+			</p>
+			<p class="law-booking-price__row law-booking-price__row--discount" data-law-price-discount-row hidden>
+				<span><?php esc_html_e( 'Discount', 'law' ); ?></span>
+				<span data-law-price="discount">&minus;<?php echo esc_html( law_events_format_pence( $law_fa_quote['discount'] ) ); ?></span>
+			</p>
+			<p class="law-booking-price__row">
+				<span><?php esc_html_e( 'VAT', 'law' ); ?></span>
+				<span data-law-price="vat"><?php echo esc_html( law_events_format_pence( $law_fa_quote['vat'] ) ); ?></span>
+			</p>
+			<p class="law-booking-price__row law-booking-price__row--total">
+				<span><?php esc_html_e( 'Total', 'law' ); ?></span>
+				<strong data-law-price="gross"><?php echo esc_html( law_events_format_pence( $law_fa_quote['gross'] ) ); ?></strong>
+			</p>
+		</div>
+
+		<?php
+		// The discount code sits in the same bordered box as the included
+		// receptions (Denis, 15 September 2026), so the dialog reads as a
+		// short stack of one-subject groups rather than a form with one field
+		// floating in it. The legend IS the field's heading, so the label is
+		// there for a screen reader only: printing both would name the same
+		// control twice.
+		//
+		// No native `required` in here: a required control inside a hidden
+		// dialog makes the whole form unsubmittable in Chrome. The script
+		// checks, and the server is the guard that holds.
+		?>
+		<fieldset class="law-booking-fieldset">
+			<legend><?php esc_html_e( 'Discount code', 'law' ); ?></legend>
+			<p class="law-form-field law-booking-code">
+				<label class="show-for-sr" for="law-fa-code-<?php echo esc_attr( (string) $law_fa_id ); ?>"><?php esc_html_e( 'Discount code', 'law' ); ?></label>
+				<input type="text" id="law-fa-code-<?php echo esc_attr( (string) $law_fa_id ); ?>"
+					name="law_flagship_apply[code]" autocomplete="off" spellcheck="false"
+					value="<?php echo esc_attr( (string) ( $law_fa_state['input']['code'] ?? '' ) ); ?>"
+					data-law-field="law_discount_code" data-law-quote-code>
+				<button type="button" class="button second" data-law-quote><?php esc_html_e( 'Apply', 'law' ); ?></button>
+			</p>
+			<p class="law-form-hint" role="status" data-law-quote-status></p>
+		</fieldset>
+
+		<?php
 		// No "Payment" heading: the dialog is one step and one subject, so a
 		// section title would be labelling the whole of itself.
 		?>
 		<?php
-		// The amount is stated in the summary above and again on the consent
-		// below, which is where it legally matters. Repeating it a third time
-		// here made the paragraph harder to read, not clearer.
+		// The amount is stated in the receipt block above and again on the
+		// consent below, which is where it legally matters. Repeating it a
+		// third time here made the paragraph harder to read, not clearer.
 		?>
-		<p class="law-booking-note">
+		<p class="law-booking-note" data-law-stripe-note<?php echo $law_fa_quote['free'] ? ' hidden' : ''; ?>>
 			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your registration we take the payment and confirm your ticket; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
 		</p>
 
+		<?php
+		// The consent sentence names the amount, and it is the record of what
+		// the delegate agreed to be charged, so the Apply button has to
+		// rewrite it along with the figures. Left alone it would still promise
+		// a charge of £660 on a registration a code had taken to nothing,
+		// which is worse than no consent at all.
+		$law_fa_consent_default = __( 'I agree to my payment details being saved securely and charged %s if my registration is approved. *', 'law' );
+		$law_fa_consent_free    = __( 'I understand my discount code covers the whole price, so there is nothing to pay and no payment details are needed. *', 'law' );
+		?>
 		<p class="law-form-field">
 			<label>
 				<input type="checkbox" name="law_flagship_apply[consent]" value="1" data-law-field="law_consent" aria-required="true">
-				<?php
-				echo esc_html(
-					sprintf(
-						/* translators: %s: the total price. */
-						__( 'I agree to my payment details being saved securely and charged %s if my registration is approved. *', 'law' ),
-						law_events_format_pence( law_events_gross_pence( $law_fa_price ) )
-					)
-				);
-				?>
+				<span data-law-consent
+					data-law-consent-default="<?php echo esc_attr( $law_fa_consent_default ); ?>"
+					data-law-consent-free="<?php echo esc_attr( $law_fa_consent_free ); ?>">
+					<?php
+					echo esc_html(
+						$law_fa_quote['free']
+							? $law_fa_consent_free
+							: sprintf(
+								/* translators: %s: the total price. */
+								$law_fa_consent_default,
+								law_events_format_pence( $law_fa_quote['gross'] )
+							)
+					);
+					?>
+				</span>
 			</label>
 		</p>
 
@@ -243,8 +338,17 @@ else :
 			<?php if ( 'modal' === $law_fa_ctx ) : ?>
 				<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Close', 'law' ); ?></button>
 			<?php endif; ?>
-			<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Taking you to Stripe…', 'law' ); ?>">
-				<?php esc_html_e( 'Continue to payment details', 'law' ); ?>
+			<?php
+			// A free quote has nothing to pay and nowhere to send them, so the
+			// button says what will actually happen.
+			?>
+			<button type="submit" class="button orange"
+				data-law-modal-busy="<?php echo esc_attr( $law_fa_quote['free'] ? __( 'Submitting…', 'law' ) : __( 'Taking you to Stripe…', 'law' ) ); ?>"
+				data-law-submit-default="<?php esc_attr_e( 'Continue to payment details', 'law' ); ?>"
+				data-law-submit-busy-default="<?php esc_attr_e( 'Taking you to Stripe…', 'law' ); ?>"
+				data-law-submit-free="<?php esc_attr_e( 'Submit my registration', 'law' ); ?>"
+				data-law-submit-busy-free="<?php esc_attr_e( 'Submitting…', 'law' ); ?>">
+				<?php echo esc_html( $law_fa_quote['free'] ? __( 'Submit my registration', 'law' ) : __( 'Continue to payment details', 'law' ) ); ?>
 			</button>
 		</p>
 	</form>

@@ -42,6 +42,7 @@ $law_fb_url    = get_permalink();
 			'flagship-retried'     => array( 'is-success', __( 'The payment was attempted again.', 'law' ) ),
 			'flagship-resent'      => array( 'is-success', __( 'The delegate has been emailed again.', 'law' ) ),
 			'flagship-added'       => array( 'is-success', __( 'The attendee has a confirmed place with no charge.', 'law' ) ),
+			'flagship-ticket-type' => array( 'is-success', __( 'The ticket type has been saved.', 'law' ) ),
 			'flagship-failed'      => array( 'is-error', __( 'That could not be done. Please check the details and try again.', 'law' ) ),
 			'flagship-denied'      => array( 'is-error', __( 'Sorry, reviewing registrations is for the committee.', 'law' ) ),
 			'rate-limited'         => array( 'is-error', __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ) ),
@@ -121,6 +122,16 @@ $law_fb_url    = get_permalink();
 						</p>
 
 						<p class="law-cal-filter-form__field">
+							<label class="show-for-sr" for="law-fb-ticket"><?php esc_html_e( 'Ticket type', 'law' ); ?></label>
+							<select id="law-fb-ticket" name="law_ticket">
+								<option value=""><?php esc_html_e( 'Any ticket type', 'law' ); ?></option>
+								<?php foreach ( law_booking_ticket_types() as $law_fb_key => $law_fb_label ) : ?>
+									<option value="<?php echo esc_attr( $law_fb_key ); ?>" <?php selected( $law_fb_filters['ticket'], $law_fb_key ); ?>><?php echo esc_html( $law_fb_label ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</p>
+
+						<p class="law-cal-filter-form__field">
 							<label class="show-for-sr" for="law-fb-comp"><?php esc_html_e( 'Attendee type', 'law' ); ?></label>
 							<?php
 							// A select, not a checkbox: calendar-filters.js reads a
@@ -149,6 +160,7 @@ $law_fb_url    = get_permalink();
 					'law_status'  => $law_fb_filters['status'],
 					'law_payment' => $law_fb_filters['payment'],
 					'law_comp'    => $law_fb_filters['complimentary'] ? '1' : '',
+					'law_ticket'  => $law_fb_filters['ticket'],
 				)
 			);
 			?>
@@ -170,6 +182,14 @@ $law_fb_url    = get_permalink();
 		// the dialog the opener points at.
 		?>
 		<?php get_template_part( 'parts/events/flagship-add-attendee' ); ?>
+
+		<?php
+		// The Ticket type dialog, once for the whole table and for the same
+		// reason as the one above: it must sit OUTSIDE #law-cal-events, which a
+		// filter change replaces wholesale, or the pencils in the new table
+		// would point at a dialog that no longer exists.
+		?>
+		<?php get_template_part( 'parts/events/flagship-ticket-type' ); ?>
 
 		<div class="law-cal-events" id="law-cal-events" aria-live="polite" data-law-skeleton="table">
 			<?php get_template_part( 'parts/events/flagship-bookings-list' ); ?>

@@ -52,6 +52,11 @@
 .law-modal__copy { margin: 0 0 1rem; }
 .law-modal .law-form-field { margin-bottom: 1rem; }
 .law-modal .law-form-field label { display: block; font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
+/* The help text under a label is its own line, not an inline tail, so it takes
+   display: block and a line height of its own: Foundation's `small` inherits
+   the label's, which is set for a single bold line and reads cramped over two.
+   The size stays Foundation's (80% of the label). */
+.law-modal .law-form-field label small { display: block; line-height: 1.4; }
 /* The textarea sits on a white dialog, not the purple form, so it takes dark
    text on a bordered pale field: the hero form's borderless white control would
    disappear against the dialog. */
@@ -62,6 +67,33 @@
 }
 .law-modal textarea:hover { border-color: rgba(239, 125, 5, .55); }
 .law-modal textarea:focus { outline: 2px solid #ef7d05; outline-offset: 1px; border-color: #e3e3ec; background: #fff; box-shadow: none; }
+/* The select the component gained on 15 September 2026 (the flagship's Ticket
+   type dialog) takes the textarea's treatment above, for the same reason and
+   with the same numbers: dark text on a bordered pale field, because the
+   theme's own control is painted for the purple hero form and vanishes on a
+   white dialog.
+
+   A select needs more than a repaint, though. Foundation draws its own caret
+   as a background-image and sets background-origin: content-box, so recolouring
+   the background alone left a clipped arrow jammed against the right edge.
+   The fix is the same one the programme's filter bar already makes
+   (.law-cal-filter-form select, calendar.css): drop the native appearance and
+   supply the chevron ourselves, with background-origin: border-box so the
+   padding does not shift it inwards. The two copies of the chevron are
+   deliberate and must stay identical — the filter bar's is the original. */
+.law-modal select {
+	width: 100%; box-sizing: border-box; margin: 0; padding: .6rem 2.1rem .6rem .75rem;
+	background-color: #fff; color: #1a1a3d; border: 1px solid #e3e3ec; border-radius: 0;
+	font-family: inherit; font-size: 1rem; line-height: 1.5; box-shadow: none; height: auto;
+	-webkit-appearance: none; appearance: none;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23292459' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-origin: border-box;
+	background-repeat: no-repeat;
+	background-position: right .75rem center;
+	background-size: .65rem auto;
+}
+.law-modal select:hover { border-color: rgba(239, 125, 5, .55); }
+.law-modal select:focus { outline: 2px solid #ef7d05; outline-offset: 1px; border-color: #e3e3ec; background-color: #fff; box-shadow: none; }
 .law-modal__close { position: absolute; top: .4rem; right: .5rem; background: none; border: 0; padding: .2rem .45rem; line-height: 1; font-size: 1.6rem; color: #292459; cursor: pointer; }
 .law-modal__close:hover { color: #ef7d05; }
 /* Hover and focus otherwise share the same orange, so keyboard users get a ring

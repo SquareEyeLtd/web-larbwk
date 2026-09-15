@@ -445,6 +445,32 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 }
 .law-dashboard .law-form-notice.is-error, .law-thread-view .law-form-notice.is-error,
 .law-cal .law-form-notice.is-error { border-left-color: #b32d2e; background: #fcf0f1; }
+/* The INLINE field error had the same hole and nobody had noticed, because
+   until 15 September 2026 nothing rendered one on a light surface that is not
+   itself a .law-event-form--light. Its base rule near the top of this file
+   already names .law-dashboard and .law-thread-view, but the light values for
+   the tokens it draws from live only on the --light form, so the committee
+   panel's band message came out white on white (Denis), and so would any
+   server-rendered error beside it.
+
+   Per the token contract at the top of the file this redefines the tokens for
+   these containers rather than restating the rule at a higher specificity --
+   restating is exactly what kept breaking. A custom property set on an
+   ancestor beats :root for everything inside it, and a --light form nested in
+   one of these containers sets the same values again on itself, so the two
+   cannot disagree. The DARK host form is untouched: it renders inside
+   .auth-hero, outside every container named here.
+
+   --law-form-input-border-cleared is in the list because .is-touched is
+   applied by a document-level listener in event-form.js, so it reaches these
+   surfaces too. Left at the hero's `2px solid transparent`, a committee member
+   correcting a flagged field would watch the input's border disappear. */
+.law-dashboard, .law-thread-view, .law-cal, .law-modal {
+	--law-form-error-bg: #fcf0f1;
+	--law-form-error-accent: #b32d2e;
+	--law-form-error-text: #1a1a3d;
+	--law-form-input-border-cleared: 1px solid #c8c8d4;
+}
 /* The calendar badge is position:absolute for the card grid; in the dashboard
    it sits inline (next to the detail title and in the table's Status cell), so
    neutralise the absolute positioning — otherwise it escapes its cell and all
@@ -790,25 +816,40 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    reads as a section label instead, and the fieldset gives back the 2.5rem it
    normally puts under itself. */
 .law-modal .law-attendee-profile,
-.law-modal .law-flagship-receptions { margin-bottom: 1rem; }
-/* The included receptions sit in a plain bordered box (Denis, 14 September
-   2026): a hairline and no fill, so the group reads as one choice without
-   competing with the summary block above it, which is the only filled panel in
-   the dialog. */
-.law-modal .law-flagship-receptions {
+.law-event-form .law-booking-fieldset { margin-bottom: 1rem; }
+/* A plain bordered box (Denis, 14 September 2026): a hairline and no fill, so
+   each group reads as one thing without competing with the summary block,
+   which is the only filled panel in the dialog. The included receptions had it
+   first; the discount code joined them on 15 September 2026, when Denis asked
+   for the two to match.
+   EVERY rule here is scoped .law-event-form, and has to be: line 13 above is
+   `.law-event-form fieldset { border: 0; padding: 0 }`, which outranks a bare
+   class and stripped the border off BOTH boxes when this was written
+   unscoped. Not scoped to .law-modal, though, because both dialogs also render
+   inline as the no-JS path, where the box is just as much the point. */
+.law-event-form .law-booking-fieldset {
 	background: none;
 	border: 1px solid #d5d2de;
 	padding: .9rem 1rem 1rem;
 }
-.law-modal .law-flagship-receptions legend { padding: 0 .4rem; margin-left: -.4rem; }
-.law-modal .law-flagship-receptions .law-form-hint { margin-bottom: .75rem; }
-.law-modal .law-flagship-receptions .law-form-field:last-child { margin-bottom: 0; }
+.law-event-form .law-booking-fieldset legend { padding: 0 .4rem; margin-left: -.4rem; }
+.law-event-form .law-booking-fieldset .law-form-hint { margin-bottom: .75rem; }
+.law-event-form .law-booking-fieldset .law-form-field:last-child { margin-bottom: 0; }
+/* The code field and its Apply button are the whole of their box, so the box's
+   own padding is the spacing: no bottom margin fighting it. */
+.law-event-form .law-booking-fieldset .law-booking-code { margin-bottom: 0; }
+.law-event-form .law-booking-fieldset .law-booking-code + .law-form-hint { margin: .5rem 0 0; }
+/* The quote's status line is empty until Apply is pressed, and an empty <p>
+   still takes a line's height inside the box. The script writes textContent,
+   so :empty is exactly "nothing to say"; it reappears with the message, which
+   is when role="status" has something to announce. */
+.law-event-form .law-booking-fieldset .law-form-hint:empty { display: none; }
 /* The "you already have a place" tag is an aside beside the reception's name,
    not a badge: .law-cal-card__badge is position:absolute for a card's corner
    and pinned itself to the DIALOG's instead. */
 .law-modal .law-flagship-receptions .law-modal__tag { margin-left: .4rem; }
 .law-modal .law-attendee-profile legend,
-.law-modal .law-flagship-receptions legend { font-size: 1rem; text-transform: none; margin-bottom: .5rem; }
+.law-event-form .law-booking-fieldset legend { font-size: 1rem; text-transform: none; margin-bottom: .5rem; }
 .law-attendee-profile .law-form-hint { margin-bottom: .75rem; }
 /* The two requirement lists sit side by side, each with its own "Other" box
    under it, so the dialog does not run to two screens. .law-row-grid collapses
@@ -861,3 +902,37 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-speaker-appearance__meta .law-speaker-appearance__when { color: #55556e; }
 .law-speaker-appearance__photo img { border-radius: 4px; margin: .25rem 0; }
 .law-speaker-appearance__remove { display: block; font-size: .9rem; margin-top: .35rem; }
+
+/* The Ticket type cell on the committee's Flagship bookings table
+   (functions/events/flagship-bookings-dashboard.php). The whole cell is one
+   inline control: the type (or "Add type" when nobody has classified this
+   person yet) with a pencil after it, so the affordance sits where the value
+   is rather than in a separate actions column.
+
+   No de-emphasis on the unset state. "Add type" is the same colour and weight
+   as a set type, because greying it would read as "this row is less
+   important" rather than "this is still to do". */
+/* One line, always. Every label the column can hold is one short word or two
+   ("Add type", "Exhibitor"), and the shared 12rem cap was breaking "Add type"
+   across two lines and pushing the pencil away from the words it belongs to.
+   It has to out-specify the base cell rule, which a lone class cannot — the
+   same reason the actions column opts out the way it does above. */
+.law-dashboard__table th.law-flagship-bookings__ticket,
+.law-dashboard__table td.law-flagship-bookings__ticket { max-width: none; white-space: nowrap; }
+.law-ticket-type__open {
+	display: inline-flex; align-items: center; gap: .3rem;
+	text-align: left; text-decoration: none; white-space: nowrap;
+}
+.law-ticket-type__label { text-decoration: underline; }
+/* The glyph is an aside to the label, so it sits at the label's own optical
+   weight rather than the 24px the icon table draws at by default. */
+.law-ticket-type__pencil { flex: 0 0 auto; opacity: .75; }
+.law-ticket-type__open:hover .law-ticket-type__pencil,
+.law-ticket-type__open:focus .law-ticket-type__pencil { opacity: 1; }
+/* The dialog is one for the whole table and is position:fixed; its form
+   wrapper must take no space in the flow, or it would put a gap between the
+   table and whatever follows. */
+.law-ticket-type__form { margin: 0; }
+/* The no-JS select in each cell: stacked, because a select and a button side
+   by side in a 12rem column wrap into each other. */
+.law-ticket-type__open + noscript select { width: 100%; margin-bottom: .35rem; }

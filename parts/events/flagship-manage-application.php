@@ -55,6 +55,12 @@ $law_fm_answers  = array_filter(
 	static fn( $value ) => '' !== trim( (string) $value )
 );
 $law_fm_comp     = (bool) law_event_meta( $law_fm_id, '_law_is_complimentary' );
+// A discount code that covered the whole price. Free like a complimentary
+// place, but for a different reason and by a different hand, so the panel says
+// so rather than calling it a gift.
+$law_fm_code     = (string) law_event_meta( $law_fm_id, '_law_discount_code' );
+$law_fm_off      = (int) law_event_meta( $law_fm_id, '_law_discount_pence' );
+$law_fm_free     = ! $law_fm_comp && '' !== $law_fm_code && $law_fm_price['free'];
 
 // What the delegate can still do. A confirmed, paid place is not withdrawn
 // from here: that is a refund, and a refund is a conversation.
@@ -63,7 +69,11 @@ $law_fm_can_withdraw = in_array( $law_fm_status, array( 'law-applied', 'law-paym
 	// and offering a control that will be refused is worse than not offering
 	// one.
 	&& 'processing' !== $law_fm_pay;
-$law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !== $law_fm_pay;
+// No payment method is offered where there is nothing to charge: a code that
+// covers the whole price means we never asked for one and never will, so
+// "Add payment details" would be an invitation to fix something that is not
+// broken.
+$law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && ! $law_fm_free && 'processing' !== $law_fm_pay;
 ?>
 
 <?php
@@ -202,6 +212,17 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 				<td>
 					<?php if ( $law_fm_comp ) : ?>
 						<?php esc_html_e( 'No charge', 'law' ); ?>
+					<?php elseif ( $law_fm_free ) : ?>
+						<?php esc_html_e( 'Nothing to pay', 'law' ); ?>
+						<span class="law-booking-table__sub">
+							<?php
+							echo esc_html(
+								'publish' === $law_fm_status
+									? __( 'Your discount code covered the whole price, so nothing was charged.', 'law' )
+									: __( 'Your discount code covers the whole price, so there is nothing to pay and we have not asked for any payment details.', 'law' )
+							);
+							?>
+						</span>
 					<?php else : ?>
 						<?php echo esc_html( law_events_price_label( $law_fm_price['net'] ) ); ?>
 						<span class="law-booking-table__sub">
@@ -218,6 +239,28 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && 'processing' !=
 					<?php endif; ?>
 				</td>
 			</tr>
+
+			<?php if ( '' !== $law_fm_code ) : ?>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Discount code', 'law' ); ?></th>
+					<td>
+						<code><?php echo esc_html( $law_fm_code ); ?></code>
+						<?php if ( $law_fm_off > 0 ) : ?>
+							<span class="law-booking-table__sub">
+								<?php
+								echo esc_html(
+									sprintf(
+										/* translators: %s: the amount taken off. */
+										__( '%s off the list price.', 'law' ),
+										law_events_format_pence( $law_fm_off )
+									)
+								);
+								?>
+							</span>
+						<?php endif; ?>
+					</td>
+				</tr>
+			<?php endif; ?>
 
 			<?php if ( $law_fm_can_method || '' !== $law_fm_card ) : ?>
 				<tr>

@@ -825,17 +825,19 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 		?>
 		<?php $law_slotchart = law_slotchart_is_active(); ?>
 		<p class="law-dashboard__actions">
-			<a class="button orange" href="<?php echo esc_url( law_external_event_url( 'new' ) ); ?>"><?php esc_html_e( 'Create an external event', 'law' ); ?></a>
 			<?php
 			// One control with two states, not two controls: the outlined base
 			// .button (app.css) against the filled orange one, so the create
 			// action stays primary and the view switch reads as secondary. The
 			// current filters travel with it (law_slotchart_url()), so pressing
-			// it changes how the events are drawn and never which events.
+			// it changes how the events are drawn and never which events. It
+			// sits first because the view switch is the control the committee
+			// reaches for most on this screen (Denis, 15 September 2026).
 			?>
 			<a class="button" href="<?php echo esc_url( law_slotchart_url( $law_slotchart ? '' : LAW_SLOTCHART_VIEW ) ); ?>">
 				<?php echo $law_slotchart ? esc_html__( 'Back to list view', 'law' ) : esc_html__( 'Timeline view', 'law' ); ?>
 			</a>
+			<a class="button orange" href="<?php echo esc_url( law_external_event_url( 'new' ) ); ?>"><?php esc_html_e( 'Create an external event', 'law' ); ?></a>
 		</p>
 		<?php
 		// The filter bar reuses the programme page's markup, CSS and JS

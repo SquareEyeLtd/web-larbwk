@@ -101,7 +101,7 @@ function law_flagship_application_for_user( $user_id, $event_id = 0 ) {
 /**
  * Every application, newest first, for the committee's list and its exports.
  *
- * @param array $filters status, payment, kw, complimentary.
+ * @param array $filters status, payment, kw, complimentary, ticket.
  * @return WP_Post[]
  */
 function law_flagship_applications( array $filters = array(), $limit = 2000 ) {
@@ -131,6 +131,7 @@ function law_flagship_applications( array $filters = array(), $limit = 2000 ) {
 	$payment = (string) ( $filters['payment'] ?? '' );
 	$kw      = mb_strtolower( trim( (string) ( $filters['kw'] ?? '' ) ) );
 	$comp    = ! empty( $filters['complimentary'] );
+	$ticket  = (string) ( $filters['ticket'] ?? '' );
 
 	$out = array();
 	foreach ( $posts as $post ) {
@@ -142,6 +143,9 @@ function law_flagship_applications( array $filters = array(), $limit = 2000 ) {
 			continue;
 		}
 		if ( $comp && ! law_event_meta( $post->ID, '_law_is_complimentary' ) ) {
+			continue;
+		}
+		if ( '' !== $ticket && (string) law_event_meta( $post->ID, '_law_ticket_type' ) !== $ticket ) {
 			continue;
 		}
 		if ( '' !== $kw ) {
@@ -247,28 +251,51 @@ function law_flagship_apply( $user_id, array $input ) {
 		return $dup;
 	}
 
+	$code    = trim( (string) ( $input['code'] ?? '' ) );
+	$applied = trim( (string) ( $input['applied_code'] ?? '' ) );
+
+	// A code typed but never checked would otherwise be applied here and then
+	// refused as a price change, which is untrue and reads as a bug. Ask for
+	// the press instead. Skipped when the request is not AJAX, because the
+	// no-JS form has no Apply button to press.
+	$code_applied = law_discount_normalise_code( $code ) === law_discount_normalise_code( $applied );
+	if ( ! $code_applied && ! empty( $input['ajax'] ) ) {
+		return new WP_Error(
+			'law_flagship_code_unapplied',
+			'Press Apply to check your code before continuing.',
+			array( 'field' => 'law_discount_code' )
+		);
+	}
+
 	// The price the delegate is consenting to, frozen now. Deliberately NOT
 	// read again at approval: they agreed to this figure (FLAGSHIP_PAYMENTS.md
 	// §0.2), and law_event_snapshot_fee() sets the same precedent on the host
-	// side.
-	$list_pence = law_flagship_price_pence( 0, $event_id );
-	if ( $list_pence < 1 ) {
-		return new WP_Error( 'law_flagship_not_on_sale', 'Registration is not open for this event yet.' );
+	// side. law_flagship_quote() refuses outright when the LIST price is 0,
+	// so "not on sale" still means not on sale and only a code can make a
+	// registration free.
+	$quote = law_flagship_quote( $event_id, $code, $user_id );
+	if ( is_wp_error( $quote ) ) {
+		return $quote;
 	}
+	$list_pence = (int) $quote['list_net'];
 
-	// The form posts the price it displayed. If it no longer matches — the
+	// The form posts the gross it displayed. If it no longer matches — the
 	// delegate had the page open across the cutover, or the committee edited
 	// the price while they were typing — refuse rather than silently
 	// snapshotting a figure they never saw and never consented to. The whole
 	// point of _law_payment_consent_at is that it evidences agreement to an
 	// amount.
-	$shown = isset( $input['price_shown'] ) ? (int) $input['price_shown'] : 0;
-	if ( $shown > 0 && $shown !== $list_pence ) {
+	$shown = law_booking_guard_price_shown(
+		(int) ( $input['price_shown'] ?? 0 ),
+		law_booking_quote_expected_gross( $quote, $code_applied ),
+		'law_flagship_price_changed'
+	);
+	if ( is_wp_error( $shown ) ) {
 		return new WP_Error(
 			'law_flagship_price_changed',
 			sprintf(
 				'The price changed to %s while you were filling this in, so nothing has been submitted. Please check the new price and register again.',
-				law_events_price_label( $list_pence )
+				law_events_format_pence( law_booking_quote_expected_gross( $quote, $code_applied ) )
 			)
 		);
 	}
@@ -284,6 +311,25 @@ function law_flagship_apply( $user_id, array $input ) {
 		return $dup;
 	}
 
+	// The code is CLAIMED before the insert, never after. Its conditional
+	// UPDATE is what makes two people redeeming the last use safe, and
+	// claiming first means a lost race refuses with nothing written to undo.
+	if ( $quote['discount_id'] && ! law_discount_claim( $quote['discount_id'] ) ) {
+		if ( $locked ) {
+			law_booking_unlock( $event_id );
+		}
+		// Deliberately specific, unlike every refusal from
+		// law_discount_validate(): by this point the code has already
+		// validated, so the delegate has proved they know it and there is
+		// nothing left to leak. "Not valid" here would be a lie about a code
+		// that was valid a second ago.
+		return new WP_Error(
+			'law_discount_used_up',
+			'That discount code has already been used the maximum number of times.',
+			array( 'field' => 'law_discount_code' )
+		);
+	}
+
 	// _law_application_answers stays in the schema and stays empty: the form
 	// asks nothing, and the committee's view reads the profile live. It is
 	// reserved for the spec's "any other questions the organisers add"
@@ -297,11 +343,24 @@ function law_flagship_apply( $user_id, array $input ) {
 	// there is a confirmed flagship place to include it with.
 	$meta = array(
 		'_law_application_at'     => gmdate( 'Y-m-d H:i' ),
-		'_law_price_pence'        => $list_pence,
-		'_law_vat'                => 1,
+		// The DISCOUNTED net, which is what keeps law_stripe_charge_booking()
+		// and law_flagship_mark_paid() unchanged: both read
+		// law_booking_price(), which reads this, so nothing subtracts the code
+		// twice. _law_discount_pence is kept for the record, not for the sum.
+		'_law_price_pence'        => (int) $quote['net'],
+		'_law_vat'                => $quote['net'] > 0 ? 1 : 0,
 		'_law_payment_consent_at' => gmdate( 'Y-m-d H:i' ),
-		'_law_payment_status'     => 'pending_setup',
+		// A code that covers the whole price asks for no payment method, so
+		// the registration must NOT sit in pending_setup: that is the state
+		// the 48-hour abandonment sweep closes, saying no card details were
+		// given.
+		'_law_payment_status'     => $quote['free'] ? 'no_charge' : 'pending_setup',
 	);
+	if ( $quote['discount_id'] ) {
+		$meta['_law_discount_id']    = (int) $quote['discount_id'];
+		$meta['_law_discount_code']  = (string) $quote['code'];
+		$meta['_law_discount_pence'] = (int) $quote['discount'];
+	}
 	if ( ! empty( $input['answers'] ) ) {
 		$meta['_law_application_answers'] = (array) $input['answers'];
 	}
@@ -317,6 +376,9 @@ function law_flagship_apply( $user_id, array $input ) {
 
 	$booking_id = law_booking_insert( $event_id, $user_id, 'law-applied', $person, $meta );
 	if ( is_wp_error( $booking_id ) ) {
+		if ( $quote['discount_id'] ) {
+			law_discount_release( $quote['discount_id'] );
+		}
 		if ( $locked ) {
 			law_booking_unlock( $event_id );
 		}
@@ -331,19 +393,28 @@ function law_flagship_apply( $user_id, array $input ) {
 
 	// Everything slow happens after the lock: Stripe and the emails, so one
 	// delegate is never queued behind another's network.
+	if ( $quote['discount_id'] ) {
+		law_discount_log( $quote['discount_id'], $booking_id, 'claimed' );
+	}
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Flagship registration #%d received from %s (%s).',
+			'Flagship registration #%1$d received from %2$s (%3$s%4$s).',
 			$number,
 			$person['name'],
-			law_events_format_pence( law_events_gross_pence( $list_pence ) )
+			law_events_format_pence( $quote['gross'] ),
+			$quote['discount'] > 0
+				? sprintf( ' after %s off with code %s', law_events_format_pence( $quote['discount'] ), $quote['code'] )
+				: ''
 		),
 		array(
 			'source'  => 'flagship',
 			'action'  => 'flagship_applied',
 			'booking' => $booking_id,
-			'price'   => $list_pence,
+			'price'   => (int) $quote['net'],
+			'list'    => $list_pence,
+			'discount' => (int) $quote['discount'],
+			'code'    => (string) $quote['code'],
 			'receptions' => $receptions,
 		),
 		array( 'user_id' => $user_id )
@@ -361,14 +432,30 @@ function law_flagship_apply( $user_id, array $input ) {
 		);
 	}
 
+	// A 100% code: there is nothing for Stripe to hold, so no payment method
+	// is asked for and the registration goes straight into the committee's
+	// queue. The code removes the PAYMENT, not the review (Denis, 15 September
+	// 2026): the flagship is approval-gated, and a code in somebody's hand is
+	// not a decision to give them a place.
+	if ( $quote['free'] ) {
+		law_flagship_mark_ready( $booking_id, 'user_flagship_applied_free' );
+
+		return array(
+			'booking'  => $booking_id,
+			'free'     => true,
+			'redirect' => add_query_arg( 'law_notice', 'flagship-free-received', law_booking_manage_url( $booking_id ) ),
+		);
+	}
+
 	$url = law_stripe_create_setup_session( $booking_id, 'apply' );
 	if ( is_wp_error( $url ) ) {
 		// The application survives: the delegate can add their card from My
-		// bookings rather than typing everything again.
-		return array( 'booking' => $booking_id, 'redirect' => law_booking_manage_url( $booking_id ) );
+		// bookings rather than typing everything again. The code stays claimed
+		// with it, and the 48-hour sweep releases it if they never come back.
+		return array( 'booking' => $booking_id, 'free' => false, 'redirect' => law_booking_manage_url( $booking_id ) );
 	}
 
-	return array( 'booking' => $booking_id, 'redirect' => $url );
+	return array( 'booking' => $booking_id, 'free' => false, 'redirect' => $url );
 }
 
 /** Is the flagship taking applications at all? Capacity is NOT a reason not to. */
@@ -526,13 +613,38 @@ function law_flagship_on_card_saved( $booking_id ) {
 		);
 		return false;
 	}
+	return law_flagship_mark_ready( (int) $booking->ID );
+}
+
+/**
+ * Put a registration into the committee's queue: latch it, log it, and send
+ * the two emails that say it is there.
+ *
+ * Its own function since 15 September 2026, when a discount code covering the
+ * whole price gave the flagship a second way to become reviewable. A free
+ * registration never goes to Stripe, so nothing would ever have called the
+ * card-saved path, and it would have sat in the queue with neither the
+ * delegate nor the committee told it existed.
+ *
+ * Idempotent: the one-shot latch is claimed rather than read and written
+ * (law_booking_claim_latch(), bookings.php explains why), so however many of
+ * the paths that report a ready registration arrive, this happens once.
+ *
+ * @param int    $booking_id     The registration.
+ * @param string $delegate_email Which acknowledgement the delegate gets: the
+ *                               standard one says their payment details are
+ *                               saved and will be charged if approved, which
+ *                               is false when a code covers the whole price.
+ * @return bool Whether this call was the one that latched.
+ */
+function law_flagship_mark_ready( $booking_id, $delegate_email = 'user_flagship_applied' ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking ) {
+		return false;
+	}
 	$booking_id = (int) $booking->ID;
 	$event_id   = (int) $booking->post_parent;
 
-	// A one-shot latch, so the acknowledgement and the committee alert go out
-	// once however many of the three paths that report a saved payment method
-	// arrive (law_booking_claim_latch(), bookings.php, which explains why it
-	// has to be claimed rather than read and written).
 	$claimed = law_booking_claim_latch( $booking_id, '_law_application_ready' );
 	if ( ! $claimed ) {
 		return false;
@@ -546,7 +658,7 @@ function law_flagship_on_card_saved( $booking_id ) {
 	);
 
 	$extra = law_flagship_email_extra( $booking_id );
-	law_events_send( 'user_flagship_applied', $event_id, $extra );
+	law_events_send( (string) $delegate_email, $event_id, $extra );
 	law_events_send( 'committee_flagship_application', $event_id, array( 'placeholders' => $extra['placeholders'] ) );
 
 	return true;
@@ -655,7 +767,15 @@ function law_flagship_approve( $booking_id, $actor_id, array $args = array() ) {
 
 	if ( $price['free'] ) {
 		$release();
-		law_flagship_confirm( $booking_id, $actor_id, 'complimentary' );
+		// Free for two different reasons, and they must not be told the same
+		// way: the committee GAVE a complimentary place, whereas a delegate
+		// BROUGHT a code that covered the price. Saying "with our compliments"
+		// to the second is wrong about who did what.
+		$how = ( (int) law_event_meta( $booking_id, '_law_discount_pence' ) > 0
+			&& ! law_event_meta( $booking_id, '_law_is_complimentary' ) )
+			? 'code'
+			: 'complimentary';
+		law_flagship_confirm( $booking_id, $actor_id, $how );
 
 		return array( 'status' => 'confirmed', 'overbooked' => $overbooked );
 	}
@@ -885,7 +1005,15 @@ function law_flagship_mark_paid( $booking_id, array $invoice = array(), $stripe_
 	return true;
 }
 
-/** Flip a booking to Confirmed, recount, log and send the confirmation. */
+/**
+ * Flip a booking to Confirmed, recount, log and send the confirmation.
+ *
+ * @param string $how 'paid' (a charge went through), 'complimentary' (the
+ *                    committee gave the place) or 'code' (a discount code
+ *                    covered the whole price). The last two are both free and
+ *                    are deliberately NOT interchangeable: they differ in who
+ *                    did what, which is the whole of what the email says.
+ */
 function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = '' ) {
 	$booking = get_post( (int) $booking_id );
 	if ( ! $booking ) {
@@ -896,6 +1024,11 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 
 	$locked = law_booking_lock( $event_id );
 	law_booking_set_status( $booking_id, 'publish' );
+	// 'code' settles as paid with a gross of 0, the same terminal state a
+	// fully discounted reception reaches: law_reception_grant_choices() and
+	// law_booking_cancel() both already understand "paid, nothing owed", and a
+	// novel terminal state would have silently stopped the included receptions
+	// being granted.
 	law_event_update_meta( $booking_id, '_law_payment_status', 'complimentary' === $how ? 'complimentary' : 'paid' );
 	law_event_update_meta( $booking_id, '_law_reviewed_at', gmdate( 'Y-m-d H:i' ) );
 	if ( $actor_id ) {
@@ -911,9 +1044,7 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 	$price = law_booking_price( $booking_id );
 	law_event_log(
 		$event_id,
-		'complimentary' === $how
-			? sprintf( 'Flagship registration #%d approved as a complimentary place.', $number )
-			: sprintf( 'Flagship registration #%d approved and paid (%s).', $number, law_events_format_pence( $price['gross'] ) ),
+		law_flagship_confirm_log_line( $booking_id, $how, $number, $price ),
 		array(
 			'source'       => $stripe_event_id ? 'stripe_webhook' : 'flagship',
 			'action'       => 'flagship_approved',
@@ -939,11 +1070,28 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 	if ( $receptions ) {
 		$extra['placeholders']['included_receptions'] = law_reception_choices_note( $receptions );
 	}
-	law_booking_send_with_ics(
-		'complimentary' === $how ? 'user_flagship_complimentary' : 'user_flagship_approved',
-		$event_id,
-		$extra
+	$templates = array(
+		'complimentary' => 'user_flagship_complimentary',
+		'code'          => 'user_flagship_approved_free',
 	);
+	law_booking_send_with_ics( $templates[ $how ] ?? 'user_flagship_approved', $event_id, $extra );
+}
+
+/** The activity-log sentence for one approval, in its own words per outcome. */
+function law_flagship_confirm_log_line( $booking_id, $how, $number, array $price ) {
+	if ( 'complimentary' === $how ) {
+		return sprintf( 'Flagship registration #%d approved as a complimentary place.', $number );
+	}
+	if ( 'code' === $how ) {
+		return sprintf(
+			'Flagship registration #%1$d approved. Discount code %2$s covered the whole price (%3$s off), so nothing was charged.',
+			$number,
+			law_event_meta( $booking_id, '_law_discount_code' ),
+			law_events_format_pence( (int) law_event_meta( $booking_id, '_law_discount_pence' ) )
+		);
+	}
+
+	return sprintf( 'Flagship registration #%d approved and paid (%s).', $number, law_events_format_pence( $price['gross'] ) );
 }
 
 /**
@@ -979,8 +1127,13 @@ function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 
 	$reason = sanitize_textarea_field( (string) $reason );
 
+	$payment_state = (string) law_event_meta( $booking_id, '_law_payment_status' );
+
 	$locked = law_booking_lock( $event_id );
 	law_booking_set_status( $booking_id, 'law-declined' );
+	// The code's use goes back with the place: this delegate is not coming, so
+	// somebody else may have it.
+	law_booking_release_discount( $booking_id, $payment_state );
 	law_event_update_meta( $booking_id, '_law_reviewed_at', gmdate( 'Y-m-d H:i' ) );
 	law_event_update_meta( $booking_id, '_law_reviewed_by', (int) $actor_id );
 	if ( '' !== $reason ) {
@@ -1048,8 +1201,11 @@ function law_flagship_withdraw( $booking_id, $actor_id ) {
 		);
 	}
 
+	$payment_state = (string) law_event_meta( $booking_id, '_law_payment_status' );
+
 	$locked = law_booking_lock( $event_id );
 	law_booking_set_status( $booking_id, 'law-cancelled' );
+	law_booking_release_discount( $booking_id, $payment_state );
 	law_event_recount_attendees( $event_id, 'flagship' );
 	if ( $locked ) {
 		law_booking_unlock( $event_id );
@@ -1414,6 +1570,59 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	return $booking_id;
 }
 
+/**
+ * Set (or clear) the committee's ticket type on one flagship registration.
+ *
+ * Purely a classification the committee keeps for itself (Delegate, Sponsor,
+ * Speaker, Exhibitor, Committee — the client's list, 15 September 2026). It is
+ * never shown to the delegate, never sent to Stripe, and no price, capacity,
+ * status or guard reads it. That is why this is the one booking value with a
+ * wp-admin write path as well (admin/booking-screen.php): there is nothing for
+ * the front-end engine to protect.
+ *
+ * An empty $type clears it. The meta sanitiser deletes the key on '', so
+ * "not set" is the absence of the value rather than a sixth vocabulary item.
+ *
+ * @param int    $booking_id The flagship booking.
+ * @param string $type       A law_booking_ticket_types() key, or '' to clear.
+ * @param int    $actor_id   Who changed it.
+ * @return array{type:string,label:string}|WP_Error
+ */
+function law_flagship_set_ticket_type( $booking_id, $type, $actor_id ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
+		return new WP_Error( 'law_flagship_not_found', 'That registration could not be found.' );
+	}
+
+	$type  = (string) $type;
+	$types = law_booking_ticket_types();
+	if ( '' !== $type && ! isset( $types[ $type ] ) ) {
+		return new WP_Error( 'law_ticket_type_unknown', 'That is not a ticket type we offer.' );
+	}
+
+	$before = (string) law_event_meta( (int) $booking->ID, '_law_ticket_type' );
+	law_event_update_meta( (int) $booking->ID, '_law_ticket_type', $type );
+
+	// Logged even when nothing moved is noise, so say nothing when the
+	// committee reopens the dialog and presses Apply on the same value.
+	if ( $before !== $type ) {
+		$actor  = $actor_id ? get_userdata( (int) $actor_id ) : null;
+		$person = law_booking_attendee( (int) $booking->ID );
+		$who    = $actor ? $actor->display_name : 'the committee';
+		$said   = '' === $type
+			? sprintf( 'Ticket type cleared for %s by %s.', $person['name'], $who )
+			: sprintf( 'Ticket type set to %s for %s by %s.', $types[ $type ], $person['name'], $who );
+		law_event_log(
+			(int) $booking->post_parent,
+			$said,
+			array( 'source' => 'flagship', 'action' => 'flagship_ticket_type', 'booking' => (int) $booking->ID, 'ticket_type' => $type ),
+			array( 'user_id' => (int) $actor_id )
+		);
+	}
+
+	return array( 'type' => $type, 'label' => law_booking_ticket_type_label( $type ) );
+}
+
 /* Emails _____________________________________________________________________ */
 
 /**
@@ -1504,12 +1713,23 @@ function law_flagship_apply_handler() {
 	law_events_respond(
 		$is_ajax,
 		true,
-		array(
-			'title'    => 'Taking you to our payment page',
-			'message'  => 'Stripe will ask for your card details. Nothing is charged unless your registration is approved.',
-			'redirect' => $result['redirect'],
-		),
-		'flagship-applied'
+		empty( $result['free'] )
+			? array(
+				'title'    => 'Taking you to our payment page',
+				'message'  => 'Stripe will ask for your card details. Nothing is charged unless your registration is approved.',
+				'redirect' => $result['redirect'],
+			)
+			// A code covered the whole price, so nobody is going to Stripe and
+			// promising them a payment page would be a lie.
+			: array(
+				'title'    => 'Your registration is with the committee',
+				'message'  => 'There is nothing to pay, so we have not asked you for any payment details. We will email you as soon as the committee has decided.',
+				'redirect' => $result['redirect'],
+			),
+		// The no-JS tail redirects back with a notice and never sees the
+		// payload, so the free path needs its own key or it is told to expect
+		// a payment page it is not being sent to.
+		empty( $result['free'] ) ? 'flagship-applied' : 'flagship-free-received'
 	);
 }
 
@@ -1528,8 +1748,16 @@ function law_flagship_input_from_request() {
 		'answers'     => $answers,
 		'consent'     => ! empty( $raw['consent'] ),
 		'terms'       => ! empty( $raw['terms'] ),
-		// The net price the form displayed, so law_flagship_apply() can
-		// refuse rather than reprice under the delegate.
+		// The discount code as typed, and the one the last successful quote
+		// actually used. law_flagship_apply() asks for the press rather than
+		// applying a code nobody checked (FLAGSHIP_PAYMENTS.md §13).
+		'code'         => sanitize_text_field( (string) ( $raw['code'] ?? '' ) ),
+		'applied_code' => sanitize_text_field( (string) ( $raw['applied_code'] ?? '' ) ),
+		// Whether this is the fetch path, which is the only one with an Apply
+		// button to have pressed.
+		'ajax'         => ! empty( $_POST['law_ajax'] ),
+		// The GROSS the form displayed, so law_flagship_apply() can refuse
+		// rather than reprice under the delegate.
 		'price_shown' => absint( $raw['price_shown'] ?? 0 ),
 		// The included receptions ticked on the consent step. Stored on the
 		// application and granted when the place is confirmed
@@ -1839,6 +2067,55 @@ function law_flagship_resend_payment_handler() {
 	);
 }
 
+add_action( 'admin_post_law_flagship_ticket_type', 'law_flagship_ticket_type_handler' );
+add_action( 'admin_post_nopriv_law_flagship_ticket_type', 'law_events_nopriv_json' );
+
+/**
+ * Set the committee's ticket type on one registration.
+ *
+ * The only handler on this screen that does NOT end in a reload. It answers
+ * with the cell's own markup in `cell`, and booking-form.js swaps that node and
+ * closes the dialog, so classifying twenty delegates is twenty presses rather
+ * than twenty page loads. The `redirect` is still there and still correct: it
+ * is what the no-JS <noscript> form in the cell gets.
+ */
+function law_flagship_ticket_type_handler() {
+	$is_ajax = law_events_guard_post(
+		'law_flagship_ticket_type',
+		array( 'rate' => array( 'flagship_review', 60, 600, 300 ), 'honeypot_json' => array( 'message' => 'Done.' ) )
+	);
+
+	$booking = law_flagship_require_committee_booking( $is_ajax );
+	$result  = law_flagship_set_ticket_type(
+		(int) $booking->ID,
+		sanitize_key( wp_unslash( (string) ( $_POST['law_ticket_type'] ?? '' ) ) ),
+		get_current_user_id()
+	);
+
+	if ( is_wp_error( $result ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => $result->get_error_message(), 'status' => 400 ), 'flagship-failed' );
+	}
+
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => 'Ticket type saved',
+			'message'  => '' === $result['type']
+				? 'The ticket type has been cleared.'
+				: sprintf( 'The ticket type is now %s.', $result['label'] ),
+			// The cell renders itself, so the table and this response can never
+			// disagree about what a set or unset type looks like.
+			'cell'     => array(
+				'target' => '[data-law-ticket-cell="' . (int) $booking->ID . '"]',
+				'html'   => law_flagship_ticket_type_cell( (int) $booking->ID ),
+			),
+			'redirect' => law_flagship_bookings_url(),
+		),
+		'flagship-ticket-type'
+	);
+}
+
 add_action( 'admin_post_law_flagship_add_attendee', 'law_flagship_add_attendee_handler' );
 add_action( 'admin_post_nopriv_law_flagship_add_attendee', 'law_events_nopriv_json' );
 
@@ -2016,7 +2293,21 @@ function law_flagship_run_daily() {
 		if ( ! $applied || $applied > $cutoff ) {
 			continue;
 		}
+		// Under the event lock, like every other mutation. The release is
+		// idempotent by deleting _law_discount_id, but that is a check then an
+		// act, not one atomic step: two overlapping cron runs could both read
+		// the key before either deleted it and both decrement the counter,
+		// which would quietly hand a limited code an extra redemption.
+		// (Security review, 15 September 2026.) Locked per booking rather than
+		// around the whole loop, so it costs nothing under normal load and
+		// serialises only the moment that needs it.
+		$law_fs_locked = law_booking_lock( $event_id );
 		law_booking_set_status( (int) $post->ID, 'law-cancelled' );
+		// Whatever code they claimed goes back with the place they never took.
+		law_booking_release_discount( (int) $post->ID );
+		if ( $law_fs_locked ) {
+			law_booking_unlock( $event_id );
+		}
 		law_event_log(
 			$event_id,
 			sprintf(
@@ -2083,3 +2374,83 @@ function law_flagship_schedule_daily() {
 		wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'law_flagship_daily' );
 	}
 }
+
+/* Discount codes _____________________________________________________________
+ *
+ * Reversal, recorded: on 10 September 2026 Denis ruled codes out here ("we
+ * still will need discount code in the future, so leave discount cpt, but we
+ * just won't use it for flagship"), and tests/DiscountsTest.php grepped this
+ * file to keep it that way. On 15 September 2026 he asked for them, so the
+ * catalogue built then has a second consumer now. The three sub-decisions he
+ * took at the same time are in FLAGSHIP_PAYMENTS.md §13: an empty "Applies to"
+ * means every paid event; a code that covers the whole price removes the
+ * payment but NOT the committee's review; and the code is claimed when the
+ * delegate registers, not when the committee approves, so the figure they
+ * consented to is guaranteed.
+ */
+
+/**
+ * What a flagship place costs this person right now, with an optional code.
+ *
+ * law_booking_quote() does the sum — law_event_price_pence() already delegates
+ * the flagship's time-switched price to law_flagship_price_pence(), so there
+ * was nothing flagship-shaped left in it. This wrapper adds the one thing the
+ * receptions do not need: a price of 0 here means the committee has not put
+ * the conference on sale, so it is refused rather than quoted as free. Only a
+ * code may make a registration free.
+ *
+ * @return array|WP_Error See law_booking_quote().
+ */
+function law_flagship_quote( $event_id = 0, $code = '', $user_id = 0 ) {
+	$event_id = (int) $event_id ? (int) $event_id : law_flagship_event_id();
+
+	if ( law_flagship_price_pence( 0, $event_id ) < 1 ) {
+		return new WP_Error( 'law_flagship_not_on_sale', 'Registration is not open for this event yet.' );
+	}
+
+	return law_booking_quote( $event_id, $code, $user_id );
+}
+
+/** The flagship answers for itself when the shared quote asks (bookings.php). */
+add_filter(
+	'law_booking_quote_guard',
+	function ( $answer, $event_id ) {
+		if ( null !== $answer || ! law_flagship_is( $event_id ) ) {
+			return $answer;
+		}
+		$open = law_flagship_guard_open( $event_id );
+		if ( is_wp_error( $open ) ) {
+			return $open;
+		}
+
+		return law_flagship_price_pence( 0, (int) $event_id ) > 0
+			? true
+			: new WP_Error( 'law_flagship_not_on_sale', 'Registration is not open for this event yet.' );
+	},
+	10,
+	2
+);
+
+/**
+ * Offer the flagship as an "Applies to" option on the discount catalogue.
+ *
+ * Registered here rather than in flagship.php because this is the file that
+ * honours a code: a scope the committee can tick has to mean somewhere a code
+ * is actually read. Only when it is published and priced, for the same reason
+ * a free reception is not offered — there is nothing to discount.
+ */
+add_filter(
+	'law_discount_scope_events',
+	function ( $events ) {
+		$event_id = law_flagship_event_id();
+		if ( ! $event_id || law_flagship_price_pence( 0, $event_id ) < 1 ) {
+			return $events;
+		}
+		$start = (string) law_event_meta( $event_id, '_law_start' );
+		$when  = '' !== $start && strtotime( $start ) ? wp_date( 'D j M', strtotime( $start ) ) : '';
+
+		$events[ (int) $event_id ] = trim( get_the_title( $event_id ) . ( '' !== $when ? ', ' . $when : '' ) );
+
+		return $events;
+	}
+);

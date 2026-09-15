@@ -6,6 +6,16 @@
  * the guards, seat recount and emails always fire — wp-admin's job here is
  * inspection. The CPT registers create_posts as do_not_allow, and the status
  * guard in workflow.php covers quick edit.
+ *
+ * ONE exception, added 15 September 2026: Ticket type on a flagship booking.
+ * It is the only editable field on this screen and the theme's only
+ * save_post_law_booking handler. It is safe here precisely because it is not
+ * booking machinery: no guard, no capacity recount, no email, no status and no
+ * price reads it. It is a label the committee keeps for their own records and
+ * their exports, and the front-end dashboard writes it through the same
+ * law_flagship_set_ticket_type() this box does, so both routes log the same
+ * line. Nothing else belongs here; anything that moves a place or money still
+ * goes through the front end.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -14,12 +24,66 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /* Meta boxes _________________________________________________________________ */
 
-add_action( 'add_meta_boxes_' . LAW_BOOKING_CPT, function () {
+add_action( 'add_meta_boxes_' . LAW_BOOKING_CPT, function ( $post ) {
 	// The editor and slug boxes are noise on a read-only record.
 	remove_meta_box( 'slugdiv', LAW_BOOKING_CPT, 'normal' );
 	add_meta_box( 'law-booking-facts', 'Booking', 'law_booking_box_facts', LAW_BOOKING_CPT, 'normal', 'high' );
+	// Its own box rather than a field in the facts table, which is a read-only
+	// <table> and should stay one. Flagship bookings only: a hosted place and a
+	// reception ticket are not classified this way, and an empty select on
+	// every booking in the site would just be a question nobody can answer.
+	if ( 'flagship' === law_booking_kind( $post ) ) {
+		add_meta_box( 'law-booking-ticket-type', 'Ticket type', 'law_booking_box_ticket_type', LAW_BOOKING_CPT, 'side' );
+	}
 	add_meta_box( 'law-booking-activity', 'Activity', 'law_booking_box_activity', LAW_BOOKING_CPT, 'normal' );
 } );
+
+/**
+ * The committee's ticket type, the one editable field on this screen.
+ *
+ * Deliberately not a route to anything else: see the file header.
+ */
+function law_booking_box_ticket_type( $post ) {
+	wp_nonce_field( 'law_booking_admin_save', 'law_booking_admin_nonce' );
+	law_field_select(
+		'law_ticket_type',
+		'Ticket type',
+		(string) law_event_meta( $post->ID, '_law_ticket_type' ),
+		law_booking_ticket_types(),
+		array( 'placeholder' => 'Not set' )
+	);
+	echo '<p class="description">' . esc_html__( 'For the committee\'s own records and exports. The delegate never sees it, and it changes nothing about their place or their price. The Flagship bookings dashboard sets the same field.', 'law' ) . '</p>';
+}
+
+/**
+ * Save it.
+ *
+ * edit_law_events, not manage_options: committee members hold the whole
+ * law_event capability set and no administrator rights, so manage_options
+ * would lock out exactly the people the field is for, and buy nothing —
+ * everyone who can reach this screen can already read the whole delegate list.
+ *
+ * law_flagship_set_ticket_type() rather than a bare meta write, so this route
+ * and the dashboard's validate the same way and write the same activity-log
+ * line.
+ */
+add_action( 'save_post_' . LAW_BOOKING_CPT, function ( $post_id, $post ) {
+	if ( ! isset( $_POST['law_booking_admin_nonce'] )
+		|| ! wp_verify_nonce( sanitize_key( wp_unslash( $_POST['law_booking_admin_nonce'] ) ), 'law_booking_admin_save' )
+		|| ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE )
+		|| wp_is_post_revision( $post_id )
+		|| ! current_user_can( 'edit_law_events' )
+		|| 'flagship' !== law_booking_kind( $post )
+	) {
+		return;
+	}
+
+	law_flagship_set_ticket_type(
+		(int) $post_id,
+		sanitize_key( wp_unslash( (string) ( $_POST['law_ticket_type'] ?? '' ) ) ),
+		get_current_user_id()
+	);
+}, 10, 2 );
 
 /**
  * Number, status, dates, the attendee, who invited them, the parent event

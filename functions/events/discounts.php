@@ -2,12 +2,17 @@
 /**
  * Discount codes: the catalogue and the rules.
  *
- * The PAID RECEPTIONS honour a code (RECEPTIONS.md §8.4): it is typed in the
- * checkout dialog, the total recalculates in place, and the committee can
- * scope a code to one reception. Nothing else does, and the flagship
- * deliberately does not — Denis settled that on 10 September 2026, because a
- * flagship place is priced by the committee at approval rather than by the
- * delegate at checkout.
+ * Two flows honour a code: the PAID RECEPTIONS since 14 September 2026
+ * (RECEPTIONS.md §8.4) and the FLAGSHIP CONFERENCE since 15 September 2026
+ * (FLAGSHIP_PAYMENTS.md §13). In both it is typed in the dialog, the total
+ * recalculates in place, and the committee can scope a code to one of them.
+ * Hosted events are free to attend, so nothing there has a price to discount.
+ *
+ * The flagship was deliberately excluded when this file was written — Denis
+ * settled that on 10 September 2026 — and he reversed it on 15 September. The
+ * reversal is recorded rather than tidied away, because the exclusion was
+ * pinned by a test and by three documents, and a reader meeting the remains of
+ * it deserves to know which way round the decision now runs.
  *
  * A flow opts in by calling law_discount_validate() and law_discount_claim(),
  * and by adding itself to the law_discount_scope_events filter. This file
@@ -137,9 +142,10 @@ function law_discount_summary( array $discount ) {
 /**
  * Events a code may be limited to.
  *
- * Empty today, because nothing charges a price that honours a code. A flow
- * that starts accepting codes adds itself here, so this file never has to
- * learn what a flagship or a reception is.
+ * A flow that accepts codes adds itself here, so this file never has to learn
+ * what a flagship or a reception is. Two do: the priced receptions and the
+ * flagship conference, each registering only while it is published and has a
+ * price, because an event with nothing to charge has nothing to discount.
  *
  * @return array<int,string> id => label.
  */
@@ -165,46 +171,65 @@ function law_discount_scope_events() {
  * @return array|WP_Error The discount data, or why not.
  */
 function law_discount_validate( $code, array $context = array() ) {
-	$field = array( 'field' => 'law_discount_code' );
+	// ONE message for every reason a code cannot be used (Denis, 15 September
+	// 2026: "refusal message just should say that the code is invalid and
+	// that's it"). The error CODE still differs, and
+	// law_booking_log_refusal() writes it into the activity log beside the
+	// message, so the committee can still see exactly why a code was refused.
+	// Only what the delegate reads is collapsed.
+	//
+	// This reversed the receptions' deliberate design, which kept "expired",
+	// "not yet" and "used up" apart to help an honest delegate and recorded
+	// the oracle as an accepted trade-off. It is not accepted any more: a
+	// signed-in member must not be able to learn that a guessed string is a
+	// real code, or what state it is in.
+	$refuse = static function ( $error_code ) {
+		return new WP_Error(
+			$error_code,
+			__( 'That discount code is not valid.', 'law' ),
+			array( 'field' => 'law_discount_code' )
+		);
+	};
 
 	if ( '' === law_discount_normalise_code( $code ) ) {
-		return new WP_Error( 'law_discount_empty', 'Enter a discount code.', $field );
+		// The one exception, and it leaks nothing: an empty field is not a
+		// code anybody guessed, and "that code is not valid" about nothing at
+		// all reads as a bug.
+		return new WP_Error( 'law_discount_empty', __( 'Enter a discount code.', 'law' ), array( 'field' => 'law_discount_code' ) );
 	}
 
 	$post     = law_discount_find( $code );
 	$discount = $post ? law_discount_data( $post ) : null;
 
-	// One message for "no such code" and for "disabled", so the field cannot
-	// be used to work out which codes exist.
 	if ( ! $discount || ! $discount['active'] ) {
-		return new WP_Error( 'law_discount_unknown', 'That discount code was not recognised.', $field );
+		return $refuse( 'law_discount_unknown' );
 	}
 
 	$now = (int) current_time( 'timestamp', true );
 	if ( '' !== $discount['starts'] ) {
 		$starts = law_discount_stamp_ts( $discount['starts'] );
 		if ( $starts && $now < $starts ) {
-			return new WP_Error( 'law_discount_early', 'That discount code cannot be used yet.', $field );
+			return $refuse( 'law_discount_early' );
 		}
 	}
 	if ( '' !== $discount['expires'] ) {
 		$expires = law_discount_stamp_ts( $discount['expires'] );
 		if ( $expires && $now >= $expires ) {
-			return new WP_Error( 'law_discount_expired', 'That discount code has expired.', $field );
+			return $refuse( 'law_discount_expired' );
 		}
 	}
 
 	if ( $discount['max_uses'] > 0 && $discount['used'] >= $discount['max_uses'] ) {
-		return new WP_Error( 'law_discount_used_up', 'That discount code has already been used the maximum number of times.', $field );
+		return $refuse( 'law_discount_used_up' );
 	}
 
 	$event_id = (int) ( $context['event_id'] ?? 0 );
 	if ( $discount['events'] && $event_id && ! in_array( $event_id, $discount['events'], true ) ) {
-		return new WP_Error( 'law_discount_wrong_event', 'That discount code cannot be used for this event.', $field );
+		return $refuse( 'law_discount_wrong_event' );
 	}
 
 	if ( (int) ( $context['price_pence'] ?? 0 ) < 1 ) {
-		return new WP_Error( 'law_discount_nothing_to_discount', 'There is nothing to discount.', $field );
+		return $refuse( 'law_discount_nothing_to_discount' );
 	}
 
 	return $discount;
@@ -433,10 +458,38 @@ function law_discount_input_from_post() {
 		'starts'   => trim( (string) ( $raw['starts'] ?? '' ) ),
 		'expires'  => trim( (string) ( $raw['expires'] ?? '' ) ),
 		'max_uses' => absint( $raw['max_uses'] ?? 0 ),
-		'events'   => array_values( array_filter( array_map( 'absint', (array) ( $raw['events'] ?? array() ) ) ) ),
+		// Only events a flow has actually offered as a scope, plus whatever
+		// this code is already limited to. The first half means a forged
+		// checkbox cannot pin a code to an arbitrary post, where it would be
+		// stored, never match, and leave the committee with a code that
+		// silently does nothing. The second means an edit never quietly drops
+		// a scope whose event has since come off sale and stopped being
+		// offered — the checkbox is not on the form to re-tick, so dropping it
+		// would widen the code every time somebody corrected its note.
+		'events'   => law_discount_allowed_scope( $raw['events'] ?? array(), absint( $raw['id'] ?? 0 ) ),
 		'note'     => sanitize_text_field( (string) ( $raw['note'] ?? '' ) ),
 		'active'   => ! empty( $raw['active'] ),
 	);
+}
+
+/**
+ * The event IDs a submitted form may legitimately have ticked: those on offer
+ * now, plus the ones this code already carries.
+ *
+ * @param mixed $posted      The raw events[] from the form.
+ * @param int   $discount_id 0 for a new code.
+ * @return int[]
+ */
+function law_discount_allowed_scope( $posted, $discount_id = 0 ) {
+	$posted  = array_values( array_filter( array_map( 'absint', (array) $posted ) ) );
+	$allowed = array_keys( law_discount_scope_events() );
+
+	$discount_id = (int) $discount_id;
+	if ( $discount_id > 0 ) {
+		$allowed = array_merge( $allowed, array_map( 'absint', (array) law_event_meta( $discount_id, '_law_discount_events' ) ) );
+	}
+
+	return array_values( array_intersect( $posted, $allowed ) );
 }
 
 /**

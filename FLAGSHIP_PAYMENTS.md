@@ -68,11 +68,16 @@ Also settled:
 6. **A saved card is managed only on the booking that needs it**, never in a
    global profile section. A global remove would silently break a pending
    approval.
-7. **No discount codes on the flagship.** A discount catalogue is built and
-   kept (Denis: "we still will need discount code in the future, so leave
-   discount cpt, but we just won't use it for flagship"), but nothing here
-   accepts one: the application form has no code field and no booking carries
-   discount meta. See §13 for what exists and how a future flow opts in.
+7. **Discount codes: ruled out on 10 September 2026, reinstated on
+   15 September.** Denis first kept the catalogue and excluded this flow ("we
+   still will need discount code in the future, so leave discount cpt, but we
+   just won't use it for flagship"), then asked for codes here once the
+   receptions had proved the machinery. The registration dialog now takes a
+   code with the total recalculating in place, and a code covering the whole
+   price skips the payment step entirely. The exclusion is recorded rather
+   than deleted because it was pinned by a test and by three documents, and a
+   reader meeting its remains deserves to know which way round the decision
+   now runs. See §13 for how it works and what it cost.
 8. **`law_booking_guard_open()`'s blanket flagship refusal STAYS.** §8 below
    originally said it comes down. It does not, and the reversal is recorded
    here rather than only in a code comment: that refusal is what keeps the
@@ -591,11 +596,38 @@ questions. Dietary and accessibility read from the profile as everywhere else
 but are **editable here** and written back, because the spec asks for them at
 application. Salutation is a new profile field.
 
-**There is no discount code field** (§0.2 item 7). The form does carry a
-hidden `price_shown`, the net price it displayed: `law_flagship_apply()`
-refuses rather than repricing if the figure has moved since the page was
-rendered, so a delegate who had it open across the cutover is never charged
-an amount they did not see and did not consent to.
+**There IS a discount code field** since 15 September 2026 (§0.2 item 7, §13),
+with the four-line receipt block the reception checkout uses: Price, Discount,
+VAT, Total, each swapped in place by the Apply button. The Discount line is
+hidden until a code applies, and needs `.law-booking-price__row[hidden]` to do
+it — `hidden` alone loses to the row's own `display: flex` at equal
+specificity, so it rendered as "Discount −£0.00" on both dialogs until Denis
+spotted it.
+
+The dialog's order, settled with him on 15 September: the event, then
+**Included receptions**, then the **price**, then the **discount code**, then
+the payment note and the two consents. The code sits in the same bordered
+`fieldset.law-booking-fieldset` as the receptions, so the dialog reads as a
+stack of one-subject groups rather than a form with one field floating in it;
+its legend is the heading, so the `<label>` is `.show-for-sr`. The input and
+the Apply button carry a shared `min-height`, because `align-items: stretch`
+alone left the button visibly shorter.
+
+The form carries a hidden `price_shown`, the **gross** it displayed (it was the
+net until the code field arrived, and one field can only hold one figure):
+`law_flagship_apply()` refuses rather than repricing if it has moved since the
+page was rendered, so a delegate who had it open across the cutover is never
+charged an amount they did not see and did not consent to. It also carries
+`applied_code`, the code the last successful quote actually used, so a code
+typed and never checked is asked about rather than silently applied and then
+blamed for a price change.
+
+Without JavaScript there is no Apply button, so the form posts the LIST gross
+with a code typed into it. `law_booking_quote_expected_gross()` is what makes
+that work: it judges a no-JS submission against the list gross, which the
+delegate really did see, rather than against a discounted total no browser ever
+rendered. A code can only reduce a total, so nobody can be charged more than
+they were shown.
 
 Then two required consents, both timestamped onto the booking and logged:
 registration terms and conditions, and explicit consent to store the card and
@@ -755,9 +787,10 @@ Provisioned through `law_migration_page_map()`, `law_setup_account_pages()` and
   information a reviewer decides on, so they came back this way. No column is
   wider than 12rem and every cell wraps, the two exceptions being the tick and
   the actions, which must stay on one line. Full list: booking number, applicant, email,
-  organisation, job title, country, status badge, list price, discount code and
-  amount, net payable, payment status, applied date, and a link to the Stripe
-  invoice where one exists. That last column is spec §7.5's "easy to find for
+  organisation, job title, country, status badge, price (with the list price
+  under it as "was £660.00" when a code applied), the discount code and what it
+  took off, payment status, applied date, and a link to the Stripe invoice
+  where one exists. That last column is spec §7.5's "easy to find for
   whoever handles a refund".
 - **Filters** per spec §4.2: keyword, country, surname, organisation, status,
   payment status and complimentary-only. Built from the events dashboard's
@@ -779,10 +812,50 @@ Provisioned through `law_migration_page_map()`, `law_setup_account_pages()` and
   full registration form.
 - **Header** shows confirmed / available, red when over-booked, matching the
   waitlist section's treatment.
-- **Exports** CSV, Excel and PDF through `functions/events/export.php`.
+- **Ticket type** (added 15 September 2026, at the client's request: "Back end
+  use only — Delegate, Sponsor, Speaker, Exhibitor, Committee"). A column
+  between Status and the actions, holding one inline control: "Add type" with a
+  pencil until a delegate is classified, then the type with the same pencil.
+  The vocabulary is `law_booking_ticket_types()` and the value is
+  `_law_ticket_type` on the booking.
+
+  It classifies and nothing else. No price, capacity, status, email or guard
+  reads it, and the delegate never sees it — which is what makes the rest of
+  its shape reasonable, so it is worth saying before the mechanics.
+
+  - **One dialog for the whole table**, `parts/events/flagship-ticket-type.php`,
+    rendered outside `#law-cal-events`. Approve and Decline each carry their
+    own modal per row because each says something different about a different
+    person and a different sum of money; this one says the same thing about
+    everybody, so the row is a hidden field the script fills in. It also only
+    renders once rather than on every row, which matters here in a way it does
+    not for Approve and Decline: those appear only on rows still awaiting a
+    decision, but a ticket type can be set on any row at all.
+  - **The edit does not reload the page** — the first action on this dashboard
+    that does not. `law_flagship_ticket_type_handler()` answers with the cell's
+    markup under a generic `cell` key and booking-form.js swaps the node,
+    closes the dialog and refocuses the replacement. One renderer,
+    `law_flagship_ticket_type_cell()`, serves both the table and that response.
+  - **Filterable**, alongside keyword, status, payment state and
+    complimentary-only, and the filter carries through to the exports.
+  - **Logged** against the booking through `law_flagship_set_ticket_type()`, so
+    the change shows in the wp-admin Activity box. Reapplying the same value
+    writes nothing.
+- **Exports** CSV, Excel and PDF. The columns, rows and title are built by
+  `law_flagship_bookings_export_rows()` in
+  `functions/events/flagship-bookings-dashboard.php`; only the CSV and XLSX
+  writers come from `functions/events/export.php`, and the PDF is built
+  client-side from the handler's `format=json` branch. Ticket type sits after
+  Complimentary, with the other classification columns.
 - The wp-admin booking screen (`admin/booking-screen.php`) facts box gains a
   payment block: status, list price, discount, card on file, invoice link,
-  consent timestamp, reviewer and the last decline message.
+  consent timestamp, reviewer and the last decline message. It also gains, on a
+  flagship booking only, the **one editable control on that screen**: a Ticket
+  type select, and with it the theme's only `save_post_law_booking` handler. It
+  is safe there precisely because nothing in the booking engine reads the
+  value; it saves behind `edit_law_events` rather than `manage_options`, which
+  would lock out the committee the field is for, and it writes through the same
+  model function the dashboard does.
 
 ---
 
@@ -956,43 +1029,146 @@ Cases worth naming, each with a comment saying which bug it guards:
 
 ---
 
-## 13. The discount catalogue (not used here, and now used by the receptions)
+## 13. Discount codes on the flagship
 
-`functions/events/discounts.php` and its committee catalogue at
-`/account/dashboard/discounts/` are part of this round's work, but they are
-**not part of the flagship flow** and must not be wired into it. A flagship
-place is priced by the committee at approval, not by the delegate at checkout,
-which is why Denis ruled codes out here on 10 September 2026 and why
-`tests/DiscountsTest.php` fails if anybody wires one in.
+Ruled out on 10 September 2026, reinstated on 15 September. The catalogue in
+`functions/events/discounts.php` did not change to allow either flow: the paid
+receptions opted in first (RECEPTIONS.md §8.4) and the flagship opted in the
+same way, which was the point of building it generically.
 
-**The catalogue got its first consumer on 14 September 2026**: the paid
-receptions (RECEPTIONS.md §8.4). Nothing in `discounts.php` changed to allow
-it, which was the point of building it generically — `receptions.php` calls
-`law_discount_validate()` / `_apply()` / `_claim()` and registers every priced
-reception through the `law_discount_scope_events` filter.
+### 13.1 Denis's three decisions (15 September 2026)
 
-- **What exists**: a `law_discount` post type (code as the title, its
-  normalised form as the slug, publish/draft for active/disabled), the meta in
-  `law_discount_meta_schema()` (percentage or fixed value, an optional
-  validity window, a usage limit and counter, an optional event scope, a
-  note), and the engine: `law_discount_validate()`, `law_discount_apply()`,
-  `law_discount_claim()` / `_release()` (an atomic conditional UPDATE, so a
-  limited code cannot be over-claimed by two people at once) and
-  `law_discount_log()`.
-- **Who calls it**: the paid receptions, and nothing else. The catalogue
-  screen says where a code bites rather than implying it works everywhere.
-- **How a flow opts in**: call `law_discount_validate( $code, [
-  'event_id', 'user_id', 'price_pence' ] )`, then `law_discount_apply()` for
-  the numbers and `law_discount_claim()` under its own lock, releasing on any
-  refusal or cancellation. Add the event to the `law_discount_scope_events`
-  filter so the committee can limit a code to it. `discounts.php` deliberately
-  knows nothing about the flagship or the receptions, so it needed no changes.
-- **The claim and the release belong to the flow.** A reception claims BEFORE
-  the booking exists — a conditional `UPDATE` decides a last use, and losing
-  means refusing with nothing written — and deletes `_law_discount_id` on
-  release, which is what makes a double release a no-op rather than a theft of
-  somebody else's live claim. A PAID place that the committee cancels keeps
-  the use, because the code really was spent.
+- **An empty "Applies to" means every paid event, the flagship included.** The
+  rule is right going forward and wrong applied backwards, so
+  `law_setup_scope_existing_discounts()` (`functions/setup-account-pages.php`)
+  runs once and ticks the priced receptions onto every code that had no scope
+  at all. Without it a code written for a £45 reception would have become
+  valid against a £550 conference ticket at the moment of deploy. It runs from
+  both `?setup-account-pages` and migration step 10, so a `git push` is enough,
+  is guarded by the `law_discounts_scoped_before_flagship` option, and logs
+  what it changed against each code. It touches only codes created before
+  `LAW_DISCOUNT_FLAGSHIP_CUTOVER`: the option flag alone is not enough, because
+  the function returns `skipped` without setting it while nothing is priced, so
+  on a site whose receptions go on sale later it would otherwise narrow a code
+  written deliberately with an empty scope after the reversal.
+- **A code that covers the whole price removes the payment, not the review.**
+  The flagship is approval-gated; a code in somebody's hand is not a decision
+  to give them a place.
+- **The code is claimed when the delegate registers, not when the committee
+  approves.** That is what guarantees the figure they consented to. The cost is
+  real and was accepted knowingly: a ten-use code can be fully claimed by ten
+  people awaiting review.
+
+### 13.2 How it works
+
+`law_flagship_quote()` wraps `law_booking_quote()` (`bookings.php`), which is
+the receptions' quote moved and renamed — it needed no change, because
+`law_event_price_pence()` already delegates the flagship's time-switched price
+to `law_flagship_price_pence()`. The wrapper adds the one flagship-specific
+rule: a LIST price under 1p means "not on sale", so it is refused rather than
+quoted as free. Only a code can make a registration free.
+
+`law_flagship_apply()` then, in this order: refuse a typed-but-unapplied code
+on the fetch path; quote; check `price_shown`; take the event lock; re-check
+duplicates; **claim the code**; insert. The claim comes before the insert
+because its conditional `UPDATE` is what makes a last use safe, and losing that
+race refuses with nothing written to undo.
+
+The booking stores the **discounted** net in `_law_price_pence`, with
+`_law_discount_id` / `_law_discount_code` / `_law_discount_pence` beside it.
+That is what leaves `law_stripe_charge_booking()` and `law_flagship_mark_paid()`
+untouched: both read `law_booking_price()`, so a second subtraction is
+impossible by construction rather than by everybody remembering.
+`law_stripe_booking_line_description()` names the code and the list price on
+the VAT invoice, so a discounted charge explains itself.
+
+### 13.3 The free path
+
+A 100% code means no Stripe call at all. The registration is inserted as
+`law-applied` with `_law_payment_status = 'no_charge'` and goes straight into
+the committee's queue through `law_flagship_mark_ready()`, which is the
+latch-log-email tail extracted from `law_flagship_on_card_saved()` — without
+it, a registration that never goes to Stripe would sit in the queue with
+neither the delegate nor the committee told it existed.
+
+`no_charge` is a new payment state, and the alternatives were both wrong.
+`pending_setup` is what the 48-hour abandonment sweep closes, so a free
+registration would have been cancelled two days later saying no card details
+were given. `complimentary` means the committee gave the place away: it drives
+the Complimentary filter, the export column and the "with our compliments"
+email, and a delegate's own code is not LAW's gift. On approval the place
+settles at `paid` with a gross of 0, the same terminal state a fully discounted
+reception reaches, because `law_reception_grant_choices()` and
+`law_booking_cancel()` already understand "paid, nothing owed" and a novel
+terminal state would have silently stopped the included receptions being
+granted.
+
+Two emails exist only for this path, `user_flagship_applied_free` and
+`user_flagship_approved_free`, because every sentence the paying templates say
+about a saved payment method is false when none was ever asked for.
+
+### 13.4 Release
+
+The use goes back with the place, but only while the money has not arrived: a
+PAID place the committee later cancels keeps it, because the code really was
+spent. `law_booking_release_discount()` (`bookings.php`) is the one copy of
+that rule, called from `law_booking_cancel()`, `law_flagship_decline()`,
+`law_flagship_withdraw()` and the abandonment sweep — the last three change
+status directly and never go through `law_booking_cancel()`, which is how they
+would each have grown a copy. It deletes `_law_discount_id` and keeps the code
+and the amount, so a second release is a no-op rather than a theft of somebody
+else's live claim.
+
+The abandonment sweep takes the event lock per booking before it changes the
+status and releases. `law_booking_release_discount()` is idempotent by deleting
+`_law_discount_id`, but that is a check and then an act rather than one atomic
+step, so two overlapping cron runs could both read the key before either
+deleted it and each decrement the counter, quietly handing a limited code an
+extra redemption (security review, 15 September 2026). Every other
+status-changing path in the module was already locked; this one was not.
+
+A Stripe error while opening the setup session does **not** release: the
+registration deliberately survives that error so the delegate can add a payment
+method from My bookings, so the code stays claimed with it and the sweep
+releases both if they never come back.
+
+### 13.5 One message for a refused code
+
+Denis, 15 September 2026: "refusal message just should say that the code is
+invalid and that's it." Every refusal from `law_discount_validate()` now reads
+"That discount code is not valid." This reversed the receptions' deliberate
+choice to keep "expired", "not yet" and "used up" apart, which was recorded
+there as an accepted trade-off precisely so somebody would put it to him.
+
+The diagnosis is kept where it costs nothing: the `WP_Error` codes still
+differ, and `law_booking_log_refusal()` writes the code into the activity log
+beside the message, so the committee can still see exactly why a code was
+refused. Losing the race for a code's LAST use at claim time stays specific —
+the code has already validated by then, so the person has proved they know it
+and there is nothing left to leak.
+
+### 13.6 What else moved
+
+- The quote endpoint is `admin_post_law_quote` → `law_booking_quote_handler()`,
+  nonce action `law_quote`, localised as `window.lawQuote` by
+  `law_booking_quote_localise()`. `admin_post_law_reception_quote` stays
+  registered as an alias so a reception dialog open across the deploy keeps
+  working. Rate surface `discount_quote`, 20 per user and 60 per IP per ten
+  minutes, shared by both flows rather than one budget each.
+- `assets/js/booking-form.js` §5 keys off `[data-law-quote-event]` and posts the
+  code under one agreed key, `law_code`, so each form keeps its own field name.
+- `.law-reception-price` / `.law-reception-code` became
+  `.law-booking-price` / `.law-booking-code`.
+- The consent sentence is rewritten by the quote through `[data-law-consent]`.
+  It names the amount and is the record of what the delegate agreed to, so
+  leaving it quoting the list price would have put a signed consent to £660 on
+  a registration a code had taken to nothing. The reception waitlist's consent
+  had the same defect and was fixed with it.
+- **A bug the receptions already had**: `price_shown` was compared against the
+  discounted gross on every path, so a code typed without JavaScript was
+  refused every time, and the inline form re-renders at the list price, so the
+  refusal repeated for ever. `law_booking_quote_expected_gross()` fixes all
+  three flows.
 
 ---
 

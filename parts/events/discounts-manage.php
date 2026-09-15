@@ -217,11 +217,11 @@ get_template_part(
 								<?php echo esc_html( $law_dm_event_label ); ?>
 							</label>
 						<?php endforeach; ?>
-						<span class="law-form-hint"><?php esc_html_e( 'Tick nothing for a code that works at every paid reception.', 'law' ); ?></span>
+						<span class="law-form-hint"><?php esc_html_e( 'Tick nothing for a code that works wherever a place is charged for.', 'law' ); ?></span>
 					</div>
 				<?php else : ?>
 					<p class="law-form-hint">
-						<?php esc_html_e( 'No reception has a price yet, so there is nothing to limit this code to: it will work at every paid reception once one goes on sale.', 'law' ); ?>
+						<?php esc_html_e( 'Nothing is on sale yet, so there is nothing to limit this code to: it will work wherever a place is charged for, once something goes on sale.', 'law' ); ?>
 					</p>
 				<?php endif; ?>
 

@@ -376,7 +376,13 @@ is read.
   `_law_attendee_*` snapshot keys, `_law_is_press` and the four
   `_law_waitlist_*` keys (WAITLIST.md §A7, §B1). The old `_law_attendee_rows`
   array, its `attendee_rows` sanitiser and the flat `_law_booking_attendee`
-  index were removed with the per-attendee rebuild.
+  index were removed with the per-attendee rebuild. **`_law_ticket_type`**
+  (15 September 2026) is the committee's own classification of a flagship
+  registration, typed `ticket_type` and validated against
+  `law_booking_ticket_types()` (`statuses.php`) the way `fee_tier` is validated
+  against the settings: anything else sanitises to `''`, which deletes the key,
+  so "not set" is the absence of a value rather than a sixth vocabulary item
+  and a defaulted "Delegate" can never make the column look filled in.
 - `law_events_sanitize_value()`: the one sanitiser, switched on type. The row
   types (`people_rows` for co-owners/contacts, `speaker_rows` for the
   event→speaker relationship) clean each subfield and drop empty rows — so the
@@ -1977,14 +1983,16 @@ What makes them one feature is that neither screen owns any of the substance:
 
 ### `discounts.php` and `discounts-dashboard.php`: the discount catalogue (10 September 2026)
 
-**Honoured by the paid receptions, and by nothing else** (14 September 2026,
-RECEPTIONS.md §8.4). Denis settled on 10 September 2026 that codes are not
-wanted on the flagship, whose price is the committee's decision at approval
-rather than the delegate's at checkout; the catalogue was built then and left
-deliberately unwired until something charged. The receptions are that
-something: the code is typed in the checkout dialog, the total recalculates in
-place through `law_reception_quote()`, and the committee can scope a code to
-one reception.
+**Honoured by the paid receptions (14 September 2026, RECEPTIONS.md §8.4) and
+by the flagship conference (15 September 2026, FLAGSHIP_PAYMENTS.md §13).**
+The catalogue was built on 10 September and left deliberately unwired, because
+Denis had settled that codes were not wanted on the flagship, whose price is
+the committee's decision at approval rather than the delegate's at checkout. He
+reversed that on 15 September once the receptions had proved the machinery. In
+both flows the code is typed in the dialog, the total recalculates in place
+through the shared `law_booking_quote()`, and the committee can scope a code to
+either. Hosted events are free to attend, so nothing there has a price to
+discount.
 
 - A fifth CPT, `law_discount`, engine-write-only like bookings. The post title
   is the code as the committee typed it (hyphens and all); the slug is
@@ -1997,8 +2005,15 @@ one reception.
 - `law_discount_validate()` answers "usable, here, now, by this person, at
   this price" and changes nothing; `law_discount_apply()` does the
   arithmetic, clamped so a fixed code larger than the price makes a booking
-  free rather than a credit. "No such code" and "that code is disabled" give
-  the SAME message, so the field cannot be used to enumerate the catalogue.
+  free rather than a credit. **Every** refusal gives the same message, "That
+  discount code is not valid" (Denis, 15 September 2026, reversing the
+  receptions' deliberate decision to keep "expired", "not yet" and "used up"
+  apart): distinct wording told a guesser that a string they tried is a real
+  code. The `WP_Error` codes still differ and `law_booking_log_refusal()`
+  writes them into the activity log, so the committee keeps the diagnosis
+  without the delegate being told. Losing the race for a LAST use at claim
+  time is the one deliberate exception — the code has already validated, so
+  there is nothing left to leak.
 - `law_discount_claim()` / `_release()` move the usage counter with a
   conditional `UPDATE`, not a read-then-write. A code can be shared across
   events, so two callers holding two different event locks could otherwise
@@ -2007,24 +2022,57 @@ one reception.
   effectively unlimited code.
 - The catalogue is at `/account/dashboard/discounts/`, committee-only, gated
   in three independent places, with the CSV/Excel/PDF trio. The screen says
-  where a code bites — "Codes are accepted when booking a paid reception" —
-  because that is the first question anybody creating one has.
+  where a code bites — "Codes are accepted when registering for the flagship
+  conference and when booking a paid reception" — because that is the first
+  question anybody creating one has. An empty "Applies to" means every paid
+  event; `law_setup_scope_existing_discounts()` ran once at the flagship
+  cutover to pin the codes that predate it to the receptions they were written
+  for, so none of them silently gained £550 of reach.
 - **How a flow opts in**: call `law_discount_validate()`, then
   `law_discount_apply()` and `law_discount_claim()` under its own lock,
   releasing on any refusal or cancellation, and add its event to the
   `law_discount_scope_events` filter. `discounts.php` knows nothing about the
-  flagship or the receptions, so wiring the receptions in needed no changes
-  here: `receptions.php` registers every PRICED reception through that filter
-  (a free one has nothing to discount, and offering it would let the committee
-  build a code that can never apply).
-- The claim and the release belong to the flow, not to the catalogue. A
-  reception claims before the booking exists and deletes `_law_discount_id` on
-  release, which is what makes a double release a no-op rather than a theft of
-  somebody else's live claim; a PAID place that the committee cancels KEEPS
-  the use, because the code really was spent.
-- Tests: `tests/DiscountsTest.php` (18), including one that fails if anybody
-  wires a code into the flagship engine without asking, and its other half:
-  the flagship is never a scope, a priced reception is, a free one is not.
+  flagship or the receptions, so wiring in each of them needed no changes here:
+  `receptions.php` registers every PRICED reception through that filter and
+  `flagship-bookings.php` registers the flagship while it has a price (a free
+  event has nothing to discount, and offering it would let the committee build
+  a code that can never apply). The only guard added was in
+  `law_discount_input_from_post()`, which now keeps a posted scope to what is
+  on offer PLUS what the code already carries — the first half stops a forged
+  checkbox pinning a code to an arbitrary post, the second stops an edit
+  silently dropping a scope whose event has since come off sale.
+- The claim belongs to the flow; the release is one shared function. Both
+  flows claim before the booking exists, so a lost race refuses with nothing
+  written. `law_booking_release_discount()` (`bookings.php`) holds the release
+  rule in one place — it deletes `_law_discount_id` and keeps the code and the
+  amount, which is what makes a double release a no-op rather than a theft of
+  somebody else's live claim, and it refuses on a PAID place, because the code
+  really was spent. It is called from `law_booking_cancel()` and from the
+  flagship's decline, withdraw and abandonment paths, which change status
+  directly and would otherwise each have grown a copy.
+- **Nothing to pay means no payment step** (Denis, 15 September 2026), on every
+  surface. A flagship registration a code covers in full skips Stripe entirely
+  and carries the `no_charge` payment state: not `pending_setup` (the
+  abandonment sweep closes that) and not `complimentary` (that is the
+  committee's gift, and drives a "with our compliments" email). So does a
+  reception waitlist entry: it joins as `no_charge`,
+  `law_waitlist_check_promotable()` accepts that alongside `ready`,
+  `law_waitlist_seat()` takes no charge claim for it, and
+  `law_reception_charge_promoted()` confirms it with no Stripe call. The test
+  is the BOOKING's amount, never `law_event_is_priced()`, which is true of a
+  place a code has taken to nothing. See FLAGSHIP_PAYMENTS.md §13.3 and
+  RECEPTIONS.md §6.1.
+- Fixed on the way (15 September 2026): a promoted waitlist delegate was
+  getting TWO confirmations and two calendar invitations, because
+  `law_reception_mark_paid()` ends by sending the generic
+  `user_reception_confirmed` and the promotion sends its own on top.
+  `law_reception_claim_promotion_email()` takes the `_law_confirmation_sent`
+  latch first, so the promotion's email is the single one; the committee is not
+  left out, because a pass sends them one summary rather than a message per
+  entry.
+- Tests: `tests/DiscountsTest.php` for the catalogue's own rules and the scope
+  list, `tests/QuoteTest.php` for the shared quote and its guard, and the
+  claim/release lifecycle in each flow's own suite.
 
 ### `flagship-bookings.php`: the flagship's application flow (10 September 2026)
 
@@ -2032,6 +2080,28 @@ The approval-gated flow from EVENTS_4.2_SPECS.md §5, as settled in
 FLAGSHIP_PAYMENTS.md. A delegate applies and saves a payment method; the
 committee approves or declines; approval charges it off-session and confirms
 the place.
+
+**Discount codes, since 15 September 2026** (FLAGSHIP_PAYMENTS.md §13,
+reversing the 10 September decision that this flow would never take one). The
+registration dialog carries the same code field and four-line receipt block as
+the reception checkout, driven by the shared `law_booking_quote()`;
+`law_flagship_quote()` adds the one flagship rule, that a LIST price under 1p
+means "not on sale" rather than "free", so only a code can make a registration
+free. The code is claimed inside the event lock before the booking is
+inserted, the DISCOUNTED net is snapshotted into `_law_price_pence` so
+`law_stripe_charge_booking()` needed no change, and decline, withdrawal and
+the 48-hour abandonment sweep each give the use back through
+`law_booking_release_discount()`.
+
+A code covering the whole price skips Stripe entirely: no setup session, no
+payment method, `_law_payment_status = 'no_charge'`, and
+`law_flagship_mark_ready()` — extracted from `law_flagship_on_card_saved()` for
+exactly this — puts it in the committee's queue and sends the acknowledgements.
+Without that extraction a free registration would have sat there with nobody
+told it existed, because the only thing that ever announced a registration was
+the card arriving. `price_shown` changed from the net to the GROSS at the same
+time: one hidden field can hold one figure, and the total is what the delegate
+is looking at.
 
 **Not necessarily a card** (Denis, 10 September 2026, and spec §7.1).
 `payment_method_types` is left unset on the Checkout session, so Stripe offers
@@ -2129,11 +2199,60 @@ and two sets of actions that do not apply to each other.
   which is worse than the generic name it had replaced.
 - A flat table with the payment facts a refund has to be traced by, including
   the Stripe invoice link (spec §7.5). Filters: keyword, status, payment
-  state, country. Per-row Approve and Decline, the two failed-payment actions,
-  select-all bulk decisions, and the "add without payment" dialog, opened from
-  the actions row above the table.
-- Exports CSV / Excel / PDF through `functions/events/export.php`.
-- Tests: `tests/FlagshipBookingsDashboardTest.php` (8).
+  state, attendee type (complimentary places) and, since 15 September 2026,
+  ticket type. There is no country filter: it was removed outright rather than
+  left reachable by URL only. Per-row Approve and Decline, the two failed-payment
+  actions, select-all bulk decisions, and the "add without payment" dialog,
+  opened from the actions row above the table.
+- **Ticket type** (Denis, 15 September 2026, from the client: "Back end use
+  only — Delegate, Sponsor, Speaker, Exhibitor, Committee"). A column whose
+  cell is one inline control: "Add type" with a pencil until somebody
+  classifies the delegate, then the type with the same pencil. The vocabulary
+  is `law_booking_ticket_types()` (`statuses.php`) and the value is
+  `_law_ticket_type` on the booking; `law_flagship_set_ticket_type()`
+  (`flagship-bookings.php`) is the only writer, and it logs the change against
+  the booking so the wp-admin Activity box picks it up. It classifies and
+  nothing more: no price, capacity, status, email or guard reads it, and the
+  delegate is never shown it.
+  - **One dialog for the whole table**, `parts/events/flagship-ticket-type.php`,
+    rendered outside `#law-cal-events` beside the add-attendee dialog so a
+    filter swapping the table cannot destroy it. Every other confirm dialog
+    here is per row because Approve and Decline say different things about
+    different people and money; this one says the same thing about everybody
+    and the row is a hidden field. That distinction earns its keep: Approve and
+    Decline only render on rows a decision can still be made on, but a ticket
+    type can be set on ANY row, so a dialog per row would mean one on every row
+    of a list that runs to hundreds. `assets/js/flagship-ticket-type.js` (~60
+    lines, delegated at the document) fills in the booking, the delegate's name
+    and the current value from the pencil that was pressed. No fetch, so the
+    dialog opens in the same frame as the press and needs no skeleton.
+  - **The edit does not reload the page.** `law_flagship_ticket_type_handler()`
+    answers with the cell's own markup under a new generic `cell` key, and
+    booking-form.js swaps that node, closes the dialog and hands focus to the
+    replacement (`[data-law-refocus]`). One renderer,
+    `law_flagship_ticket_type_cell()`, draws the cell for the table and for
+    that response, so the two can never disagree. It is the thread-bubble
+    pattern from `comments.php` — return the rendered markup, swap the node —
+    rather than the waitlist reorder, which rebuilds state in JavaScript and is
+    the hardest code in that file to keep right. A cell no longer on the page
+    (the filter moved) falls through to the ordinary reload.
+  - **`parts/layout/modal.php` gained a select** for this (`'type' =>
+    'select'` with `options` and `placeholder`), rather than a second
+    hand-written dialog skeleton. Same name, same ships-disabled behaviour,
+    same `data-law-modal-field` hook, so `law-modal.js` needed no change at
+    all. It is also a ninth deliberate **Apply** button, on top of the eight
+    listed under the applicant/delegate rename below.
+  - **Without JavaScript** every pencil stays `hidden` (`data-law-modal-enhanced`)
+    and each cell's `<noscript>` select posts the same action instead, so the
+    column is never read-only for somebody with scripts off.
+- Exports CSV / Excel / PDF. The three formats share
+  `law_flagship_bookings_export_rows()` in THIS file, which owns the columns,
+  the rows and the title; only the CSV and XLSX writers
+  (`law_events_send_csv()` / `law_events_send_xlsx()`) come from
+  `functions/events/export.php`, and the PDF is built client-side from the
+  handler's `format=json` branch. Ticket type sits with the other
+  classification columns, after Complimentary.
+- Tests: `tests/FlagshipBookingsDashboardTest.php` (20).
 
 ### `receptions.php`: the drinks receptions (14 September 2026)
 
@@ -2170,7 +2289,11 @@ of `stripe/attendees.php`, and the waitlist.
 - **`law_reception_quote()`** is pure: it reads, writes nothing and claims
   nothing. That is what lets the same function render the dialog, answer the
   live Apply endpoint and be re-run inside the checkout handler — which is
-  the point, because the client can never send its own price.
+  the point, because the client can never send its own price. Its body moved
+  to `law_booking_quote()` (`bookings.php`) on 15 September 2026 when the
+  flagship started taking codes, and this name is now a one-line wrapper: the
+  sum turned out to be the same sum, because `law_event_price_pence()` already
+  routed the flagship's time-switched price.
 - **`law_reception_checkout()`**, in this order: the cheap refusals first; the
   discount code CLAIMED before the booking exists (one conditional `UPDATE`
   decides a last use, with nothing to roll back if we lose); the hold inserted
@@ -3015,9 +3138,9 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   `parts/calendar-event-details.php`): it skips the `publish` gate, the
   redirect notices and the viewer's own booking states (a preview answers
   "what will an attendee see", not "what do I see"), and renders the same four
-  availability states with the same wording — "Bookings open soon", "Bookings
-  for this event have closed.", "This event is fully booked." and "N places
-  left". There is deliberately **one** state machine: the preview reuses those
+  availability states with the same wording — "Places for this event have not
+  been released yet.", "Bookings for this event have closed.", "This event is
+  fully booked." and "N places left". There is deliberately **one** state machine: the preview reuses those
   branches rather than restating them. `law_booking_render_opener()`'s
   `$preview` branch prints
   `<button type="button" class="button orange" disabled aria-disabled="true">`
@@ -3112,11 +3235,10 @@ click to find that out.
   from that day's own events and widened to a three-hour minimum. Only one day
   is on screen, so a varying scale is not confusing, and a Wednesday carrying
   one evening reception renders 18:00 to 22:30 rather than fourteen empty hours.
-  It then opens **one step earlier still**, and the part draws neither a label
-  nor a running total for that opening step: a ruler label is centred on the
-  moment it names, so the first one was sliced in half by the scroller's own
-  left edge. The lead-in is what puts the first real time on screen in full
-  (Denis, 15 September 2026).
+  It then opens **one step earlier still**, and the part draws no label for that
+  opening step: a ruler label is centred on the moment it names, so the first one
+  was sliced in half by the scroller's own left edge. The lead-in is what puts
+  the first real time on screen in full (Denis, 15 September 2026).
 - `law_slotchart_item()`: an empty `_law_end` is drawn at **two hours**, which
   is already `law_event_ics()`'s answer to the same question — a different
   number would give the site two answers to "how long is this event". The bar
@@ -3126,17 +3248,141 @@ click to find that out.
   chart rather than as a fact about the event. An end on a later date or
   at/before its start is the same case (form 10 entry 1559, Law Rocks! LONDON
   2026, captured as 19:45 to 11:30).
-- `law_slotchart_density()`: one figure per half hour under the ruler, the
-  running total the client asked for. The bars show *where* the clashes are
-  without ever stating a number; this is the number. Nothing opens and nothing
-  expands — there is no drill-down on this view (Denis, 15 September 2026).
+- **A bar carries what a table row carries** (Denis, 15 September 2026:
+  "display all information, but we just don't need buttons"). The first cut drew
+  a bar as a time and a title, which made the timeline a picture of the week and
+  left the committee switching back to the table to learn anything about an
+  event. `law_slotchart_item()` now reads the same facts
+  `parts/events/dashboard-list.php` prints, and `law_slotchart_item_facts()`
+  turns them into the ordered detail lines the bar and the accessible label
+  share, so the two cannot drift. Under the title, in order: **status ·
+  reference · kind** on one bold line, host and organisation, attendees booked
+  and places left of the capacity, then anyone waiting and the session-agenda
+  summary. Each line carries a `key` as well as its text, because the first is
+  bold and the part must not decide which by counting rows. The extra cost is
+  `law_event_meta()` reads plus one `get_userdata()` per event — the same
+  per-row cost the table already pays, and still no query per bar.
+  - **What a bar deliberately does not print.** The **time** went in the same
+    round it arrived: the bar's position and length *are* the time, the ruler
+    above names it, and "08:30–10:00" on each of Tuesday's 48 bars was a line of
+    type per bar restating the chart. The **payment status** went with it —
+    bookkeeping, and silent about when an event runs or whether it clashes
+    ("don't care if paid or unpaid"). Both are still on the table and the detail
+    view, and the time is still in the bar's tooltip and `aria-label`, which is
+    now the only place it appears on this view.
+  - **Status, reference and kind share one bold line.** The status sat top-right
+    beside the time; with the time gone that row held one word, so it joined the
+    lines below, and the reference then had a row of its own that it did not
+    fill either — merging the two bought a row back off the lane height, which
+    is why `--law-sc-lane` is `6.25rem` and not `7rem` (Denis, 15 September
+    2026, "status and ref could be in the same line divided by fat dot"). The
+    order is also the truncation order: on a bar too narrow for the line the
+    kind goes first and the status survives. The status is on the bar at all
+    because the fill colour says the same thing and colour is not a fact anyone
+    can quote back; seven fills are closer in value than seven words. The
+    reference is prefixed "Ref" because it is a bare Gravity Forms entry ID
+    ("1503") on a card with several other numbers on it. The line is **not**
+    uppercased — it was while it held the status alone, and "REF 301 · EXTERNAL
+    EVENT" reads as shouting rather than as a label.
+  - **No gap between the title and the details.** They were held apart by a
+    `margin-top: auto` so the slack in a fixed-height lane sat somewhere
+    deliberate; it read as a gap where something had failed to render. The slack
+    now falls below everything, as it does in any under-filled card.
+  - **No buttons, and specifically no Bookings button.** The bar *is* the Review
+    link, so a second anchor inside it could not be clicked anyway; and the
+    attendee list is not what a planning view is for. The booking numbers are
+    printed as text instead.
+  - **A missing fact is omitted, not dashed.** A dash is right in a table, where
+    the column exists whether or not the row fills it; inside a bar it is a line
+    of punctuation standing where a line of text would be. So an unconfirmed
+    event states no booking numbers at all, an external one says "booked on the
+    organiser's site" rather than a hollow "0 booked", and an approved event
+    with no capacity yet says "no capacity set" rather than "0 left" — not open
+    for booking is not the same fact as full.
+  - **A bar is as tall as its own text; the LANE is the fixed thing.**
+    `height: auto` with `max-height: var(--law-sc-lane)`, so the details end at
+    the bar's own bottom border and a bar that is not the day's fullest is
+    simply shorter (Denis, 15 September 2026: "remove the bottom space, so
+    details are more stuck to the bottom border"). The lane keeps its height, so
+    the rows are still a grid.
+    The lane height itself is **computed per day**, not fixed:
+    `parts/events/slot-chart.php` counts the detail lines of the day's fullest
+    item and emits `--law-sc-facts`, and the stylesheet does the arithmetic —
+    `calc(2.9375rem + var(--law-sc-facts, 4) * 0.875rem)`. A day whose events
+    have no waiting list and no session agenda is one line shorter throughout
+    (Tuesday renders at 89px a lane, Monday at 103px), where one figure for the
+    whole chart would pad every other day out to the worst one.
+    **Every number in that sum is a whole pixel on purpose**: 6+1 padding and
+    border twice, two 15px title lines, a 3px gap, and 14px a detail line. The
+    title's two-line clamp had been letting a sliver of a third line through,
+    because `-webkit-line-clamp` alone was leaving the box a fraction taller
+    than two lines of an 11.52px font on a 14.4px line. It now has a `max-height`
+    of `2.5em` as well — exactly two of its own line boxes — and integer metrics
+    so that boundary is not left to sub-pixel rounding. The busiest day of the
+    2026 week packs into nine lanes, so the chart runs to roughly one and a half
+    screens; that lane height is the one number to shrink if it is too much.
+    Horizontally nothing was bought: `--law-sc-min` stays at 2px a minute,
+    because widening the scale to fit longer lines would cost the one thing the
+    view exists for, which is seeing a whole day's clashes without scrolling
+    sideways. Instead the bar is a `container-type: inline-size` container and
+    drops its detail lines below a 6rem content width — a 30-minute event loses
+    them, an hour keeps them — while the `title` and `aria-label` carry every
+    line whatever the width, which is why `law_slotchart_item_label()` repeats
+    them.
+  - **The title stopped being painted in the status colour.** On an Approved bar
+    that meant `#ef7d05` on white, 2.9:1 and under AA. It was one short line
+    then and it is a paragraph now, so the bar has four tokens instead of one:
+    `--law-sc-bg` / `--law-sc-border` carry the status, `--law-sc-ink` the
+    title, `--law-sc-accent` the status word (`#a35300` on the light fills, the
+    darker orange `calendar.css` already uses for sent-back type), and
+    `--law-sc-soft` the detail lines. Each of the seven status variants needs
+    looking at on the page rather than reasoned about, because the fills are
+    close in value.
+- **The per-half-hour running total was built and then removed** (both on
+  15 September 2026). `law_slotchart_density()` put one figure per half hour in
+  a row under the ruler — 9, 9, 9, 0, 9 across Tuesday — with the day's own peak
+  picked out in orange, and it was the literal answer to the client's "a running
+  total of events confirmed at a particular time slot". Denis had it taken out:
+  "we don't need those numbers … that are basically showing amount of events in
+  a gap". A column of bars already *is* the count, and the figures sat in the
+  gaps between bars where they read as belonging to the whitespace. The function,
+  its markup, its styles and its two tests all went with it. **Worth knowing
+  before re-adding it**, because the client asked for it in writing and may ask
+  again.
 - **Days**: the configured programme week *plus any other date carrying an
   event*. `law_calendar_events_by_date()` drops an out-of-week event into its
   unscheduled bucket, which is right for a five-tab public programme and wrong
   here; the flagship screen already warns that a date can fall outside the week,
   so the committee can produce one, and a planning view has to account for every
-  event. Events with no start at all get the `day-unscheduled` section, a list
-  rather than a chart, shown under every tab.
+  event. Events with no start at all get the `day-unscheduled` section, shown
+  under every tab, and it is **the list view's own table** (Denis,
+  15 September 2026: "the section with 'No confirmed slots' just should repeat
+  the list view"). They have no geometry to draw, so the chart has nothing to
+  offer them that the table does not already do better, and a list written for
+  that one section was a second layout for the same rows to keep in step.
+  `parts/events/dashboard-list.php` gained four optional `$args` for it —
+  `events` (skip its own `law_committee_events()` call), `show_count`,
+  `show_actions` and `link_base` — following the same pattern
+  `parts/calendar-daynav.php` already uses (`show_bookings` replaced a blunter
+  `show_actions`, which is still there for a caller that wants no actions column
+  at all). The timeline turns the count line off — it would count the
+  unscheduled handful against every event on the site — and keeps **Review**
+  while dropping **Bookings**. Review is here although the bars do without it
+  (Denis, 15 September 2026): there is no bar to click, so without the button
+  the row's title link would be the only way in and would not look like one.
+  Bookings stays off, as it is everywhere on this view. The `link_base` is
+  `law_slotchart_url()`, so those rows carry the view and the filters exactly as
+  the bars do.
+- **A sticky ruler was tried and reverted** (both 15 September 2026). Pinning
+  the time axis to the top of the chart keeps the times readable nine lanes
+  down, but it forces the vertical scrolling off the page and onto
+  `.law-slotchart`: `position: sticky` pins to the nearest scrollport, and the
+  ruler has to stay *inside* the horizontal scroller to keep step sideways with
+  the bars it measures, so that element has to become the thing that scrolls.
+  Denis judged a scroll box inside the page the worse trade. **Before trying
+  again**, know there is no third option in CSS — `overflow-y: visible` computes
+  to `auto` the moment `overflow-x` is not visible, so a horizontal-only
+  scroller whose children can stick to the viewport needs JavaScript.
 - **Page**: `parts/events/slot-chart.php`, rendered inside `#law-cal-events` and
   returned on its own by `&law_partial=1`, so filtering swaps the chart in place
   exactly as it swaps the table.
@@ -3167,6 +3413,15 @@ click to find that out.
   and the `title` attribute always carries the true times.
 - **Exports are kept** on this view: they export the filtered event list, the
   filters work here, and leaving them costs no code.
+- **Hover moves nothing.** The bar used to lift on `transform: translateY(-1px)`.
+  That was fine on a bar holding one line and wrong on one holding five lines of
+  clamped 10px type: the shift is sub-pixel, so every line re-rounds to a
+  different device pixel and the ellipsis, the bold line and the detail lines all
+  settle at slightly different moments through the transition, which reads as the
+  contents jumping about independently rather than as the card rising (Denis,
+  15 September 2026). It is now a ring and a shadow, both drawn as `box-shadow`
+  so the box itself never changes — an `outline` or a wider border would have
+  brought the same problem back.
 - **Two CSS traps it walked into**, both the same shape: a bar is an `<a>`, and
   the theme has opinions about those.
   `.law-dashboard a:not(.button)` in `event-form.css` paints every dashboard
@@ -3186,7 +3441,7 @@ click to find that out.
   programme too** — nothing had ever set it, so the public day tabs had
   underlined on hover since they were built; it only became visible here
   because the dashboard's blanket rule used to underline them in every state.
-- Tests: `tests/SlotChartTest.php` (35).
+- Tests: `tests/SlotChartTest.php` (42, after the running total's two went with the feature).
 
 ### `export.php`: the dashboard exports (CSV / Excel / PDF)
 
@@ -3214,12 +3469,15 @@ they stay the same length.
   the users cache once (`cache_users()`) for the host + assignee lookups.
   Columns: ID, Reference, Title, Name, Email, Committee assignee, Preferred
   date & time slots, Confirmed slot, Event status, Payment status, Submitted
-  (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Linked
-  organisations (`law_event_organisation_names()`, `; `-joined), Sponsored
-  (`law_events_post_is_sponsored()`, `Yes` or blank), Run by LAW, Session
-  agenda, Event fee,
-  Discounted fee, Venue capacity, Tickets available, Bookings, Places left,
-  Venue. Bookings and Places left are the same two figures the screen table
+  (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Host
+  organisation(s), Linked organisations (`law_event_organisation_names()`,
+  `; `-joined), Sponsored (`law_events_post_is_sponsored()`, `Yes` or blank),
+  External, External booking URL, Session agenda, Event fee,
+  Discounted fee, Venue capacity, Tickets available, Bookings, Awaiting
+  payment, Places left, Venue. (This list had drifted: it still named a "Run by
+  LAW" column that the external-events work replaced with External and External
+  booking URL, and it predated Host organisation(s) and Awaiting payment.
+  Corrected 15 September 2026.) Bookings and Places left are the same two figures the screen table
   shows (`law_event_attendee_total()` and `law_event_tickets_remaining()`),
   with Places left blank when no capacity is set, i.e. not open for booking.
   The fee column
@@ -3480,7 +3738,18 @@ they stay the same length.
   are Booking, Event, Attendee, Invited by, Status, Date, plus the events
   list's "Booked" column (`sold / available`, red when sold exceeds available,
   which now also means a deliberate over-booking from the waitlist). Mutations
-  stay front-end-only so the engine's guards always run.
+  stay front-end-only so the engine's guards always run, with **exactly one
+  exception since 15 September 2026**: a side box offering **Ticket type** on a
+  flagship booking, and with it the theme's only `save_post_law_booking`
+  handler. It is safe here precisely because it is not booking machinery — no
+  guard, no capacity recount, no email, no status and no price reads the value,
+  and it is never shown to the delegate. The box is registered only when
+  `law_booking_kind( $post )` is `flagship`, it saves behind
+  `edit_law_events` (not `manage_options`, which would lock out the committee
+  the field is for), and it writes through the same
+  `law_flagship_set_ticket_type()` the dashboard uses, so both routes validate
+  identically and leave the same activity-log line. Nothing else belongs
+  there.
 - **`flagship-screen.php`** (9 September 2026) — the Flagship screen, a submenu
   of Events at `edit.php?post_type=law_event&page=law-flagship`, capability
   `edit_law_events` (the committee holds the whole `law_event` cap set, and the
@@ -3568,7 +3837,7 @@ they stay the same length.
   `law_events_emails_handle_test_mode_post()`, see `test-mode.php`), including
   the live address check and the live-site confirmation tick.
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/content-transfer.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -3814,6 +4083,238 @@ they stay the same length.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
+
+### `migration/content-transfer.php`: between environments, as one zip (15 September 2026)
+
+The Gravity Forms migration above moves data between two *shapes* on one site.
+This is the other move nobody had a tool for: the same shape, between two
+*environments*. The client fills the real receptions and flagship details in on
+staging, and production has to end up holding them.
+
+A git deploy already carries the code, and the theme already provisions the
+empty records on any environment (`law_flagship_ensure_post()`,
+`law_reception_ensure_posts()` — one flagship post and three `law-draft`
+receptions, idempotent by slug). What a deploy cannot carry is what was typed
+into them: dates, venue, places, prices, the price-switch datetime, the banner
+image, the publish ticks, the whole flagship session agenda with its speakers,
+and the discount catalogue. The panel sits on the Migration screen, between the
+repair panels and the cutover form, and does exactly that and no more.
+
+**Scope, as settled on 15 September 2026**: the receptions, the flagship with
+its sessions and speakers, the discount codes, and the committee's customised
+email wording. External events are out.
+**Bookings are out and always will be** — they carry Stripe customer, invoice,
+charge and payment-method IDs from whatever Stripe account the source site
+points at, plus one-shot idempotency latches (`_law_confirmation_sent`,
+`_law_charge_claim`) that would suppress a genuine confirmation email or charge
+on the far side. So are `law_events_test_mode`, the Stripe `tax_rate_id` and
+`rendering_template_id` (account-specific), an email's RECIPIENTS, and every
+one-shot version latch. `ContentTransferTest` pins the bundle's top-level keys,
+so widening that list is a decision somebody has to make on purpose — and the
+`emails` key is what that gate looks like when it fires: the exclusion was
+reversed the same day, on purpose, with the test updated to match.
+
+**Email wording (`emails`, added 15 September 2026).** The registry in
+`notifications.php` is code and travels with a deploy; what does not is the
+polishing somebody did on the Emails screen, which lives in the
+`law_events_email_overrides` option. `law_content_transfer_emails()` exports one
+row per overridden slug — `{slug, name, subject, body, active}` — and only for
+slugs this site's registry still defines, so a retired email cannot be
+resurrected (`law_setup_retire_booking_received_emails()` is the precedent). 78
+emails ship in the registry and only the customised ones travel, so a deploy's
+own wording changes never look like an incoming edit.
+
+**An email's `to` is never exported**, even though the Emails screen can edit it
+on the four registry entries whose recipients are a typed address list rather
+than an audience key. Those addresses are a routing decision belonging to the
+environment, and the failure modes are not symmetrical: dropping them costs
+somebody re-typing four addresses, while carrying them can point a production
+notification at a staging test mailbox silently, and nobody finds out until the
+email that mattered went to the wrong place. The importer preserves whatever
+`to` the far site already had.
+
+`law_content_transfer_run_email()` is the one importer that is not a caller of
+an existing saver, because the Emails screen writes the option inline rather
+than through one; it mirrors `law_events_emails_handle_post()`'s three keys and
+sanitisers instead of inventing a second shape. It diffs against the EFFECTIVE
+email (`law_events_email()`, registry plus any stored override) so "No change"
+means "this site already sends these words", however they got there. The body
+gets `law_content_transfer_body_change()` rather than the shared diff, which
+truncates at 80 characters: two rewrites of one email routinely share their
+first 80 characters, so the generic `old → new` would print the same string
+twice on the one field the operator most needs to be sure about. It names the
+length change and quotes the first line that differs.
+
+**Emails are applied last in `law_content_transfer_run()`**, after the
+receptions, flagship and discounts. Every one of those can fire an email, and
+writing the wording first would mean a run sent its own notifications in words
+the operator had not yet seen applied.
+
+**Ordering against the migration matters more.** Migration step 9
+(`notifications`) writes this same option, from form 2 (Event > submit an
+event)'s Gravity Forms notifications. So on a production → staging pull the
+content-transfer import must run AFTER the migration, or step 9 overwrites the
+wording it just restored. Measured on 15 September 2026 against the local
+site's 15 real overrides: export, wipe the option, write two legacy values as
+step 9 would, run `?setup-account-pages`, then import — 15 of 15 restored with
+no mismatch, the legacy values overwritten, and no recipient list carried.
+
+**Three format rules, all of them consequences of the one fact that makes a
+cross-site move hard: post IDs do not survive it.**
+
+- **Receptions and discount scope are keyed by SLUG.** The slug is what
+  `law_event_ensure_managed_post()` provisions by, so it means the same thing on
+  both sites. A discount scoped to an event that is not one of the exported
+  receptions is dropped from its scope and the run says so. The importer creates
+  a missing reception through `law_event_ensure_managed_post()` rather than
+  letting `law_reception_save()` create it, because that saver derives the slug
+  from the TITLE — and the slug is the key the whole format turns on.
+- **Speakers are keyed by IDENTITY.** Each row carries the first name, last
+  name, email and website inline, is marked `is_new`, and is handed to
+  `law_flagship_resolve_speaker_rows()` → `law_speaker_upsert()`, which already
+  dedupes by email first and normalised name second. So there is **no speaker
+  matching logic in this file at all**, and the existing split holds: the shared
+  profile is gap-filled, never overwritten, while the per-appearance role,
+  organisation, job title, biography and photo are written onto the event row,
+  which is where they belong.
+- **Derived values are never exported.** `_law_start`, `_law_end` and the
+  event-level `_law_speakers` union are recomputed by `law_flagship_recompute()`
+  from the sessions; exporting them would only give the importer a chance to
+  write something stale. Same for `_law_tickets_sold`, the capacity-warning
+  latches, `_law_reference`, `_law_assignee` and `_law_co_owner_ids`.
+
+**The import is a CALLER, never a second write path.** Every record goes
+through `law_reception_save()`, `law_flagship_save()` or `law_discount_save()`,
+which is what keeps the validation, the `law_event_managed_saving` status-guard
+exemption, the recompute and the per-event activity log identical to a
+committee member typing the same values in by hand. Nothing in this file writes
+a meta key directly.
+
+**Two conversions that are easy to get backwards**, both because the savers take
+what was TYPED rather than what is stored. Prices live in pence and are edited
+in pounds, so the export divides by 100 and the import lets
+`law_events_pounds_to_pence()` multiply back. And a discount's `value` is an int
+from `law_discount_data()` — a percentage for `percent`, **pence** for `fixed` —
+while `law_discount_save()` wants pounds for a fixed one. `_law_discount_used`
+is never exported: a code spent on staging must not arrive on production
+already spent.
+
+An unwritten flagship price travels as `''`, not as the default.
+`law_flagship_price_pounds_field()` substitutes `LAW_FLAGSHIP_PRICE_DEFAULT`
+when the key has never been written, which is right for a form field and wrong
+for an export: it would turn "not set yet" into "set to £550" and stamp that on
+the far site.
+
+**Dry run, then apply.** The preview parses the upload, stashes it in a one-hour
+per-user transient (`law_ct_bundle_<uid>`, the mechanism the speakers and
+flagship dashboards already use for a refused save) and renders a table of
+Create / Update / No change / Skipped / Failed with the changed fields as
+`old → new`. The Apply button reads the transient, so the file is not uploaded
+twice. There is deliberately **no second code path for the preview**: it takes
+the same route and diffs the stored record against what the bundle *would* make
+of it, where the apply diffs it against what the saver *did* make of it, using
+the same `law_reception_snapshot()` and `law_flagship_snapshot()` the activity
+log already compares. A preview can therefore not promise something the apply
+does not do. The one place it has to be careful is a discount scoped to a
+reception the same run will create: there is no ID to compare yet, so that
+field is left OUT of the preview's diff and reported in words instead, rather
+than reported wrongly.
+
+**Images travel INSIDE the file** (format version 2, Denis, 15 September 2026).
+The bundle is a zip: `bundle.json` plus an `images/` folder.
+
+Version 1, shipped earlier the same day, was plain JSON whose images the far
+site fetched from the source site's URLs at import. Denis reversed that within
+hours, and the reason is worth keeping because the original reasoning was sound
+and only one fact changed: **LAW staging sits behind HTTP basic auth.** Every
+fetch returned 401, and because a failed fetch is deliberately warn-and-continue,
+the import would have reported success while leaving every `photo_id` at 0 — the
+worst shape a failure can take. The general rule that came out of it: a
+cross-environment bundle has to be self-contained, because no environment here
+can be assumed reachable from another, or from itself.
+
+- **The URL still travels, and is still the identity.** `url` is what
+  `_law_transfer_source_url` records, so a re-import reuses the attachment
+  rather than filling the media library with copies; `archive` is only a path
+  within the zip. `law_content_transfer_attachment()` sets `archive` from the
+  attachment ID (`images/<id>-<name>`), which also lets the exporter find the
+  file again without the bundle ever carrying a server path —
+  `law_content_transfer_archive_source()` derives it back. No absolute path
+  enters the file even to be stripped out again.
+- **A zip brings two attack classes JSON did not**, and both are handled before
+  anything is written. Entry names are attacker-chosen, so nothing calls
+  `ZipArchive::extractTo()` on the whole archive; `law_content_transfer_safe_entry()`
+  is an allowlist (exactly `images/<basename>`, and `.` / `..` named explicitly
+  because `basename('..')` is `'..'` and would otherwise pass a self-comparison).
+  And compression ratio is attacker-chosen, so the declared uncompressed total is
+  read from the archive's own directory and refused against
+  `law_content_transfer_max_unzipped()` before a byte lands.
+- **The bytes are still what decide.** `wp_check_filetype_and_ext()` over the
+  file is unchanged and now lives in `law_content_transfer_install()`, which both
+  routes share precisely so they cannot drift apart.
+- **The version 1 route is kept**, for bundles written before the archive and for
+  an image whose file had gone from the source site's disk at export. An image
+  with no `archive` key falls back to `download_url()` with the same
+  `site.uploads_baseurl` prefix check and `wp_safe_remote_get()` gates as before.
+- **The identity check and the fetch check are now different checks**, and this
+  is the subtle part. `law_content_transfer_media_base()` runs
+  `wp_http_validate_url()`, which resolves the host and refuses private and
+  loopback addresses — right before a request, and fatal if it also gated
+  identity, because a source site on a private network is exactly the case the
+  archive exists to serve. So `law_content_transfer_identity_base()` does the
+  syntactic half only. What it still enforces is the part carrying the security
+  weight: every image in one bundle shares one declared prefix, so a bundle
+  cannot claim an attachment imported from somewhere else.
+- **Extracted images live as long as the decision they belong to.** The preview
+  unpacks into a per-user directory under `wp-content/uploads/law-migration/`
+  (the directory the snapshot step already creates and protects) and puts the
+  path in the existing transient; the apply reads from there and
+  `law_content_transfer_clear_workdir()` removes it afterwards, as does an
+  expired preview and any directory older than a day.
+- A failure is still never fatal — a missing headshot is not a reason to abandon
+  an agenda import — so it warns and carries on, and a banner that could not be
+  read leaves the one already on the site alone rather than blanking it.
+
+**Round-trip fidelity, measured 15 September 2026.** Exporting the local site,
+importing it back over itself and exporting again produces a byte-identical
+bundle. Two storage-level normalisations happen on the first apply and never
+again (`_law_tickets_available` and `_law_flagship_included` go from absent to
+`0`), which every reader treats identically — `bookings.php` documents 0 and
+unset as the same "no capacity limit". One thing genuinely churns: the flagship's
+sessions are deleted and recreated with new post IDs on every import, because
+`law_flagship_save_sessions()` matches on a posted session ID and the bundle
+carries none by design. Nothing references a session by ID, so the effect is
+confined to the post IDs themselves, but a same-site re-import is not idempotent
+in that one respect.
+
+Everything is logged through the existing `law_migration_log()` under the step
+`content_transfer`, so the transfer appears in the screen's log tail and in the
+existing "Download CSV report" with no new plumbing.
+
+The panel says on screen what it does not do, because whoever runs it will not
+have read this: no bookings or payments, the Stripe tax rate and rendering
+template set by hand, the email overrides checked separately, and production
+still needing `?setup-account-pages`, the `law_events_source` flip and a real
+system cron on `wp-cron.php`.
+
+- Tests: `tests/ContentTransferTest.php` (52: 22 cover the archive, 8 the email wording). It is the first test class to
+  reach `law_migration_log()`, whose table is created with DDL — and DDL
+  implicitly commits in MariaDB, which would end the transaction
+  `LAW_Test_Case` rolls each test back with. So it installs the table once in
+  `setUpBeforeClass()`, outside any test's transaction, rather than paying the
+  delete-based teardown. Its fixtures also use generated slugs: the local
+  database holds the three real receptions, and a fixture called
+  `opening-drinks` would silently test against the site's own record. The
+  archive tests add a third fixture rule: they redirect the whole uploads layer
+  to a scratch directory through the `upload_dir` filter, which both lets the
+  runner write (the site's own uploads belong to the web server) and keeps test
+  files out of the client's media library and out of `law-migration/`. The
+  round-trip test blocks `pre_http_request` outright, because "the photograph
+  arrives with no network at all" is the actual requirement and a test that
+  could quietly be passing via a fetch would not prove it.
+
+- The panel's own copy now says images travel inside the archive, and the file
+  input accepts `.zip` and `.json` both.
 
 ---
 
@@ -4357,9 +4858,12 @@ These predate the rebuild and now branch on `law_events_source()`.
   joining the paid waitlist — because everything but the consent tick, the
   action and three labels is identical, and the price block is the same
   arithmetic either way. Nothing in it computes money: every figure comes from
-  `law_reception_quote()` on the server, the Apply button re-asks it, and the
-  submit posts back the gross it was SHOWING so the server can refuse rather
-  than reprice under somebody. No colleague repeater: one place per checkout,
+  the shared `law_booking_quote()` on the server, the Apply button re-asks it,
+  and the submit posts back the gross it was SHOWING so the server can refuse
+  rather than reprice under somebody — judged against the LIST gross when the
+  submission is not AJAX, because a form with no Apply button was rendered at
+  the list price and comparing it against the discounted total refused every
+  no-JS redemption (fixed 15 September 2026). No colleague repeater: one place per checkout,
   self only), `reception-include-modal.php` (the receptions a confirmed
   flagship place includes, rendered INSIDE the form it confirms; a reception
   already held is checked and DISABLED with a tag saying why, never hidden,
@@ -5673,7 +6177,9 @@ displays as a state ("Pending approval"), not as a noun.
 word and all deliberately untouched: the filter-form submit on the programme
 filters, the Manage bookings, Manage speakers, Discounts and Flagship bookings
 dashboards; the discount-code Apply in the reception checkout dialog; and the
-"Applies to" column and label in the discount catalogue. So is "the price that
+"Applies to" column and label in the discount catalogue. A ninth joined them on
+15 September 2026: the confirm button on the Ticket type dialog, which the
+client asked for in those words. So is "the price that
 applied when they saved their payment details" on the flagship settings screen.
 
 **Files touched.** `functions/account-flagship.php` (18 strings),
@@ -5715,21 +6221,22 @@ Everything else — places not released yet, invitation only, the event has been
 and gone, an event the committee has not published — dropped to Event details
 alone, and a row with one lonely button reads as a card that has forgotten its
 button rather than as an event nobody can book yet. The single event view has
-said "Bookings open soon" in its panel since the booking states were built
+said so in its panel since the booking states were built
 (`law_booking_render_action_body()`); the programme said nothing, so the only
 way to find out was to open every event on the page (Denis, 15 September 2026).
 
 **Every card now carries two buttons, the second one disabled with the reason
 on it when there is nothing to press.** `law_booking_card_inert_action()`
 (`functions/account-bookings.php`) maps the actionless states to their words —
-`not-open` → "Bookings open soon", `closed` → "Bookings closed", `invitation` →
-"Invitation only", and an event with no resolvable state at all (an unpublished
-one, which only the committee's own programme lists) → "Bookings not open".
+`not-open` → "Open soon" (shortened from "Bookings open soon" later the same
+day, see below), `closed` → "Bookings closed", `invitation` → "Invitation
+only", and an event with no resolvable state at all (an unpublished one, which
+only the committee's own programme lists) → "Bookings not open".
 `law_flagship_card_inert_action()` (`functions/account-flagship.php`) is its
-counterpart for the conference, in the conference's own vocabulary:
-"Registration opens soon", "Registration closed", "Registration not open"
-before it is published. A place there is registered for rather than booked, and
-the two surfaces should not name the same wait two ways.
+counterpart for the conference: "Open soon" as well, then "Registration closed"
+and "Registration not open" before it is published. The two longer labels stay
+in the conference's own vocabulary, because a place there is registered for
+rather than booked; the shortened one is shared, because it names neither act.
 
 Three details worth keeping:
 
@@ -5906,6 +6413,204 @@ Consulting London Arbitration Week Quiz", 101-150 with 20 places), which is the
 case against a floor: Places available is the booking capacity, not a fact about
 the room. Denis chose the hard rule anyway. Each is fixable in one save from the
 committee panel, where both halves post together.
+
+### "Open soon", and the panel that had no button (15 September 2026)
+
+Two follow-ups to the two-button cards above, from the same day.
+
+**The label is now "Open soon".** `law_booking_card_inert_action()` said
+"Bookings open soon" and `law_flagship_card_inert_action()` said "Registration
+opens soon"; both now say "Open soon" (Denis, 15 September 2026). A button is a
+label, not a sentence, and the card's title and date have already said what it
+is that opens soon. Sharing the shortened words across the hosted cards and the
+conference block does not undo the vocabulary decision recorded above: "Open
+soon" names neither booking nor registering, so the objection it answered (two
+cards on one programme naming the same wait two ways) is answered rather than
+reintroduced. The conference's other two labels, and the sentence its own page
+prints ("Registration opens soon. Registration for this conference has not
+opened yet."), are unchanged — there is room for the vocabulary where there is
+room for a sentence.
+
+Deliberately **not** changed: the external events' "Registration opening soon",
+which is a different fact (a third party takes the booking and has not opened
+it yet), is specified in EVENTS_4.2_SPECS.md ("External events") and is quoted
+back at the committee in the Manage external events help text. Shortening it
+would mean editing the spec and that copy too.
+
+**The not-open panel gained the button it had been describing.** The single
+event view printed "Bookings open soon" as a heading and handed
+`law_booking_panel()` an empty right-hand slot, so the one state an attendee
+meets before anybody has opened bookings was also the only panel with nothing
+in its action slot — the opposite of the card, which had carried a disabled
+button for that state since the morning. It now returns
+`law_booking_inert_button( 'Open soon' )`, and the heading is gone rather than
+kept above it: "Bookings open soon" over a button reading "Open soon" is the
+same sentence twice. The words are the explanation alone, split across the
+panel's two paragraph styles the way every other state splits its own —
+"Places for this event have not been released yet." / "Check back nearer the
+date." The colleagues-only state still gets its Manage bookings button first,
+so that row reads Manage bookings + Open soon.
+
+**One helper, four call sites.** The disabled-button markup existed in four
+places (the hosted preview opener, the flagship preview opener, the external
+event with no URL, and now this panel), each with its own copy of the reasoning
+for why it must be a `<button>` and not an `<a aria-disabled>`. It is now
+`law_booking_inert_button()` in `functions/account-bookings.php`, which all four
+call. `law_booking_card_inert()` stays separate: it builds an actions *entry*
+for `parts/loop/event.php`, not markup.
+
+Pinned by `BookingCardActionTest::test_the_not_open_panel_carries_the_disabled_open_soon_button`
+(the words, the real disabled `<button>` in the action slot, and that the state
+is not said twice), alongside the card assertions listed above, which now expect
+the shortened labels.
+
+### Moving the client's receptions and flagship from staging to production (15 September 2026)
+
+The client entered the real reception and flagship details on staging. There
+was no way to get them onto production except by retyping them, and the
+flagship's session agenda — sessions, times, descriptions and per-appearance
+speaker rows with photographs and biographies — is far too long to retype
+safely. So the Migration screen gained a **Content transfer** panel: export
+this site's receptions, flagship and discount codes as one file, upload it on
+the other site, preview every change it would make, then apply.
+
+Worth recording that the receptions alone did NOT justify this. They are about
+thirty fields and would have taken ten minutes by hand, with no risk at all.
+The agenda and the discount catalogue are what earned the tool, and that is the
+test to apply if anyone proposes widening it.
+
+The decisions behind the shape, all taken the same day: scope is the
+receptions, the flagship with its sessions and speakers, the discount codes
+and the customised email wording, with external events left out; and the flow
+is always dry run first,
+with apply overwriting the matched records. Bookings and payments are never in
+the bundle and never will be.
+
+**And one reversal within hours of shipping.** Images were first fetched from
+the source site's URLs at import rather than packed into the file; then the
+production → staging database pull was planned and LAW staging turned out to
+sit behind HTTP basic auth, which makes that fetch return 401 for every image —
+silently, because a failed fetch is warn-and-continue by design. So format
+version 2 made the bundle a zip carrying the bytes. The URL still travels as the
+identity key, so nothing about re-import idempotency changed, and a version 1
+`.json` bundle still imports by the old route.
+
+The full reasoning, the format, and the traps (pence versus pounds, slugs versus
+IDs, derived values, the media allowlist, the zip's own path-traversal and
+decompression-bomb gates) are written up under `migration/content-transfer.php`
+in §2.
+
+### Ticket type on the flagship bookings dashboard (15 September 2026)
+
+The client asked for one thing, in one sentence: "Can we add in a ticket type
+to this page? Back end use only — Delegate, Sponsor, Speaker, Exhibitor,
+Committee." Nothing in the theme held any such idea; a grep of `.php`, `.js`,
+`.css` and `.md` for `ticket_type` found only boilerplate in
+`templates/privacy.php`.
+
+So it is a label the committee keeps for themselves. It is stored as
+`_law_ticket_type` on the booking, it appears in the table and in all three
+exports, it can be filtered on, and it is set from a dialog behind an inline
+pencil. It touches nothing else: no price, capacity, status, email or guard
+reads it, and the delegate is never shown it. That "nothing else" is what makes
+the rest of the decisions defensible, so it is stated first.
+
+**The shape, and the three things worth knowing.**
+
+*One dialog, not one per row.* Approve and Decline each render their own modal
+inside their own row form, because each one says something different about a
+different person and a different sum of money. Ticket type says the same thing
+about everybody, so the row is a hidden field and one dialog serves the table.
+That is not only tidier: Approve and Decline render only on rows a decision can
+still be made on, whereas a ticket type can be set on ANY row, so copying their
+pattern would have put a dialog on every row of a list that runs to hundreds.
+The dialog lives outside `#law-cal-events`, beside the add-attendee one, because
+a filter change replaces that container wholesale.
+
+*The edit does not reload the page.* This is the first action on any committee
+dashboard that does not. The handler answers with the cell's own markup under a
+new generic `cell` key and booking-form.js swaps that node, closes the dialog
+and hands focus to the replacement. Classifying twenty delegates is twenty
+presses rather than twenty page loads, which is the whole point of the request.
+It follows the thread-bubble pattern from `comments.php` — the server renders
+the markup, the script swaps the node — rather than the waitlist reorder, which
+rebuilds state in JavaScript and is the hardest code in that file to keep right.
+`law_flagship_ticket_type_cell()` is the ONE renderer, called by the table and
+by the response, so the cell drawn on load and the cell drawn after an edit are
+the same markup from the same place. A cell no longer on the page falls through
+to the ordinary reload, the same bail-out `applyWaitlistOrder()` takes.
+
+*It is the module's first `save_post_law_booking` handler.* The wp-admin
+booking screen has been read-only on purpose since v1, and the theme had no
+booking save handler at all, because every mutation is meant to run through the
+front-end engine so the guards, the recount and the emails always fire. The
+client asked for an admin control as well, and one is safe here for the same
+reason the rest of this is small: nothing in the engine reads the value. The
+box is registered only on a flagship booking, saves behind `edit_law_events`
+(not `manage_options`, which would lock out the committee the field is for),
+and writes through the same `law_flagship_set_ticket_type()` the dashboard
+uses, so both routes validate identically and log the same line. The file
+header now says so, because the next reader will otherwise find the exception
+before they find the reason for it.
+
+**Reuse rather than a second copy.** `parts/layout/modal.php` gained an
+optional `'type' => 'select'` field instead of a hand-written dialog skeleton:
+same name, same ships-disabled behaviour, same `data-law-modal-field` hook, and
+`law-modal.js` needed no change at all. Two things it did need, both found on
+first sight of the rendered dialog: a select is not just a textarea to repaint,
+because Foundation draws its own caret as a background image with
+`background-origin: content-box`, so recolouring the background alone left a
+clipped arrow jammed against the right edge — `law-modal.css` now drops the
+native appearance and supplies the chevron the way
+`.law-cal-filter-form select` already does; and the field gained an optional
+`label_hidden`, because a dialog whose heading reads "Ticket type for Ada
+Lovelace" does not need "Ticket type" again three lines lower. The label is
+still there as the control's accessible name, just not drawn. The cell itself
+opts out of the shared 12rem wrap the same way the actions column does: "Add
+type" was breaking across two lines and pushing the pencil away from the words
+it belongs to. The delegate's name reaches the heading
+through a printf template on the form (`data-law-ticket-title`) rather than the
+dialog's `copy`, which is passed through `wp_kses_post()` and would strip a
+`data-*` hook out of it — so the wording stays in PHP and no sentence is
+assembled in JavaScript. `law_booking_ticket_types()` in `statuses.php` is the
+single vocabulary, read by the cell, the dialog, the filter, the exports, the
+wp-admin box and the meta sanitiser.
+
+**No default, and no de-emphasis.** An unclassified registration holds nothing
+and the cell reads "Add type". Defaulting to Delegate would make the column
+look complete when nobody had actually classified anyone, and greying the empty
+state would read as "this row matters less" rather than "this is still to do",
+so "Add type" is the same colour and weight as a set type.
+
+**Files.** `functions/events/statuses.php` (the vocabulary),
+`meta.php` (the key and its sanitiser), `flagship-bookings.php` (the model
+function, the handler and the query filter), `flagship-bookings-dashboard.php`
+(the row keys, the filter, the export column, the cell renderer, the enqueue),
+`admin/booking-screen.php`, `helpers.php` (a `pencil` icon),
+`parts/layout/modal.php`, `parts/events/flagship-bookings-list.php`, new
+`parts/events/flagship-ticket-type.php`,
+`templates/account-dashboard-flagship-bookings.php`, new
+`assets/js/flagship-ticket-type.js`, `assets/js/booking-form.js`,
+`assets/css/law-modal.css` (the select on a white dialog) and
+`assets/css/event-form.css`. Seven new tests in
+`tests/FlagshipBookingsDashboardTest.php`, 20 in that file now, and the
+suite green.
+
+**Two documentation errors corrected in the same pass**, both found while
+reading and neither caused by this change: the flagship dashboard section
+claimed its exports run "through `functions/events/export.php`" when only the
+CSV and XLSX writers do, and the events-dashboard export column list still
+named a "Run by LAW" column that the external-events work replaced.
+
+**One pre-existing test flake, left alone and recorded here.**
+`BookingsDashboardTest::test_keyword_matches_email_name_and_booking_number`
+fails about three runs in four. It searches for `#N`, the needle is stripped to
+the bare digits, and the fixture's `unique_email()` builds addresses from
+`wp_generate_password( 8, false )`, which frequently contains that digit — so
+an unrelated booking matches and the per-row assertion fails. It is random, not
+order-dependent, and nothing here touches that path. The fix is to assert the
+target row is among the results rather than that every result matches, but that
+is somebody's decision to take, not a silent edit inside this change.
 
 ---
 

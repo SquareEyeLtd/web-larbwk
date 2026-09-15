@@ -930,6 +930,20 @@ function law_stripe_booking_line_description( $booking_id, array $price ) {
 		}
 	}
 
+	// A discounted invoice has to explain itself: the amount on it is not the
+	// published price, and the only place a delegate can see why is this line
+	// (FLAGSHIP_PAYMENTS.md §4.3). $price['net'] is already the discounted
+	// figure, so the list price is reconstructed rather than stored twice.
+	$off  = (int) law_event_meta( (int) $booking_id, '_law_discount_pence' );
+	$code = (string) law_event_meta( (int) $booking_id, '_law_discount_code' );
+	if ( $off > 0 && '' !== $code ) {
+		$title .= sprintf(
+			' — %s less discount code %s',
+			law_events_format_pence( (int) $price['net'] + $off ),
+			$code
+		);
+	}
+
 	return mb_substr( $title, 0, 500 );
 }
 

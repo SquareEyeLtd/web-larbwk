@@ -156,11 +156,29 @@ function law_slotchart_date( $datetime ) {
 /**
  * One event as the chart's renderer wants it.
  *
+ * It carries the SAME facts the committee table prints, not a reduced set: the
+ * timeline stopped being a picture of the week and became the list view laid
+ * out in time (Denis, 15 September 2026), so a bar states the host, the
+ * reference and the booking numbers exactly as the row does. The payment
+ * status is the one column left behind: it is bookkeeping, and says nothing
+ * about when an event runs or whether it clashes ("don't care if paid or
+ * unpaid", same round).
+ * What it does not carry is an action -- the bar itself is the Review
+ * link, and the table's Bookings button is deliberately absent, because a
+ * second link inside a link cannot be clicked and a planning view is not where
+ * the committee opens an attendee list.
+ *
+ * The extra reads are all law_event_meta() on the event's own post meta plus
+ * one get_userdata() -- the same per-row cost parts/events/dashboard-list.php
+ * already pays -- so this stays one query for the events and no query per bar.
+ *
  * @param WP_Post $post law_event post.
  * @return array{
  *     id:int, title:string, status:string, status_label:string, status_slug:string,
  *     url:string, date:string, start:int|null, end:int|null, start_label:string,
- *     end_label:string, open_ended:bool, kind:string
+ *     end_label:string, open_ended:bool, kind:string, kind_label:string,
+ *     reference:string, host:string, organisation:string, agenda:string,
+ *     bookable:bool, sold:int, available:int, left:int|null, waiting:int
  * }
  */
 function law_slotchart_item( $post ) {
@@ -186,6 +204,15 @@ function law_slotchart_item( $post ) {
 
 	$status_label = law_event_status_label( (string) $post->post_status );
 
+	$kind = law_slotchart_kind( $id );
+	$host = get_userdata( (int) $post->post_author );
+
+	// Only a Confirmed (published) event can hold a booking, and an external one
+	// is booked on the organiser's own website, so it can never hold one here.
+	// The same two conditions the table's Bookings column applies, so the two
+	// views cannot disagree about whether a number exists to show.
+	$bookable = 'publish' === (string) $post->post_status && 'external' !== $kind;
+
 	return array(
 		'id'           => $id,
 		'title'        => (string) $post->post_title,
@@ -202,8 +229,42 @@ function law_slotchart_item( $post ) {
 		'start_label'  => null === $start_min ? '' : substr( $start, 11, 5 ),
 		'end_label'    => $open_ended || null === $end_min ? '' : substr( $end, 11, 5 ),
 		'open_ended'   => $open_ended,
-		'kind'         => law_slotchart_kind( $id ),
+		'kind'         => $kind,
+		'kind_label'   => law_slotchart_kind_label( $kind ),
+		'reference'    => (string) law_event_meta( $id, '_law_reference' ),
+		'host'         => $host ? (string) $host->display_name : '',
+		// Person and firm both, as the table prints them: the keyword box
+		// searches the firm (functions/events/committee.php), so a "Mayer Brown"
+		// search whose bars never printed those words would read as broken.
+		'organisation' => (string) law_event_meta( $id, '_law_host_organisations' ),
+		'agenda'       => function_exists( 'law_event_agenda_summary' ) ? law_event_agenda_summary( $id ) : '',
+		'bookable'     => $bookable,
+		'sold'         => $bookable && function_exists( 'law_event_attendee_total' ) ? law_event_attendee_total( $id ) : 0,
+		'available'    => (int) law_event_meta( $id, '_law_tickets_available' ),
+		// Null means capacity was never set at approval, i.e. not open for
+		// booking -- the reading law_booking_guard_open() takes, not "none left".
+		'left'         => $bookable && function_exists( 'law_event_tickets_remaining' ) ? law_event_tickets_remaining( $id ) : null,
+		'waiting'      => function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $id ) : 0,
 	);
+}
+
+/**
+ * "Flagship conference" / "Reception" / "External event", and '' for an
+ * ordinary hosted one, which needs no tag because it is the default.
+ *
+ * One list, read by the bar's visible identity tag and by its accessible label,
+ * so a bar cannot name its kind two different ways.
+ *
+ * @param string $kind From law_slotchart_kind().
+ * @return string
+ */
+function law_slotchart_kind_label( $kind ) {
+	$labels = array(
+		'flagship'  => __( 'Flagship conference', 'law' ),
+		'reception' => __( 'Reception', 'law' ),
+		'external'  => __( 'External event', 'law' ),
+	);
+	return $labels[ $kind ] ?? '';
 }
 
 /**
@@ -454,39 +515,6 @@ function law_slotchart_lanes( array $day_items ) {
 }
 
 /**
- * How many events are running in each step of the day's axis.
- *
- * The client asked for "a running total of events confirmed at a particular
- * time slot". The bars answer WHERE the clashes are without ever stating a
- * number, so this is the number, rendered as one row of figures above the bars
- * it describes. Nothing opens and nothing expands: there is no drill-down on
- * this view (Denis, 15 September 2026).
- *
- * A step counts an event when the two overlap at all, so a 19:45 start is
- * counted in the 19:30 step. Half-open on both sides, so an event ending
- * exactly at 10:00 is not counted in the step beginning 10:00.
- *
- * @param array[] $day_items Items for one date.
- * @param array   $axis      From law_slotchart_axis().
- * @return array<int,int> Step start (minutes from midnight) => count.
- */
-function law_slotchart_density( array $day_items, array $axis ) {
-	$counts = array();
-	for ( $at = $axis['from']; $at < $axis['to']; $at += LAW_SLOTCHART_STEP ) {
-		$counts[ $at ] = 0;
-		foreach ( $day_items as $item ) {
-			if ( null === $item['start'] || null === $item['end'] ) {
-				continue;
-			}
-			if ( $item['start'] < $at + LAW_SLOTCHART_STEP && $item['end'] > $at ) {
-				++$counts[ $at ];
-			}
-		}
-	}
-	return $counts;
-}
-
-/**
  * "08:30", from minutes past midnight. 1440 is midnight at the END of the day,
  * which has to read as 24:00 rather than wrapping to 00:00 and looking like the
  * chart starts where it finishes.
@@ -502,33 +530,160 @@ function law_slotchart_time_label( $minutes ) {
 }
 
 /**
- * The bar's tooltip and accessible name: title, times, status, and the kind
- * when it is not an ordinary hosted event.
+ * "09:00–10:30", or "19:45 onwards" where no end was recorded.
  *
- * It carries the TRUE times even where the bar cannot draw them (a very short
- * event is widened to stay legible, and an open-ended one is drawn at the
- * two-hour default), so the exact answer is always one hover or one screen
- * reader away from the approximate picture.
+ * One wording, used by the bar's own time line and by its accessible label, so
+ * an assumed end is never stated as a fact in one place and hedged in the other.
+ *
+ * @param array $item From law_slotchart_item().
+ * @return string
+ */
+function law_slotchart_item_when( array $item ) {
+	$when = $item['start_label'];
+	if ( '' === $when ) {
+		return '';
+	}
+	if ( '' !== $item['end_label'] ) {
+		return $when . '–' . $item['end_label'];
+	}
+	return $when . ' ' . __( 'onwards', 'law' );
+}
+
+/**
+ * The lines of detail printed inside a bar, under its title: the same facts the
+ * committee table's remaining columns carry, in one ordered list.
+ *
+ * Returned rather than echoed because three callers need the same wording and
+ * must not drift: the bar, the accessible label that stands in for the bar when
+ * it is too narrow to draw every line, and the unscheduled list at the foot of
+ * the chart, which has no bar at all but the same events in it.
+ *
+ * Each line carries a key as well as its text, because the first of them is set
+ * in bold and the part must not decide which by counting rows: the status, the
+ * reference the committee quotes at each other, and the kind, on one line
+ * (Denis, 15 September 2026).
+ *
+ * Facts that do not exist are omitted rather than printed as a dash. A dash is
+ * right in a table, where the column exists whether or not the row fills it;
+ * inside a bar it is a line of punctuation taking the place of a line of text.
+ *
+ * Three things the table prints are deliberately NOT here:
+ *  - the TIME, which the bar's own position and length already state, and which
+ *    the ruler above it names (Denis, 15 September 2026). It stays in the
+ *    tooltip and the accessible label, where the exact figures still have to be
+ *    reachable;
+ *  - the PAYMENT status, which is the committee's bookkeeping rather than
+ *    anything about when an event runs or whether it clashes ("don't care if
+ *    paid or unpaid", same round). It is still a column on the table and a fact
+ *    on the detail view;
+ *  - the slot LABEL, for the same reason as the time.
+ *
+ * @param array $item From law_slotchart_item().
+ * @return array<int,array{key:string,text:string}> Lines, top first.
+ */
+function law_slotchart_item_facts( array $item ) {
+	$lines = array();
+
+	// One bold line: status, reference, and the kind when it is not an ordinary
+	// hosted event (Denis, 15 September 2026, "status and ref could be in the same
+	// line divided by fat dot"). They had a row each and neither filled one, so
+	// merging them bought a row back off the lane height.
+	//
+	// The status is here at all because the fill colour says the same thing and
+	// colour is not a fact anyone can quote back; seven fills are closer in value
+	// than seven words. The reference is a legacy Gravity Forms entry ID and so is
+	// a bare number ("1550") — the table can print it in a <code> under the title
+	// and be understood, but a bar is several lines of small type with other
+	// numbers on it, so this one says what it is.
+	//
+	// In this order because it is also the truncation order: on a bar too narrow
+	// for the line, the kind is what goes first and the status is what survives.
+	$identity = array();
+	if ( '' !== $item['status_label'] ) {
+		$identity[] = $item['status_label'];
+	}
+	if ( '' !== $item['reference'] ) {
+		/* translators: %s: an event's reference, e.g. 1550. */
+		$identity[] = sprintf( __( 'Ref %s', 'law' ), $item['reference'] );
+	}
+	if ( '' !== $item['kind_label'] ) {
+		$identity[] = $item['kind_label'];
+	}
+	if ( $identity ) {
+		$lines[] = array( 'key' => 'identity', 'text' => implode( ' · ', $identity ) );
+	}
+
+	$who = array_filter( array( $item['host'], $item['organisation'] ) );
+	if ( $who ) {
+		$lines[] = array( 'key' => 'who', 'text' => implode( ' · ', $who ) );
+	}
+
+	$places = array();
+	if ( $item['bookable'] ) {
+		/* translators: %s: number of attendees booked. */
+		$places[] = sprintf( __( '%s booked', 'law' ), number_format_i18n( $item['sold'] ) );
+		if ( null === $item['left'] ) {
+			// Capacity is set at approval; until it is, the event is not open
+			// for booking, which is not the same as being full.
+			$places[] = __( 'no capacity set', 'law' );
+		} elseif ( $item['left'] === $item['available'] ) {
+			// "of 120" only once some of them have gone: on an event nobody has
+			// booked yet the capacity IS the number left, and repeating it says
+			// nothing (Denis, 11 September 2026, about the table's own column).
+			/* translators: %s: places remaining. */
+			$places[] = sprintf( __( '%s left', 'law' ), number_format_i18n( $item['left'] ) );
+		} else {
+			/* translators: 1: places remaining, 2: total places. */
+			$places[] = sprintf( __( '%1$s of %2$s left', 'law' ), number_format_i18n( $item['left'] ), number_format_i18n( $item['available'] ) );
+		}
+	} elseif ( 'external' === $item['kind'] ) {
+		// Not "0 booked": bookings do not happen here at all, and a hollow zero
+		// reads as nobody having come forward.
+		$places[] = __( "booked on the organiser's site", 'law' );
+	}
+	if ( $places ) {
+		$lines[] = array( 'key' => 'places', 'text' => implode( ' · ', $places ) );
+	}
+
+	$rest = array();
+	if ( $item['waiting'] ) {
+		/* translators: %s: number of people on the waiting list. */
+		$rest[] = sprintf( _n( '%s waiting', '%s waiting', $item['waiting'], 'law' ), number_format_i18n( $item['waiting'] ) );
+	}
+	if ( '' !== $item['agenda'] ) {
+		$rest[] = $item['agenda'];
+	}
+	if ( $rest ) {
+		$lines[] = array( 'key' => 'more', 'text' => implode( ' · ', $rest ) );
+	}
+
+	return $lines;
+}
+
+/**
+ * The bar's tooltip and accessible name: title, times, and every fact the bar
+ * prints.
+ *
+ * It is the ONLY place the times appear now that the bar does not print them
+ * (the bar's position and the ruler above it say when an event runs, and a
+ * repeated "08:30-10:00" on every one of a day's 48 bars was a line of type
+ * saying what the chart already said). It carries the TRUE times even where the
+ * bar cannot draw them to scale -- a very short event is widened to stay
+ * legible, and an open-ended one is drawn at the two-hour default -- so the
+ * exact answer is always one hover or one screen reader away.
+ *
+ * It repeats the detail lines on purpose. A narrow bar hides them
+ * (assets/css/slot-chart.css drops them below a container width at which they
+ * would be one ellipsis each), and a fact that is only sometimes on the page is
+ * a fact a screen reader should always be able to reach.
  *
  * @param array $item From law_slotchart_item().
  */
 function law_slotchart_item_label( array $item ) {
-	$when = $item['start_label'];
-	if ( '' !== $item['end_label'] ) {
-		$when .= '–' . $item['end_label'];
-	} elseif ( '' !== $when ) {
-		$when .= ' ' . __( 'onwards', 'law' );
-	}
+	// Title and times, then every detail line. Neither the status nor the kind is
+	// appended here: law_slotchart_item_facts() opens with both, and repeating
+	// them would have the label read itself back.
+	$parts = array_filter( array( $item['title'], law_slotchart_item_when( $item ) ) );
 
-	$parts = array_filter( array( $item['title'], $when, $item['status_label'] ) );
-	if ( 'hosted' !== $item['kind'] ) {
-		$kinds = array(
-			'flagship'  => __( 'Flagship conference', 'law' ),
-			'reception' => __( 'Reception', 'law' ),
-			'external'  => __( 'External event', 'law' ),
-		);
-		$parts[] = $kinds[ $item['kind'] ] ?? '';
-	}
-
-	return implode( ' · ', array_filter( $parts ) );
+	return implode( ' · ', array_merge( $parts, wp_list_pluck( law_slotchart_item_facts( $item ), 'text' ) ) );
 }

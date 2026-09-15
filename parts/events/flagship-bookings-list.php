@@ -55,12 +55,29 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 	// WILL do, and the present tense reads as a statement that it already
 	// has — which on a dialog offering to cancel is alarming, and on one
 	// about taking £660 off somebody, worse.
+	// Free for two reasons and paid for a third, and the dialog has to say
+	// which: "This will charge £0.00" is what the paid sentence does to a
+	// registration a code covered.
+	$covered = ! $row['complimentary'] && $row['gross_pence'] < 1 && '' !== $row['discount_code'];
+	if ( $row['complimentary'] ) {
+		$law_fbl_what = sprintf( __( 'This will give %s a confirmed place with nothing to pay.', 'law' ), $row['name'] );
+	} elseif ( $covered ) {
+		$law_fbl_what = sprintf(
+			/* translators: 1: the delegate, 2: the code. */
+			__( 'This will confirm %1$s\'s place straight away. Their discount code %2$s covers the whole price, so nothing will be charged.', 'law' ),
+			$row['name'],
+			$row['discount_code']
+		);
+	} else {
+		$law_fbl_what = sprintf( __( 'This will charge %1$s to the payment method %2$s saved and confirm their place straight away.', 'law' ), $amount, $row['name'] );
+	}
+
 	$copy = $approve
 		? array(
-			$row['complimentary']
-				? sprintf( __( 'This will give %s a confirmed place with nothing to pay.', 'law' ), $row['name'] )
-				: sprintf( __( 'This will charge %1$s to the payment method %2$s saved and confirm their place straight away.', 'law' ), $amount, $row['name'] ),
-			__( 'They will be emailed a confirmation with a VAT invoice and a calendar invitation.', 'law' ),
+			$law_fbl_what,
+			$row['complimentary'] || $covered
+				? __( 'They will be emailed a confirmation with a calendar invitation.', 'law' )
+				: __( 'They will be emailed a confirmation with a VAT invoice and a calendar invitation.', 'law' ),
 		)
 		: array(
 			sprintf( __( 'This will tell %s they have not been offered a place. They will not be charged.', 'law' ), $row['name'] ),
@@ -126,10 +143,12 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 				),
 				'confirm' => array(
 					'label' => $approve
-						? ( $row['complimentary'] ? __( 'Confirm the place', 'law' ) : sprintf( __( 'Charge %s and confirm', 'law' ), $amount ) )
+						? ( $row['complimentary'] || $covered ? __( 'Confirm the place', 'law' ) : sprintf( __( 'Charge %s and confirm', 'law' ), $amount ) )
 						: __( 'Decline the registration', 'law' ),
 					'class' => $approve ? 'button orange' : 'button alert',
-					'busy'  => $approve ? __( 'Charging…', 'law' ) : __( 'Declining…', 'law' ),
+					'busy'  => $approve
+						? ( $row['complimentary'] || $covered ? __( 'Confirming…', 'law' ) : __( 'Charging…', 'law' ) )
+						: __( 'Declining…', 'law' ),
 				),
 				'close'   => $approve ? __( 'Leave it for now', 'law' ) : __( 'Keep the registration', 'law' ),
 			)
@@ -185,6 +204,13 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 				'copy'    => array_filter(
 					array(
 						__( 'Each one will have the payment method they saved charged and their place confirmed straight away. Everyone will be emailed a confirmation with a VAT invoice and a calendar invitation.', 'law' ),
+						// A batch can mix paying registrations with ones a
+						// discount code or a committee decision already
+						// covered, and the sentence above is only true of the
+						// first kind. Said once here rather than trying to
+						// count the batch, which the dialog cannot do without
+						// the selection.
+						__( 'Anyone with nothing to pay, whether their discount code covered the price or the committee offered the place, is simply confirmed: no charge is attempted and no invoice is raised.', 'law' ),
 						__( 'Large batches are charged ten at a time, and the rest continue in the background.', 'law' ),
 						$law_fbl_full
 							? sprintf(
@@ -272,8 +298,10 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 				<th class="law-flagship-bookings__applicant"><?php esc_html_e( 'Delegate', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Email', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Price', 'law' ); ?></th>
+				<th><?php esc_html_e( 'Code', 'law' ); ?></th>
 				<th class="law-flagship-bookings__payment"><?php esc_html_e( 'Payment', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Status', 'law' ); ?></th>
+				<th class="law-flagship-bookings__ticket"><?php esc_html_e( 'Ticket type', 'law' ); ?></th>
 				<th class="law-dashboard__row-actions"><span class="show-for-sr"><?php esc_html_e( 'Actions', 'law' ); ?></span></th>
 			</tr></thead>
 			<tbody>
@@ -328,7 +356,47 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 						<?php endif; ?>
 					</td>
 					<td><?php echo esc_html( $law_fbl_row['email'] ); ?></td>
-					<td><?php echo esc_html( law_events_format_pence( $law_fbl_row['gross_pence'] ) ); ?></td>
+					<td>
+						<?php echo esc_html( law_events_format_pence( $law_fbl_row['gross_pence'] ) ); ?>
+						<?php if ( $law_fbl_row['discount_pence'] > 0 ) : ?>
+							<?php
+							// What the place would have cost, so the committee
+							// can see what a code gave away without opening the
+							// row.
+							?>
+							<span class="law-booking-table__sub">
+								<?php
+								echo esc_html(
+									sprintf(
+										/* translators: %s: the list price including VAT. */
+										__( 'was %s', 'law' ),
+										law_events_format_pence( $law_fbl_row['list_pence'] )
+									)
+								);
+								?>
+							</span>
+						<?php endif; ?>
+					</td>
+					<td>
+						<?php if ( '' !== $law_fbl_row['discount_code'] ) : ?>
+							<code><?php echo esc_html( $law_fbl_row['discount_code'] ); ?></code>
+							<?php if ( $law_fbl_row['discount_pence'] > 0 ) : ?>
+								<span class="law-booking-table__sub">
+									<?php
+									echo esc_html(
+										sprintf(
+											/* translators: %s: the amount taken off. */
+											__( '%s off', 'law' ),
+											law_events_format_pence( $law_fbl_row['discount_pence'] )
+										)
+									);
+									?>
+								</span>
+							<?php endif; ?>
+						<?php else : ?>
+							&mdash;
+						<?php endif; ?>
+					</td>
 					<td class="law-flagship-bookings__payment">
 						<?php echo esc_html( $law_fbl_row['payment_label'] ); ?>
 						<?php if ( '' !== $law_fbl_row['payment_error'] ) : ?>
@@ -356,6 +424,22 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 							<?php endif; ?>>
 							<?php echo esc_html( $law_fbl_row['status_label'] ); ?>
 						</span>
+					</td>
+					<td class="law-flagship-bookings__ticket" data-law-ticket-cell="<?php echo esc_attr( (string) $law_fbl_row['id'] ); ?>">
+						<?php
+						// Rendered by law_flagship_ticket_type_cell(), which the AJAX
+						// handler calls too, so the cell drawn here and the cell that
+						// replaces it after an edit are the same markup from the same
+						// place.
+						//
+						// The dialog it opens is NOT in this cell, or even in this
+						// partial: ONE dialog serves the whole table, and it lives
+						// outside #law-cal-events so a filter swapping the table cannot
+						// destroy it mid-use. A dialog per row would also mean one on
+						// EVERY row, where Approve and Decline only render theirs on the
+						// rows a decision can still be made on.
+						?>
+						<?php echo law_flagship_ticket_type_cell( (int) $law_fbl_row['id'] ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the renderer. ?>
 					</td>
 					<td class="law-dashboard__row-actions">
 						<?php

@@ -78,6 +78,41 @@ function law_flagship_application_statuses() {
 }
 
 /**
+ * The ticket types the committee can classify a flagship registration with
+ * (the client's own list, 15 September 2026). Back-office only: it is never
+ * shown to the delegate, never reaches Stripe and changes no price, capacity
+ * or guard. It exists so the committee's own records and their exports can
+ * say who a name in the list actually is.
+ *
+ * One list, read by the dashboard cell, the dialog, the filter, the exports,
+ * the wp-admin box and the meta sanitiser, so the five cannot drift apart.
+ * There is deliberately no default: a registration nobody has classified holds
+ * nothing, and the column says "Add type" rather than claiming everyone is a
+ * delegate.
+ *
+ * @return array<string,string> slug => label.
+ */
+function law_booking_ticket_types() {
+	return array(
+		'delegate'  => 'Delegate',
+		'sponsor'   => 'Sponsor',
+		'speaker'   => 'Speaker',
+		'exhibitor' => 'Exhibitor',
+		'committee' => 'Committee',
+	);
+}
+
+/**
+ * A ticket type's label, or '' when nothing is set or the slug is unknown.
+ *
+ * @param string $type A law_booking_ticket_types() key.
+ */
+function law_booking_ticket_type_label( $type ) {
+	$types = law_booking_ticket_types();
+	return $types[ (string) $type ] ?? '';
+}
+
+/**
  * Booking statuses that are registered by this module rather than by core.
  * One list, so registration and the untrash whitelist cannot drift.
  *

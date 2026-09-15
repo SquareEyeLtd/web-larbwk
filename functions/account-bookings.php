@@ -883,11 +883,23 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 
 	// The four availability states below are shared with the preview, which
 	// shows the same wording; only the opener differs.
-	// State: no ticket number yet.
+	// State: no ticket number yet. The BUTTON carries the state and the words
+	// beside it explain it, which is the programme card's shape brought to the
+	// page (Denis, 15 September 2026): this panel used to print the state as a
+	// heading and hand back nothing, so the one state an attendee meets before
+	// anybody has opened bookings was also the only one whose right-hand slot
+	// was empty.
+	//
+	// The old heading is gone rather than kept above the button: "Bookings open
+	// soon" over a button reading "Open soon" is the same sentence twice, so
+	// the words are now the explanation alone, split across the panel's two
+	// paragraph styles the way every other state splits its own.
 	if ( 'not-open' === $state['state'] ) {
-		echo '<p class="law-booking-state">' . esc_html__( 'Bookings open soon', 'law' ) . '</p>';
-		echo '<p class="law-booking-substate">' . esc_html__( 'Places for this event have not been released yet. Check back nearer the date.', 'law' ) . '</p>';
-		return law_booking_action_parts( $law_bk_manage );
+		echo '<p class="law-booking-state">' . esc_html__( 'Places for this event have not been released yet.', 'law' ) . '</p>';
+		echo '<p class="law-booking-substate">' . esc_html__( 'Check back nearer the date.', 'law' ) . '</p>';
+		return law_booking_action_parts(
+			trim( $law_bk_manage . law_booking_inert_button( __( 'Open soon', 'law' ) ) )
+		);
 	}
 
 	// State: the event has started or passed.
@@ -990,6 +1002,31 @@ function law_booking_action_parts( $action = '', $form = '' ) {
 }
 
 /**
+ * An inert control for the panel's right-hand slot: a disabled <button>
+ * carrying the reason as its words.
+ *
+ * ONE definition, because the markup IS the point. A disabled <button> is
+ * inert by every route — pointer, keyboard, assistive tech and form submission
+ * — where an <a> with only aria-disabled would still follow its href on Enter,
+ * and the four surfaces that need one (the not-open panel, an external event
+ * whose organiser has not opened registration, and both committee previews)
+ * were four chances to paste an anchor instead. The dimming and the dead
+ * pointer come from .law-cal .button[aria-disabled="true"] (calendar.css).
+ *
+ * The card's counterpart is law_booking_card_inert(), which builds an actions
+ * entry for parts/loop/event.php rather than markup.
+ *
+ * @param string $label The reason, as the button's words.
+ * @return string
+ */
+function law_booking_inert_button( $label ) {
+	return sprintf(
+		'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
+		esc_html( (string) $label )
+	);
+}
+
+/**
  * The Register button for an external event: a link out to the organiser's own
  * site, or a disabled button when they have not opened registration yet.
  *
@@ -1010,9 +1047,8 @@ function law_booking_external_button( array $state, $preview = false ) {
 	// rather than omitted, so the absence reads as "not yet" rather than as
 	// "there is no way in".
 	if ( '' === $url || $preview ) {
-		return sprintf(
-			'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
-			esc_html( '' === $url ? __( 'Registration opening soon', 'law' ) : __( 'Register', 'law' ) )
+		return law_booking_inert_button(
+			'' === $url ? __( 'Registration opening soon', 'law' ) : __( 'Register', 'law' )
 		);
 	}
 
@@ -1395,11 +1431,11 @@ function law_booking_card_inert( $label ) {
  * buttons whatever state its event is in (Denis, 15 September 2026).
  *
  * A card that simply dropped its booking button read as a card that had
- * forgotten one. "Bookings open soon" is the one thing the row could not say,
- * and it is exactly what somebody scanning the programme wants to know before
- * they open the page -- the single event view has said it in its panel since
- * the booking states were built (law_booking_render_action_body()), and this
- * is the same sentence shortened to a button.
+ * forgotten one. "Open soon" is the one thing the row could not say, and it is
+ * exactly what somebody scanning the programme wants to know before they open
+ * the page. It is two words rather than "Bookings open soon" (Denis, 15
+ * September 2026): a button is a label, not a sentence, and the card's title
+ * and date have already said what it is that opens soon.
  *
  * Only the states with genuinely nothing to press get a label. A state that
  * HAS an action and was merely filtered out by the caller's 'action' scope
@@ -1428,7 +1464,7 @@ function law_booking_card_inert_action( array $event ) {
 		case 'invitation':
 			return law_booking_card_inert( __( 'Invitation only', 'law' ) );
 		case 'not-open':
-			return law_booking_card_inert( __( 'Bookings open soon', 'law' ) );
+			return law_booking_card_inert( __( 'Open soon', 'law' ) );
 		case 'closed':
 			return law_booking_card_inert( __( 'Bookings closed', 'law' ) );
 	}
@@ -1459,15 +1495,11 @@ function law_booking_render_opener( array $event, $mode = 'book', $preview = fal
 
 	// The preview shows the button exactly where the attendee will find it, but
 	// it must never be actuable from a page whose event may not even be
-	// approved. A disabled <button> is inert by every route -- pointer,
-	// keyboard, assistive tech and form submission -- where an <a> with only
-	// aria-disabled would still follow its href on Enter. It carries no href and
-	// no data-law-book, so there is nothing for the script to fetch or open.
+	// approved. law_booking_inert_button() is the one place that markup is
+	// built: it carries no href and no data-law-book, so there is nothing for
+	// the script to fetch or open.
 	if ( $preview ) {
-		printf(
-			'<button type="button" class="button orange" disabled aria-disabled="true">%s</button>',
-			esc_html( $label )
-		);
+		echo law_booking_inert_button( $label ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.
 		return;
 	}
 
@@ -1741,6 +1773,36 @@ function law_booking_maybe_render_dialog() {
 }
 
 /**
+ * Hand the booking script the quote endpoint and a nonce for it.
+ *
+ * The live discount quote posts to its own action with its own nonce, so the
+ * checkout form's nonce is no use to it (RECEPTIONS.md §5.2). Signed-in only:
+ * the endpoint refuses anybody else, and a nonce in a signed-out page's markup
+ * would only be a cache key to get wrong.
+ *
+ * Its own function because TWO places enqueue this script -- the event view
+ * here and the flagship page (functions/account-flagship.php). Until
+ * 15 September 2026 only this one localised, and the flagship worked purely
+ * because law_booking_is_event_view() is true for any singular law_event, so
+ * this closure happened to run as well. That was luck, not design: the moment
+ * either gate moved, the Apply button would have fallen back to the form's
+ * nonce and been refused.
+ */
+function law_booking_quote_localise() {
+	if ( ! is_user_logged_in() ) {
+		return;
+	}
+	wp_localize_script(
+		'law-booking-form',
+		'lawQuote',
+		array(
+			'url'   => admin_url( 'admin-post.php' ),
+			'nonce' => wp_create_nonce( 'law_quote' ),
+		)
+	);
+}
+
+/**
  * The single event view's assets: the shared form styles (the modal form uses
  * the --light variant), the modal component, and the booking script. Hooked
  * (not just partial-time) so the stylesheets print in the head.
@@ -1753,20 +1815,7 @@ add_action( 'wp_enqueue_scripts', function () {
 	$booking_script = function () {
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), filemtime( get_theme_file_path( 'assets/js/booking-form.js' ) ), true );
-		// The live discount quote posts to its own action with its own nonce,
-		// so the checkout form's nonce is no use to it (RECEPTIONS.md §5.2).
-		// Signed-in only: the endpoint refuses anybody else, and a nonce in a
-		// signed-out page's markup would only be a cache key to get wrong.
-		if ( is_user_logged_in() ) {
-			wp_localize_script(
-				'law-booking-form',
-				'lawReceptionQuote',
-				array(
-					'url'   => admin_url( 'admin-post.php' ),
-					'nonce' => wp_create_nonce( 'law_reception_quote' ),
-				)
-			);
-		}
+		law_booking_quote_localise();
 	};
 
 	if ( law_booking_is_event_view() ) {
