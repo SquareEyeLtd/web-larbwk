@@ -3932,7 +3932,38 @@ they stay the same length.
   the ~1,000 timeline inserts exceeded it in a single request) can no longer
   kill the step. The guard never fires mid-event, so the per-event
   `_law_history_migrated` flag still guarantees an event's timeline is written
-  whole or not at all. **Step 10 (account page templates)**,
+  whole or not at all.
+
+  **Made ~2.5x faster on 15 September 2026**, after the staging rehearsal
+  against production data sat on this step for 25 minutes and visibly slowed
+  down as it went (3 events per batch, then 2). Two causes, both measured:
+
+  - `wp_insert_comment()` finishes with `wp_update_comment_count()` — a
+    `COUNT(*)` over `wp_comments` for the post, an `UPDATE` on `wp_posts` and a
+    `clean_post_cache()`, **per comment**. A timeline is hundreds of comments on
+    ONE post, so that recount ran hundreds of times to reach a number only the
+    last one needed, and got dearer as the post's comments accumulated. The loop
+    now runs inside `wp_defer_comment_counting( true )`, released in a `finally`
+    so the time-box's early `return` cannot leave it on. This is the larger half
+    of the win, and it is largest on a remote database where every query is a
+    round trip.
+  - A real run re-walked the WHOLE map every batch and wrote a
+    `law_migration_log()` row — an `INSERT` — for each event it then skipped, so
+    batch N paid for everything batches 1..N-1 had done. Quadratic over a run,
+    and the reason for the visible tail-off.
+    `law_migration_history_pending()` now returns just the outstanding events
+    from one query, and `law_migration_history_revisions()` scopes the revision
+    scan to them. **A dry run still walks everything and still reports the
+    already-migrated ones**, because a preview describes the whole picture and
+    runs in a single request, so none of the above applies to it.
+
+  Measured locally over 103 events with synthetic notes, rolled back after:
+  12,141 timeline comments went from 18.1s to 7.7s; 32,741 went from 53.2s over
+  three batches to 21.2s over two, with log rows down to exactly one per event.
+  Verified alongside: `comment_count` correct on every post both mid-run and
+  after (deferring changes when the recount happens, not its result), a second
+  full run writing nothing, the dry run still writing nothing and still logging
+  one row per event, and the deferral flag off on both exit paths. **Step 10 (account page templates)**,
   `law_migration_run_pages()`, reconciles the account pages with the templates
   the rebuild expects (`law_migration_page_map()`, keyed by page path):
   assigns the right template where a page exists with the wrong one, creates a
