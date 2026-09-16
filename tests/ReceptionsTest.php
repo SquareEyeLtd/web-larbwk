@@ -584,6 +584,114 @@ class ReceptionsTest extends LAW_Test_Case {
 		$this->assertSame( 1, (int) get_post_meta( $code['id'], '_law_discount_used', true ) );
 	}
 
+	/* A reception priced at nothing ______________________________________ */
+
+	/**
+	 * Zero is FREE, not "not on sale" (Denis, 16 September 2026).
+	 *
+	 * Until then both reception guards read law_event_is_priced() and refused
+	 * a £0 reception outright, so the committee could publish one, the page
+	 * rendered a Register button and a full checkout dialog, and pressing it
+	 * answered "Places at this reception are not on sale." The place confirms
+	 * here with no Stripe call at all, exactly as a 100% discount code does.
+	 */
+	public function test_a_reception_priced_at_nothing_books_without_a_payment(): void {
+		$event_id = $this->make_reception( array( '_law_attendee_price_pence' => 0, '_law_registration_state' => 'free' ) );
+		$user_id  = $this->make_delegate();
+
+		// No queue at all: an unmocked Stripe call fails loudly, which is part
+		// of the assertion.
+		$GLOBALS['law_test_stripe_queue'] = array();
+
+		$result = law_reception_checkout(
+			$user_id,
+			array( 'event_id' => $event_id, 'terms' => 1, 'price_shown' => 0, 'ajax' => true )
+		);
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$this->posts[] = $result['booking'];
+
+		$this->assertSame( 'publish', get_post_status( $result['booking'] ) );
+		$this->assertSame( 0, (int) law_event_meta( $result['booking'], '_law_price_pence' ) );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'Nothing to charge, so nothing is called.' );
+		$this->assertSame( 1, law_event_attendee_total( $event_id ) );
+		$this->assertStringContainsString(
+			'reception-no-charge-confirmed',
+			$result['redirect'],
+			'Not the discount-code notice: there was no code to credit it to.'
+		);
+	}
+
+	/**
+	 * The consent tick authorises a card being saved and charged later. A free
+	 * reception saves no card, so its dialog does not show the tick and the
+	 * engine must not demand one.
+	 */
+	public function test_a_free_receptions_waitlist_asks_for_no_payment_consent(): void {
+		$event_id = $this->make_reception(
+			array( '_law_attendee_price_pence' => 0, '_law_registration_state' => 'free', '_law_tickets_available' => 1 )
+		);
+		// Fill the one place, so there is a queue to join.
+		$taken = law_booking_insert( $event_id, $this->make_user(), 'publish', array( 'name' => 'A', 'email' => 'a@example.test' ) );
+		$this->posts[] = $taken;
+		law_event_recount_attendees( $event_id );
+
+		$user_id = $this->make_delegate();
+		$result  = law_reception_waitlist_join(
+			$user_id,
+			array( 'event_id' => $event_id, 'terms' => 1, 'price_shown' => 0, 'ajax' => true )
+		);
+		$this->assertIsArray( $result, is_wp_error( $result ) ? $result->get_error_message() : '' );
+		$this->posts[] = $result['booking'];
+
+		$this->assertSame( 'law-waitlisted', get_post_status( $result['booking'] ) );
+		$this->assertStringContainsString( 'reception-waitlist-no-charge', $result['redirect'] );
+		$this->assertSame(
+			'no_charge',
+			(string) law_event_meta( $result['booking'], '_law_payment_status' ),
+			'Nothing to pay means the entry is offerable without a saved card.'
+		);
+	}
+
+	/**
+	 * A priced reception has always refused the free booking form, because one
+	 * place per checkout is the settled rule. That is a fact about receptions,
+	 * not about prices, so a free one refuses it too — otherwise the colleague
+	 * repeater and "Add a colleague" would both open on it.
+	 */
+	public function test_the_free_booking_form_is_refused_on_a_free_reception(): void {
+		$event_id = $this->make_reception( array( '_law_attendee_price_pence' => 0, '_law_registration_state' => 'free' ) );
+		$this->assertWPError( law_booking_guard_form_open( $event_id ), 'law_booking_priced' );
+		$this->assertTrue(
+			law_booking_guard_form_open( $event_id, array( 'allow_priced' => true ) ),
+			'The committee may still write a place on one.'
+		);
+	}
+
+	/**
+	 * The dialog shows no money at all on a free reception: no price block to
+	 * read as "£0.00", and no discount code field inviting somebody to hunt for
+	 * a reduction on nothing (Denis, 16 September 2026).
+	 */
+	public function test_the_dialog_on_a_free_reception_shows_no_price_and_no_code(): void {
+		$event_id = $this->make_reception( array( '_law_attendee_price_pence' => 0, '_law_registration_state' => 'free' ) );
+		wp_set_current_user( $this->make_delegate() );
+
+		ob_start();
+		get_template_part(
+			'parts/events/reception-checkout-modal',
+			null,
+			array( 'event' => law_events_map_post( get_post( $event_id ) ), 'context' => 'modal', 'mode' => 'checkout' )
+		);
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Free to attend.', $html );
+		$this->assertStringNotContainsString( 'law-booking-price', $html );
+		$this->assertStringNotContainsString( 'Discount code', $html );
+		$this->assertStringNotContainsString( 'taken to Stripe', $html );
+		$this->assertStringContainsString( 'law_reception[terms]', $html, 'The terms are still accepted.' );
+		$this->assertStringContainsString( '>Register<', $html, 'One word for the dialog, as for the button.' );
+	}
+
 	public function test_an_included_place_can_be_cancelled_and_frees_the_place(): void {
 		$event_id      = $this->make_reception();
 		$user_id       = $this->make_delegate();

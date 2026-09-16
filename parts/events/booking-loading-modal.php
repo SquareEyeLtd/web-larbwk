@@ -33,11 +33,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 		<h2
 			class="law-modal__title"
 			id="law-booking-loading-title"
-			data-law-loading-book="<?php esc_attr_e( 'Book your place', 'law' ); ?>"
+			data-law-loading-book="<?php esc_attr_e( 'Register', 'law' ); ?>"
 			data-law-loading-waitlist="<?php esc_attr_e( 'Join the waitlist', 'law' ); ?>"
-			data-law-loading-apply="<?php esc_attr_e( 'Register to attend', 'law' ); ?>"
+			data-law-loading-apply="<?php esc_attr_e( 'Register', 'law' ); ?>"
 			data-law-loading-include="<?php esc_attr_e( 'Add to my bookings', 'law' ); ?>"
-		><?php esc_html_e( 'Book your place', 'law' ); ?></h2>
+		><?php esc_html_e( 'Register', 'law' ); ?></h2>
 		<?php
 		// Not visible: the shimmering skeleton below already says "loading" to
 		// anyone who can see it, and a line of text saying so as well was noise

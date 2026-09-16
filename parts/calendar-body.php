@@ -148,10 +148,12 @@ if ( $event ) {
 				(array) $event['sectors']
 			),
 		),
-		// Any PRICED event: the flagship conference and the paid receptions.
-		// The helper returns '' for anything free, so the row drops out of
-		// every other event's box on its own (an empty value is skipped)
-		// rather than needing a caller to know about it. There is no Places
+		// Any PRICED event: the flagship conference and the paid receptions,
+		// plus "Free" on a reception the committee has priced at nothing
+		// (Denis, 16 September 2026). The helper returns '' for everything
+		// else, so the row drops out of a hosted event's box on its own (an
+		// empty value is skipped) rather than needing a caller to know about
+		// it. There is no Places
 		// row beside it: the count is printed in the availability panel below,
 		// opposite its button (Denis, 11 September 2026).
 		//

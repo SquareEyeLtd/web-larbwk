@@ -688,6 +688,21 @@ add_filter(
 	2
 );
 
+/**
+ * Does a place at this reception cost nothing at all?
+ *
+ * The RECEPTION's own price, not the quote's: a place a discount code took to
+ * zero is free for this delegate, and this is the other thing — the committee
+ * priced the reception at nothing, so it is free for everybody and there is no
+ * money anywhere in it (Denis, 16 September 2026). The two need different
+ * words, because telling somebody their discount code covered the price when
+ * they never had one reads as a bug (Denis spotted exactly that on the
+ * confirmation notice).
+ */
+function law_reception_costs_nothing( $event_id ) {
+	return law_event_price_pence( (int) $event_id ) < 1;
+}
+
 /* Checkout ___________________________________________________________________ */
 
 /**
@@ -724,9 +739,14 @@ function law_reception_checkout( $user_id, array $input ) {
 	if ( is_wp_error( $open ) ) {
 		return $open;
 	}
-	if ( ! law_event_is_priced( $event_id ) ) {
-		return new WP_Error( 'law_reception_not_on_sale', __( 'Places at this reception are not on sale.', 'law' ) );
-	}
+	// A reception priced at £0 is FREE, not closed: the committee sets the price
+	// to nothing and the dialog stops showing money at all (Denis, 16 September
+	// 2026). It still books through here, because everything else about a
+	// reception place — one per checkout, the capacity lock, the waitlist — is
+	// the same whatever it costs, and the £0 path below already confirms
+	// without Stripe, which is what a 100% discount code has always done.
+	// (Until now this guard refused it outright, so a free reception showed a
+	// Register button that could not be used.)
 	if ( empty( $input['terms'] ) ) {
 		return new WP_Error(
 			'law_reception_no_terms',
@@ -898,7 +918,11 @@ function law_reception_checkout( $user_id, array $input ) {
 
 		return array(
 			'booking'  => $booking_id,
-			'redirect' => add_query_arg( 'law_notice', 'reception-free-confirmed', law_booking_manage_url( $booking_id ) ),
+			'redirect' => add_query_arg(
+				'law_notice',
+				law_reception_costs_nothing( $event_id ) ? 'reception-no-charge-confirmed' : 'reception-free-confirmed',
+				law_booking_manage_url( $booking_id )
+			),
 		);
 	}
 
@@ -1223,8 +1247,15 @@ function law_reception_maybe_send_confirmation( $booking_id, $force = false ) {
 	}
 
 	$extra = law_booking_email_extra( $booking_id );
-	law_booking_send_with_ics( 'user_reception_confirmed', $event_id, $extra );
-	law_events_send( 'committee_reception_booking', $event_id, array( 'placeholders' => $extra['placeholders'] ) );
+	// A place with nothing to pay gets the pair written for it: the paid
+	// templates quote an amount taken and link a VAT invoice, and a free place
+	// has neither, so the delegate was reading "You paid £0.00" above an empty
+	// invoice link (Denis, 16 September 2026).
+	$slugs = $price['free']
+		? array( 'user_reception_confirmed_free', 'committee_reception_booking_free' )
+		: array( 'user_reception_confirmed', 'committee_reception_booking' );
+	law_booking_send_with_ics( $slugs[0], $event_id, $extra );
+	law_events_send( $slugs[1], $event_id, array( 'placeholders' => $extra['placeholders'] ) );
 
 	return true;
 }
@@ -1981,15 +2012,19 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 	if ( is_wp_error( $open ) ) {
 		return $open;
 	}
-	if ( ! law_event_is_priced( $event_id ) ) {
-		return new WP_Error( 'law_reception_not_on_sale', __( 'Places at this reception are not on sale.', 'law' ) );
-	}
+	// A free reception queues like any other; see law_reception_checkout().
 	// You only join a waitlist when there is nothing left to buy.
 	$seats = law_booking_guard_seats( $event_id, 1, 'law-waitlisted' );
 	if ( is_wp_error( $seats ) ) {
 		return $seats;
 	}
-	if ( empty( $input['consent'] ) ) {
+	// The consent tick exists to authorise a card being saved and charged
+	// later. A reception that costs nothing saves no card and charges nobody,
+	// so the dialog does not show the tick and there is nothing to withhold
+	// here either (Denis, 16 September 2026). A code that happens to cover the
+	// whole price is NOT this case: that form still shows the tick, because
+	// the code could stop applying before the place comes up.
+	if ( law_event_is_priced( $event_id ) && empty( $input['consent'] ) ) {
 		return new WP_Error(
 			'law_reception_no_consent',
 			__( 'Please confirm you agree to your payment details being saved and charged if a place opens up.', 'law' ),
@@ -2148,7 +2183,11 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 		return array(
 			'booking'  => $booking_id,
 			'free'     => true,
-			'redirect' => add_query_arg( 'law_notice', 'reception-waitlist-free', law_booking_manage_url( $booking_id ) ),
+			'redirect' => add_query_arg(
+				'law_notice',
+				law_reception_costs_nothing( $event_id ) ? 'reception-waitlist-no-charge' : 'reception-waitlist-free',
+				law_booking_manage_url( $booking_id )
+			),
 		);
 	}
 
@@ -2614,13 +2653,18 @@ function law_reception_waitlist_join_handler() {
 				'message'  => __( 'Stripe will ask for the payment details we would charge if a place opens up.', 'law' ),
 				'redirect' => $result['redirect'],
 			)
-			// A code covered the whole price, so nobody is going to Stripe.
+			// Nothing to pay — a free reception, or a code that covered the
+			// whole price — so nobody is going to Stripe.
 			: array(
 				'title'    => __( "You're on the waitlist", 'law' ),
 				'message'  => __( 'There is nothing to pay, so we have not asked you for any payment details. If a place opens up we will confirm it and email you straight away.', 'law' ),
 				'redirect' => $result['redirect'],
 			),
-		empty( $result['free'] ) ? 'reception-card' : 'reception-waitlist-free'
+		// The notice the destination shows, which has to say WHY there was
+		// nothing to pay, so the two cases carry different keys.
+		empty( $result['free'] )
+			? 'reception-card'
+			: ( law_reception_costs_nothing( (int) $input['event_id'] ) ? 'reception-waitlist-no-charge' : 'reception-waitlist-free' )
 	);
 }
 
@@ -3094,6 +3138,12 @@ add_filter(
 				'reception-processing'       => array( 'ok', __( 'Your payment is on its way. Your place is held and we will email you as soon as it clears.', 'law' ) ),
 				'reception-free-confirmed'   => array( 'ok', __( 'Your place is confirmed. Your discount code covered the full price, so nothing was charged.', 'law' ) ),
 				'reception-waitlist-free'    => array( 'ok', __( 'You are on the waitlist. Your discount code covers the full price, so there is nothing to pay and we have not asked for any payment details. If a place opens up we will confirm it and email you straight away.', 'law' ) ),
+				// The same two moments on a reception that costs nothing in
+				// the first place. Their own keys, because the pair above name
+				// a discount code and there is none here (Denis, 16 September
+				// 2026).
+				'reception-no-charge-confirmed' => array( 'ok', __( 'Your place is confirmed. This reception is free to attend, so there was nothing to pay.', 'law' ) ),
+				'reception-waitlist-no-charge'  => array( 'ok', __( 'You are on the waitlist. This reception is free to attend, so there is nothing to pay and we have not asked for any payment details. If a place opens up we will confirm it and email you straight away.', 'law' ) ),
 				'reception-cancelled'        => array( 'error', __( 'No payment was taken and the place has been released. You can book again while places remain.', 'law' ) ),
 				'reception-expired'          => array( 'error', __( 'Your booking was not completed in time and the place has been released. You can book again while places remain.', 'law' ) ),
 				'reception-return-failed'    => array( 'error', __( 'We could not confirm your payment with Stripe. If money has left your account, contact LAW and we will sort it out.', 'law' ) ),

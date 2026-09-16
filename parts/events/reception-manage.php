@@ -182,7 +182,7 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 				<input type="text" inputmode="decimal" id="law-rm-price" name="law_reception[price]"
 					value="<?php echo esc_attr( (string) $law_rm_values['price'] ); ?>"
 					<?php disabled( $law_rm_locked ); ?>>
-				<span class="law-form-hint"><?php esc_html_e( 'Zero means the reception is not on sale. VAT is added on top at the standard rate.', 'law' ); ?></span>
+				<span class="law-form-hint"><?php esc_html_e( 'Zero means the reception is free to attend: the booking form shows no prices and no discount code. VAT is added on top at the standard rate.', 'law' ); ?></span>
 			</p>
 		</div>
 
@@ -190,10 +190,17 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 		// One sentence saying what a delegate will actually be charged,
 		// because "45.00 excluding VAT" is not a figure anybody checks
 		// against a card statement.
-		$law_rm_pence   = law_events_pounds_to_pence( (string) $law_rm_values['price'] );
-		$law_rm_preview = ( null !== $law_rm_pence && $law_rm_pence > 0 )
-			? sprintf( __( 'Attendees pay %s.', 'law' ), law_events_price_label( $law_rm_pence ) )
-			: '';
+		$law_rm_pence = law_events_pounds_to_pence( (string) $law_rm_values['price'] );
+		if ( null === $law_rm_pence ) {
+			$law_rm_preview = '';
+		} elseif ( $law_rm_pence > 0 ) {
+			$law_rm_preview = sprintf( __( 'Attendees pay %s.', 'law' ), law_events_price_label( $law_rm_pence ) );
+		} else {
+			// A £0 reception is free, not closed (Denis, 16 September 2026), so
+			// the committee is told what they have just chosen rather than
+			// being left with a blank where the price sentence sits.
+			$law_rm_preview = __( 'This reception is free to attend. Attendees register without paying anything.', 'law' );
+		}
 		?>
 		<?php if ( '' !== $law_rm_preview && ! $law_rm_locked ) : ?>
 			<p class="law-form-field"><strong><?php echo esc_html( $law_rm_preview ); ?></strong></p>

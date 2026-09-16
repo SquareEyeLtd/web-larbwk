@@ -196,10 +196,20 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 
 	public function test_places_cannot_drop_below_the_places_taken(): void {
 		// Published, because the booking engine refuses an unpublished event
-		// and the point here is a reception with real places taken.
+		// and the point here is a reception with real places taken. The places
+		// are written with the engine's own insert: a reception is booked
+		// through its own checkout whatever it costs, so the free booking form
+		// refuses every one of them (law_booking_guard_form_open()).
 		$event_id = $this->make_reception( array( '_law_tickets_available' => 10 ), 'publish' );
-		$this->make_booking( $event_id, $this->make_user() );
-		$this->make_booking( $event_id, $this->make_user() );
+		foreach ( array( 'one', 'two' ) as $law_who ) {
+			$this->posts[] = law_booking_insert(
+				$event_id,
+				$this->make_user(),
+				'publish',
+				array( 'name' => 'Guest ' . $law_who, 'email' => 'guest-' . $law_who . '@example.test' )
+			);
+		}
+		law_event_recount_attendees( $event_id );
 
 		$errors = law_reception_validate( array( 'event_id' => $event_id, 'title' => 'Drinks', 'places' => '1' ) );
 		$this->assertNotEmpty( $errors->get_error_message( 'places' ) );

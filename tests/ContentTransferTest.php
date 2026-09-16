@@ -557,16 +557,24 @@ class ContentTransferTest extends LAW_Test_Case {
 		// Staging bookings carry Stripe customer, invoice and payment-method
 		// IDs from whatever Stripe account staging points at, plus one-shot
 		// latches that would suppress a real confirmation email or charge.
-		// A FREE reception, so the booking engine seats the place outright: a
-		// priced one would send the booker to Stripe and this fixture would
-		// quietly be a WP_Error instead of a booking.
+		// A FREE reception, so no Stripe session stands between the fixture and
+		// a seated place. The place is written with the engine's own insert
+		// rather than through law_booking_create(): EVERY reception, priced or
+		// free, is booked one place at a time through its own checkout, and the
+		// free booking form refuses all of them (law_booking_guard_form_open()).
 		$event_id = $this->make_reception(
 			$this->slug( 'ct-drinks' ),
 			array( '_law_attendee_price_pence' => 0, '_law_registration_state' => 'free' )
 		);
 		$booker   = $this->make_user();
-		$booking  = $this->make_booking_id( $event_id, $booker );
+		$booking  = law_booking_insert(
+			$event_id,
+			$booker,
+			'publish',
+			array( 'name' => 'Transfer Fixture', 'email' => 'transfer-fixture@example.test' )
+		);
 		$this->assertIsInt( $booking, 'The booking fixture must really be a booking.' );
+		$this->posts[] = $booking;
 
 		$bundle = law_content_transfer_bundle();
 

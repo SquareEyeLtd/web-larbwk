@@ -212,6 +212,12 @@ if ( $law_is_reception && ! $law_is_flagship ) {
 					__( '%s + VAT', 'law' ),
 					law_events_format_pence( (int) $event['price_pence'] )
 				);
+			} else {
+				// Priced at nothing means free to attend, and the card says so
+				// rather than leaving the row out (Denis, 16 September 2026).
+				// Receptions only, as above: this whole block is inside
+				// $law_is_reception, and a hosted event is free by default.
+				$law_card_price = __( 'Free', 'law' );
 			}
 		}
 		?>

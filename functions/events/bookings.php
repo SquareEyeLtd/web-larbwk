@@ -896,8 +896,11 @@ function law_booking_kind( $booking ) {
 }
 
 /**
- * What one place at this event costs, NET of VAT, in pence. 0 means free, or
- * (on a reception) "not on sale yet".
+ * What one place at this event costs, NET of VAT, in pence. 0 means free —
+ * on a hosted event, on a reception (Denis, 16 September 2026: a reception
+ * priced at nothing is free to attend, not closed) and on anything else. The
+ * flagship is the one exception: two zero prices there mean it is not on sale
+ * (functions/events/flagship.php).
  *
  * The flagship is the exception and is delegated rather than duplicated: its
  * price is time-switched between two stored figures, not a single int, so
@@ -1098,7 +1101,16 @@ function law_booking_guard_form_open( $event_id, array $args = array() ) {
 			'This event is booked on the organiser\'s own website.'
 		);
 	}
-	if ( empty( $args['allow_priced'] ) && law_event_is_priced( $event_id ) ) {
+	// A RECEPTION, not merely a priced event: every reception is booked through
+	// its own checkout, one place at a time, and that is true of one the
+	// committee has priced at nothing too (Denis, 16 September 2026). Keyed on
+	// the price before then, which left a free reception open to the colleague
+	// repeater and to "Add a colleague" — neither of which a reception has ever
+	// been allowed. The flagship is refused earlier, by
+	// law_booking_guard_open().
+	if ( empty( $args['allow_priced'] )
+		&& ( law_event_is_priced( $event_id )
+			|| ( function_exists( 'law_reception_is' ) && law_reception_is( $event_id ) ) ) ) {
 		return new WP_Error(
 			'law_booking_priced',
 			'This reception is booked through checkout.'

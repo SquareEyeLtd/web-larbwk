@@ -44,9 +44,17 @@ $law_rc_remaining = law_event_tickets_remaining( $law_rc_id );
 $law_rc_quote     = law_reception_quote( $law_rc_id, '', get_current_user_id() );
 $law_rc_quote     = is_wp_error( $law_rc_quote ) ? law_reception_quote( $law_rc_id ) : $law_rc_quote;
 
+// Free BECAUSE THE RECEPTION COSTS NOTHING, which is a different thing from
+// the quote's own `free` (a discount code that happens to cover the whole
+// price). A reception with no price has no money to show and nothing a code
+// could reduce, so the price block, the code field, the payment consent and
+// the Stripe line all go and the summary simply says it is free (Denis,
+// 16 September 2026).
+$law_rc_gratis = (int) $law_rc_quote['list_net'] < 1;
+
 $law_rc_action  = $law_rc_wait ? 'law_reception_waitlist_join' : 'law_reception_checkout';
 $law_rc_dialog  = 'law-reception-modal';
-$law_rc_heading = $law_rc_wait ? __( 'Join the waitlist', 'law' ) : __( 'Book your place', 'law' );
+$law_rc_heading = $law_rc_wait ? __( 'Join the waitlist', 'law' ) : __( 'Register', 'law' );
 $law_rc_submit  = $law_rc_wait ? __( 'Join waitlist', 'law' ) : __( 'Continue to payment', 'law' );
 $law_rc_busy    = $law_rc_wait ? __( 'Joining…', 'law' ) : __( 'Taking you to Stripe…', 'law' );
 $law_rc_when    = trim(
@@ -127,9 +135,19 @@ else :
 						<?php echo esc_html( sprintf( _n( '%s place left.', '%s places left.', (int) $law_rc_remaining, 'law' ), number_format_i18n( (int) $law_rc_remaining ) ) ); ?>
 					<?php endif; ?>
 				</span>
+				<?php if ( $law_rc_gratis ) : ?>
+					<span class="law-event-summary__free"><?php esc_html_e( 'Free to attend.', 'law' ); ?></span>
+				<?php endif; ?>
 			</p>
 		</div>
 
+		<?php
+		// The price block and the code field below it are for a reception that
+		// costs something. A free one shows neither: there is no sum to break
+		// down, and a code field on a £0.00 total invites a delegate to hunt
+		// for a discount on nothing (Denis, 16 September 2026).
+		if ( ! $law_rc_gratis ) :
+		?>
 		<?php
 		// The price block. Every line carries data-law-price so the Apply
 		// button can swap the four figures in place without the page moving,
@@ -184,6 +202,7 @@ else :
 			</p>
 			<p class="law-form-hint" role="status" data-law-quote-status></p>
 		</fieldset>
+		<?php endif; ?>
 
 		<?php
 		// The consent sentence names the amount, and it is the record of what
@@ -192,7 +211,7 @@ else :
 		// price after a code had moved it (found 15 September 2026, while the
 		// flagship was learning the same trick).
 		?>
-		<?php if ( $law_rc_wait ) : ?>
+		<?php if ( $law_rc_wait && ! $law_rc_gratis ) : ?>
 			<?php
 			$law_rc_consent_default = __( 'Save my payment details and charge %s when a place opens up. You can leave the waitlist at any time before then. *', 'law' );
 			$law_rc_consent_free    = __( 'Hold my place in the queue. My discount code covers the whole price, so there is nothing to pay and no payment details are needed. *', 'law' );
@@ -232,15 +251,17 @@ else :
 			</label>
 		</p>
 
-		<p class="law-booking-note" data-law-stripe-note<?php echo $law_rc_quote['free'] ? ' hidden' : ''; ?>>
-			<?php
-			echo esc_html(
-				$law_rc_wait
-					? __( 'You will be taken to Stripe to save your payment details. Nothing is charged unless a place opens up.', 'law' )
-					: __( 'You will be taken to Stripe to pay.', 'law' )
-			);
-			?>
-		</p>
+		<?php if ( ! $law_rc_gratis ) : ?>
+			<p class="law-booking-note" data-law-stripe-note<?php echo $law_rc_quote['free'] ? ' hidden' : ''; ?>>
+				<?php
+				echo esc_html(
+					$law_rc_wait
+						? __( 'You will be taken to Stripe to save your payment details. Nothing is charged unless a place opens up.', 'law' )
+						: __( 'You will be taken to Stripe to pay.', 'law' )
+				);
+				?>
+			</p>
+		<?php endif; ?>
 
 		<p class="law-modal__actions">
 			<?php if ( 'modal' === $law_rc_ctx ) : ?>

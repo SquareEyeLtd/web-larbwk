@@ -667,7 +667,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'law-booking-skeleton', $html );
 		// Both headings server-side, so the script picks one rather than
 		// carrying a second copy of translated copy.
-		$this->assertStringContainsString( 'data-law-loading-book="Book your place"', $html );
+		$this->assertStringContainsString( 'data-law-loading-book="Register"', $html );
 		$this->assertStringContainsString( 'data-law-loading-waitlist="Join the waitlist"', $html );
 
 		$source = file_get_contents( get_theme_file_path( 'functions/account-bookings.php' ) );
