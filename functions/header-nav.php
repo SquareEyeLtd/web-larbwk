@@ -65,6 +65,7 @@ function law_account_paths() {
 		'receptions'  => 'account/dashboard/receptions',
 		'flagship_bookings' => 'account/dashboard/flagship-bookings',
 		'discounts'   => 'account/dashboard/discounts',
+		'emails'      => 'account/dashboard/emails',
 		'events'      => 'account/events',
 		'my_bookings' => 'account/bookings',
 		'submit'      => 'account/events/submit',
@@ -427,6 +428,19 @@ function law_header_nav() {
 			'group'       => 'committee',
 			'icon'        => 'type',
 			'description' => __( 'Prepare and manage discount codes', 'law' ),
+		);
+		// Last in the committee group, by decision: every item above is a
+		// thing that happens during the week, and this one is the wording the
+		// site sends about all of them. It is the front-end copy of the
+		// wp-admin Emails screen (functions/events/emails-dashboard.php), so a
+		// committee member never needs wp-admin to fix a typo in a
+		// notification.
+		$items[] = array(
+			'key'         => 'emails',
+			'label'       => __( 'Manage emails', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'email',
+			'description' => __( 'Wording of every notification the module sends', 'law' ),
 		);
 	}
 

@@ -221,6 +221,34 @@ class ProgrammeVisibilityTest extends LAW_Test_Case {
 		$this->assertSame( 'not-open', law_booking_state( $event, array( 'user_id' => 0 ) )['state'] );
 	}
 
+	/**
+	 * A reception's row on the committee's event list goes straight to Manage
+	 * receptions, labelled Edit, because that screen holds every field it has
+	 * and it has no workflow to review (Denis, 16 September 2026).
+	 */
+	public function test_the_event_list_sends_a_reception_row_to_its_own_editor(): void {
+		$reception = $this->slotted_event( 'publish', array( '_law_is_reception' => 1, '_law_attendee_price_pence' => 4500 ) );
+		$hosted    = $this->slotted_event( 'publish' );
+		wp_set_current_user( $this->make_committee_user() );
+
+		ob_start();
+		get_template_part( 'parts/events/dashboard-list' );
+		$html = (string) ob_get_clean();
+
+		$row = function ( $id ) use ( $html ) {
+			$reference = law_event_meta( $id, '_law_reference' );
+			return preg_match( '/<code>' . preg_quote( (string) $reference, '/' ) . '<\/code>(.*?)<\/tr>/s', $html, $m ) ? $m[1] : '';
+		};
+
+		$this->assertStringContainsString( '>Edit<', $row( $reception ) );
+		$this->assertStringContainsString( 'law_reception=' . $reception, $row( $reception ) );
+		$this->assertStringNotContainsString( '>Review<', $row( $reception ) );
+
+		// Guard: an ordinary event still goes to the detail view to be reviewed.
+		$this->assertStringContainsString( '>Review<', $row( $hosted ) );
+		$this->assertStringContainsString( 'event=' . $hosted, $row( $hosted ) );
+	}
+
 	/* The override __________________________________________________________ */
 
 	public function test_the_override_defaults_to_automatic(): void {
@@ -299,6 +327,92 @@ class ProgrammeVisibilityTest extends LAW_Test_Case {
 		$note = law_event_booking_hold_note( $event );
 		$this->assertTrue( $note['error'] );
 		$this->assertStringContainsString( 'Places available', $note['text'] );
+	}
+
+	/* A place already held outranks every hold ______________________________ */
+
+	/**
+	 * Closing an event stops NEW bookings. It must not tell somebody who
+	 * already holds a place that the event is "Open soon", which would read as
+	 * their booking having vanished and would take away the route to manage or
+	 * cancel it -- the card's and the event page's only link to it.
+	 */
+	public function test_disable_booking_never_hides_a_place_somebody_already_holds(): void {
+		$event  = $this->slotted_event( 'publish' );
+		$holder = $this->make_user();
+		$this->make_booking( $event, $holder );
+		law_event_update_meta( $event, '_law_booking_override', 'disable' );
+
+		$state = law_booking_state( $event, array( 'user_id' => $holder ) );
+		$this->assertSame( 'booked', $state['state'] );
+		$this->assertNotSame( '', $state['manage_url'], 'And the route to it survives.' );
+		// The card always resolves for the CURRENT viewer, so it has to be them.
+		wp_set_current_user( $holder );
+		$card = law_booking_card_action( array( 'id' => $event, 'title' => 'x' ) );
+		$this->assertNotNull( $card, 'The card offers the booking, not a dead button.' );
+		$this->assertSame( law_booking_manage_label( $state ), $card['label'] );
+		$this->assertNull( law_booking_card_inert_action( array( 'id' => $event ) ), 'And no "Open soon" beside it.' );
+
+		// Everybody else is held shut, which is the point of the answer.
+		$this->assertSame( 'not-open', law_booking_state( $event, array( 'user_id' => 0 ) )['state'] );
+		$this->assertSame( 'not-open', law_booking_state( $event, array( 'user_id' => $this->make_user() ) )['state'] );
+	}
+
+	/**
+	 * The same thing one door along, and this sequence is reachable: the
+	 * committee forces a sponsor's unpaid event open, delegates book, and
+	 * somebody later sets it back to Automatic before the fee is paid.
+	 */
+	public function test_a_place_taken_on_a_forced_open_event_survives_the_answer_changing(): void {
+		$event = $this->slotted_event( 'law-approved' );
+		law_event_update_meta( $event, '_law_booking_override', 'enable' );
+		$holder = $this->make_user();
+		$this->make_booking( $event, $holder );
+
+		law_event_update_meta( $event, '_law_booking_override', 'auto' );
+
+		$this->assertSame( 'booked', law_booking_state( $event, array( 'user_id' => $holder ) )['state'] );
+		$this->assertSame( 'not-open', law_booking_state( $event, array( 'user_id' => 0 ) )['state'] );
+		$this->assertWPError( law_booking_guard_open( $event ), 'law_booking_not_bookable', 'And no new place can be taken.' );
+	}
+
+	/** A waitlist entry is a place in a queue, and is kept for the same reason. */
+	public function test_disable_booking_never_hides_a_waitlist_entry(): void {
+		$event = $this->slotted_event( 'publish', array( '_law_tickets_available' => 1 ) );
+		$this->make_booking( $event, $this->make_user() );
+		$waiter = $this->make_user();
+		$this->make_waitlist( $event, $waiter );
+
+		law_event_update_meta( $event, '_law_booking_override', 'disable' );
+		$this->assertSame( 'waitlisted', law_booking_state( $event, array( 'user_id' => $waiter ) )['state'] );
+	}
+
+	/**
+	 * The committee's own columns have to report a forced-open event's bookings.
+	 * Keying the Bookings count and button on `publish` alone printed a dash
+	 * against real places taken, and left no way into the list.
+	 */
+	public function test_the_event_list_reports_bookings_on_a_forced_open_event(): void {
+		$event = $this->slotted_event( 'law-approved' );
+		law_event_update_meta( $event, '_law_booking_override', 'enable' );
+		$this->make_booking( $event, $this->make_user() );
+		$empty = $this->slotted_event( 'law-approved' );
+		wp_set_current_user( $this->make_committee_user() );
+
+		ob_start();
+		get_template_part( 'parts/events/dashboard-list' );
+		$html = (string) ob_get_clean();
+
+		$row = function ( $id ) use ( $html ) {
+			$reference = law_event_meta( $id, '_law_reference' );
+			return preg_match( '/<code>' . preg_quote( (string) $reference, '/' ) . '<\/code>(.*?)<\/tr>/s', $html, $m ) ? $m[1] : '';
+		};
+
+		$this->assertStringContainsString( '>Bookings<', $row( $event ) );
+		$this->assertStringContainsString( 'law_event_bookings=' . $event, $row( $event ) );
+		// An approved event nobody has booked keeps its dash: a hollow 0 reads
+		// as "nobody has booked" rather than "bookings do not happen here".
+		$this->assertStringNotContainsString( '>Bookings<', $row( $empty ) );
 	}
 
 	/* External events _______________________________________________________ */

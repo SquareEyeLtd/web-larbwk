@@ -69,7 +69,8 @@ Load order is set in `_load.php`: settings → post types → statuses → meta 
 countries → capabilities → fees → log → **request** → workflow → comments → unread →
 co-owners → **ics** → **discounts** → **bookings** → **waitlist** →
 **bookings-dashboard** → **discounts-dashboard** →
-**test-mode** → notifications → speakers → **speakers-dashboard** →
+**test-mode** → notifications → **emails-dashboard** → speakers →
+**speakers-dashboard** →
 **flagship** (+ **flagship-form**, **flagship-dashboard**, **flagship-bookings**,
 **flagship-bookings-dashboard**) → source → edit-lock → submission-form →
 registration → committee → export → Stripe (client, service, **attendees**,
@@ -3903,7 +3904,10 @@ they stay the same length.
   Forms merge tags. It also hosts the **Enable test mode** card
   (`law_events_emails_test_mode_card()` /
   `law_events_emails_handle_test_mode_post()`, see `test-mode.php`), including
-  the live address check and the live-site confirmation tick.
+  the live address check and the live-site confirmation tick. Since 16 September 2026 it
+  owns none of the editing logic: the registry, the sanitising and the writer
+  live in `notifications.php` and are shared with the committee's front-end
+  Manage emails screen (`emails-dashboard.php`).
 
 ### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/content-transfer.php`)
 
@@ -7431,6 +7435,92 @@ through the ordinary booking form rather than through Checkout. That is
 pre-existing behaviour, it was not part of this change, and whether a £0
 reception should be refused has not been put to anyone.
 
+**A reception's row on the event list says Edit, and goes to its own editor**
+(Denis, 16 September 2026): `law_receptions_dashboard_url( $id )` — the
+`?law_reception=<id>` view on Manage receptions — rather than `?event=<id>` on
+the committee detail page. A reception has no workflow to review: no host
+submitted it, nobody approves it, no invoice is raised, and every field it does
+have (date, times, venue, places, price, the included and invitation switches)
+lives on that screen behind the one saver `law_reception_save()`. Sending the
+committee through a read-only detail view to reach its Edit button was a hop
+with nothing on it. Ordinary events, external events and the flagship keep
+Review and the detail view; only the label and the href move, and the timeline
+view inherits both because it renders the same partial.
+
+**The audit pass, and the five things it moved** (16 September 2026, after the
+above shipped). Read as one list, because each is the same mistake in a
+different place: treating `publish` as "on the programme" when it now means
+"paid for".
+
+1. **A place somebody already holds outranks every hold.**
+   `law_booking_resolve_state()` returned "Open soon" the moment an event was
+   closed, and it returned it to the attendee holding a confirmed place on it.
+   Their booking was untouched, but the card and the event page -- the only two
+   surfaces carrying the link to it -- told them the event was not open yet, so
+   the route to manage or cancel their own place was gone. Worse on a reception,
+   where a delegate could be mid-payment. The two holds that are read before the
+   viewer is (the fee outstanding, and Disable booking) are now recorded in a
+   `$held` flag and applied AFTER the viewer's own booking resolves, so the
+   holder keeps `booked` / `waitlisted` / `pending-payment` and everybody else
+   gets "Open soon". The sequence is reachable rather than theoretical: force a
+   sponsor's unpaid event open, take bookings, set it back to Automatic.
+   Invitation-only and external keep their existing precedence over the viewer's
+   own state -- that is a settled decision (and nobody holds a local booking on
+   an external event anyway) -- so Disable booking is still applied inside the
+   external branch, which returns before any hold is read.
+2. **The committee's own bookings columns hid a forced-open event's bookings.**
+   `$law_row_bookable` (dashboard-list.php) and `$bookable`
+   (slot-chart.php) were `'publish' === $post_status`, so a forced-open Approved
+   event with real places taken printed a dash in the Bookings column and
+   offered no way into the list. Both now read "publicly listed AND places
+   taken, or published". Deliberately not "places taken" alone: a Proposed
+   event can hold no booking at all, so a stray `_law_tickets_sold` on one is
+   impossible data rather than a booking to link to -- which is what
+   `SlotChartTest::test_an_unconfirmed_event_states_no_booking_numbers` catches,
+   and it caught it.
+3. **The approval email said the wrong thing.** `user_payment_due` told the host
+   "Your event will be published in the programme once payment is received",
+   which stopped being true the moment approval put it there. It now says the
+   event is listed showing "Open soon" and that registration opens on payment.
+   NOTE: `law_events_email()` merges the `law_events_email_overrides` option
+   over the registry, so any copy somebody has pressed Save on from the Emails
+   screen keeps its stored wording and will still make the old promise. The
+   local database holds no overrides; staging and production need checking.
+4. **`{event_link}` and the legacy `?event=` redirect** both keyed on `publish`,
+   so an Approved event's email placeholder came out empty and an old
+   `?event=<entry id>` link rendered inline on the programme instead of 301ing
+   to the permalink the event now has. Both ask
+   `law_event_is_publicly_listed()`. The same for the `.ics` invite's
+   description link (`law_event_ics()`), which an attendee of a forced-open
+   event would otherwise receive without one.
+5. **An empty derived status list.** `law_events_cpt_mapped_events()` derives
+   its `post_status` from the allowed labels; on a label list that matches no
+   status (the `array( '*' )` sentinel) that produced `post_status => array()`,
+   which WP_Query reads as "no status clause" and answers with the public
+   statuses -- a silent widening on exactly the input that meant something else.
+   It falls back to every status now. No caller passes that today; the single
+   caller is `law_calendar_events()`.
+
+Checked and deliberately NOT changed: `law_reception_guard_open()` still
+requires literal `publish` and honours only the `disable` half of the override,
+so a reception cannot be bought before it is shown on the programme;
+`speakers-dashboard.php` still appends the status label to an unpublished
+event's name, which is a committee-facing select and should say Approved; and
+the `not-open` panel still says "Places for this event have not been released
+yet." on an Approved event whose places ARE set, because one public wording for
+every hold is the point (see above) and the alternative leaks the host's
+invoice.
+
+A security review of the whole change (the `security-specialist` agent: the
+status registration, both write paths for the override, the `_law_venue` write,
+the repair panel, and every booking-creation entry point) returned no findings
+at any severity. The two things it confirmed that matter most: `edit_law_events`
+is held only by `administrator`, `editor` and `events_committee` on the live
+site, so no host can force their own unpaid event open; and every creation and
+promotion path re-asks `law_booking_guard_open()` itself rather than trusting a
+caller, so raising capacity on an unpaid Approved event promotes nobody unless
+the answer is genuinely Enable booking.
+
 **Two things to know before this deploys.**
 
 - **The venue rule closes booking on live events.** On the current data eight
@@ -7442,12 +7532,15 @@ reception should be refused has not been put to anyone.
 - `LAW_Test_Case::make_event()` now seeds `_law_venue`, or every suite that
   books anything would have been testing the venue hold by accident.
 
-Covered by `tests/ProgrammeVisibilityTest.php` (30 tests): the two statuses the
+Covered by `tests/ProgrammeVisibilityTest.php` (35 tests): the two statuses the
 programme lists and the one the legacy source lists, the status registration and
 the permalink, the payment gate and the one thing that lifts it, each hold in
 isolation, the venue rule asserted on all three answers to Venue needed, the
 external event's two halves, the receptions' exemption and the two things it does
-not exempt them from, and that the public wording never names the reason.
+not exempt them from, the reception row's Edit button, a held place surviving
+both Disable booking and a forced-open event going back to Automatic, the
+committee's Bookings column on a forced-open event, and that the public wording
+never names the reason.
 
 ### The receptions take the navy surface, and their days say so (16 September 2026)
 
@@ -7596,6 +7689,92 @@ The 17 live events that breach a bound are left as they are — each is now
 fixable in one save from the panel, and a bulk repair was not part of this.
 Whether a cleared Places available should mean "no limit" or "bookings closed"
 is still the open product question in the entry above.
+
+---
+
+## Manage emails on the front end (16 September 2026)
+
+The wp-admin Emails screen now has a committee-facing twin at
+`/account/dashboard/emails/`, last in the committee group of the top bar and of
+the account hub. Same reason as every other management screen
+(`functions/events/emails-dashboard.php`, and the same decision as Manage
+bookings, Manage speakers and the discount catalogue): a member holding only
+`events_committee` should never have to learn wp-admin to fix a typo in a
+notification.
+
+**One feature, not two.** Neither screen owns the data any more. Everything
+that reads or writes an override moved into `notifications.php` and both call
+it: `law_events_email_override_from_input()` (build), `_save_override()`,
+`_reset_override()`, `_is_customised()`, `_has_unresolved_tags()`,
+`_recipients_label()`, `_recipients_survived()` and `_send_test()`.
+`tests/EmailsDashboardTest.php` asserts by reflection that each of those still
+lives in `notifications.php`, and that neither screen writes
+`LAW_EVENTS_EMAIL_OVERRIDES_OPTION` itself — the same guard
+`ReceptionsDashboardTest` puts on the receptions' shared saver, and for the same
+reason: a second writer is how two screens quietly come to mean different
+things.
+
+**Two deliberate differences from wp-admin.**
+
+1. **Test mode is not offered.** The card at the top of the wp-admin list is not
+   an email-wording control: it diverts *every* email the site sends, password
+   resets for real accounts included, and it is gated on `manage_options`. It
+   stays gated there. What the committee screen does is announce it — a warning
+   strip on both views, but only while it is actually on, because somebody
+   pressing "Send a test to me" has to know why the message landed elsewhere.
+   The test-send confirmation says so too, naming the diverted address instead
+   of claiming the test went to them.
+2. **The body is a plain textarea, not a WYSIWYG.** That is what an email body
+   IS here: the override is stored through `sanitize_textarea_field()` and
+   `law_events_send()` renders it with `esc_html()` + `wpautop()`, so markup
+   typed into it is delivered as visible angle brackets. The wp-admin screen's
+   `wp_editor()` promises formatting it has never been able to keep.
+
+**Recipients are never saved empty (both screens).** `'to'` is editable only
+where the registry names a fixed address list; the dynamic audiences (`host`,
+`committee`, `admin`, `invoice_contact`) are resolved per event at send time, so
+a posted value for one is dropped rather than stored somewhere nothing reads it.
+And a list where nothing survives `is_email()` no longer overwrites the stored
+addresses with `array()`: `law_events_send()` treats "no recipients" as a
+failure it logs and drops, so one typo in the only address would have silently
+switched the notification off while both screens went on reporting it as
+active. The builder keeps the code default;
+`law_events_email_recipients_survived()` lets each screen refuse the save and
+say why. To stop an email being sent, untick "Send this notification" — that is
+the control for it.
+
+**Not logged, on either screen.** The module's activity log is per-event
+(`law_event_log()` writes a comment on a `law_event` post and returns early
+without one) and a notification's wording belongs to no event. Recording "who
+reworded what, when" would need a site-wide stream the module does not have, so
+nothing pretends to keep one. Worth revisiting now that more than one person can
+edit these.
+
+**The rest.** The list is the full registry, inactive rows included — "which
+emails are switched off" is a question this screen has to be able to answer —
+with an "Edited" badge on the customised ones (15 of 78 in production today) and
+a red "Check the tags" badge on any body still carrying a Gravity Forms merge
+tag the renderer cannot resolve. The editor posts through
+`admin_post_law_email_manage` on the module's standard guard (nonce, honeypot,
+its own `email_manage` rate surface, with a tighter `email_test` budget on
+outbound test sends), answers JSON for `assets/js/booking-form.js` and falls
+back to a plain POST without it. Reset sits behind the shared
+`parts/layout/modal.php` confirm dialog. A test send and a refused save both
+come back through a one-shot transient keyed by slug, so the draft survives the
+redirect and does not leak onto the next notification's form.
+
+Touched: `functions/events/emails-dashboard.php` (new),
+`templates/account-dashboard-emails.php` (new), `parts/events/emails-list.php`
+and `parts/events/emails-manage.php` (new), `functions/events/notifications.php`
+(the shared helpers), `functions/events/admin/emails-screen.php` (refactored
+onto them), `functions/events/_load.php`, `functions/header-nav.php` (the
+`emails` path and nav item), `functions/helpers.php` (the envelope glyph),
+`functions/setup-account-pages.php` and `functions/events/migration/runner.php`
+(page provisioning, both routes), `functions/enqueue.php` and
+`functions/events/submission-form.php` (stylesheets), `assets/css/calendar.css`
+and `assets/css/event-form.css` (the screen, and an `is-warning` notice
+variant), `tests/EmailsDashboardTest.php`, `tests/HeaderNavTest.php` and
+`tests/AccountHubTest.php`.
 
 ---
 

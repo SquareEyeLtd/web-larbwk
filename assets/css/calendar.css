@@ -3026,3 +3026,73 @@
   display: inline-block;
   margin: 0;
 }
+
+/* The committee's Manage emails screen (functions/events/emails-dashboard.php). */
+/* The list is long (every notification the module sends), so the two columns
+   that carry sentences rather than labels are held back from the full width:
+   a trigger description running the width of a desktop table pushes Status and
+   Edit off the right of anything narrower. */
+.law-emails__table th:nth-child(2),
+.law-emails__table td:nth-child(2) {
+  max-width: 22rem;
+}
+
+.law-emails__table th:nth-child(3),
+.law-emails__table td:nth-child(3) {
+  max-width: 16rem;
+  word-break: break-word;
+}
+
+/* "Edited" sits next to the name rather than in a column of its own: it is
+   true of a handful of rows and a whole column of empty cells would cost more
+   width than it is worth. Neutral, because a customised email is the normal
+   state, not a problem — unlike the red "Check the tags" badge beside it,
+   which reuses the cancelled badge for exactly that reason. */
+.law-emails__badge {
+  background: #eef0f6;
+  color: #3c3c6e;
+  border: 1px solid #c9cde0;
+}
+
+/* The editor. */
+.law-emails__trigger {
+  margin: -0.5rem 0 1.2rem;
+  color: #4a4a6a;
+}
+
+.law-emails__recipients {
+  display: inline-block;
+  font-weight: 600;
+}
+
+/* The placeholder tags: a wrapped list of codes rather than one long line, so
+   a tag can be read and copied instead of hunted for in a paragraph. */
+.law-emails__tags ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0;
+}
+
+.law-emails__tags li {
+  margin: 0;
+}
+
+.law-emails__tags code {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  background: rgba(26, 26, 61, 0.06);
+  border: 1px solid rgba(26, 26, 61, 0.18);
+  border-radius: 2px;
+  color: inherit;
+  font-size: 0.8rem;
+}
+
+/* The body. A notification runs to several paragraphs and the theme's default
+   textarea height shows about three lines of it. */
+.law-emails-form textarea {
+  min-height: 18rem;
+  font-family: inherit;
+  line-height: 1.5;
+}

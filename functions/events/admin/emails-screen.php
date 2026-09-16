@@ -49,16 +49,16 @@ function law_events_emails_list_screen() {
 	foreach ( law_events_email_registry() as $slug => $definition ) {
 		$merged     = law_events_email( $slug );
 		$customised = isset( $overrides[ $slug ] );
-		$to         = is_array( $merged['to'] ) ? implode( ', ', $merged['to'] ) : ucfirst( str_replace( '_', ' ', $merged['to'] ) );
+		$to         = law_events_email_recipients_label( $merged );
 		// Migrated GF merge tags the renderer cannot resolve need eyes.
-		$unmapped = preg_match( '/\{[^}]*:[0-9.]+[^}]*\}|\{all_fields\}|\{embed_url\}|\{entry_[a-z_]+\}/', $merged['subject'] . ' ' . $merged['body'] );
+		$unmapped = law_events_email_has_unresolved_tags( $merged );
 		printf(
 			'<tr><td><strong><a href="%s">%s</a></strong>%s%s</td><td>%s</td><td>%s</td><td>%s</td><td><a class="button button-small" href="%1$s">Edit</a></td></tr>',
 			esc_url( add_query_arg( array( 'page' => 'law-events-emails', 'email' => $slug ), admin_url( 'admin.php' ) ) ),
 			esc_html( $merged['name'] ),
 			$customised ? ' <span class="law-badge">customised</span>' : '',
 			$unmapped ? ' <span class="law-badge" style="border-color:#b32d2e;color:#b32d2e;background:#fcf0f1">review tags</span>' : '',
-			esc_html( $merged['trigger'] ),
+			esc_html( law_events_email_trigger_label( $merged ) ),
 			esc_html( $to ),
 			$merged['active'] ? '<span style="color:#00a32a">Active</span>' : '<span style="color:#757575">Inactive</span>'
 		);
@@ -74,7 +74,7 @@ function law_events_emails_edit_screen( $slug ) {
 	?>
 	<div class="wrap">
 		<h1><?php echo esc_html( $email['name'] ); ?></h1>
-		<p><a href="<?php echo esc_url( $back ); ?>">← All emails</a> · Trigger: <strong><?php echo esc_html( $email['trigger'] ); ?></strong></p>
+		<p><a href="<?php echo esc_url( $back ); ?>">← All emails</a> · Trigger: <strong><?php echo esc_html( law_events_email_trigger_label( $email ) ); ?></strong></p>
 		<form method="post" style="max-width:760px">
 			<?php wp_nonce_field( 'law_email_edit', 'law_email_nonce' ); ?>
 			<table class="form-table" role="presentation">
@@ -114,52 +114,46 @@ function law_events_emails_edit_screen( $slug ) {
 }
 
 function law_events_emails_handle_post( $slug ) {
-	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
-	if ( ! is_array( $overrides ) ) {
-		$overrides = array();
-	}
-
+	// The option is never written here: both screens go through the shared
+	// helpers in notifications.php, so an edit made in wp-admin and one made on
+	// the committee's front-end page cannot come to mean different things.
 	if ( isset( $_POST['reset'] ) ) {
-		unset( $overrides[ $slug ] );
-		update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+		law_events_email_reset_override( $slug );
 		echo '<div class="notice notice-success"><p>Reset to the code default.</p></div>';
 		return;
 	}
 
-	$registry = law_events_email_registry();
-	$override = array(
-		'subject' => sanitize_text_field( wp_unslash( $_POST['subject'] ?? '' ) ),
-		'body'    => sanitize_textarea_field( wp_unslash( $_POST['body'] ?? '' ) ),
+	$input = array(
+		'subject' => wp_unslash( $_POST['subject'] ?? '' ),
+		'body'    => wp_unslash( $_POST['body'] ?? '' ),
 		'active'  => ! empty( $_POST['active'] ),
-	);
-	if ( is_array( $registry[ $slug ]['to'] ?? null ) && isset( $_POST['to'] ) ) {
-		$override['to'] = array_filter(
-			array_map( 'sanitize_email', array_map( 'trim', explode( ',', (string) wp_unslash( $_POST['to'] ) ) ) ),
-			'is_email'
-		);
+	) + ( isset( $_POST['to'] ) ? array( 'to' => wp_unslash( $_POST['to'] ) ) : array() );
+
+	$override = law_events_email_override_from_input( $slug, $input );
+	if ( null === $override ) {
+		echo '<div class="notice notice-error"><p>That notification could not be found.</p></div>';
+		return;
+	}
+
+	// Nothing typed into Recipients was a usable address, so the builder kept
+	// the stored ones. Saying so beats reporting "Email saved" over a screen
+	// that no longer matches what was stored.
+	if ( ! law_events_email_recipients_survived( $slug, $input, $override ) ) {
+		echo '<div class="notice notice-error"><p>None of those recipients is a valid email address, so nothing was saved. Separate addresses with commas, or untick "Send this notification" to stop it being sent at all.</p></div>';
+		return;
 	}
 
 	// Send test renders the values AS TYPED without persisting anything, so
 	// admins can preview safely before deciding to save.
 	if ( isset( $_POST['send_test'] ) ) {
-		$sample       = get_posts( array( 'post_type' => LAW_EVENT_CPT, 'post_status' => law_event_all_status_keys(), 'posts_per_page' => 1, 'fields' => 'ids' ) );
-		$sample_id    = $sample ? (int) $sample[0] : 0;
-		$user         = wp_get_current_user();
-		$placeholders = law_events_email_placeholders( $sample_id );
-		$sent         = wp_mail(
-			array( $user->user_email ),
-			'[TEST] ' . strtr( $override['subject'], $placeholders ),
-			make_clickable( wpautop( esc_html( strtr( $override['body'], $placeholders ) ) ) ),
-			array( 'Content-Type: text/html; charset=UTF-8' )
-		);
-		echo $sent
-			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $user->user_email ) . ( $sample_id ? ' using event "' . esc_html( get_the_title( $sample_id ) ) . '"' : ' (no events exist yet, placeholders were blank)' ) . '. Nothing was saved: use Save email to keep these values.</p></div>'
+		$test = law_events_email_send_test( $override );
+		echo $test['sent']
+			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $test['email'] ) . ( $test['event_id'] ? ' using event "' . esc_html( $test['event_title'] ) . '"' : ' (no events exist yet, placeholders were blank)' ) . '. Nothing was saved: use Save email to keep these values.</p></div>'
 			: '<div class="notice notice-error"><p>Send failed.</p></div>';
 		return;
 	}
 
-	$overrides[ $slug ] = $override;
-	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+	law_events_email_save_override( $slug, $override );
 	echo '<div class="notice notice-success"><p>Email saved.</p></div>';
 }
 

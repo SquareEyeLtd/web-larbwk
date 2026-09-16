@@ -91,7 +91,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is approved, payment due: {event_title}',
-			'body'    => "Dear {host_name},\n\nGood news: {event_title} ({law_reference}) has been approved by the committee.\n\nThe event fee of {fee} is now due. Please pay within 5 days using the secure Stripe invoice:\n{invoice_url}\n\nYour event will be published in the programme once payment is received.",
+			'body'    => "Dear {host_name},\n\nGood news: {event_title} ({law_reference}) has been approved by the committee and is now listed in the London Arbitration Week programme, showing \"Open soon\".\n\nThe event fee of {fee} is now due. Please pay within 5 days using the secure Stripe invoice:\n{invoice_url}\n\nRegistration opens once payment is received.",
 		),
 		'committee_payment_received' => array(
 			'name'    => 'Email to committee > payment received',
@@ -721,6 +721,227 @@ function law_events_email( $slug ) {
 	return array_merge( $registry[ $slug ], array_intersect_key( $override, array_flip( array( 'subject', 'body', 'to', 'active', 'name' ) ) ) );
 }
 
+/* Editing one email _________________________________________________________ */
+
+/*
+ * Two screens edit the registry now: the wp-admin Emails screen
+ * (functions/events/admin/emails-screen.php) and the committee's front-end
+ * Manage emails page (functions/events/emails-dashboard.php). Everything below
+ * is the shared middle: what an override may contain, how it is written, what
+ * the list column says and how a test send is rendered. Neither screen writes
+ * the option itself, for the same reason the receptions screens both go
+ * through law_reception_save() — a second writer is how the two quietly come
+ * to mean different things.
+ */
+
+/** The keys a stored override may carry. Anything else is ignored on read. */
+function law_events_email_editable_keys() {
+	return array( 'subject', 'body', 'to', 'active', 'name' );
+}
+
+/** Whether a stored override exists for this email. */
+function law_events_email_is_customised( $slug ) {
+	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+	return is_array( $overrides ) && isset( $overrides[ $slug ] );
+}
+
+/**
+ * Build one override from a screen's submitted values.
+ *
+ * 'to' is only accepted for an email whose registry recipients are a FIXED
+ * address list. The dynamic audiences ('host', 'committee', 'admin',
+ * 'invoice_contact') are resolved per event by law_events_email_recipients(),
+ * so letting a screen post one would silently do nothing.
+ *
+ * The body is sanitised as plain text, not HTML, because that is what it is:
+ * law_events_send() escapes it and runs wpautop() over the result, so any tag
+ * typed here would be delivered as visible angle brackets.
+ *
+ * @param string $slug  Registry slug.
+ * @param array  $input subject, body, active, and optionally to (a
+ *                      comma-separated string, or an array of addresses).
+ * @return array|null The override, or null for an unknown slug.
+ */
+function law_events_email_override_from_input( $slug, array $input ) {
+	$registry = law_events_email_registry();
+	if ( ! isset( $registry[ $slug ] ) ) {
+		return null;
+	}
+
+	// is_scalar before the cast: a posted law_email[subject][] arrives as an
+	// array, and casting one to string is a warning and the word "Array".
+	$scalar = static function ( $value ) {
+		return is_scalar( $value ) ? (string) $value : '';
+	};
+
+	$override = array(
+		'subject' => sanitize_text_field( $scalar( $input['subject'] ?? '' ) ),
+		'body'    => sanitize_textarea_field( $scalar( $input['body'] ?? '' ) ),
+		'active'  => ! empty( $input['active'] ),
+	);
+
+	if ( is_array( $registry[ $slug ]['to'] ) && isset( $input['to'] ) ) {
+		$raw  = is_array( $input['to'] ) ? $input['to'] : explode( ',', $scalar( $input['to'] ) );
+		$list = array_values(
+			array_filter(
+				array_map( 'sanitize_email', array_map( 'trim', array_map( $scalar, $raw ) ) ),
+				'is_email'
+			)
+		);
+		// An empty list is never stored. law_events_send() treats "no
+		// recipients" as a failure it logs and drops, so a typo in the only
+		// address would silently switch the notification off while the screen
+		// went on reporting it as active. Falling back to the code default is
+		// the safe floor; the screen that took the input is where a typo gets
+		// reported (law_events_email_recipients_survived()).
+		if ( $list ) {
+			$override['to'] = $list;
+		}
+	}
+
+	return $override;
+}
+
+/**
+ * Whether a submitted recipients list survived sanitising, for a screen that
+ * wants to refuse the save rather than quietly keep the old addresses.
+ *
+ * True when there was nothing to check: an email whose recipients are a
+ * dynamic audience, or a form that posted no 'to' at all.
+ *
+ * @param string $slug     Registry slug.
+ * @param array  $input    The same input array given to the builder.
+ * @param array  $override What the builder returned.
+ */
+function law_events_email_recipients_survived( $slug, array $input, array $override ) {
+	$registry = law_events_email_registry();
+	if ( ! isset( $registry[ $slug ] ) || ! is_array( $registry[ $slug ]['to'] ) || ! isset( $input['to'] ) ) {
+		return true;
+	}
+	$typed = is_array( $input['to'] ) ? implode( ',', $input['to'] ) : (string) $input['to'];
+
+	return '' === trim( $typed ) || ! empty( $override['to'] );
+}
+
+/**
+ * Persist one override.
+ *
+ * @param string $slug     Registry slug.
+ * @param array  $override From law_events_email_override_from_input().
+ * @return bool Whether the slug was known.
+ */
+function law_events_email_save_override( $slug, array $override ) {
+	$registry = law_events_email_registry();
+	if ( ! isset( $registry[ $slug ] ) ) {
+		return false;
+	}
+	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+	if ( ! is_array( $overrides ) ) {
+		$overrides = array();
+	}
+	$overrides[ $slug ] = array_intersect_key( $override, array_flip( law_events_email_editable_keys() ) );
+	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+
+	return true;
+}
+
+/** Drop one override, returning the email to its code default. */
+function law_events_email_reset_override( $slug ) {
+	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+	if ( ! is_array( $overrides ) || ! isset( $overrides[ $slug ] ) ) {
+		return false;
+	}
+	unset( $overrides[ $slug ] );
+	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+
+	return true;
+}
+
+/**
+ * Migrated Gravity Forms merge tags the renderer cannot resolve, which need
+ * a human's eyes: {12.3}, {all_fields}, {embed_url}, {entry_id} and friends
+ * would be delivered to somebody literally.
+ *
+ * @param array $email A merged definition from law_events_email().
+ */
+function law_events_email_has_unresolved_tags( array $email ) {
+	return (bool) preg_match(
+		'/\{[^}]*:[0-9.]+[^}]*\}|\{all_fields\}|\{embed_url\}|\{entry_[a-z_]+\}/',
+		(string) $email['subject'] . ' ' . (string) $email['body']
+	);
+}
+
+/**
+ * What the "Sent when" column says.
+ *
+ * Presentation only, inventing nothing. Most registry triggers are already
+ * sentences ("a place opens up, or a host promotes an entry"), but a dozen of
+ * the oldest are the bare workflow action names — `send_back`, `resubmit`,
+ * `submit` — and "Sent when: send_back" is not something to put in front of a
+ * legal marketer. Underscores become spaces and the first letter is
+ * capitalised, which is all the difference between the two shapes.
+ *
+ * @param array $email A merged definition from law_events_email().
+ */
+function law_events_email_trigger_label( array $email ) {
+	return ucfirst( str_replace( '_', ' ', trim( (string) $email['trigger'] ) ) );
+}
+
+/**
+ * What the Recipients column says: the address list, or the audience name.
+ *
+ * @param array $email A merged definition from law_events_email().
+ */
+function law_events_email_recipients_label( array $email ) {
+	return is_array( $email['to'] )
+		? implode( ', ', $email['to'] )
+		: ucfirst( str_replace( '_', ' ', (string) $email['to'] ) );
+}
+
+/**
+ * Send one email AS TYPED to the current user, persisting nothing, so an
+ * editor can see the result before deciding to save.
+ *
+ * Rendered exactly as law_events_send() renders a real one (placeholders,
+ * esc_html, wpautop, make_clickable), against the most recent event so the
+ * tags resolve to something recognisable.
+ *
+ * @param array $override subject and body, as typed.
+ * @param int   $user_id  Recipient; defaults to the current user.
+ * @return array{sent:bool,email:string,event_id:int,event_title:string}
+ */
+function law_events_email_send_test( array $override, $user_id = 0 ) {
+	$user = $user_id ? get_user_by( 'id', (int) $user_id ) : wp_get_current_user();
+	if ( ! $user || ! is_email( $user->user_email ) ) {
+		return array( 'sent' => false, 'email' => '', 'event_id' => 0, 'event_title' => '' );
+	}
+
+	$sample = get_posts(
+		array(
+			'post_type'      => LAW_EVENT_CPT,
+			'post_status'    => law_event_all_status_keys(),
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+		)
+	);
+	$event_id     = $sample ? (int) $sample[0] : 0;
+	$placeholders = law_events_email_placeholders( $event_id );
+
+	$sent = wp_mail(
+		array( $user->user_email ),
+		'[TEST] ' . strtr( (string) ( $override['subject'] ?? '' ), $placeholders ),
+		make_clickable( wpautop( esc_html( strtr( (string) ( $override['body'] ?? '' ), $placeholders ) ) ) ),
+		array( 'Content-Type: text/html; charset=UTF-8' )
+	);
+
+	return array(
+		'sent'        => (bool) $sent,
+		'email'       => $user->user_email,
+		'event_id'    => $event_id,
+		'event_title' => $event_id ? (string) get_the_title( $event_id ) : '',
+	);
+}
+
 /** Placeholder tags available to every event email. */
 function law_events_email_placeholders( $event_id, array $extra = array() ) {
 	$post   = get_post( $event_id );
@@ -763,7 +984,10 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{slot}'             => (string) law_event_meta( $event_id, '_law_slot_label' ),
 		'{rejection_reason}' => (string) law_event_meta( $event_id, '_law_rejection_reason' ),
 		'{cancellation_reason}' => (string) law_event_meta( $event_id, '_law_cancellation_reason' ),
-		'{event_link}'       => $post && 'publish' === $post->post_status ? get_permalink( $post ) : '',
+		// The event's own public page, empty while it has none. Publicly listed
+		// rather than published since 16 September 2026: an Approved event is on
+		// the programme and has a permalink of its own.
+		'{event_link}'       => $post && law_event_is_publicly_listed( $post ) ? get_permalink( $post ) : '',
 		// The committee dashboard screen that edits this event, not post.php:
 		// the committee works from the site rather than wp-admin, so no email
 		// may drop them into it (Denis, 15 September 2026).

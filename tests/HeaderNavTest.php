@@ -53,7 +53,9 @@ class HeaderNavTest extends LAW_Test_Case {
 		// 'receptions' sits after 'flagship' because it is a configuration
 		// screen for an event LAW runs itself, not one of the two bookings
 		// views, which are kept together (RECEPTIONS.md §0.4).
-		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts' );
+		// 'emails' is last: every item before it is something that happens
+		// during the week, and it is the wording the site sends about all of them.
+		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts', 'emails' );
 
 		return array(
 			'subscriber, no events'   => array(
@@ -240,13 +242,15 @@ class HeaderNavTest extends LAW_Test_Case {
 		$this->assertSame( 'Manage bookings', $items['bookings'] );
 		$this->assertSame( 'Flagship bookings', $items['flagship_bookings'] );
 
+		$this->assertSame( 'Manage emails', $items['emails'] );
+
 		$keys      = array_keys( $items );
-		$committee = array_values( array_intersect( $keys, array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' ) ) );
+		$committee = array_values( array_intersect( $keys, array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'emails' ) ) );
 
 		$this->assertSame(
-			array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts' ),
+			array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'emails' ),
 			$committee,
-			'The management links keep their order, with the two bookings views adjacent.'
+			'The management links keep their order, with the two bookings views adjacent and Manage emails last.'
 		);
 		$this->assertGreaterThan(
 			array_search( 'profile', $keys, true ),

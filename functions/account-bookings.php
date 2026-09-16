@@ -500,26 +500,30 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 	// must fall through to the real states here. Every other unpublished status
 	// still returns null, which is how the committee's own programme gets
 	// "Bookings not open" on a Proposed card.
+	//
+	// $held records it rather than returning on the spot, and that matters: the
+	// hold is about a NEW booking, and somebody who already has a place must
+	// keep seeing it. Returning here would tell an attendee holding a confirmed
+	// place -- or a reception delegate mid-payment -- "Open soon", with no route
+	// left to their own booking, the moment the committee closed the event or
+	// set a forced-open one back to Automatic. The state is decided after the
+	// viewer's own booking is read, below.
+	$held = false;
 	if ( ! $preview && 'publish' !== $post->post_status ) {
 		if ( ! law_event_is_publicly_listed( $post ) ) {
 			return null;
 		}
-		if ( 'enable' !== law_event_booking_override( $event_id ) ) {
-			$state['state'] = 'not-open';
-			return $state;
-		}
+		$held = 'enable' !== law_event_booking_override( $event_id );
 	}
 
 	// Disable booking, the committee's own answer (client, 16 September 2026).
-	// FIRST of the three holds, and ahead of the invitation and external
-	// branches below, because the select promises it closes the event whatever
-	// else is set. It is also the only hold that reaches an external event at
-	// all: that branch returns before the derived holds are read, so an
-	// external event stays registerable whatever its places and venue say,
+	// It closes the event whatever else is set, which is what the select
+	// promises, and it is the ONE hold that reaches an external event: the
+	// branch below returns before the derived holds are read, so an external
+	// event otherwise stays registerable whatever its places and venue say,
 	// which is the point of it (its Register button leaves the site).
 	if ( 'disable' === law_event_booking_override( $event_id ) ) {
-		$state['state'] = 'not-open';
-		return $state;
+		$held = true;
 	}
 
 	// Invitation only outranks everything but the flagship and the hold above:
@@ -537,6 +541,14 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 	// changes that. Nobody can hold a local booking on one, so this cannot
 	// shadow a state the viewer would rather see.
 	if ( function_exists( 'law_event_is_external' ) && law_event_is_external( $event_id ) ) {
+		// Held shut, i.e. Disable booking: an external event cannot be held shut
+		// any other way. Checked here rather than left to the hold below,
+		// because this branch returns and nobody can hold a local booking on one
+		// for the viewer's own state to win with.
+		if ( $held ) {
+			$state['state'] = 'not-open';
+			return $state;
+		}
 		$state['state']        = 'external';
 		$state['external_url'] = (string) law_event_meta( $event_id, '_law_external_url' );
 		return $state;
@@ -582,15 +594,17 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		}
 	}
 
-	// The committee's three holds, from the one predicate the submission guard
-	// asks too (law_event_booking_hold_reason(), bookings.php): Disable booking
-	// ticked, no places released, or no venue name on an event whose host
-	// already had a room. All three land on 'not-open' and say "Open soon",
-	// because naming the reason on a public page would tell an attendee things
-	// that are the committee's business. 'remaining' is still set above, so a
-	// consumer reading it sees null exactly when no places are released.
+	// The viewer holds nothing here, so the holds decide. First the two read
+	// above -- the fee outstanding, and Disable booking -- and then the rest of
+	// the one predicate the submission guard asks too
+	// (law_event_booking_hold_reason(), bookings.php): no places released, or no
+	// venue recorded on an event whose host submitted it. Every one of them
+	// lands on 'not-open' and says "Open soon", because naming the reason on a
+	// public page would tell an attendee things that are the committee's
+	// business. 'remaining' is set first, so a consumer reading it sees null
+	// exactly when no places are released.
 	$state['remaining'] = law_event_tickets_remaining( $event_id );
-	if ( '' !== law_event_booking_hold_reason( $event_id ) ) {
+	if ( $held || '' !== law_event_booking_hold_reason( $event_id ) ) {
 		$state['state'] = 'not-open';
 		return $state;
 	}
