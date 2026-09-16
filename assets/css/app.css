@@ -2939,3 +2939,44 @@ margin-bottom: .5rem;
 .invoices p, .invoices p a{
     color: #292459;
 }
+
+/* --- Search hit highlighting, site-wide -----------------------------------
+   One <mark> treatment for every "we found this here" highlight on the site:
+   the speakers archive (assets/js/speaker-search.js, client-side and
+   token-based) and the programme's filter (law_calendar_highlight(),
+   server-side and a single contiguous substring). The two matchers are
+   deliberately different; what the reader sees is not, so it is declared once
+   here rather than copied (Denis, 16 September 2026). Lives in app.css because
+   that is the one stylesheet enqueued on every page.
+
+   The fill alone carries it, and that is a deliberate call (Denis,
+   16 September 2026). A darkened #a85400 underline sat under this mark for the
+   first few hours, on the reasoning that the pale orange fill is only 1.27:1
+   against white and 1.12:1 against the sponsored card's #fdeedd, so it is a
+   soft signal on one surface and close to none on the other. It read as
+   clutter on a table where several rows carry a hit, so it is gone. Two
+   consequences to know before reaching for it again: a hit on a sponsored
+   programme card is nearly invisible, and forced-colors mode is now the only
+   place this mark has a hard edge (the block below repaints it with the
+   system's own Mark/MarkText pair). Deepening the fill is the way to strengthen
+   it, not putting the border back.
+
+   The text colour is pinned rather than inherited. The flagship's three navy
+   surfaces (.law-flagship-card, .law-flagship-strip, .law-event-card--flagship)
+   print white text, and white on this fill is 1.27:1; navy on it is 11.1:1. One
+   declaration settles every surface, and a direct rule on the mark also outranks
+   the colour it would otherwise inherit from a hovered ancestor <a>, which the
+   theme's global a:hover { color: #fff } would otherwise wash out. */
+mark.law-hit {
+    padding: 0 0.1em;
+    border-radius: 2px;
+    background: #ffdfb8;
+    color: #292459;
+}
+
+@media (forced-colors: active) {
+    mark.law-hit {
+        background: Mark;
+        color: MarkText;
+    }
+}

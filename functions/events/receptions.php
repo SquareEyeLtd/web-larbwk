@@ -632,6 +632,13 @@ function law_reception_guard_open( $event_id ) {
 	if ( law_event_is_invitation_only( $event_id ) ) {
 		return new WP_Error( 'law_booking_invitation_only', __( 'Places at this reception are by invitation from LAW.', 'law' ) );
 	}
+	// Disable booking, the committee's own answer (client, 16 September 2026).
+	// This guard is the priced checkout's own and does not delegate to
+	// law_booking_guard_open(), so the answer has to be honoured here too or a
+	// reception showing "Open soon" would still take money.
+	if ( 'disable' === law_event_booking_override( $event_id ) ) {
+		return new WP_Error( 'law_reception_not_open', __( 'This reception is not open for booking yet.', 'law' ) );
+	}
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' !== $start && strtotime( $start ) <= current_time( 'timestamp' ) ) {
 		return new WP_Error( 'law_booking_closed', __( 'This reception has taken place, so bookings are closed.', 'law' ) );

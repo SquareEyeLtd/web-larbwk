@@ -19,11 +19,16 @@ $law_days    = law_calendar_week_days();
 $law_by_date = law_calendar_events_by_date();
 $law_unsched = $law_by_date['_unscheduled'] ?? array();
 
-// The flagship conference is pinned to its own day whatever the filters say:
-// it is the main event of the week, and a delegate searching for something
-// else should still see it. law_calendar_events() excludes it from the ordinary
-// cards, so it appears exactly once, here.
-$law_flagship      = function_exists( 'law_calendar_flagship_event' ) ? law_calendar_flagship_event() : null;
+// The flagship conference is pinned to its own day. Since 16 September 2026 it
+// answers the filters like any other event, so this reads the VISIBLE one.
+//
+// This file is otherwise a frozen copy of parts/calendar-events.php as it was on
+// 11 September 2026, and would rather have kept the old pinned behaviour with the
+// rest of the snapshot. It cannot: it shares law_calendar_day_is_empty() with the
+// live layout, and that now skips a filtered-out flagship's whole day section, so
+// leaving this line alone would render the block through the out-of-week branch
+// below and never through the day one -- a third behaviour neither layout has.
+$law_flagship      = function_exists( 'law_calendar_visible_flagship_event' ) ? law_calendar_visible_flagship_event() : null;
 $law_flagship_date = $law_flagship ? (string) ( $law_flagship['date'] ?? '' ) : '';
 
 $law_has_events = ! empty( $law_unsched );

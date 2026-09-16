@@ -349,6 +349,13 @@
 			var min = bound('data-law-min');
 			var max = bound('data-law-max');
 			if (isNaN(places)) { return bandError(''); }
+			// Below the band, but for a reason that has nothing to do with the
+			// band: zero and negatives are refused whatever is chosen, and on
+			// the committee panel (no min attribute, see below) this message is
+			// the only warning before the post. Same wording as the server's.
+			if (places < 1) {
+				return bandError('Places available must be a whole number of 1 or more, or blank to keep bookings closed.');
+			}
 			if (max !== null && places > max) {
 				return bandError('That is more places than this band allows (at most ' + max + ').');
 			}
@@ -364,7 +371,14 @@
 		   committee panel opts out (no data-law-strict): its Approve, Send back,
 		   Reject, Mark paid, Cancel and Delete buttons all submit the same form,
 		   so an attribute the stored value violates would block every one of
-		   them behind a validation bubble. */
+		   them behind a validation bubble.
+
+		   Since 16 September 2026 the panel also renders no min or max of its
+		   own, so this guard is the whole of the opt-out rather than half of it.
+		   It used to print a max from the stored band that nothing then updated,
+		   which meant a member who widened the band to fix an over-band event
+		   was refused by the old ceiling and could not save the correction at
+		   all. */
 		function syncBounds() {
 			if (!tickets.hasAttribute('data-law-strict')) { return; }
 			var min = bound('data-law-min');

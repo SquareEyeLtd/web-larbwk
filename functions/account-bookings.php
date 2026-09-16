@@ -489,14 +489,44 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 
 	// A preview deliberately skips this: the point of a preview is what the
 	// finished page looks like for an attendee, even before it is published.
+	//
+	// An APPROVED event is the exception, and the whole point of the
+	// 16 September 2026 rule: it is on the public programme from the moment the
+	// committee approves it, but normally no place can be held on one, because
+	// law_booking_guard_open() refuses anything that is not published and
+	// publication is what paying does. So it resolves to the state whose word
+	// is "Open soon" rather than to nothing at all -- unless the committee has
+	// answered Enable booking, which lifts the payment gate in the guard and so
+	// must fall through to the real states here. Every other unpublished status
+	// still returns null, which is how the committee's own programme gets
+	// "Bookings not open" on a Proposed card.
 	if ( ! $preview && 'publish' !== $post->post_status ) {
-		return null;
+		if ( ! law_event_is_publicly_listed( $post ) ) {
+			return null;
+		}
+		if ( 'enable' !== law_event_booking_override( $event_id ) ) {
+			$state['state'] = 'not-open';
+			return $state;
+		}
 	}
 
-	// Invitation only outranks everything but the flagship: LAW invites people
-	// itself, and nothing about the viewer changes that. It is not a refusal
-	// the viewer's own booking should be able to hide, because somebody LAW
-	// has invited still needs the page to explain what this event is.
+	// Disable booking, the committee's own answer (client, 16 September 2026).
+	// FIRST of the three holds, and ahead of the invitation and external
+	// branches below, because the select promises it closes the event whatever
+	// else is set. It is also the only hold that reaches an external event at
+	// all: that branch returns before the derived holds are read, so an
+	// external event stays registerable whatever its places and venue say,
+	// which is the point of it (its Register button leaves the site).
+	if ( 'disable' === law_event_booking_override( $event_id ) ) {
+		$state['state'] = 'not-open';
+		return $state;
+	}
+
+	// Invitation only outranks everything but the flagship and the hold above:
+	// LAW invites people itself, and nothing about the viewer changes that. It
+	// is not a refusal the viewer's own booking should be able to hide, because
+	// somebody LAW has invited still needs the page to explain what this event
+	// is.
 	if ( function_exists( 'law_event_is_invitation_only' ) && law_event_is_invitation_only( $event_id ) ) {
 		$state['state'] = 'invitation';
 		return $state;
@@ -552,8 +582,15 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		}
 	}
 
+	// The committee's three holds, from the one predicate the submission guard
+	// asks too (law_event_booking_hold_reason(), bookings.php): Disable booking
+	// ticked, no places released, or no venue name on an event whose host
+	// already had a room. All three land on 'not-open' and say "Open soon",
+	// because naming the reason on a public page would tell an attendee things
+	// that are the committee's business. 'remaining' is still set above, so a
+	// consumer reading it sees null exactly when no places are released.
 	$state['remaining'] = law_event_tickets_remaining( $event_id );
-	if ( null === $state['remaining'] ) {
+	if ( '' !== law_event_booking_hold_reason( $event_id ) ) {
 		$state['state'] = 'not-open';
 		return $state;
 	}
@@ -1381,9 +1418,11 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 
 	$waitlist  = 'waitlist' === $state['mode'];
 	$reception = ! empty( $state['reception'] );
-	$label     = $waitlist
-		? __( 'Join waitlist', 'law' )
-		: ( $reception ? __( 'Book now', 'law' ) : __( 'Register', 'law' ) );
+	// A reception says "Register" like everything else (Denis, 16 September
+	// 2026): the button wording is the same word everywhere on the site, and
+	// the price sits beside the button to say that money is involved. Only the
+	// opener param differs, so the card can never open the free booking form.
+	$label     = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' );
 	return array(
 		'label'    => $label,
 		'url'      => add_query_arg( law_booking_opener_param( $state['mode'], $reception ), 1, get_permalink( (int) $state['event_id'] ) ),
@@ -1394,11 +1433,8 @@ function law_booking_card_action( array $event, $scope = 'full' ) {
 			$waitlist
 				/* translators: %s: event title. */
 				? __( 'Join the waitlist for %s', 'law' )
-				: ( $reception
-					/* translators: %s: event title. */
-					? __( 'Book a place at %s', 'law' )
-					/* translators: %s: event title. */
-					: __( 'Register for %s', 'law' ) ),
+				/* translators: %s: event title. */
+				: __( 'Register for %s', 'law' ),
 			(string) ( $event['title'] ?? '' )
 		),
 		'dialog'   => (int) $state['event_id'],
@@ -1485,13 +1521,12 @@ function law_booking_render_opener( array $event, $mode = 'book', $preview = fal
 	$waitlist  = 'waitlist' === $mode;
 	$reception = function_exists( 'law_reception_is' ) && law_reception_is( $event_id );
 	$param     = law_booking_opener_param( $mode, $reception );
-	// "Book now" rather than "Register" on a priced reception: the word has to
-	// say that money is about to change hands (EVENTS_4.2_SPECS.md §3.4).
-	if ( $reception ) {
-		$label = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Book now', 'law' );
-	} else {
-		$label = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' );
-	}
+	// "Register" on a reception too (Denis, 16 September 2026), overriding the
+	// spec's "Book now" at EVENTS_4.2_SPECS.md §3.4: one word for the control
+	// everywhere on the site. The price and the "+ VAT" line next to the button
+	// are what say money is about to change hands. $reception still picks the
+	// opener param, so the control opens the checkout, not the free form.
+	$label     = $waitlist ? __( 'Join waitlist', 'law' ) : __( 'Register', 'law' );
 
 	// The preview shows the button exactly where the attendee will find it, but
 	// it must never be actuable from a page whose event may not even be

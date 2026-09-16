@@ -19,7 +19,13 @@ function law_event_statuses() {
 		'law-draft'     => array( 'label' => 'Draft',     'public' => false ),
 		'law-proposed'  => array( 'label' => 'Proposed',  'public' => false ),
 		'law-sent-back' => array( 'label' => 'Sent back', 'public' => false ),
-		'law-approved'  => array( 'label' => 'Approved',  'public' => false ),
+		// Approved is PUBLIC (Denis, 16 September 2026): an event the committee
+		// has approved goes straight onto the programme carrying "Open soon",
+		// and only pays its way to Confirmed afterwards. The flag is what
+		// law_events_register_statuses() below turns into a status WordPress
+		// will render a permalink for, and what law_calendar_public_statuses()
+		// keys the programme's own filter on.
+		'law-approved'  => array( 'label' => 'Approved',  'public' => true ),
 		'publish'       => array( 'label' => 'Confirmed', 'public' => true ),
 		'law-rejected'  => array( 'label' => 'Rejected',  'public' => false ),
 		'law-cancelled' => array( 'label' => 'Cancelled', 'public' => false ),
@@ -153,13 +159,32 @@ function law_events_register_statuses() {
 		if ( 'publish' === $status ) {
 			continue;
 		}
+		// A status the module calls public is one WordPress must be willing to
+		// render: Approved is the only one, and three args are needed together
+		// for it, not one.
+		//
+		//  - public: WP_Query::get_posts() empties a singular result for a
+		//    logged-out visitor whenever the status object is not public, so
+		//    without this the permalink is a 404 however the programme links it.
+		//  - publicly_queryable + protected => false: is_post_status_viewable()
+		//    refuses a protected status and, for a status that is not built in,
+		//    reads publicly_queryable rather than public. It is what
+		//    wp_force_plain_post_permalink() asks, so without the pair
+		//    get_permalink() hands back ?post_type=law_event&p=123 instead of
+		//    the pretty URL.
+		//
+		// exclude_from_search stays true on every status, and the CPT itself is
+		// registered exclude_from_search, so none of this puts an unconfirmed
+		// event into site search.
+		$public = ! empty( $config['public'] );
 		register_post_status(
 			$status,
 			array(
 				'label'                     => $config['label'],
-				'public'                    => false,
+				'public'                    => $public,
+				'publicly_queryable'        => $public,
 				'internal'                  => false,
-				'protected'                 => true,
+				'protected'                 => ! $public,
 				'exclude_from_search'       => true,
 				'show_in_admin_all_list'    => true,
 				'show_in_admin_status_list' => true,
@@ -188,6 +213,35 @@ function law_event_status_label( $status ) {
 	return $statuses[ $status ]['label'] ?? ucfirst( (string) $status );
 }
 
+/**
+ * Whether this event has been approved, whatever it has done since.
+ *
+ * Read from the STATUS first, not from `_law_approved_at`. The timestamp was
+ * the original test, and it is wrong for every migrated event: form 2 (Event >
+ * submit an event) field 78 (Approval date) is empty on all 500 production
+ * entries, so the key is absent on all 90 approved and Confirmed events the
+ * migration created, and anything gated on it silently came unlocked. That is
+ * how the post-approval fee-override lock (law_event_fee_override_locked())
+ * was off across the whole migrated programme (audit, 16 September 2026).
+ *
+ * `law-approved` and `publish` say it themselves. `law-cancelled` is the one
+ * status that cannot: law_event_transitions() reaches it from BOTH `cancel`
+ * (from approved or Confirmed, so it was approved) and `withdraw` (from draft,
+ * proposed or sent back, so it never was). The timestamp separates those two
+ * and is reliable there, because a cancellation can only have happened on this
+ * site, after the workflow started writing the key. Migration never produces a
+ * cancelled event at all: the legacy vocabulary had no such status.
+ *
+ * @param int $event_id law_event post ID.
+ * @return bool
+ */
+function law_event_has_been_approved( $event_id ) {
+	if ( in_array( get_post_status( $event_id ), array( 'law-approved', 'publish' ), true ) ) {
+		return true;
+	}
+	return '' !== (string) law_event_meta( $event_id, '_law_approved_at' );
+}
+
 /** Old field 95 (Event status) value → new post status. */
 function law_event_status_from_legacy( $legacy ) {
 	$map = array(
@@ -203,6 +257,49 @@ function law_event_status_from_legacy( $legacy ) {
 /** All law_event statuses, for admin/committee queries. */
 function law_event_all_status_keys() {
 	return array_keys( law_event_statuses() );
+}
+
+/**
+ * Status KEYS for a set of committee-facing status LABELS.
+ *
+ * The calendar layer speaks labels, because the legacy Gravity Forms source
+ * stored field 95 (Event status) as prose and the two sources share
+ * law_calendar_public_statuses(). A get_posts() call needs keys. Derived from
+ * the one status table above so the two vocabularies cannot drift, and an
+ * unknown label is dropped rather than guessed at.
+ *
+ * @param string[] $labels e.g. array( 'Confirmed', 'Approved' ).
+ * @return string[] e.g. array( 'law-approved', 'publish' ).
+ */
+function law_event_status_keys_for_labels( array $labels ) {
+	$keys = array();
+	foreach ( law_event_statuses() as $key => $config ) {
+		if ( in_array( $config['label'], $labels, true ) ) {
+			$keys[] = $key;
+		}
+	}
+	return $keys;
+}
+
+/**
+ * Is this event on the PUBLIC programme, as opposed to visible only to the
+ * committee: Confirmed, or Approved and waiting for its host to pay?
+ *
+ * One predicate, because three questions turn on it and each used to test
+ * 'publish' for itself: which statuses the programme query asks for, whether
+ * an event's link is its permalink or the committee's ?event= view, and
+ * whether a committee screen offers "View event" or "Preview event".
+ *
+ * @param int|WP_Post $event Event ID or post.
+ */
+function law_event_is_publicly_listed( $event ) {
+	$post = get_post( $event );
+	if ( ! $post || LAW_EVENT_CPT !== $post->post_type ) {
+		return false;
+	}
+	$statuses = law_event_statuses();
+	return 'publish' === $post->post_status
+		|| ! empty( $statuses[ $post->post_status ]['public'] );
 }
 
 /**

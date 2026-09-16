@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Event IDs matching a dashboard keyword, across all three haystacks.
+ * Event IDs matching a dashboard keyword, across all four haystacks.
  *
  * The box was a bare WP_Query `s` until 15 September 2026, so it searched the
  * post's title, excerpt and content and nothing else. The firm that runs an
@@ -20,7 +20,10 @@ if ( ! defined( 'ABSPATH' ) ) {
  * flagship bookings, speakers -- and so did the PUBLIC programme filter
  * (law_calendar_event_matches_filters()), which reads the same
  * _law_host_organisations through source.php's `host` key. The committee's own
- * list was the one place it did not.
+ * list was the one place it did not. The host's own NAME followed on
+ * 16 September 2026 (Denis), for the same reason one step further in: the
+ * Host column prints it, and a box that ignores the words on the row it
+ * filters reads as broken.
  *
  * Each limb is its own fields => ids query over EVERY status, law-draft
  * included: the status rules (drafts are owner-only, external drafts are
@@ -93,7 +96,91 @@ function law_committee_keyword_event_ids( $keyword ) {
 		}
 	}
 
+	// 4. The host's own name. The Host column prints the event author's
+	// display_name, so the name the committee can actually read on the row was
+	// the one thing the box would not match: typing "Emma" returned nothing
+	// while three of Emma Higgins' events sat on the list (Denis,
+	// 16 September 2026). Matched from the EVENT side -- the distinct authors
+	// of the CPT -- rather than by running a LIKE over the user table, which
+	// would scan thousands of delegate accounts to find the sixty-odd people
+	// who have ever hosted anything, and would need a row cap (so, silently
+	// dropped matches) to stay affordable.
+	$host_user_ids = law_committee_host_name_user_ids( $keyword );
+	if ( $host_user_ids ) {
+		$ids = array_merge(
+			$ids,
+			get_posts( array_merge( $base, array( 'author__in' => $host_user_ids ) ) )
+		);
+	}
+
 	return array_values( array_unique( array_map( 'intval', $ids ) ) );
+}
+
+/**
+ * Users who have authored an event and whose name answers a keyword.
+ *
+ * The candidate set is the distinct post_author column of the event CPT, not
+ * the user table: a host is by definition someone who has submitted an event,
+ * and the site's users are mostly delegates who never will. One DISTINCT read
+ * of an indexed column, then cache_users() to prime those rows and their
+ * first/last name meta, and the comparison itself happens in PHP.
+ *
+ * Every word of the keyword has to appear somewhere in the name, in any order,
+ * so "higgins emma" finds Emma Higgins and "emma h" narrows rather than
+ * widens. display_name is what the dashboard's Host column prints, and the
+ * first_name/last_name meta is read alongside it for accounts whose
+ * display_name was left as a login or a nickname.
+ *
+ * Co-owners are deliberately not matched (Denis, 16 September 2026): the row
+ * names the submitting host only, and a hit on an invisible name would read
+ * like a broken filter in the same way the missing firm did.
+ *
+ * @param string $keyword Raw keyword, already sanitised by the caller.
+ * @return int[] User IDs, unique. Empty when nothing matches.
+ */
+function law_committee_host_name_user_ids( $keyword ) {
+	$words = preg_split( '/\s+/', trim( (string) $keyword ), -1, PREG_SPLIT_NO_EMPTY );
+	if ( ! $words ) {
+		return array();
+	}
+
+	global $wpdb;
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$authors = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT DISTINCT post_author FROM {$wpdb->posts} WHERE post_type = %s AND post_author > 0",
+			LAW_EVENT_CPT
+		)
+	);
+	$authors = array_filter( array_map( 'intval', (array) $authors ) );
+	if ( ! $authors ) {
+		return array();
+	}
+	cache_users( $authors );
+
+	$matched = array();
+	foreach ( $authors as $author_id ) {
+		$user = get_userdata( $author_id );
+		if ( ! $user ) {
+			continue;
+		}
+		$name = trim(
+			$user->display_name . ' ' .
+			(string) get_user_meta( $author_id, 'first_name', true ) . ' ' .
+			(string) get_user_meta( $author_id, 'last_name', true )
+		);
+		if ( '' === $name ) {
+			continue;
+		}
+		foreach ( $words as $word ) {
+			if ( false === stripos( $name, $word ) ) {
+				continue 2;
+			}
+		}
+		$matched[] = $author_id;
+	}
+
+	return $matched;
 }
 
 /**
@@ -437,6 +524,11 @@ function law_committee_refuse( $event_id, $is_ajax, $message, $code = 400 ) {
  * in this very post, not the stored one — the panel always posts both halves
  * together, so there is no locked half to read from meta.
  *
+ * The caller decides WHETHER to ask: law_committee_action_handler() skips this
+ * when the posted pair matches the stored one exactly, so an event that already
+ * breaches its band can still be approved, cancelled or deleted. This function
+ * answers only "may this pair be stored".
+ *
  * @param string $capacity Posted band, '' for "not set".
  * @param string $tickets  Posted places, '' for none released.
  * @return string An empty string when the pair is acceptable, else the message
@@ -445,6 +537,44 @@ function law_committee_refuse( $event_id, $is_ajax, $message, $code = 400 ) {
 function law_committee_venue_input_error( $capacity, $tickets ) {
 	list( , $message ) = law_events_venue_pair_error( $capacity, $tickets );
 	return $message;
+}
+
+/**
+ * Is this posted pair the stored one, handed straight back?
+ *
+ * Both halves ride along on every panel action, because committee-actions.js
+ * posts the whole controls form, so a member who presses Delete posts the band
+ * and the places too. Judging that as a submission refused every action on the
+ * 17 migrated events whose stored pair breaches its band — approve, send back,
+ * reject, mark paid, cancel and delete alike — and a capacity rule must not be
+ * able to block a delete (16 September 2026). An untouched pair is therefore
+ * not a submission of it, which is the same reading law_events_form_save()
+ * takes of a pair whose halves the submitter cannot move.
+ *
+ * "Unchanged" means the pair exactly as the panel rendered it, handed back.
+ * Stored places of 0 render as a BLANK field, so blank is the untouched value
+ * there and a typed 0 is a change like any other — which keeps the refusal
+ * honest, since "0" is not a value the field may hold. Anything that is not a
+ * plain positive number is a change for the same reason: otherwise "lots"
+ * against a stored 0 would read as untouched and skip the check that refuses it.
+ *
+ * @param int    $event_id Event being acted on.
+ * @param string $capacity Posted band, '' for "not set".
+ * @param string $tickets  Posted places, '' for none released.
+ * @return bool True when neither half differs from what is stored.
+ */
+function law_committee_venue_input_unchanged( $event_id, $capacity, $tickets ) {
+	$capacity_stored = (string) law_event_meta( $event_id, '_law_venue_capacity' );
+	$places_stored   = (int) law_event_meta( $event_id, '_law_tickets_available' );
+	$tickets         = trim( (string) $tickets );
+
+	if ( (string) $capacity !== $capacity_stored ) {
+		return false;
+	}
+	if ( '' === $tickets ) {
+		return 0 === $places_stored;
+	}
+	return ctype_digit( $tickets ) && (int) $tickets > 0 && (int) $tickets === $places_stored;
 }
 
 function law_committee_action_handler() {
@@ -486,13 +616,19 @@ function law_committee_action_handler() {
 	// must leave the event exactly as it was, and the writes further down would
 	// already have landed. The sentinel says the control was on the form, so a
 	// blank field means "cleared" rather than "not asked".
+	//
+	// The CHANGE is judged, not the event: see
+	// law_committee_venue_input_unchanged() above for why. Changing either half
+	// is still judged in full.
 	$venue_present = ! empty( $_POST['law_venue_present'] );
 	$capacity_new  = '';
 	$tickets_new   = '';
 	if ( $venue_present ) {
 		$capacity_new = sanitize_text_field( wp_unslash( $_POST['law_venue_capacity'] ?? '' ) );
 		$tickets_new  = trim( (string) wp_unslash( $_POST['law_tickets_available'] ?? '' ) );
-		$venue_error  = law_committee_venue_input_error( $capacity_new, $tickets_new );
+		$venue_error  = law_committee_venue_input_unchanged( $event_id, $capacity_new, $tickets_new )
+			? ''
+			: law_committee_venue_input_error( $capacity_new, $tickets_new );
 		if ( '' !== $venue_error ) {
 			law_committee_refuse( $event_id, $is_ajax, $venue_error );
 		}
@@ -570,6 +706,23 @@ function law_committee_action_handler() {
 	if ( $venue_present ) {
 		$before_capacity = (string) law_event_meta( $event_id, '_law_venue_capacity' );
 		$before_places   = (int) law_event_meta( $event_id, '_law_tickets_available' );
+		// The venue itself (client, 16 September 2026). Not required, and not
+		// validated: any address is better than none, and booking simply stays
+		// shut until there is one. Logged because it is one of the three things
+		// that decide whether booking opens.
+		if ( isset( $_POST['law_venue'] ) ) {
+			$before_venue = (string) law_event_meta( $event_id, '_law_venue' );
+			law_event_update_meta( $event_id, '_law_venue', wp_unslash( $_POST['law_venue'] ) );
+			$after_venue = (string) law_event_meta( $event_id, '_law_venue' );
+			if ( $before_venue !== $after_venue ) {
+				law_event_log(
+					$event_id,
+					sprintf( 'Venue changed to "%s".', $after_venue ?: '(none)' ),
+					array( 'action' => 'venue', 'old' => $before_venue, 'new' => $after_venue, 'source' => 'ui' ),
+					array( 'user_id' => $actor )
+				);
+			}
+		}
 		law_event_update_meta( $event_id, '_law_venue_capacity', $capacity_new );
 		law_event_update_meta( $event_id, '_law_tickets_available', $tickets_new );
 		law_event_log_capacity_change( $event_id, $before_capacity, $actor );
@@ -596,6 +749,16 @@ function law_committee_action_handler() {
 	// law_orgs_present above: the groups must be independently absent-safe,
 	// and an unticked checkbox posts nothing, so without a sentinel a flag
 	// could be switched on and then never off.
+	// Override booking availability, at the top of the panel. A select always
+	// posts, so isset() is sentinel enough. Logged, because opening booking on
+	// an event that has not paid, or closing it on a live one, is exactly the
+	// kind of decision the committee has to be able to account for later.
+	if ( isset( $_POST['law_booking_override'] ) ) {
+		$before_override = law_event_booking_override( $event_id );
+		law_event_update_meta( $event_id, '_law_booking_override', wp_unslash( $_POST['law_booking_override'] ) );
+		law_event_log_booking_override_change( $event_id, $before_override, $actor );
+	}
+
 	if ( ! empty( $_POST['law_flags_present'] ) ) {
 		$before_flags = array(
 			'_law_is_external'   => (int) law_event_meta( $event_id, '_law_is_external' ),

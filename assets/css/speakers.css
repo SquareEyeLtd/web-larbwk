@@ -160,12 +160,9 @@
 	letter-spacing: 0.04em;
 }
 
-.law-speakers mark.law-speakers__hit {
-	padding: 0 0.05em;
-	border-radius: 2px;
-	background: #ffdfb8;
-	color: inherit;
-}
+/* The search hit highlight used to be declared here as .law-speakers__hit. It
+   now lives in app.css as the site-wide mark.law-hit, shared with the
+   programme's filter (Denis, 16 September 2026). */
 
 .law-speakers__empty {
 	margin-top: 1rem;

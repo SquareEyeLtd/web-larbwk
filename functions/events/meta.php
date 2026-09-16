@@ -21,7 +21,7 @@ function law_event_meta_schema() {
 		'_law_slot_label'           => 'text',      // The chosen slot label, for display parity.
 		'_law_preferred_slots'      => 'text_array',
 		'_law_venue'                => 'text',
-		'_law_venue_needed'         => 'text',
+		'_law_venue_needed'         => 'venue_needed',
 		'_law_venue_capacity'       => 'text',
 		'_law_tickets_available'    => 'int',
 		'_law_tickets_sold'         => 'int',  // Recalculated by law_event_recount_attendees().
@@ -77,9 +77,20 @@ function law_event_meta_schema() {
 		// _law_session_agenda: this event has a session-level agenda, which is
 		// what puts the Session agenda section on the event form
 		// (law_event_has_session_agenda() in submission-form.php).
+		//
+		// _law_booking_override: the committee's hand on the booking switch
+		// (client, 16 September 2026). 'auto' follows the rules -- paid, places
+		// released, venue recorded -- while 'disable' shows "Open soon" however
+		// complete the event is and 'enable' opens booking on an event that is
+		// missing its venue or has not paid yet, for the high-profile event LAW
+		// wants promoted now. Not a flag, because the three answers are not two:
+		// "the committee has not touched this" has to be distinguishable from
+		// "the committee decided to leave it open", or a later rule change would
+		// silently reinterpret every event nobody has looked at.
 		'_law_is_external'          => 'flag',
 		'_law_external_url'         => 'url',
 		'_law_session_agenda'       => 'flag',
+		'_law_booking_override'     => 'booking_override',
 		// The flagship conference (functions/events/flagship.php). Exactly one
 		// law_event post carries _law_is_flagship; it is edited on the Flagship
 		// screen, its date is fixed (2 December by default) and its _law_start /
@@ -285,15 +296,31 @@ function law_discount_meta_schema() {
 	);
 }
 
+/**
+ * Post type => its own meta schema.
+ *
+ * The one place the five schemas are listed together. register_post_meta()
+ * and law_events_meta_type() both read it, so what a key is sanitised as on
+ * the way in cannot drift from what it is registered as.
+ *
+ * @return array<string,array<string,string>>
+ */
+function law_events_post_type_meta_schemas() {
+	static $types = null;
+	if ( null === $types ) {
+		$types = array(
+			LAW_EVENT_CPT    => law_event_meta_schema(),
+			LAW_SPEAKER_CPT  => law_speaker_meta_schema(),
+			LAW_SESSION_CPT  => law_session_meta_schema(),
+			LAW_BOOKING_CPT  => law_booking_meta_schema(),
+			LAW_DISCOUNT_CPT => law_discount_meta_schema(),
+		);
+	}
+	return $types;
+}
+
 function law_events_register_meta() {
-	$types = array(
-		LAW_EVENT_CPT   => law_event_meta_schema(),
-		LAW_SPEAKER_CPT => law_speaker_meta_schema(),
-		LAW_SESSION_CPT => law_session_meta_schema(),
-		LAW_BOOKING_CPT => law_booking_meta_schema(),
-		LAW_DISCOUNT_CPT => law_discount_meta_schema(),
-	);
-	foreach ( $types as $post_type => $schema ) {
+	foreach ( law_events_post_type_meta_schemas() as $post_type => $schema ) {
 		foreach ( $schema as $key => $type ) {
 			register_post_meta(
 				$post_type,
@@ -367,6 +394,17 @@ function law_events_sanitize_value( $value, $type ) {
 		case 'fee_tier':
 			$tiers = array_keys( (array) law_events_setting( 'fee_tiers', array() ) );
 			return in_array( $value, $tiers, true ) ? $value : '';
+		case 'venue_needed':
+			// One of the two answers on the Venue needed radio, as its full
+			// label. Migrated events arrived holding the Gravity Forms choice
+			// VALUES ("Yes"/"No"), which matched no radio on the custom form,
+			// so the answer is mapped onto its canonical label on the way in.
+			return law_events_venue_needed_label( $value );
+		case 'booking_override':
+			// Unknown falls back to 'auto', the answer that decides nothing: a
+			// forged post must not be able to force booking open on an event
+			// that has not paid.
+			return in_array( $value, array( 'auto', 'disable', 'enable' ), true ) ? $value : 'auto';
 		case 'payment_status':
 			return in_array( $value, array( 'unpaid', 'paid', 'refunded', 'free' ), true ) ? $value : 'unpaid';
 		case 'discount_type':
@@ -431,6 +469,10 @@ function law_events_sanitize_value( $value, $type ) {
 			foreach ( law_events_address_parts() as $part ) {
 				$out[ $part ] = sanitize_text_field( (string) ( $value[ $part ] ?? '' ) );
 			}
+			// The billing country as a NAME. Half the migrated events arrived
+			// holding a bare ISO code, which is not what the Country select
+			// offers; see law_events_country_display_name().
+			$out['country'] = law_events_country_display_name( $out['country'] );
 			return $out;
 		case 'people_rows':
 			$rows = array();
@@ -549,12 +591,44 @@ function law_events_all_meta_schemas() {
 	return $schemas;
 }
 
+/**
+ * The sanitiser for one meta key ON ONE POST, which is not the same question
+ * as "what does this key mean somewhere in the module".
+ *
+ * Two post types can declare the same key with DIFFERENT vocabularies, and
+ * _law_payment_status does: an event's is unpaid/paid/refunded/free, a
+ * booking's is the longer pending_setup/ready/processing/… list. The merged
+ * map cannot answer for both, because array_merge() keeps the last one, which
+ * is the booking's. Reading the post's own schema first is what makes an
+ * event's 'free' survive the write; before 16 September 2026 it was sanitised
+ * against the booking vocabulary into 'pending_setup' and then, by the
+ * registered per-post-type callback, into 'unpaid'. Every £0 event in the
+ * database read "Unpaid" as a result, which is what
+ * migration/repair-payment-status.php was written to correct.
+ *
+ * The merged map stays as the fallback, for a post whose type is none of the
+ * five (or a post that no longer exists), where a key still has exactly one
+ * possible meaning.
+ *
+ * @param int    $post_id Post the value is being read from or written to.
+ * @param string $key     Schema key.
+ * @return string|null The sanitiser id, or null when the key is in no schema.
+ */
+function law_events_meta_type( $post_id, $key ) {
+	$post_type = get_post_type( $post_id );
+	$schemas   = law_events_post_type_meta_schemas();
+	if ( $post_type && isset( $schemas[ $post_type ][ $key ] ) ) {
+		return $schemas[ $post_type ][ $key ];
+	}
+	return law_events_all_meta_schemas()[ $key ] ?? null;
+}
+
 function law_event_update_meta( $post_id, $key, $value ) {
-	$schemas = law_events_all_meta_schemas();
-	if ( ! isset( $schemas[ $key ] ) ) {
+	$type = law_events_meta_type( $post_id, $key );
+	if ( null === $type ) {
 		return false;
 	}
-	$clean = law_events_sanitize_value( $value, $schemas[ $key ] );
+	$clean = law_events_sanitize_value( $value, $type );
 	if ( '' === $clean || array() === $clean ) {
 		return delete_post_meta( $post_id, $key );
 	}
@@ -568,9 +642,8 @@ function law_event_update_meta( $post_id, $key, $value ) {
  * @param string $key     Schema key.
  */
 function law_event_meta( $post_id, $key ) {
-	$value   = get_post_meta( $post_id, $key, true );
-	$schemas = law_events_all_meta_schemas();
-	$type    = $schemas[ $key ] ?? 'text';
+	$value = get_post_meta( $post_id, $key, true );
+	$type  = law_events_meta_type( $post_id, $key ) ?? 'text';
 	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows', 'answer_map' ), true ) ) {
 		return is_array( $value ) ? $value : array();
 	}

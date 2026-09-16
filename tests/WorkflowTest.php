@@ -80,6 +80,52 @@ class WorkflowTest extends LAW_Test_Case {
 		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'Zero-fee events never touch Stripe.' );
 	}
 
+	/**
+	 * Free is a first-class payment state, not a quieter kind of unpaid.
+	 *
+	 * Worth pinning, because until 16 September 2026 no event in the migrated
+	 * data could hold it: _law_payment_status is declared on both the event
+	 * and the booking, the merged schema handed law_event_update_meta() the
+	 * BOOKING vocabulary, and an event's 'free' was rewritten to 'unpaid' on
+	 * the way in (law_events_meta_type() now resolves it per post type).
+	 */
+	public function test_a_free_event_is_bookable_and_owes_nothing(): void {
+		wp_set_current_user( $this->make_committee_user() );
+		$event = $this->make_event(
+			array(
+				'_law_fee_tier'          => 'sponsor',
+				'_law_venue'             => 'Guildhall, EC2V 7HH',
+				'_law_venue_capacity'    => '101-150',
+				'_law_tickets_available' => 120,
+				'_law_start'             => gmdate( 'Y-m-d H:i', strtotime( '+30 days' ) ),
+			)
+		);
+
+		$this->assertTrue( law_event_workflow_transition( $event, 'approve' ) );
+		$this->assertSame( 'free', law_event_meta( $event, '_law_payment_status' ) );
+
+		// Booking is gated on publication, which approving a zero-fee event
+		// does in the same breath. Nothing reads the payment status to decide
+		// whether a place may be taken.
+		$this->assertSame( 'publish', get_post_status( $event ) );
+		$this->assertSame( '', law_event_booking_hold_reason( $event ) );
+		$this->assertTrue( law_booking_guard_open( $event ) );
+
+		// The fee snapshot stays editable: 'free' is not a settled payment the
+		// way 'paid' and 'refunded' are, because no invoice was ever raised.
+		$this->assertNotInstanceOf( WP_Error::class, law_event_resnapshot_fee( $event ) );
+
+		// And the committee's post-approval lock is on, from the status.
+		$this->assertTrue( law_event_fee_override_locked( $event ) );
+	}
+
+	/** What the migration derives for a Confirmed zero-fee event survives the write. */
+	public function test_a_migrated_zero_fee_event_stores_free(): void {
+		$event = $this->make_event( array( '_law_fee_tier' => 'sponsor' ), 'publish' );
+		law_event_update_meta( $event, '_law_payment_status', law_migration_derive_payment( 'Confirmed', 0, '' ) );
+		$this->assertSame( 'free', law_event_meta( $event, '_law_payment_status' ) );
+	}
+
 	public function test_stripe_failure_holds_at_approved_with_error_flag(): void {
 		wp_set_current_user( $this->make_committee_user() );
 		$event = $this->make_event( array( '_law_fee_tier' => 'uk' ) );

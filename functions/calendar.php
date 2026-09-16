@@ -36,7 +36,27 @@ function law_calendar_week_days() {
 /**
  * Statuses shown on the public programme.
  */
+/**
+ * The statuses the PUBLIC programme lists, as committee-facing labels.
+ *
+ * Confirmed plus Approved on the CPT source (Denis, 16 September 2026): an
+ * approved event is on the programme from the moment the committee approves
+ * it, carrying "Open soon" until its host pays and its places are released.
+ *
+ * Confirmed ALONE on the legacy Gravity Forms source, and this is the reason
+ * the function is source-aware rather than a flat list. That source has no
+ * booking system at all, so law_booking_card_inert_action() returns null for
+ * every card on it and an Approved entry would sit there looking bookable with
+ * nothing on the row to say otherwise. This same list filters form 2 (Event >
+ * submit an event) field 95 (Event status) in law_calendar_raw_entries() and
+ * law_calendar_map_entry(), which is where that would bite.
+ *
+ * @return string[]
+ */
 function law_calendar_public_statuses() {
+	if ( function_exists( 'law_events_source' ) && 'cpt' === law_events_source() ) {
+		return array( 'Confirmed', 'Approved' );
+	}
 	return array( 'Confirmed' );
 }
 
@@ -137,6 +157,41 @@ function law_calendar_filter_params() {
 }
 
 /**
+ * Whether the Organiser filter exists on this page at all.
+ *
+ * ONE rule, two consumers: parts/calendar-filters.php decides whether to draw
+ * the select, and law_calendar_filters() decides whether to honour the
+ * ?law_run_by= it posts. They share a predicate because the halves must never
+ * drift -- a parameter that still filters with no control on screen is the
+ * worse half of the pair, since the visitor can see a shortened programme and
+ * has nothing to press to lengthen it again.
+ *
+ * Committee only, since 16 September 2026 (Denis): the public programme is down
+ * to keyword, sector and type. The committee's programme view keeps it, and the
+ * committee events dashboard's own "Run by" filter
+ * (templates/account-dashboard.php) is a different control on a different
+ * screen and is untouched by this.
+ *
+ * The page-template test rather than a capability test, and not by taste. The
+ * one thing a capability test would buy is keeping a committee member's filter
+ * alive on a round trip out to an event page and back, and that round trip does
+ * not preserve filters anyway: law_calendar_url() short-circuits on a single
+ * law_event permalink before it merges law_calendar_search_query_args(). What a
+ * capability test WOULD do is leave the stale-bookmark bug in place for the only
+ * people who have ever seen the control, and therefore the only people who could
+ * have bookmarked it. The legacy in-page detail view
+ * (/calendar-committee/?event=123) is still on the committee page template, so
+ * the template test preserves the filter exactly where it can be preserved.
+ *
+ * Folding the source test in here closes a second, older hole: in legacy Gravity
+ * Forms mode every event maps is_external => false, so ?law_run_by=external
+ * emptied the programme with no control anywhere to clear it.
+ */
+function law_calendar_organiser_filter_enabled() {
+	return 'cpt' === law_events_source() && law_calendar_is_committee();
+}
+
+/**
  * Programme filters from the query string. Fully theme-owned: the calendar
  * queries entries with GFAPI and filters mapped events in PHP, with no
  * GravityView involvement.
@@ -171,6 +226,17 @@ function law_calendar_filters( $reset = false ) {
 		$filters['run_by'] = 'external';
 	}
 	if ( ! in_array( $filters['run_by'], array( 'external', 'host' ), true ) ) {
+		$filters['run_by'] = '';
+	}
+
+	// And blanked outright wherever the control is not drawn, so a bookmark from
+	// before 16 September 2026 cannot filter the public programme invisibly.
+	// Blanked rather than unset: law_calendar_event_matches_filters() reads the
+	// key unconditionally. Blanking also keeps it out of
+	// law_calendar_search_query_args(), so law_calendar_is_searching() stays
+	// false and an empty programme says "No events in the programme yet."
+	// rather than blaming a search the visitor never made.
+	if ( ! law_calendar_organiser_filter_enabled() ) {
 		$filters['run_by'] = '';
 	}
 
@@ -262,6 +328,232 @@ function law_calendar_event_matches_filters( $event, $filters ) {
 	}
 
 	return true;
+}
+
+/**
+ * The active keyword marked up inside a display string, as safe HTML.
+ *
+ * Why it exists: filtering the programme told a visitor which cards survived but
+ * never why, so a search for "gar live" returned a page of cards with nothing on
+ * any of them pointing at the words that matched (Denis, 16 September 2026).
+ *
+ * Server-side, and that is the whole reason it is a PHP function rather than a
+ * second copy of assets/js/speaker-search.js. The programme renders through
+ * parts/calendar-events.php on the first load, on every filter fetch (the
+ * &law_partial=1 endpoint re-renders the same part) and on the no-JS GET
+ * fallback, so one implementation here covers all three and the committee's
+ * programme view as well. The speakers archive's highlighter stays client-side
+ * and stays token-based, because it filters as you type against markup already
+ * in the page; the two matchers are deliberately different, and only the thing
+ * the reader sees is shared (mark.law-hit, assets/css/app.css).
+ *
+ * THE TRAP, and the reason this is not three lines of str_ireplace.
+ * law_calendar_event_matches_filters() searches a string that has been through
+ * law_calendar_normalise_choice(): entities decoded, whitespace runs collapsed,
+ * lower-cased. The first two CHANGE THE LENGTH of the string -- "&amp;" is five
+ * characters before decoding and one after -- so an offset found in the
+ * normalised string does not point at the same character in the raw one. The
+ * only way a mark lands where it belongs is to put the text we are about to
+ * PRINT through the same two transforms and search that. The lower-casing is
+ * deliberately not applied: this string reaches the page, and mb_stripos() does
+ * the case-insensitive part without a second folded copy to map offsets back
+ * from.
+ *
+ * Every branch that is not marking anything returns esc_html( $text ) on the
+ * RAW string, so a field with no hit is byte for byte what it was before this
+ * function existed. That matters because parts/loop/event.php is shared with the
+ * speaker profile, My events and My bookings.
+ *
+ * mb_* unguarded: the theme already calls mb_strtolower, mb_substr and
+ * mb_strtoupper without a guard in a dozen places and fatals without mbstring
+ * long before a visitor reaches the programme. The function_exists() test in
+ * law_calendar_normalise_choice() above protects nothing and is not copied here.
+ *
+ * THE WHOLE PHRASE, CASE-INSENSITIVELY, AND NOTHING ELSE. Every surface that
+ * calls this marks one contiguous run of characters. Marking the keyword's
+ * individual words instead was tried on the committee's dashboard and reversed
+ * within the hour (Denis, 16 September 2026): that box is used with long
+ * phrases lifted off a title, and "Collaboration with Arbitral Institutions in"
+ * then stippled every "in", "with" and "in"-inside-a-word down two columns,
+ * which is noise rather than an explanation. The cost of the exact rule is that
+ * a row the SEARCH matched word by word can show with nothing marked; that is
+ * the accepted trade, and it is the same limitation the programme already
+ * carries for a card matched on its description.
+ *
+ * @param string $text    Raw field value (a title, a venue, joined host names).
+ * @param string $keyword The active keyword, as law_calendar_filters() returns it.
+ * @param string $class   Class on the <mark>.
+ * @return string Escaped HTML. Only the <mark> tags are raw.
+ */
+function law_calendar_highlight( $text, $keyword, $class = 'law-hit' ) {
+	$text    = (string) $text;
+	$keyword = (string) $keyword;
+
+	if ( '' === $text || '' === trim( $keyword ) ) {
+		return esc_html( $text );
+	}
+
+	$display = preg_replace( '/\s+/u', ' ', html_entity_decode( $text, ENT_QUOTES, 'UTF-8' ) );
+	$needle  = preg_replace( '/\s+/u', ' ', html_entity_decode( $keyword, ENT_QUOTES, 'UTF-8' ) );
+
+	// preg_replace() returns null on invalid UTF-8, and mb_stripos( null, ... )
+	// is a deprecation notice on PHP 8.1. Bad bytes fall back to plain escaping
+	// rather than warning on a public page.
+	if ( null === $display || null === $needle ) {
+		return esc_html( $text );
+	}
+	$needle = trim( $needle );
+	if ( '' === $needle ) {
+		return esc_html( $text );
+	}
+
+	$at = mb_stripos( $display, $needle );
+
+	// The keyword is not in THIS field. The row is on screen because it matched
+	// something the filter searches but the row does not print -- the type, a
+	// sector, the description -- or because the filter split the phrase into
+	// words and this field answers only some of them. Accepted rather than
+	// papered over: see the note on the needle above.
+	if ( false === $at ) {
+		return esc_html( $text );
+	}
+
+	// No regex anywhere near the needle. The keyword is typed by a visitor, so a
+	// preg_quote()/preg_replace() pass would be one forgotten escape away from a
+	// pattern error or a runaway backtrack; mb_stripos() treats "." and "(" as
+	// the characters they are, for free.
+	$length = mb_strlen( $needle );
+	$out    = '';
+	$cursor = 0;
+	while ( false !== $at ) {
+		$out   .= esc_html( mb_substr( $display, $cursor, $at - $cursor ) );
+		$out   .= '<mark class="' . esc_attr( $class ) . '">'
+			. esc_html( mb_substr( $display, $at, $length ) )
+			. '</mark>';
+		$cursor = $at + $length;
+		// Resume AFTER the match, never inside it: searching from $at + 1 would
+		// nest marks on an overlapping hit ("aa" in "aaa") and mark the same
+		// characters twice.
+		$at = mb_stripos( $display, $needle, $cursor );
+	}
+	$out .= esc_html( mb_substr( $display, $cursor ) );
+
+	return $out;
+}
+
+/**
+ * A keyword-in-context extract of a description, with the hit marked.
+ *
+ * Why it exists: both keyword boxes search the description, and neither surface
+ * prints it, so a search for a word that lives only in the body text returned
+ * rows and cards that named nothing the visitor had typed (Denis, 16 September
+ * 2026). Marking the printed fields was the first half of that fix; this is the
+ * other half, and it is the standard search-result snippet every search engine
+ * shows for the same reason.
+ *
+ * Returns '' -- not a truncated description -- unless the keyword is actually
+ * IN the description. The line is there to explain a match, so a card matched
+ * on its title alone grows nothing, and the caller can test the return value as
+ * the condition for printing anything at all.
+ *
+ * WHAT THE WINDOW IS. ~170 characters, which is about two lines on a card and
+ * the length search engines settled on for the same job, with ~55 of them
+ * before the hit so the phrase is read in context rather than starting the
+ * line. $chars is a FLOOR, not a cap: a keyword longer than the window left
+ * after the lead-in widens it, because a snippet cropped inside its own phrase
+ * comes back with nothing marked at all. Both edges are then pulled back to a word boundary, never mid-word, and
+ * an ellipsis marks each edge that is not the real start or end of the text --
+ * so the reader can tell a snippet from a short description. A hit near the
+ * beginning simply has no leading ellipsis.
+ *
+ * The text is flattened through law_rich_text_plain() first: descriptions are
+ * rich text, so tags, shortcodes and entities have to go before anything can be
+ * counted in characters, and block boundaries have to become spaces or a
+ * bulleted list runs into one word. Newlines then collapse to spaces, because
+ * this is one line of type on a card.
+ *
+ * Marking is delegated to law_calendar_highlight(), so the snippet obeys the
+ * same exact-phrase rule as every other surface and cannot escape the mark:
+ * only the ellipses are added raw, and they carry no HTML meaning.
+ *
+ * @param string $description Raw rich-text description (post_content).
+ * @param string $keyword     The active keyword.
+ * @param int    $chars       Target window length in characters.
+ * @return string Escaped HTML with <mark> tags, or '' when there is no hit.
+ */
+function law_calendar_search_snippet( $description, $keyword, $chars = 170 ) {
+	$keyword = trim( (string) $keyword );
+	if ( '' === $keyword ) {
+		return '';
+	}
+
+	$text = law_rich_text_plain( $description );
+	$text = preg_replace( '/\s+/u', ' ', $text );
+	// preg_replace() returns null on invalid UTF-8; mb_stripos( null, ... ) is a
+	// deprecation on PHP 8.1, and a snippet is not worth a notice on a public
+	// page.
+	if ( null === $text ) {
+		return '';
+	}
+	$text = trim( $text );
+
+	$needle = preg_replace( '/\s+/u', ' ', html_entity_decode( $keyword, ENT_QUOTES, 'UTF-8' ) );
+	if ( null === $needle ) {
+		return '';
+	}
+	$needle = trim( $needle );
+	if ( '' === $text || '' === $needle ) {
+		return '';
+	}
+
+	$at = mb_stripos( $text, $needle );
+	if ( false === $at ) {
+		return '';
+	}
+
+	$total       = mb_strlen( $text );
+	$needle_size = mb_strlen( $needle );
+
+	// THE WINDOW HAS TO HOLD THE LEAD-IN AND THE WHOLE PHRASE, which is not the
+	// same as holding the phrase. Before this was written as one sum it read
+	// max( $chars, $needle + 40 ) and the lead-in was spent out of the same
+	// budget, so a 62-character phrase searched on the committee's table (110)
+	// began 55 characters in, ran past the end of the window and was cropped
+	// mid-phrase -- and law_calendar_highlight(), which matches the phrase
+	// whole, then found nothing to mark. The reader got a snippet with no
+	// highlight in it, on the one surface whose window was tight, while the
+	// programme's 170 happened to fit and looked fine (Denis, 16 September
+	// 2026, with both screenshots). Any window shorter than this sum would
+	// silently produce that again.
+	$lead   = 55;
+	$window = max( (int) $chars, $lead + $needle_size + 40 );
+	$start  = max( 0, $at - $lead );
+	$end    = min( $total, $start + $window );
+
+	// Word boundaries, and never at the cost of the hit itself: the start only
+	// moves forward while it stays left of the match, the end only moves back
+	// while it stays right of it.
+	if ( $start > 0 ) {
+		$space = mb_strpos( $text, ' ', $start );
+		if ( false !== $space && $space < $at ) {
+			$start = $space + 1;
+		}
+	}
+	if ( $end < $total ) {
+		$space = mb_strrpos( mb_substr( $text, $start, $end - $start ), ' ' );
+		if ( false !== $space && $start + $space > $at + $needle_size ) {
+			$end = $start + $space;
+		}
+	}
+
+	$snippet = trim( mb_substr( $text, $start, $end - $start ) );
+	if ( '' === $snippet ) {
+		return '';
+	}
+
+	return ( $start > 0 ? '… ' : '' )
+		. law_calendar_highlight( $snippet, $keyword )
+		. ( $end < $total ? ' …' : '' );
 }
 
 /**
@@ -1076,7 +1368,11 @@ function law_calendar_day_nav_label( $date ) {
  * day section's data-count after a filter fetch, so the two must agree.
  *
  * @param int  $count           Events on the day, flagship included.
- * @param bool $is_flagship_day The flagship block is pinned to this day.
+ * @param bool $is_flagship_day A VISIBLE flagship block is pinned to this day.
+ *                              Since 16 September 2026 the flagship answers the
+ *                              filters, so a day whose flagship has been
+ *                              filtered out passes false here and correctly
+ *                              falls through to "No events".
  * @return string
  */
 function law_calendar_day_count_text( $count, $is_flagship_day ) {
@@ -1129,12 +1425,110 @@ function law_calendar_flagship_event( $reset = false ) {
 }
 
 /**
+ * The flagship conference as the programme should RENDER it: the event when it
+ * survives the active filters, and null when it does not.
+ *
+ * Until 16 September 2026 the flagship was pinned to its day whatever the
+ * filters said, on the reasoning that the main event of the week should be in
+ * front of a delegate searching for something else. Denis reversed it: an event
+ * that ignores the filters is an event the visitor cannot get out of the way,
+ * and a search for a term the conference does not carry should not return it.
+ * It now answers keyword, sector and type like any other event, and with no
+ * filters set it is pinned to its day exactly as before.
+ *
+ * A second function rather than filtering inside law_calendar_flagship_event(),
+ * because the unfiltered answer is still the right one for "is there a flagship
+ * at all" -- the conference's own page, the committee's screens and the status
+ * rules documented above all resolve through it and must not inherit a
+ * visitor's search box.
+ *
+ * Memoised per context like its neighbour: law_calendar_day_is_empty() asks once
+ * per day of the week, and without the memo the matcher would run
+ * law_rich_text_plain() over the conference's whole rendered description five to
+ * seven times a request. law_calendar_filters() is itself memoised for the
+ * request, so the two cannot disagree within one.
+ *
+ * @param bool $reset Clear the memo (tests).
+ */
+function law_calendar_visible_flagship_event( $reset = false ) {
+	static $cache = array();
+	if ( $reset ) {
+		$cache = array();
+	}
+
+	$key = law_calendar_context();
+	if ( array_key_exists( $key, $cache ) ) {
+		return $cache[ $key ];
+	}
+
+	$flagship = law_calendar_flagship_event();
+	$cache[ $key ] = ( $flagship && law_calendar_event_matches_filters( $flagship, law_calendar_filters() ) )
+		? $flagship
+		: null;
+	return $cache[ $key ];
+}
+
+/**
+ * The dates of the week that have a drinks reception ON THE PROGRAMME.
+ *
+ * Behind the day tabs' "Reception" pill (parts/calendar-daynav.php), the
+ * companion to the "Flagship" one: a day carrying a reception says so before
+ * anybody scrolls, which matters most on the days with no conference on them
+ * to draw the eye down (Denis, 16 September 2026).
+ *
+ * VISIBLE receptions, for the same reason the flagship's resolver answers the
+ * filters: it reads law_calendar_events_by_date(), whose events have already
+ * been through law_calendar_event_matches_filters(), so a keyword search that
+ * hides the reception takes its pill with it. Presence, not booking state --
+ * a reception whose places have not been released yet still gets a pill, in
+ * parity with the conference, whose pill does not wait for registration to
+ * open either.
+ *
+ * Memoised per context like its neighbour above: the day nav asks once per day
+ * of the week and the answer cannot change within a request.
+ *
+ * @param bool $reset Clear the memo (tests).
+ * @return string[] Y-m-d keys, in week order.
+ */
+function law_calendar_reception_dates( $reset = false ) {
+	static $cache = array();
+	if ( $reset ) {
+		$cache = array();
+	}
+
+	$key = law_calendar_context();
+	if ( array_key_exists( $key, $cache ) ) {
+		return $cache[ $key ];
+	}
+
+	$dates = array();
+	foreach ( law_calendar_events_by_date() as $date => $events ) {
+		if ( '_unscheduled' === $date ) {
+			continue;
+		}
+		foreach ( $events as $event ) {
+			if ( ! empty( $event['is_reception'] ) ) {
+				$dates[] = (string) $date;
+				break;
+			}
+		}
+	}
+
+	$cache[ $key ] = $dates;
+	return $dates;
+}
+
+/**
  * True when a programme day has nothing to show.
  *
  * One rule, two consumers (parts/calendar-events.php skips the day section,
- * parts/calendar-filters.php greys out its tab), because the flagship makes
- * "empty" mean more than "no cards": its block is pinned to its own day
- * whatever the filters say, so that day is never empty while it is published.
+ * parts/calendar-daynav.php greys out its tab), because the flagship makes
+ * "empty" mean more than "no cards": its block is not one of the day's cards,
+ * so a day holding only the conference still has something to show.
+ *
+ * It reads the VISIBLE flagship. Until 16 September 2026 the flagship kept its
+ * day and its tab alive however the list was filtered; now that it answers the
+ * filters too, a search it does not match leaves its day as empty as any other.
  *
  * @param string $date Y-m-d key from law_calendar_week_days().
  */
@@ -1143,7 +1537,7 @@ function law_calendar_day_is_empty( $date ) {
 	if ( ! empty( $grouped[ (string) $date ] ) ) {
 		return false;
 	}
-	$flagship = law_calendar_flagship_event();
+	$flagship = law_calendar_visible_flagship_event();
 	if ( $flagship && (string) ( $flagship['date'] ?? '' ) === (string) $date ) {
 		return false;
 	}
@@ -1159,6 +1553,8 @@ function law_calendar_reset_caches() {
 	law_calendar_events( true );
 	law_calendar_event_by_id( 1, true );
 	law_calendar_flagship_event( true );
+	law_calendar_visible_flagship_event( true );
+	law_calendar_reception_dates( true );
 	if ( function_exists( 'law_flagship_event_id' ) ) {
 		law_flagship_event_id( true );
 	}

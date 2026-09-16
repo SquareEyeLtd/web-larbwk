@@ -146,11 +146,35 @@
   display: none;
 }
 
+/* The pills' row. Wednesday carries two of them -- the conference's and a
+   reception's -- and stacking them would make that one tab taller than the
+   rest, which matters more than it looks: --law-cal-daynav-h above is the
+   sticky scroll offset every in-page anchor on the programme is measured
+   against, and it is a fixed value, not one the script measures. Side by side,
+   wrapping only when a tab is genuinely too narrow for the pair.
+
+   Rendered whether or not it has anything in it, because calendar-tabs.js adds
+   and removes the pills inside it after a filter fetch and a day that gains one
+   needs somewhere to put it. Hence the :empty rule, so the gap goes with the
+   pills. */
+.law-cal-daynav__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+}
+
+.law-cal-daynav__flags:empty {
+  display: none;
+}
+
 /* Orange on both white and navy clears AA for a label this size only as an
-   outline pill, the same reasoning as the flagship block's own badge. */
+   outline pill, the same reasoning as the flagship block's own badge. The
+   reception's pill is deliberately the SAME pill: the two say "there is
+   something on this day worth the click", and the words are what tell them
+   apart -- a second colour would be a third meaning nobody has a key to. */
 .law-cal-daynav__flag {
   align-self: flex-start;
-  margin-top: 0.15rem;
   padding: 2px 8px;
   border: 1px solid #ef7d05;
   border-radius: 10px;
@@ -527,15 +551,28 @@
   color: #a85400;
 }
 
-/* The flagship as an ordinary row (parts/loop/event.php): the speaker
-   profile's role lists, My bookings, My events. Same structure as every other
-   row, but wearing the programme block's colours -- brand navy fill, white
-   text, orange accents -- so the conference is recognisable as the conference
-   wherever it is listed (Denis, 14 September 2026). Navy and white and navy
+/* The two LAW-run events as ordinary rows (parts/loop/event.php): the speaker
+   profile's role lists, My bookings, My events, and -- for the receptions --
+   the programme itself. Same structure as every other row, but wearing the
+   programme block's colours: brand navy fill, white text, orange accents, so
+   the conference is recognisable as the conference wherever it is listed
+   (Denis, 14 September 2026) and a drinks reception stops disappearing into
+   the pale rows around it (Denis, 16 September 2026). Navy and white and navy
    and orange both clear AA, the same pairing the block and the strip use.
-   The programme's own day lists never reach this: the flagship is lifted out
-   of them and rendered as parts/events/flagship-card.php instead. */
-.law-event-card--flagship {
+
+   ONE set of declarations for both, deliberately. They are the same surface
+   and splitting them produced two copies of the same twelve rules the first
+   time it was tried; what tells a reader which is which is the identity pill
+   and, on the programme, the fact that the conference is a photo block rather
+   than a row at all. The programme's own day lists never reach the flagship
+   half: it is lifted out of them and rendered as
+   parts/events/flagship-card.php instead.
+
+   Placed AFTER .law-event-card--sponsored above, which is how a reception a
+   firm has actually sponsored still comes out navy: equal specificity, later
+   in the file. */
+.law-event-card--flagship,
+.law-event-card--reception {
   background: #292459;
   border-left-color: #ef7d05;
   border-bottom-color: #292459;
@@ -543,36 +580,44 @@
 }
 
 .law-event-card--flagship .law-event-card__title,
-.law-event-card--flagship .law-event-card__title a {
+.law-event-card--flagship .law-event-card__title a,
+.law-event-card--reception .law-event-card__title,
+.law-event-card--reception .law-event-card__title a {
   color: #fff;
 }
 
 .law-event-card--flagship .law-event-card__title a:hover,
-.law-event-card--flagship .law-event-card__title a:focus {
+.law-event-card--flagship .law-event-card__title a:focus,
+.law-event-card--reception .law-event-card__title a:hover,
+.law-event-card--reception .law-event-card__title a:focus {
   color: #ef7d05;
 }
 
-.law-event-card--flagship .law-event-card__time {
+.law-event-card--flagship .law-event-card__time,
+.law-event-card--reception .law-event-card__time {
   color: #ef7d05;
 }
 
 /* The muted grey of an ordinary row would sink into the navy, so the meta
    lines go white and lean on opacity for the step down in weight, as the
    block's own meta line does. */
-.law-event-card--flagship .law-event-card__meta {
+.law-event-card--flagship .law-event-card__meta,
+.law-event-card--reception .law-event-card__meta {
   color: #fff;
   opacity: 0.9;
 }
 
-.law-event-card--flagship .law-event-card__meta + .law-event-card__meta::before {
+.law-event-card--flagship .law-event-card__meta + .law-event-card__meta::before,
+.law-event-card--reception .law-event-card__meta + .law-event-card__meta::before {
   color: rgba(255, 255, 255, 0.5);
 }
 
 /* The identity pill: an orange outline, never a fill, so it cannot be mistaken
-   for a status badge. One shape for all four of them (the loop card's, the
-   strip's and the flagship block's), because they are the same pill seen on
-   different surfaces and they had drifted into four copies of the same
-   declarations. Only the colour and the spacing around them differ, below.
+   for a status badge. One shape for all five of them (the loop card's two --
+   the conference's and a reception's -- the strip's and the flagship block's),
+   because they are the same pill seen on different surfaces and they had
+   drifted into four copies of the same declarations before this list existed.
+   Only the colour and the spacing around them differ, below.
 
    Two details keep the words centred inside the pill. Uppercase text with
    letter-spacing leaves the trailing gap after the last letter inside the line
@@ -581,7 +626,7 @@
    height is pinned to 1 rather than left to the font's own leading, which for
    all-caps sits the letters low in the box (Denis, 15 September 2026). */
 .law-event-card__flagship-badge,
-.law-event-card__external-badge,
+.law-event-card__reception-badge,
 .law-strip__badge,
 .law-flagship-strip__badge,
 .law-flagship-card__badge {
@@ -598,24 +643,15 @@
   text-transform: uppercase;
 }
 
-.law-event-card__flagship-badge {
+.law-event-card__flagship-badge,
+.law-event-card__reception-badge {
   margin: 0 0 0.4rem;
-}
-
-/* The external event's pill is the same shape in navy rather than orange:
-   orange is the flagship's colour on a card, and two orange outline pills would
-   read as one thing. In the flow, not in the absolute corner, because that slot
-   is the committee's status badge and two absolutely positioned badges would
-   sit on top of each other. */
-.law-event-card__external-badge {
-  margin: 0 0 0.4rem;
-  border-color: #292459;
-  color: #292459;
 }
 
 /* The committee's status badge, which is navy-on-navy in its --confirmed form
    and unreadable on this fill. White pill, navy text, for every status. */
-.law-event-card--flagship .law-cal-card__badge {
+.law-event-card--flagship .law-cal-card__badge,
+.law-event-card--reception .law-cal-card__badge {
   background: #fff;
   border-color: #fff;
   color: #292459;
@@ -624,27 +660,33 @@
 /* Buttons invert, exactly as they do on the programme block: white by default,
    the orange primary action swapping to white on hover. Navy on orange rather
    than white on orange, for contrast. */
-.law-event-card--flagship .button {
+.law-event-card--flagship .button,
+.law-event-card--reception .button {
   background: #fff;
   border-color: #fff;
   color: #292459;
 }
 
 .law-event-card--flagship .button:hover,
-.law-event-card--flagship .button:focus {
+.law-event-card--flagship .button:focus,
+.law-event-card--reception .button:hover,
+.law-event-card--reception .button:focus {
   background: #ef7d05;
   border-color: #ef7d05;
   color: #292459;
 }
 
-.law-event-card--flagship .button.orange {
+.law-event-card--flagship .button.orange,
+.law-event-card--reception .button.orange {
   background: #ef7d05;
   border-color: #ef7d05;
   color: #292459;
 }
 
 .law-event-card--flagship .button.orange:hover,
-.law-event-card--flagship .button.orange:focus {
+.law-event-card--flagship .button.orange:focus,
+.law-event-card--reception .button.orange:hover,
+.law-event-card--reception .button.orange:focus {
   background: #fff;
   border-color: #fff;
   color: #292459;
@@ -697,6 +739,29 @@
 .law-event-card__meta + .law-event-card__meta::before {
   content: " · ";
   color: #b3b0bd;
+}
+
+/* The search-result snippet: the slice of the description the keyword was found
+   in, printed only while a keyword is active and only when the hit is in the
+   body text (law_calendar_search_snippet()). A block of its own under the meta
+   line, because the meta lines are inline and joined with " · " -- running two
+   lines of prose into that chain would read as one more fact about the event.
+   Quieter than the meta (#666 against its #555) and set solid at 1.45, so the
+   card's own facts stay the first thing read and the snippet is plainly a
+   quotation from somewhere else. */
+.law-event-card__snippet {
+  display: block;
+  margin: 0.45rem 0 0;
+  color: #666;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+/* The flagship's card is navy, so the snippet follows its meta lines to white
+   rather than staying at a grey that is 2.2:1 on that fill. */
+.law-event-card--flagship .law-event-card__snippet {
+  color: #fff;
+  opacity: 0.9;
 }
 
 /* Every meta line is "label: value"; the value carries the weight so the eye

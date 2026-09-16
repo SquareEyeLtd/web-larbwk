@@ -18,6 +18,7 @@
  *   'show_actions' => true,                   // the actions column at all
  *   'show_bookings'=> false,                  // the Bookings button within it
  *   'link_base'    => law_slotchart_url(),    // what a row's title links to
+ *   'highlight'    => 'emma',                 // phrase to <mark>; ?law_kw= by default
  * ) );
  *
  * The timeline turns the count line off -- it would count the unscheduled
@@ -41,6 +42,22 @@ $law_show_count   = (bool) ( $args['show_count'] ?? true );
 $law_show_actions  = (bool) ( $args['show_actions'] ?? true );
 $law_show_bookings = (bool) ( $args['show_bookings'] ?? true );
 $law_link_base    = (string) ( $args['link_base'] ?? get_permalink() );
+
+// Search hits, marked in the three printed fields the keyword box actually
+// searches: the title (core `s`), the host's name and the firm. Filtering told
+// the committee which rows survived but never why (Denis, 16 September 2026),
+// which is the same thing the programme's cards were fixed for the same day.
+// The KEYWORD AS TYPED, matched whole and case-insensitively. Marking its
+// individual words was tried first and reversed the same day: the box is used
+// with long phrases lifted off a title, and every "in" and "with" in two
+// columns then came back marked. A row the search matched word by word can
+// therefore show with nothing marked, which is accepted.
+// Read from the query string, like the keyword itself (law_committee_events()),
+// so the first load, the &law_partial=1 fetch, the no-JS GET and the timeline's
+// unscheduled section all mark the same words without a caller passing anything.
+$law_hl = isset( $args['highlight'] )
+	? (string) $args['highlight']
+	: sanitize_text_field( wp_unslash( $_GET['law_kw'] ?? '' ) );
 
 // The status select's counts come from one wp_count_posts() call and ignore
 // every filter, so with persistent filters applied "Proposed (12)" can sit
@@ -69,28 +86,52 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 	</p>
 	<?php endif; ?>
 	<div class="law-dashboard__table-wrap">
-		<table class="law-dashboard__table">
+		<?php // --striped: this is the one dashboard table whose events can be two
+		// <tr>s, so it counts its own stripe instead of Foundation's nth-child.
+		// The modifier keeps that off the eight other tables sharing the base
+		// class, which have one row per thing and stripe correctly as they are. ?>
+		<table class="law-dashboard__table law-dashboard__table--striped">
 			<thead><tr><th>Event</th><th>Host</th><th>Slot</th><th>Status</th><th>Payment</th><th>Bookings</th><th>Places left</th><?php if ( $law_show_actions ) : ?><th></th><?php endif; ?></tr></thead>
 			<tbody>
+			<?php
+			// Zebra striping is counted HERE, not left to Foundation's
+			// tbody tr:nth-child(even): an event with a search snippet under it
+			// is two <tr>s, so the alternation would stripe half an event and
+			// flip every event after the first snippet. The class goes on both
+			// rows of a pair, so one event is always one band of colour.
+			$law_row_index = 0;
+			?>
 			<?php foreach ( $law_events as $law_row ) :
 				$law_row_status = law_event_status_label( $law_row );
 				$law_row_author = get_user_by( 'id', (int) $law_row->post_author );
+				// The description, where the keyword is in it and in none of the
+				// columns. Core `s` searches the body text and the table never showed
+				// a word of it, so those rows named nothing the committee had typed
+				// (Denis, 16 September 2026). It gets a row of its own spanning the
+				// table rather than a line inside the Event cell, because prose in a
+				// 12rem column is five lines of two words (Denis, same day).
+				$law_row_snippet = law_calendar_search_snippet( $law_row->post_content, $law_hl, 260 );
+				$law_row_class   = ( ++$law_row_index % 2 ? '' : 'is-alt' );
 				?>
-				<tr>
-					<td><strong><a href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, $law_link_base ) ); ?>"><?php echo esc_html( $law_row->post_title ); ?></a></strong>
+				<tr class="<?php echo esc_attr( trim( $law_row_class . ( '' !== $law_row_snippet ? ' has-snippet' : '' ) ) ); ?>">
+					<?php // law_calendar_highlight() returns escaped HTML with only its <mark> tags
+					// raw, and falls back to plain esc_html() whenever there is no keyword or
+					// no hit in this field. ?>
+					<td><strong><a href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, $law_link_base ) ); ?>"><?php echo law_calendar_highlight( $law_row->post_title, $law_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></a></strong>
 						<?php law_event_external_badge( $law_row->ID ); ?><br>
 						<code><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_reference' ) ); ?></code>
 						<?php $law_row_agenda = law_event_agenda_summary( $law_row->ID ); ?>
 						<?php if ( '' !== $law_row_agenda ) : ?>
 							<br><span class="law-dashboard__row-note"><?php echo esc_html( $law_row_agenda ); ?></span>
-						<?php endif; ?></td>
+						<?php endif; ?>
+						</td>
 					<?php // Person and firm together: the keyword box searches the firm
 					// (functions/events/committee.php), so a "Mayer Brown" search whose
 					// results never printed those words would read as a broken filter. ?>
-					<td><?php echo esc_html( $law_row_author ? $law_row_author->display_name : '—' ); ?>
+					<td><?php echo $law_row_author ? law_calendar_highlight( $law_row_author->display_name, $law_hl ) : '—'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
 						<?php $law_row_firm = (string) law_event_meta( $law_row->ID, '_law_host_organisations' ); ?>
 						<?php if ( '' !== $law_row_firm ) : ?>
-							<br><span class="law-dashboard__row-note"><?php printf( esc_html__( 'Organisation: %s', 'law' ), esc_html( $law_row_firm ) ); ?></span>
+							<br><span class="law-dashboard__row-note"><?php printf( esc_html__( 'Organisation: %s', 'law' ), law_calendar_highlight( $law_row_firm, $law_hl ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 						<?php endif; ?></td>
 					<?php // Date on one line, time under it: the label is the widest thing
 					// in the column otherwise, and the two halves read faster stacked. ?>
@@ -165,6 +206,16 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 					<?php endif; ?></td>
 					<?php endif; ?>
 				</tr>
+				<?php if ( '' !== $law_row_snippet ) : ?>
+					<?php // A row of its own, spanning every column, so the quotation gets
+					// the full width of the table instead of the Event column's 12rem
+					// (Denis, 16 September 2026). The pair shares one stripe class and
+					// the event row above drops its bottom border, so the two <tr>s read
+					// as one event rather than as an orphaned line of prose. ?>
+					<tr class="<?php echo esc_attr( trim( 'law-dashboard__snippet-row ' . $law_row_class ) ); ?>">
+						<td class="law-dashboard__snippet-cell" colspan="<?php echo (int) ( $law_show_actions ? 8 : 7 ); ?>"><?php echo $law_row_snippet; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></td>
+					</tr>
+				<?php endif; ?>
 			<?php endforeach; ?>
 			</tbody>
 		</table>

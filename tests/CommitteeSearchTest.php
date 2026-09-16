@@ -39,6 +39,20 @@ class CommitteeSearchTest extends LAW_Test_Case {
 		return array_map( 'intval', $ids );
 	}
 
+	/** A tracked account with a real display_name, for the host-name limb. */
+	private function make_named_user( string $first, string $last ): int {
+		$user_id = $this->make_user();
+		wp_update_user(
+			array(
+				'ID'           => $user_id,
+				'first_name'   => $first,
+				'last_name'    => $last,
+				'display_name' => $first . ' ' . $last,
+			)
+		);
+		return $user_id;
+	}
+
 	/** A tracked organisation post, for the linked-organisations limb. */
 	private function make_organisation( string $title ): int {
 		$post_id = wp_insert_post(
@@ -92,6 +106,69 @@ class CommitteeSearchTest extends LAW_Test_Case {
 		law_event_update_meta( $event, '_law_organisation_ids', array( $org ) );
 
 		$this->assertContains( $event, $this->search( 'Searchable Chambers' ) );
+	}
+
+	/* The host's name ________________________________________________________ */
+
+	public function test_a_host_first_name_finds_the_events_that_host_submitted(): void {
+		// The reported case (Denis, 16 September 2026): "Emma" returned nothing
+		// while the Host column of three rows said Emma Higgins.
+		$host  = $this->make_named_user( 'Emma', 'Higgins' );
+		$match = $this->make_event( array(), 'law-proposed', $host );
+		$other = $this->make_event();
+
+		$ids = $this->search( 'Emma' );
+		$this->assertContains( $match, $ids );
+		$this->assertNotContains( $other, $ids );
+	}
+
+	public function test_a_host_full_name_matches_in_either_order(): void {
+		$host  = $this->make_named_user( 'Emma', 'Higgins' );
+		$event = $this->make_event( array(), 'law-proposed', $host );
+
+		$this->assertContains( $event, $this->search( 'emma higgins' ) );
+		$this->assertContains( $event, $this->search( 'Higgins Emma' ) );
+	}
+
+	public function test_every_word_has_to_answer_so_a_half_wrong_name_misses(): void {
+		// Otherwise "Emma Higgins" would return every Emma on the programme.
+		$host  = $this->make_named_user( 'Emma', 'Higgins' );
+		$event = $this->make_event( array(), 'law-proposed', $host );
+
+		$this->assertNotContains( $event, $this->search( 'Emma Dickinson' ) );
+	}
+
+	public function test_a_host_name_search_leaves_other_hosts_events_out(): void {
+		$emma   = $this->make_named_user( 'Emma', 'Higgins' );
+		$robert = $this->make_named_user( 'Robert', 'Higgins' );
+		$hers   = $this->make_event( array(), 'law-proposed', $emma );
+		$his    = $this->make_event( array(), 'law-proposed', $robert );
+
+		$ids = $this->search( 'Emma' );
+		$this->assertContains( $hers, $ids );
+		$this->assertNotContains( $his, $ids );
+		$this->assertContains( $his, $this->search( 'Higgins' ), 'The surname is shared.' );
+	}
+
+	public function test_a_co_owner_name_is_not_matched(): void {
+		// The row names the submitting host only; a hit on a name the committee
+		// cannot see on screen reads as a broken filter (Denis, 16 September
+		// 2026).
+		$host     = $this->make_named_user( 'Emma', 'Higgins' );
+		$co_owner = $this->make_named_user( 'Priya', 'Raman' );
+		$event    = $this->make_event( array(), 'law-proposed', $host );
+		law_event_update_meta( $event, '_law_co_owner_ids', array( $co_owner ) );
+
+		$this->assertNotContains( $event, $this->search( 'Priya' ) );
+	}
+
+	public function test_a_user_who_hosts_nothing_cannot_drag_in_events(): void {
+		// The candidate set is the CPT's authors, not the user table, so an
+		// account that has never submitted anything is never even looked at.
+		$this->make_named_user( 'Zephrania', 'Quillingsworth' );
+		$this->make_event();
+
+		$this->assertSame( array(), $this->search( 'Zephrania Quillingsworth' ) );
 	}
 
 	/* The two WP_Query traps _________________________________________________ */

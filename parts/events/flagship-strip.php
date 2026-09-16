@@ -12,7 +12,9 @@
  * tag above the title.
  *
  * get_template_part( 'parts/events/flagship-strip', null, array(
- *   'event' => <hydrated calendar event array>, // required
+ *   'event'     => <hydrated calendar event array>, // required
+ *   'highlight' => '',  // Keyword to mark in the title and the venue. Passed by
+ *                       // parts/calendar-events.php only.
  * ) );
  */
 
@@ -39,7 +41,18 @@ $law_fs_day_text = '' !== $law_fs_date
 	? (string) ( $law_fs_days[ $law_fs_date ] ?? law_calendar_day_heading( $law_fs_date ) )
 	: '';
 
-$law_fs_meta = array_filter( array( $law_fs_day_text, $law_fs_time, $law_fs_venue ), 'strlen' );
+$law_fs_hl = (string) ( $args['highlight'] ?? '' );
+
+// Pre-escaped parts, imploded after, so only the VENUE can carry a mark: the day
+// and the time are not among the things the filter searches.
+$law_fs_meta = array_filter(
+	array(
+		esc_html( $law_fs_day_text ),
+		esc_html( $law_fs_time ),
+		'' !== $law_fs_venue ? law_calendar_highlight( $law_fs_venue, $law_fs_hl ) : '',
+	),
+	'strlen'
+);
 
 // The jump target is the day section. With no date (it cannot happen:
 // law_flagship_date() never returns empty) the link falls back to the event
@@ -49,9 +62,9 @@ $law_fs_jump = '' !== $law_fs_date ? '#day-' . $law_fs_date : $law_fs_url;
 <div class="law-flagship-strip" data-day="<?php echo esc_attr( $law_fs_date ); ?>">
 	<span class="law-flagship-strip__badge"><?php esc_html_e( 'Flagship event', 'law' ); ?></span>
 	<a class="law-flagship-strip__link" href="<?php echo esc_url( $law_fs_jump ); ?>" data-day="<?php echo esc_attr( $law_fs_date ); ?>">
-		<span class="law-flagship-strip__title"><?php echo esc_html( $law_fs_event['title'] ); ?></span>
+		<span class="law-flagship-strip__title"><?php echo law_calendar_highlight( $law_fs_event['title'], $law_fs_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 		<?php if ( $law_fs_meta ) : ?>
-			<span class="law-flagship-strip__meta"><?php echo esc_html( implode( ' · ', $law_fs_meta ) ); ?></span>
+			<span class="law-flagship-strip__meta"><?php echo implode( ' · ', $law_fs_meta ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- all parts escaped above. ?></span>
 		<?php endif; ?>
 	</a>
 	<?php if ( '' !== $law_fs_url ) : ?>

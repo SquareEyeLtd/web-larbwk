@@ -78,7 +78,7 @@
 				frag.appendChild(document.createTextNode(field.text.slice(cursor, range[0])));
 			}
 			var mark = document.createElement('mark');
-			mark.className = 'law-speakers__hit';
+			mark.className = 'law-hit'; /* Site-wide, shared with the programme's server-side highlighter. Styled in app.css. */
 			mark.textContent = field.text.slice(range[0], range[1]);
 			frag.appendChild(mark);
 			cursor = range[1];

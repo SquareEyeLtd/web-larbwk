@@ -686,7 +686,7 @@ flagship because nothing about the viewer changes it.
 | `payment-failed` | own `law-payment-failed` | `full` colour | "Your payment needs attention" + the stored reason | **Sort out my payment** (the flagship's label, `law_flagship_action_link()`) → manage view |
 | `waitlist-needs-card` | own `law-waitlisted` with payment `pending_setup`, or blocked `law_waitlist_no_payment_method` | `mine` | "Your place in the queue needs your payment details." sub "Add them to keep your place on the waitlist." | **Add payment details** (POST form → setup session) |
 | `included` | priced, `_law_flagship_included`, viewer holds a confirmed flagship place, no live place here | `open` | "Included with your flagship place" / "Add this reception to your bookings at no cost." | **Add to my bookings** → include dialog (§7.4) |
-| `buy` | priced, places remain | `open` / `low` | the count line only ("12 places left", "Only 3 places left"), pill "Booking open" / "Almost full"; when the viewer holds a live **unconfirmed** flagship application add "If your flagship application is approved, this reception is included at no cost." | **Book now** (spec §3.4's word for a paid place) → `?law_reception_checkout=1`, `data-law-book` |
+| `buy` | priced, places remain | `open` / `low` | the count line only ("12 places left", "Only 3 places left"), pill "Booking open" / "Almost full"; when the viewer holds a live **unconfirmed** flagship application add "If your flagship application is approved, this reception is included at no cost." | **Register** → `?law_reception_checkout=1`, `data-law-book`. Spec §3.4 said "Book now" for a paid place; Denis reversed that on 16 September 2026 so every action button on the site reads "Register", the price beside the button being what says a payment is coming |
 | `buy-full` | priced, 0 remaining | `full` | "This reception is fully booked." sub "Join the waitlist and save a payment method. If a place opens up we will charge it and confirm your place automatically. You can leave the waitlist at any time before then." | **Join waitlist** → `?law_reception_waitlist=1` |
 
 Existing `booked` / `waitlisted` / `closed` apply unchanged (a paid or
@@ -704,7 +704,8 @@ print the same net figure, or "Invitation only", as a meta line in
 
 ### 4.2 Cards and dialogs
 
-- `law_booking_card_action()` (`:887`): `buy` → "Book now", `buy-full` →
+- `law_booking_card_action()` (`:887`): `buy` → "Register" ("Book now" until
+  16 September 2026), `buy-full` →
   "Join waitlist", `included` → "Add to my bookings", each with `dialog`;
   `invitation` → `null`; the own-booking states → the manage link as today.
 - `law_booking_maybe_render_dialog()` (`:1099`) branches on
@@ -717,7 +718,7 @@ print the same net figure, or "Invitation only", as a meta line in
   ("Add to my bookings"); `bookKind()` in `booking-form.js:208-215` learns
   `law_reception_checkout` (→ "Book your place"), `law_reception_waitlist` (→
   the waitlist heading) and the include link.
-- Signed-out visitors pressing Book now or Join waitlist get the dialog's
+- Signed-out visitors pressing Register or Join waitlist get the dialog's
   sign-in branch. `included` cannot be reached signed out.
 
 ## 5. The checkout dialog and the live discount quote
@@ -1318,7 +1319,7 @@ merge into staging, push staging, switch back).
 - `?setup-account-pages` creates the page and three drafts; Manage receptions
   publishes Monday with a price; `/programme/` shows "£75.00 + VAT" on the
   card and "Invitation only" on Friday; the Friday page shows the invitation
-  panel and no button; Book now opens the skeleton then the dialog; Apply
+  panel and no button; Register opens the skeleton then the dialog; Apply
   recalculates the total in place and Remove restores it; a Stripe test
   payment returns to the manage view with `reception-paid`; Mailpit holds
   **one** confirmation with `.ics` and invoice link whichever of

@@ -980,6 +980,10 @@ function law_migration_populate_event( $post_id, array $entry, $payment_status )
 		// rewrites the events migrated before that decision.
 		'_law_reference'           => (string) $entry_id,
 		'_law_venue'               => rgar( $entry, '21' ),
+		// Field 103 (Venue needed) is a radio whose choice values are "Yes"
+		// and "No"; the custom form's answers are the choice TEXTS, so the
+		// entry value is mapped onto its canonical label (the 'venue_needed'
+		// meta sanitiser does it) or the answer reads as unset after cutover.
 		'_law_venue_needed'        => rgar( $entry, '103' ),
 		'_law_venue_capacity'      => rgar( $entry, '55' ),
 		'_law_tickets_available'   => rgar( $entry, '54' ),
@@ -2370,6 +2374,19 @@ function law_migration_run_pages( $dry ) {
 	}
 	if ( ! $dry && function_exists( 'law_setup_retire_booking_received_emails' ) ) {
 		law_migration_log( 'notifications', 'created', 'host_booking_received / committee_booking_received', 'Retired: stored active override cleared (' . law_setup_retire_booking_received_emails() . ').' );
+	}
+	// Events migrated before 16 September 2026 hold the choice VALUE of field
+	// 103 (Venue needed), "Yes" or "No", where the custom form's radios carry
+	// the full sentences, so the answer reads as unset. Shared helper with the
+	// setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_normalise_venue_needed' ) ) {
+		law_migration_log( 'events', 'created', 'venue needed', 'Migrated answers mapped onto the form\'s labels: ' . law_setup_normalise_venue_needed() . '.' );
+	}
+	// Field 74 (Address) input 74.6 (Country) holds both a bare ISO code and a
+	// country name across the legacy entries; the forms offer names. Shared
+	// helper with the setup-account-pages trigger.
+	if ( ! $dry && function_exists( 'law_setup_normalise_invoice_countries' ) ) {
+		law_migration_log( 'events', 'created', 'billing country', 'Migrated ISO codes mapped onto country names: ' . law_setup_normalise_invoice_countries() . '.' );
 	}
 	// The flagship's own bookings page.
 	if ( ! $dry && function_exists( 'law_setup_scope_existing_discounts' ) ) {

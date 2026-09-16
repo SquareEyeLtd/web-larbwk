@@ -17,8 +17,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @return array[]
  */
 function law_events_cpt_mapped_events( $allowed ) {
-	$all      = is_array( $allowed ) && empty( $allowed );
-	$statuses = $all ? law_event_all_status_keys() : array( 'publish' );
+	$all = is_array( $allowed ) && empty( $allowed );
+	// Derived from the allowed LABELS rather than hardcoded, so the public
+	// programme picks up Approved (law_calendar_public_statuses()) without a
+	// second list here to keep in step with that one.
+	$statuses = $all
+		? law_event_all_status_keys()
+		: law_event_status_keys_for_labels( is_array( $allowed ) ? $allowed : law_calendar_public_statuses() );
 
 	$posts = get_posts(
 		array(
@@ -185,12 +190,21 @@ function law_events_public_url( $post ) {
 	return home_url( '/' . trim( $base, '/' ) . '/' . $post->post_name . '/' );
 }
 
+/**
+ * Where to link this event TODAY: its own page when the public can open it,
+ * the committee's ?event= view when only the committee can.
+ *
+ * Keyed on law_event_is_publicly_listed(), not on 'publish': an Approved event
+ * has a real public page from 16 September 2026, and sending its card's "Event
+ * details" button to the committee view would be a dead end behind the Members
+ * restriction for every visitor.
+ */
 function law_events_event_url( $post ) {
 	$post = get_post( $post );
 	if ( ! $post ) {
 		return '';
 	}
-	if ( 'publish' === $post->post_status ) {
+	if ( function_exists( 'law_event_is_publicly_listed' ) && law_event_is_publicly_listed( $post ) ) {
 		return get_permalink( $post );
 	}
 	return function_exists( 'law_calendar_url' )
@@ -291,7 +305,8 @@ function law_event_organisation_names( $event_id ) {
 /**
  * Sponsored tag (parity with law_calendar_is_sponsored_event()): sponsor tier
  * or zero fee, a sponsor-category organisation, or a submitter with more than
- * one Approved/Confirmed event this year.
+ * one Approved/Confirmed event this year -- that last one for HOSTED events
+ * only, see below.
  */
 function law_events_post_is_sponsored( $post ) {
 	$post = get_post( $post );
@@ -312,13 +327,38 @@ function law_events_post_is_sponsored( $post ) {
 		return true;
 	}
 
+	// The repeat-submitter clause is a heuristic about HOSTS: a firm that puts
+	// on several events in one week is behaving like a sponsor. LAW's own
+	// events -- the flagship, the receptions, the external listings -- carry no
+	// host at all; their post_author is whichever committee account happened to
+	// create them, so that account trips the clause on its second post and
+	// every LAW-run event starts wearing the sponsored surface.
+	//
+	// Found 16 September 2026: both seeded receptions were rendering on the
+	// programme in the sponsored fill, which told visitors that LAW's own
+	// drinks reception was a sponsored event (Denis). Only this clause is
+	// skipped -- a firm really can sponsor a reception, and a sponsor tier or a
+	// linked sponsor organisation above still says so.
+	if ( function_exists( 'law_event_is_managed_by_law' ) && law_event_is_managed_by_law( $post->ID ) ) {
+		return false;
+	}
+
 	$counts = law_events_cpt_author_counts();
 	return ( $counts[ (int) $post->post_author ] ?? 0 ) > 1;
 }
 
-/** Approved/Confirmed event counts per author (the multi-event sponsor rule). */
-function law_events_cpt_author_counts() {
+/**
+ * Approved/Confirmed event counts per author (the multi-event sponsor rule).
+ *
+ * @param bool $reset Clear the memo. Production renders one template per
+ *                    request and never needs it; the tests create events
+ *                    mid-request and do.
+ */
+function law_events_cpt_author_counts( $reset = false ) {
 	static $counts = null;
+	if ( $reset ) {
+		$counts = null;
+	}
 	if ( null !== $counts ) {
 		return $counts;
 	}

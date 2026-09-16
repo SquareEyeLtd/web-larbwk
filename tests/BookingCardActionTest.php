@@ -697,11 +697,11 @@ class BookingCardActionTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * A priced reception is BOUGHT, so the card says so: "Book now", not
-	 * "Register", and the link carries the reception's own query var so the
-	 * dialog that opens can never be the free booking form.
+	 * A priced reception says "Register" like every other event (Denis, 16
+	 * September 2026), but the link carries the reception's own query var so
+	 * the dialog that opens can never be the free booking form.
 	 */
-	public function test_a_priced_reception_offers_book_now(): void {
+	public function test_a_priced_reception_offers_register(): void {
 		$event = $this->reception();
 		$state = law_booking_state( $event, array( 'user_id' => 0 ) );
 
@@ -710,7 +710,7 @@ class BookingCardActionTest extends LAW_Test_Case {
 		$this->assertSame( 4500, $state['price'] );
 
 		$action = law_booking_card_action( law_events_map_post( get_post( $event ) ) );
-		$this->assertSame( 'Book now', $action['label'] );
+		$this->assertSame( 'Register', $action['label'] );
 		$this->assertStringContainsString( 'law_reception_checkout=1', $action['url'] );
 		$this->assertSame( $event, $action['dialog'] );
 	}

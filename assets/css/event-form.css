@@ -730,6 +730,31 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    Quiet on purpose: it is context for the row, not a second heading. */
 .law-dashboard__row-note { color: #55556e; font-size: .8rem; }
 
+/* The search-result snippet: a row of its own under the event it belongs to,
+   spanning every column, because prose in the Event column's 12rem cap is five
+   lines of two words (Denis, 16 September 2026).
+
+   Three rules make two <tr>s read as one event. The cell lifts the table's
+   12rem max-width, which is what the full width is FOR. The event row above it
+   drops its bottom border, so the pair is enclosed by one line rather than
+   divided by one. And the stripe comes from an .is-alt class the template
+   counts out in PHP, not from Foundation's tbody tr:nth-child(even): with a
+   conditional second row per event, even/odd would stripe half an event and
+   flip every event after the first snippet. Foundation's rule is disarmed
+   rather than out-specified row by row, and ONLY under --striped: eight other
+   dashboard tables share the base class, they have one row per thing, and they
+   must keep striping the way they always have. */
+.law-dashboard__table--striped tbody tr:nth-child(even) { background-color: transparent; }
+.law-dashboard__table--striped tbody tr.is-alt { background-color: #f1f1f1; }
+.law-dashboard__table--striped tbody tr.has-snippet > td { border-bottom: 0; }
+.law-dashboard__snippet-cell {
+	max-width: none;
+	padding-top: 0;
+	color: #55556e;
+	font-size: .8rem;
+	line-height: 1.5;
+}
+
 /* The buttons in an actions cell stay side by side whatever else wraps: that
    is the whole point of the column. It has to out-specify the base cell rule
    above, which a lone class cannot. */

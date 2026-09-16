@@ -325,14 +325,46 @@ class EventFlagsTest extends LAW_Test_Case {
 		return $event_id;
 	}
 
-	/** Programme event IDs under a given ?law_run_by= value. */
+	/**
+	 * Run $fn with the committee programme page as the queried object.
+	 *
+	 * The Organiser filter is committee-only since 16 September 2026, and both
+	 * halves of it -- the select in parts/calendar-filters.php and the parameter
+	 * in law_calendar_filters() -- are gated on law_calendar_organiser_filter_enabled(),
+	 * which asks is_page_template( 'templates/calendar-committee.php' ). Nothing
+	 * else in tests/ simulates a page template, so this is the helper for it:
+	 * is_page_template() reads is_page() and get_queried_object_id() off the
+	 * global query, so swapping that is enough.
+	 */
+	private function with_committee_programme( callable $fn ) {
+		$page_id = wp_insert_post(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+				'post_title'  => 'Programme (committee)',
+			)
+		);
+		$this->posts[] = $page_id;
+		update_post_meta( $page_id, '_wp_page_template', 'templates/calendar-committee.php' );
+
+		$previous            = $GLOBALS['wp_query'];
+		$GLOBALS['wp_query'] = new WP_Query( array( 'page_id' => $page_id ) );
+		law_calendar_reset_caches();
+		try {
+			return $fn();
+		} finally {
+			$GLOBALS['wp_query'] = $previous;
+			law_calendar_reset_caches();
+		}
+	}
+
+	/** Programme event IDs under a given ?law_run_by= value, on the committee view. */
 	private function programme_ids( string $run_by ): array {
 		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
 		if ( '' !== $run_by ) {
 			$_GET['law_run_by'] = $run_by;
 		}
-		law_calendar_reset_caches();
-		$ids = wp_list_pluck( law_calendar_events(), 'id' );
+		$ids = $this->with_committee_programme( fn() => wp_list_pluck( law_calendar_events(), 'id' ) );
 		unset( $_GET['law_run_by'] );
 		remove_filter( 'pre_option_law_events_source', $cpt );
 		law_calendar_reset_caches();
@@ -376,11 +408,12 @@ class EventFlagsTest extends LAW_Test_Case {
 		$this->assertContains( $law_run, $ids );
 	}
 
-	public function test_the_organiser_filter_survives_a_link_back_from_an_event(): void {
+	public function test_the_organiser_filter_survives_a_link_back_on_the_committee_view(): void {
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
 		$_GET['law_run_by'] = 'external';
-		law_calendar_reset_caches();
-		$args = law_calendar_search_query_args();
+		$args = $this->with_committee_programme( fn() => law_calendar_search_query_args() );
 		unset( $_GET['law_run_by'] );
+		remove_filter( 'pre_option_law_events_source', $cpt );
 		law_calendar_reset_caches();
 
 		$this->assertSame( 'external', $args['law_run_by'] ?? '' );
@@ -393,32 +426,77 @@ class EventFlagsTest extends LAW_Test_Case {
 	 * programme, which is the failure nobody would notice.
 	 */
 	public function test_the_old_organiser_value_still_filters(): void {
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
 		$_GET['law_run_by'] = 'law';
-		law_calendar_reset_caches();
-		$filters = law_calendar_filters();
+		$filters = $this->with_committee_programme( fn() => law_calendar_filters() );
 		unset( $_GET['law_run_by'] );
+		remove_filter( 'pre_option_law_events_source', $cpt );
 		law_calendar_reset_caches();
 
 		$this->assertSame( 'external', $filters['run_by'] );
 	}
 
-	public function test_the_organiser_select_renders_with_nothing_flagged_yet(): void {
-		// Drawn regardless of the data: "External events" can return no cards,
-		// but never an empty page, because the flagship block is pinned to its
-		// day outside the filtered list.
-		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
-		law_calendar_reset_caches();
-
+	/** parts/calendar-filters.php in whichever context the caller has set up. */
+	private function render_filters(): string {
 		ob_start();
 		get_template_part( 'parts/calendar-filters' );
-		$html = (string) ob_get_clean();
+		return (string) ob_get_clean();
+	}
 
+	public function test_the_committee_programme_keeps_the_organiser_control(): void {
+		// Drawn regardless of the data: a committee planning view has to be able
+		// to ask a question that currently has no answer, and an empty result on
+		// the committee's own screen reads as information rather than as a
+		// broken page.
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
+		$html = $this->with_committee_programme( fn() => $this->render_filters() );
 		remove_filter( 'pre_option_law_events_source', $cpt );
 		law_calendar_reset_caches();
 
 		$this->assertStringContainsString( 'name="law_run_by"', $html );
 		$this->assertStringContainsString( '>External events<', $html );
 		$this->assertStringContainsString( '>Hosted events<', $html );
+	}
+
+	public function test_the_public_programme_drops_to_three_filters(): void {
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
+		law_calendar_reset_caches();
+		$html = $this->render_filters();
+		remove_filter( 'pre_option_law_events_source', $cpt );
+		law_calendar_reset_caches();
+
+		$this->assertStringNotContainsString( 'name="law_run_by"', $html, 'Organiser is committee-only (Denis, 16 September 2026).' );
+		// The other three, so an over-broad edit that guts the form fails here
+		// rather than passing for the wrong reason.
+		foreach ( array( 'law_kw', 'law_sector', 'law_type' ) as $field ) {
+			$this->assertStringContainsString( 'name="' . $field . '"', $html );
+		}
+	}
+
+	public function test_a_bookmarked_organiser_url_does_not_filter_the_public_programme(): void {
+		// Hiding only the control would leave a bookmark from before the change
+		// filtering invisibly, with nothing on the page to clear it with.
+		$hosted   = $this->make_programme_event( false );
+		$external = $this->make_programme_event( true );
+
+		add_filter( 'pre_option_law_events_source', $cpt = fn() => 'cpt' );
+		$_GET['law_run_by'] = 'host';
+		law_calendar_reset_caches();
+
+		$filters   = law_calendar_filters();
+		$ids       = wp_list_pluck( law_calendar_events(), 'id' );
+		$args      = law_calendar_search_query_args();
+		$searching = law_calendar_is_searching();
+
+		unset( $_GET['law_run_by'] );
+		remove_filter( 'pre_option_law_events_source', $cpt );
+		law_calendar_reset_caches();
+
+		$this->assertSame( '', $filters['run_by'] );
+		$this->assertContains( $hosted, $ids );
+		$this->assertContains( $external, $ids, 'The whole programme, not the half the stale bookmark asked for.' );
+		$this->assertArrayNotHasKey( 'law_run_by', $args, 'And it does not travel on into the links either.' );
+		$this->assertFalse( $searching, 'So an empty page blames the programme, not a search the visitor never made.' );
 	}
 
 	// The dashboard's "Session agenda" select was removed on 15 September 2026,
@@ -476,5 +554,94 @@ class EventFlagsTest extends LAW_Test_Case {
 
 		// Idempotent: a second run finds nothing.
 		$this->assertNotContains( $with_sessions, wp_list_pluck( law_events_backfill_agenda_scan(), 'event_id' ) );
+	}
+
+	/* The sponsored flag and LAW's own events ________________________________ */
+
+	/**
+	 * An event in the programme year, owned by $author, that the repeat-submitter
+	 * clause of law_events_post_is_sponsored() can actually see.
+	 *
+	 * The year term matters: law_events_cpt_author_counts() scopes its query to
+	 * the configured programme year, so a fixture without one is invisible to
+	 * the clause and the test would pass for the wrong reason.
+	 */
+	private function make_counted_event( int $author, array $meta = array() ): int {
+		$event_id = $this->make_event( $meta, 'publish', $author );
+		wp_set_object_terms( $event_id, (string) law_events_setting( 'year', 2026 ), 'law_year', false );
+		return $event_id;
+	}
+
+	public function test_a_reception_is_not_sponsored_just_because_the_committee_owns_two(): void {
+		// The real shape of the bug (16 September 2026): the receptions are
+		// created by law_event_ensure_managed_post() with the CURRENT user as
+		// their author, so one committee account owns all of them and trips the
+		// repeat-submitter clause on the second. Both seeded receptions were
+		// rendering on the programme in the sponsored fill.
+		$committee = $this->make_committee_user();
+		$first     = $this->make_counted_event( $committee, array( '_law_is_reception' => 1 ) );
+		$second    = $this->make_counted_event( $committee, array( '_law_is_reception' => 1 ) );
+		law_events_cpt_author_counts( true );
+
+		$this->assertSame(
+			2,
+			law_events_cpt_author_counts()[ $committee ] ?? 0,
+			'The clause can see both: without this the rest of the test proves nothing.'
+		);
+		$this->assertFalse( law_events_post_is_sponsored( $first ) );
+		$this->assertFalse( law_events_post_is_sponsored( $second ) );
+	}
+
+	public function test_a_repeat_host_is_still_sponsored(): void {
+		$host = $this->make_user();
+		$one  = $this->make_counted_event( $host );
+		$this->make_counted_event( $host );
+		law_events_cpt_author_counts( true );
+
+		// Stated before the behaviour it underwrites, as in the reception case
+		// above. The counter reads the 500 most recent published events of the
+		// programme year, so a suite that has left enough of them behind could
+		// push a fixture out of range and turn a real failure into a confusing
+		// one.
+		$this->assertSame(
+			2,
+			law_events_cpt_author_counts()[ $host ] ?? 0,
+			'The clause can see both of this host\'s events.'
+		);
+		$this->assertTrue(
+			law_events_post_is_sponsored( $one ),
+			'The clause is about HOSTS and still applies to them: a firm putting on two events in the week reads as a sponsor.'
+		);
+	}
+
+	public function test_the_flagship_and_an_external_event_are_exempt_too(): void {
+		// law_event_is_managed_by_law() covers all three kinds, so the exemption
+		// does; pinned here so a narrowing of that helper fails loudly.
+		$committee = $this->make_committee_user();
+		$flagship  = $this->make_counted_event( $committee, array( '_law_is_flagship' => 1 ) );
+		$external  = $this->make_counted_event( $committee, array( '_law_is_external' => 1 ) );
+		law_events_cpt_author_counts( true );
+
+		// law_flagship_is() asks law_flagship_event_id(), which resolves the ONE
+		// conference for the site rather than reading the meta back off the post,
+		// so a fixture has to say which post that is.
+		add_filter( 'law_flagship_event_id', fn() => $flagship );
+		law_flagship_event_id( true );
+
+		$this->assertFalse( law_events_post_is_sponsored( $flagship ) );
+		$this->assertFalse( law_events_post_is_sponsored( $external ) );
+	}
+
+	public function test_a_reception_a_firm_really_sponsors_is_still_sponsored(): void {
+		// Only the repeat-submitter clause is skipped. A sponsor fee tier is a
+		// statement about who paid for the event, and it still stands.
+		$committee = $this->make_committee_user();
+		$reception = $this->make_counted_event(
+			$committee,
+			array( '_law_is_reception' => 1, '_law_fee_tier' => 'sponsor' )
+		);
+		law_events_cpt_author_counts( true );
+
+		$this->assertTrue( law_events_post_is_sponsored( $reception ) );
 	}
 }

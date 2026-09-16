@@ -91,6 +91,11 @@ function law_event_snapshot_fee( $event_id ) {
  * Fee column while the snapshot, the invoice and the {fee} emails all kept the
  * old figure: a save that reports success and changes nothing that matters.
  * The dashboard control therefore goes read-only from approval onwards.
+ * "From approval onwards" is law_event_has_been_approved(), which reads the
+ * STATUS: the `_law_approved_at` timestamp this used to test is absent on
+ * every migrated event, because the legacy form never filled field 78
+ * (Approval date) in, and the lock was therefore off across the whole migrated
+ * programme (audit, 16 September 2026).
  * wp-admin stays the deliberate escape hatch for a post-approval fee change
  * (the settled decision recorded in EVENTS_FUNC.md), because that screen can
  * re-freeze the snapshot through law_event_resnapshot_fee().
@@ -99,7 +104,7 @@ function law_event_snapshot_fee( $event_id ) {
  * @return bool
  */
 function law_event_fee_override_locked( $event_id ) {
-	return '' !== (string) law_event_meta( $event_id, '_law_approved_at' );
+	return law_event_has_been_approved( $event_id );
 }
 
 /**

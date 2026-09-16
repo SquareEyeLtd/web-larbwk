@@ -3,7 +3,7 @@
  * Buying a place at a reception, or joining its waitlist (RECEPTIONS.md §5.1),
  * in two contexts:
  *
- * - 'modal': the .law-modal skeleton the Book now button opens (law-modal.js
+ * - 'modal': the .law-modal skeleton the Register button opens (law-modal.js
  *   supplies open/close/focus-trap off the shared classes; deliberately NOT
  *   parts/layout/modal.php, whose args are confirm-dialog shaped). Hidden
  *   without JS, because the opener is then a real link to the inline context.

@@ -421,6 +421,40 @@ function law_event_confirm_side_effects( $event_id ) {
 }
 
 /**
+ * Log a change to Override booking availability.
+ *
+ * Its own entry rather than a limb of law_event_log_flag_change(): that one
+ * carries 0/1 flags and this answer has three values, and the sentence has to
+ * name the one chosen rather than say "on" or "off".
+ *
+ * @param int    $event_id law_event post ID.
+ * @param string $before   law_event_booking_override() read before the write.
+ * @param int    $actor    User making the change.
+ */
+function law_event_log_booking_override_change( $event_id, $before, $actor ) {
+	$after = law_event_booking_override( $event_id );
+	if ( (string) $before === $after ) {
+		return;
+	}
+
+	// Plain language, in the committee's own words, and each says what it does
+	// rather than naming the setting: the activity log is read by committee
+	// members, not developers.
+	$sentences = array(
+		'auto'    => 'Booking availability set back to Automatic: it follows payment, places and venue again.',
+		'disable' => 'Booking disabled on this event, so the programme shows "Open soon".',
+		'enable'  => 'Booking forced open on this event, whether or not it has paid or has a venue recorded.',
+	);
+
+	law_event_log(
+		$event_id,
+		$sentences[ $after ] ?? 'Booking availability changed.',
+		array( 'action' => 'booking_override', 'old' => (string) $before, 'new' => $after, 'source' => 'ui' ),
+		array( 'user_id' => (int) $actor )
+	);
+}
+
+/**
  * Change the payment status with a log entry. Never silent.
  *
  * @param int    $event_id law_event post ID.
@@ -553,7 +587,8 @@ function law_event_log_organisation_change( $event_id, array $before_ids, $actor
  * handler and the wp-admin screen with the values read immediately before the
  * write, exactly like the fee and organisation loggers above).
  *
- * ONE entry covering both flags, not one per flag: law_event_log_entries()
+ * ONE entry covering every flag the caller passed, not one per flag:
+ * law_event_log_entries()
  * orders by comment_date_gmt with no tie-break, so two entries written in the
  * same second would display in arbitrary order.
  *
@@ -562,24 +597,32 @@ function law_event_log_organisation_change( $event_id, array $before_ids, $actor
  * @param int   $actor        User making the change.
  */
 function law_event_log_flag_change( $event_id, array $before_flags, $actor ) {
-	$after = array(
-		'_law_is_external'   => (int) law_event_meta( $event_id, '_law_is_external' ),
-		'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
-	);
-	$before = array(
-		'_law_is_external'   => (int) ( $before_flags['_law_is_external'] ?? 0 ),
-		'_law_session_agenda' => (int) ( $before_flags['_law_session_agenda'] ?? 0 ),
-	);
-	if ( $before === $after ) {
-		return;
-	}
-
 	// Plain language, in the same words as the dashboard controls: the activity
 	// log is read by committee members, not developers.
 	$sentences = array(
-		'_law_is_external'    => array( 'No longer marked as an external event.', 'Marked as an external event, booked on the organiser\'s own website.' ),
-		'_law_session_agenda' => array( 'Session agenda turned off.', 'Session agenda turned on.' ),
+		'_law_is_external'      => array( 'No longer marked as an external event.', 'Marked as an external event, booked on the organiser\'s own website.' ),
+		'_law_session_agenda'   => array( 'Session agenda turned off.', 'Session agenda turned on.' ),
 	);
+
+	// Driven by the keys the CALLER read before its own write, not by a fixed
+	// list. The committee panel writes the booking hold and the two
+	// classification switches behind SEPARATE sentinels (16 September 2026), so
+	// a fixed list would compare a key this call never touched against a
+	// default of 0 and log a change that never happened -- an external event
+	// would report being marked external every time the hold was toggled.
+	$before = array();
+	$after  = array();
+	foreach ( array_keys( $before_flags ) as $key ) {
+		if ( ! isset( $sentences[ $key ] ) ) {
+			continue;
+		}
+		$before[ $key ] = (int) $before_flags[ $key ];
+		$after[ $key ]  = (int) law_event_meta( $event_id, $key );
+	}
+	if ( ! $after || $before === $after ) {
+		return;
+	}
+
 	$changed = array();
 	foreach ( $after as $key => $value ) {
 		if ( $before[ $key ] !== $value ) {

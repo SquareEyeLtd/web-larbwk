@@ -195,6 +195,8 @@ function law_migration_admin_page() {
 
 		<?php law_events_repair_owner_panel(); ?>
 
+		<?php law_events_repair_payment_panel(); ?>
+
 		<?php law_events_backfill_agenda_panel(); ?>
 
 		<?php law_events_photo_fetch_panel(); ?>
