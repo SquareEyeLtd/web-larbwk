@@ -190,7 +190,11 @@ accounts, and every user before the migration step runs. The step uses that dist
 
 - `law_registration_welcome_slug( array $intents )` (:39-43):
   `return $intents ? 'user_welcome_registered_host' : 'user_welcome_registered';`
-  Either tick means hosting-side copy. No floor logic.
+  Either tick means hosting-side copy. No floor logic. **Superseded 16 September 2026:**
+  this plan removed the tick from every form on 14 September, which left the branch with
+  one reachable answer, so the helper and `user_welcome_registered_host` were both deleted
+  and the handler names `user_welcome_registered` directly. The intent storage and the
+  HubSpot tags below are unaffected, and are now the only reason `law_intent` exists.
 - `law_registration_hubspot_tags( array $intents )` (:119-130): `'sponsor'` → `"$year Sponsor"`,
   `'host'` → `"$year Event Host"`. Output strings are unchanged, so existing
   `law_hubspot_contact_type` values stay comparable.

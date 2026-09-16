@@ -1363,12 +1363,13 @@ block the queue. Joining is refused while places are free.
     `user_booking_registered` / `_invited` (registered on their behalf); the
     per-context cancellation family `user_booking_rejected` /
     `user_booking_cancelled_by_booker` / `user_booking_cancelled_self` /
-    `user_booking_event_cancelled`; the registration welcome pair
-    `user_welcome_registered` (attendee copy) / `user_welcome_registered_host`
-    (event host or sponsor: leads with `{submit_link}` and asks for dietary and
-    accessibility requirements only if they also book a place), chosen by
-    `law_registration_welcome_slug()` and both event-less, so unlogged; and
-    the two capacity stages, each with its own one-shot latch:
+    `user_booking_event_cancelled`; the single registration welcome
+    `user_welcome_registered`, event-less and so unlogged (there was a second,
+    hosting-side copy until 16 September 2026, with a
+    `law_registration_welcome_slug()` helper choosing between the two on the
+    stored `law_intent`; both went when it became clear the branch had only one
+    reachable answer); and the two capacity stages, each with its own one-shot
+    latch:
     `host_capacity_warning` (to `host`, at `law_event_capacity_warning_at()` —
     fewer than 10% of the places left, floored at 5) and, when the last place
     goes, `host_event_full` (to `host`) plus `committee_event_full` (to
@@ -4697,9 +4698,9 @@ These predate the rebuild and now branch on `law_events_source()`.
   `[user-content role="event_host"]`, so a user who registered as "LAW sponsor"
   and nothing else matched neither block and was served a heading with an empty
   body. Sponsors hold the same front-end access as hosts everywhere else
-  (`law_events_user_can_submit()`, `law_account_user_is_host_like()`,
-  `law_registration_welcome_slug()` all name both roles), which is what made
-  the gap easy to miss. Both helpers are called through `function_exists()`,
+  (`law_events_user_can_submit()`, `law_account_user_is_host_like()` and the
+  since-removed `law_registration_welcome_slug()` all named both roles), which
+  is what made the gap easy to miss. Both helpers are called through `function_exists()`,
   because this file loads before the events module.
 
 - **`modal.php`**: the reusable confirmation modal's asset registrar.
@@ -5262,7 +5263,8 @@ and role-gated surface confirmed that the `sponsor` role had the same
 front-end access as `event_host` in all of the theme's own code:
 `law_events_user_can_submit()` (submission-form.php),
 `law_account_user_is_host_like()` (account-bookings.php),
-`law_registration_welcome_slug()` and the HubSpot tags (registration.php), and
+`law_registration_welcome_slug()` (removed 16 September 2026) and the HubSpot
+tags (registration.php), and
 `law_self_service_roles()` (users.php) all name both. Neither role gets any
 wp-admin capability (`capabilities.php` grants the `law_event` set to
 administrator, editor and `events_committee` only) or the admin bar
@@ -6103,9 +6105,9 @@ Three things carry the weight, and are the parts to preserve:
 `{dashboard_link}` stays on My events; they resolved to the same URL until now,
 so nothing would have caught a swap, and `tests/MyBookingsPageTest.php` pins
 both. Only `user_welcome_registered_host` needed its body edited, because it
-used `{bookings_link}` to mean "your events" — and an environment whose Emails
-screen already overrides that template keeps the old wording, so check it by
-hand after deploying. `law_setup_dashboard_child_access( $path )` became
+used `{bookings_link}` to mean "your events". That template has since been
+removed altogether (16 September 2026), so the hand-check this paragraph asked
+for no longer applies. `law_setup_dashboard_child_access( $path )` became
 `law_setup_child_page_access( $path, $parent_path )` to serve a child of
 `/account/`; both provisioning routes (`?setup-account-pages` and migration step
 10) create the page, and both were run from scratch to prove it.
@@ -7877,6 +7879,68 @@ Touched: `functions/events/notifications.php`, `functions/events/rich-text.php`
 `templates/account-dashboard-emails.php`,
 `functions/events/migration/content-transfer.php`, `assets/css/calendar.css`,
 `tests/EmailsDashboardTest.php`.
+
+## One welcome email, not two (16 September 2026)
+
+**A template the Emails screen offered but nothing could send.** The registry
+carried two welcome emails, `user_welcome_registered` and
+`user_welcome_registered_host`, and `law_registration_welcome_slug()` chose
+between them on the stored `law_intent`:
+
+```php
+return $intents ? 'user_welcome_registered_host' : 'user_welcome_registered';
+```
+
+The split began as a role test, became an optional "I plan to host an event"
+tick, and then lost the tick on 14 September 2026 when the self-service roles
+were retired. From that day no form collected an intent, so `$intents` was
+always empty on a new registration and the hosting copy could not be reached by
+any route except a hand-crafted POST carrying `law_intent[]` (whitelisted and
+stored, so it would have worked, though the only consequence was a different
+welcome body).
+
+Denis asked what the second template was for while looking at the front-end
+Manage emails list, which is where the cost showed. Both rows read **ON**, and
+the trigger column described states that no longer exist: "user registration (no
+hosting or sponsor tick)" and "user registration (ticked host or sponsor)". A
+committee member could have spent an afternoon wording an email nobody would
+ever receive, with nothing on the screen to warn them. That is a worse outcome
+than losing a template we were not using, so the template, the helper and the
+qualifier on the surviving trigger were all removed. Restoring the split means
+reviving this commit, not flipping a flag.
+
+**`law_intent` itself stays**, and the reasoning is worth keeping separate from
+the email. Migration step 11 seeded that key for every account it converted, so
+it holds the only translation of what the retired roles said about 302 people,
+and `law_registration_hubspot_tags()` reads it for the "<year> Event Host" and
+"<year> Sponsor" tags the client segments on in HubSpot. Deleting the storage
+would lose both. `law_registration_intents()` therefore survives with a docblock
+that now gives one reason for its existence rather than two.
+
+**Nothing needed a data migration.** Every read path is registry-gated:
+`law_events_email()` returns `null` for an unknown slug, both editing screens
+iterate `law_events_email_registry()`, and `law_content_transfer_emails()`
+skips a stored override whose slug the registry does not know. An environment
+that had customised the hosting template keeps an inert row in
+`law_events_email_overrides` that nothing will ever read.
+
+**The surviving copy has to cover the whole job** — browsing, booking and
+submitting an event — because anybody signed in may do all three, and it may
+not describe what the reader is *allowed* to do. It already did; that was
+settled on 14 September and is pinned by
+`test_the_welcome_email_offers_booking_and_submitting()`.
+
+`BookingEmailsTest` lost `test_host_welcome_email_leads_with_submitting_an_event()`,
+whose real value was proving `{submit_link}` resolves with no event to resolve
+against. That assertion moved into `test_welcome_email_resolves_with_no_event()`
+rather than being dropped. `RegistrationTest` swapped its slug-matrix test for
+`test_only_one_welcome_template_is_registered()`, which pins the absence: the
+registry key is gone, `law_events_email()` returns `null`, the helper function
+no longer exists, and the surviving trigger reads plainly "user registration".
+
+Touched: `functions/events/notifications.php`,
+`functions/events/registration.php`, `tests/RegistrationTest.php`,
+`tests/BookingEmailsTest.php`.
 
 ---
 

@@ -16,9 +16,9 @@
  * self-service account is a plain subscriber, and any signed-in person may
  * submit an event or book a place. What the checkboxes used to say about
  * somebody survives as OPTIONAL user meta, law_intent (see
- * law_registration_intents()), which chooses the welcome email and the
- * HubSpot tags and gates nothing at all. ROLES_AND_ACCOUNT_HUB.md is the
- * contract; migration step 11 converts the existing accounts.
+ * law_registration_intents()), which now feeds only the HubSpot tags and gates
+ * nothing at all. ROLES_AND_ACCOUNT_HUB.md is the contract; migration step 11
+ * converts the existing accounts.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -34,17 +34,17 @@ if ( ! defined( 'ABSPATH' ) ) {
  * event and book a place whatever is stored here, and nothing in this key may
  * ever become a gate.
  *
- * The vocabulary and its storage stay for two reasons. Migration step 11 seeded
+ * The vocabulary and its storage stay for ONE reason, now that the welcome
+ * email no longer branches on it (16 September 2026): migration step 11 seeded
  * this key for every account it converted, so it holds the only translation of
- * what the retired roles said about 302 people; and it is what
+ * what the retired roles said about 302 people, and it is what
  * law_registration_hubspot_tags() reads to produce the "<year> Event Host" and
- * "<year> Sponsor" tags the client segments on. Both would be lost by deleting
- * it.
+ * "<year> Sponsor" tags the client segments on. Deleting it would lose both.
  *
  * What follows from nothing rendering it: new registrations store an empty
- * array (asked nothing, so nothing ticked), and they all get the general
- * welcome email rather than the hosting one. Put a tick back on a form and both
- * come back with it.
+ * array (asked nothing, so nothing ticked) and carry no Host or Sponsor tag.
+ * Put a tick back on a form and the tags come back with it; the second welcome
+ * template would have to be restored from the same commit that removed it.
  */
 function law_registration_intents() {
 	return array(
@@ -100,24 +100,6 @@ function law_registration_write_intent( $user_id, array $intents ) {
 	) );
 	update_user_meta( (int) $user_id, 'law_intent', $intents );
 	return $intents;
-}
-
-/**
- * Which welcome email a new registration gets. Two templates, one per
- * audience: any stored intent means the hosting-side copy, which leads with
- * {submit_link}, and none means the general copy, which asks for dietary and
- * accessibility requirements up front.
- *
- * Since no form collects an intent, every NEW registration currently takes the
- * general copy. The hosting template stays in the registry, editable on the
- * Emails screen and one tick away from being used again; it is also what the
- * seeded accounts would match if anything ever mailed them.
- *
- * @param string[] $intents The stored law_intent values.
- * @return string A law_events_email_registry() slug.
- */
-function law_registration_welcome_slug( array $intents ) {
-	return $intents ? 'user_welcome_registered_host' : 'user_welcome_registered';
 }
 
 /**
@@ -513,11 +495,12 @@ function law_registration_handler() {
 	// admin notices above it has no event, so it is the one send the activity
 	// log cannot record (law_event_log() needs an event to attach to).
 	//
-	// Hosting-side and attendee copy differ. $stored_intents is the right
-	// input, not law_account_user_is_host_like(), which is now simply "signed
-	// in" and would hand everybody the hosting copy.
-	$welcome_slug = law_registration_welcome_slug( $stored_intents );
-	law_events_send( $welcome_slug, 0, array( 'to' => array( $user->user_email ), 'placeholders' => $placeholders ) );
+	// One template, named directly. Until 16 September 2026 a
+	// law_registration_welcome_slug() helper chose between this and a
+	// hosting-side copy on the stored intents, but no form has collected an
+	// intent since 14 September 2026, so the choice only ever had one answer;
+	// both the helper and the second template are gone (Denis).
+	law_events_send( 'user_welcome_registered', 0, array( 'to' => array( $user->user_email ), 'placeholders' => $placeholders ) );
 
 	// Auto-login (replacing GW Auto Login) + the form 1 confirmation redirect.
 	wp_set_current_user( $user_id );
