@@ -31,7 +31,41 @@
 	}
 
 	var flagshipDay = nav.getAttribute('data-flagship-day') || '';
+	var receptionDays = splitDays(nav.getAttribute('data-reception-days'));
 	var active = null;
+
+	function splitDays(value) {
+		return (value || '').split(',').filter(function (day) {
+			return day !== '';
+		});
+	}
+
+	/* The day nav lives OUTSIDE #law-cal-events and is never swapped by a filter
+	   fetch, so the value above goes stale the moment a filter hides the flagship
+	   (which it can, since 16 September 2026): the tab would keep its "Flagship"
+	   pill and its blank count where it should now read "No events". The truth
+	   therefore comes from the swapped markup, where parts/calendar-events.php
+	   emits a marker on every render, empty value and all.
+
+	   Its ABSENCE means this is not the programme's markup at all -- the
+	   committee's timeline view shares this script and swaps in
+	   parts/events/slot-chart.php, which knows nothing about the flagship -- in
+	   which case the server's own value stands and nothing is touched. Writing the
+	   value back onto the nav keeps the DOM honest for anything else reading it. */
+	function readFlagshipDay() {
+		var marker = results.querySelector('[data-law-flagship-day]');
+		if (!marker) {
+			return;
+		}
+		flagshipDay = marker.getAttribute('data-law-flagship-day') || '';
+		nav.setAttribute('data-flagship-day', flagshipDay);
+
+		/* The receptions ride on the same marker, for the same reason and with
+		   the same absence rule: a comma-separated list of the days carrying one
+		   that survived the filters. */
+		receptionDays = splitDays(marker.getAttribute('data-law-reception-days'));
+		nav.setAttribute('data-reception-days', receptionDays.join(','));
+	}
 
 	var status = document.getElementById('law-cal-status');
 	if (!status) {
@@ -83,7 +117,12 @@
 	/* Mirrors law_calendar_day_count_text(): each section's data-count already
 	   includes the flagship on its day, so the count covers it; an empty day
 	   says so, and a flagship day can only fall to the blank if a section ever
-	   reports 0 (its pill says what is on). */
+	   reports 0 (its pill says what is on).
+
+	   Since the flagship answers the filters, that blank is unreachable from the
+	   programme for a second reason: a visible flagship day always counts at
+	   least 1, and a filtered-out one is no longer a flagship day at all. Kept as
+	   the defensive fallback its PHP twin is. */
 	function countText(count, day) {
 		if (count === 1) {
 			return '1 event';
@@ -97,6 +136,55 @@
 	function countFor(day) {
 		var section = sectionFor(day);
 		return section ? parseInt(section.getAttribute('data-count') || '0', 10) : 0;
+	}
+
+	/* The "Flagship" and "Reception" pills are server-rendered inside the nav
+	   link, and the nav is never swapped, so they have to be added and removed
+	   here as the visible flagship and the visible receptions come and go. The
+	   labels are hard-coded, as '1 event', 'No events' and 'the flagship
+	   conference' already are in this file: the PHP side translates, the script
+	   does not, and the site is English only.
+
+	   Both live inside .law-cal-daynav__flags, which the server always renders
+	   whether or not it has anything to put in it -- so a day that gains a pill
+	   after a filter fetch has somewhere to put it, and the two sit side by side
+	   rather than stacking and changing the sticky bar's height. A nav rendered
+	   before this wrapper existed is tolerated by falling back to the link. */
+	function flagsHost(link) {
+		return link.querySelector('.law-cal-daynav__flags') || link;
+	}
+
+	function togglePill(link, selector, className, label, on) {
+		var host = flagsHost(link);
+		var pill = host.querySelector(selector);
+		if (on && !pill) {
+			pill = document.createElement('span');
+			pill.className = className;
+			pill.textContent = label;
+			host.appendChild(pill);
+		} else if (!on && pill) {
+			pill.parentNode.removeChild(pill);
+		}
+	}
+
+	function refreshFlagPill() {
+		links().forEach(function (link) {
+			var day = link.getAttribute('data-day');
+			togglePill(
+				link,
+				'.law-cal-daynav__flag:not(.law-cal-daynav__flag--reception)',
+				'law-cal-daynav__flag',
+				'Flagship',
+				flagshipDay !== '' && day === flagshipDay
+			);
+			togglePill(
+				link,
+				'.law-cal-daynav__flag--reception',
+				'law-cal-daynav__flag law-cal-daynav__flag--reception',
+				'Reception',
+				receptionDays.indexOf(day) !== -1
+			);
+		});
 	}
 
 	function refreshCounts() {
@@ -281,8 +369,14 @@
 	/* After a filter fetch the panels are new elements: re-enhance them,
 	   refresh the counts, and stay on the same day unless it emptied. */
 	document.addEventListener('law:partial-rendered', function () {
+		/* The flagship day and the reception days first: both refreshCounts() and
+		   refreshFlagPill() read them. calendar-filters.js has already greyed the
+		   empty days by the time this fires, so the classes the two functions see
+		   are current. */
+		readFlagshipDay();
 		enhance();
 		refreshCounts();
+		refreshFlagPill();
 		activate(pick(active), { hash: false, prefix: 'Programme updated.' });
 	});
 

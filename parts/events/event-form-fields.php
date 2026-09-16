@@ -165,9 +165,15 @@ get_template_part(
 // post-approval host edit law_events_form_values() hands back an empty answer;
 // reading the stored value in that case keeps both the radios checked and the
 // venue details on screen.
-$law_venue_needed = in_array( 'venue_needed', $law_locked, true ) && $law_post
-	? (string) law_event_meta( $law_post->ID, '_law_venue_needed' )
-	: (string) $law_value( 'venue_needed' );
+// law_events_venue_needed_label() maps an answer stored in either vocabulary
+// onto the label the radios carry, so an event migrated with the Gravity Forms
+// choice value ("Yes"/"No") renders with its answer already picked.
+$law_venue_choices = law_events_venue_needed_choices();
+$law_venue_needed  = law_events_venue_needed_label(
+	in_array( 'venue_needed', $law_locked, true ) && $law_post
+		? law_event_meta( $law_post->ID, '_law_venue_needed' )
+		: $law_value( 'venue_needed' )
+);
 // The venue name, capacity band and places available are only asked of a host
 // who already has a venue; the committee always sees them, because on an event
 // LAW places they are the ones who know. See
@@ -201,14 +207,14 @@ $law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_ava
 	<legend>Venue</legend>
 	<div class="law-form-field <?php echo in_array( 'venue_needed', $law_locked, true ) ? 'is-locked' : ''; ?>">
 		<span class="law-form-label">Venue needed? *</span>
-		<label><input type="radio" name="venue_needed" value="Yes, please share our details with venue hosts" <?php checked( $law_venue_needed, 'Yes, please share our details with venue hosts' ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> Yes, please share our details with venue hosts</label>
-		<label><input type="radio" name="venue_needed" value="No, we already have a venue planned"<?php echo $law_venue_toggle; ?> <?php checked( $law_venue_needed, 'No, we already have a venue planned' ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> No, we already have a venue planned</label>
+		<label><input type="radio" name="venue_needed" value="<?php echo esc_attr( $law_venue_choices['yes'] ); ?>" <?php checked( $law_venue_needed, $law_venue_choices['yes'] ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> <?php echo esc_html( $law_venue_choices['yes'] ); ?></label>
+		<label><input type="radio" name="venue_needed" value="<?php echo esc_attr( $law_venue_choices['no'] ); ?>"<?php echo $law_venue_toggle; ?> <?php checked( $law_venue_needed, $law_venue_choices['no'] ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> <?php echo esc_html( $law_venue_choices['no'] ); ?></label>
 		<?php $law_error_message( 'venue_needed' ); ?>
 	</div>
 	<!-- A plain wrapper, not the grid itself: .law-row-grid's display:grid is
 	authored after Foundation's [hidden] { display: none } and would win. -->
 	<div id="law-venue-details" <?php echo $law_show_venue ? '' : 'hidden'; ?>>
-	<?php if ( 'committee' === $law_context && 0 !== strpos( $law_venue_needed, 'No,' ) ) : ?>
+	<?php if ( 'committee' === $law_context && $law_venue_choices['no'] !== $law_venue_needed ) : ?>
 		<p class="law-form-hint">The host asked LAW to find a venue, so these three are not on their form. Set them here once the event has been placed.</p>
 	<?php endif; ?>
 	<div class="law-row-grid law-row-grid--three">

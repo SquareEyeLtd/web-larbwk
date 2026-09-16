@@ -4,10 +4,15 @@
  * own single-page template, and its pinned block on the programme.
  *
  * The two properties worth pinning are the ones a later change could break
- * silently: the flagship must appear on the programme EXACTLY once, as its
- * block and never as an ordinary card, and it must stay there when a visitor
- * filters the list, because it is the main event of the week rather than one
- * result among many.
+ * silently: the flagship must appear on the programme EXACTLY once, as its block
+ * and never as an ordinary card, and it must answer the filters exactly as every
+ * other event does.
+ *
+ * That second rule is the reverse of what this file asserted until 16 September
+ * 2026, when Denis reversed the 11 September decision to pin the conference
+ * outside the filtered list. An event nobody can filter away is an event nobody
+ * can get out of the way, and a search for a term the conference does not carry
+ * should not return it. With no filters set it is still pinned to its day.
  */
 class FlagshipRenderTest extends LAW_Test_Case {
 
@@ -141,34 +146,127 @@ class FlagshipRenderTest extends LAW_Test_Case {
 		$this->assertGreaterThan( $day_position, $block_position );
 	}
 
-	public function test_the_day_is_never_empty_while_the_flagship_is_published(): void {
+	/** Run $fn with one filter applied, caches reset either side. */
+	private function under_filter( string $param, string $value, callable $fn ) {
+		$_GET[ $param ] = $value;
+		law_calendar_reset_caches();
+		try {
+			return $fn();
+		} finally {
+			unset( $_GET[ $param ] );
+			law_calendar_reset_caches();
+		}
+	}
+
+	public function test_the_flagship_keeps_its_day_alive_only_while_it_matches(): void {
 		$event_id = $this->make_flagship();
 		$date     = law_flagship_date( $event_id );
 
-		$this->assertFalse( law_calendar_day_is_empty( $date ), 'Its own day always has the block to show.' );
+		$this->assertFalse( law_calendar_day_is_empty( $date ), 'Unfiltered, its own day always has the block to show.' );
 
-		// Even when the filters exclude every ordinary event on that day, which
-		// is what the day nav reads to decide whether to grey the tab out.
-		$_GET['law_kw'] = 'no-such-term-anywhere';
-		law_calendar_reset_caches();
-		$empty_under_filter = law_calendar_day_is_empty( $date );
-		unset( $_GET['law_kw'] );
-		law_calendar_reset_caches();
+		// This is what the day nav reads to decide whether to grey a tab out, so
+		// the tab has to go the moment the block does.
+		$this->assertTrue(
+			$this->under_filter( 'law_kw', 'no-such-term-anywhere', fn() => law_calendar_day_is_empty( $date ) ),
+			'A search the conference does not answer leaves its day as empty as any other.'
+		);
 
-		$this->assertFalse( $empty_under_filter, 'The flagship keeps its day and its tab alive under any filter.' );
+		$this->assertFalse(
+			$this->under_filter( 'law_kw', 'Flagship conference', fn() => law_calendar_day_is_empty( $date ) ),
+			'A search it does answer keeps the day alive.'
+		);
 	}
 
-	public function test_a_filtered_list_still_carries_the_block(): void {
+	public function test_a_search_the_flagship_does_not_answer_drops_the_block(): void {
 		$this->make_flagship();
 
-		$_GET['law_kw'] = 'no-such-term-anywhere';
-		law_calendar_reset_caches();
-		$html = $this->render_list();
-		unset( $_GET['law_kw'] );
+		$html = $this->under_filter( 'law_kw', 'no-such-term-anywhere', fn() => $this->render_list() );
+
+		$this->assertStringNotContainsString( 'class="law-flagship-card"', $html, 'The block goes with the rest of the non-matches.' );
+		$this->assertStringNotContainsString( 'law-flagship-strip', $html, 'And so does the strip that signposts it.' );
+		$this->assertStringContainsString( 'law-cal__empty', $html, 'Nothing matched at all, so the page says so.' );
+	}
+
+	public function test_a_search_the_flagship_answers_keeps_the_block_and_drops_the_empty_message(): void {
+		$this->make_flagship();
+
+		$html = $this->under_filter( 'law_kw', 'Flagship conference', fn() => $this->render_list() );
+
+		$this->assertStringContainsString( 'class="law-flagship-card"', $html );
+		$this->assertStringContainsString( 'law-flagship-strip', $html );
+		// The flagship is not one of the day's CARDS, so without it counting
+		// towards "is there anything here" the page would print "No events match
+		// this search." directly above a block that plainly matches.
+		$this->assertStringNotContainsString( 'law-cal__empty', $html, 'A matching conference is something on the page.' );
+	}
+
+	public function test_the_sector_and_type_filters_reach_the_flagship_too(): void {
+		$event_id = $this->make_flagship();
+		wp_set_object_terms( $event_id, 'Energy', 'law_sector' );
+		wp_set_object_terms( $event_id, 'Conference', 'law_event_type' );
 		law_calendar_reset_caches();
 
-		$this->assertStringContainsString( 'class="law-flagship-card"', $html, 'A search that matches nothing must not hide the main event of the week.' );
-		$this->assertStringContainsString( 'law-cal__empty', $html, 'The "no events match" message still prints for the rest of the list.' );
+		foreach ( array( 'law_sector' => array( 'Energy', 'Shipping' ), 'law_type' => array( 'Conference', 'Social event' ) ) as $param => $pair ) {
+			$this->assertStringContainsString(
+				'class="law-flagship-card"',
+				$this->under_filter( $param, $pair[0], fn() => $this->render_list() ),
+				sprintf( 'Its own %s keeps the block.', $param )
+			);
+			$this->assertStringNotContainsString(
+				'class="law-flagship-card"',
+				$this->under_filter( $param, $pair[1], fn() => $this->render_list() ),
+				sprintf( 'Another %s drops it. Keyword alone would not prove the matcher is fully wired.', $param )
+			);
+		}
+	}
+
+	public function test_the_partial_publishes_the_visible_flagship_day_for_the_tabs(): void {
+		$event_id = $this->make_flagship();
+		$date     = law_flagship_date( $event_id );
+
+		$this->assertStringContainsString(
+			'data-law-flagship-day="' . $date . '"',
+			$this->render_list(),
+			'assets/js/calendar-tabs.js reads this out of the swapped markup, because the day nav it caches from is never swapped.'
+		);
+		$this->assertStringContainsString(
+			'data-law-flagship-day=""',
+			$this->under_filter( 'law_kw', 'no-such-term-anywhere', fn() => $this->render_list() ),
+			'Emitted empty rather than omitted: absent has to keep meaning "not the programme\'s markup", which is what the committee timeline swaps in.'
+		);
+
+		// The attribute is a contract between two files, so pin the other end of
+		// it here too. Same technique this class already uses for calendar.css.
+		$this->assertStringContainsString(
+			'data-law-flagship-day',
+			(string) file_get_contents( get_theme_file_path( '/assets/js/calendar-tabs.js' ) ),
+			'Renaming the attribute on one side must fail a test, not go quiet.'
+		);
+	}
+
+	public function test_the_day_tab_follows_the_visible_flagship(): void {
+		$event_id = $this->make_flagship();
+		$date     = law_flagship_date( $event_id );
+
+		$nav = static function () {
+			ob_start();
+			get_template_part( 'parts/calendar-daynav' );
+			return (string) ob_get_clean();
+		};
+
+		// The full class ATTRIBUTE, not the bare class name. Both pills live inside
+		// a .law-cal-daynav__flags wrapper the nav renders on every tab whether or
+		// not it has anything to put in it (16 September 2026), and a bare
+		// 'law-cal-daynav__flag' matches that wrapper on every day of the week.
+		// The reception's pill carries a second class, so this string is the
+		// conference's alone.
+		$this->assertStringContainsString( 'data-flagship-day="' . $date . '"', $nav() );
+		$this->assertStringContainsString( 'class="law-cal-daynav__flag"', $nav(), 'Unfiltered, its day wears the Flagship pill.' );
+
+		$filtered = $this->under_filter( 'law_kw', 'no-such-term-anywhere', $nav );
+		$this->assertStringContainsString( 'data-flagship-day=""', $filtered, 'No visible flagship, no flagship day.' );
+		$this->assertStringNotContainsString( 'class="law-cal-daynav__flag"', $filtered, 'And no pill on a tab that no longer holds the conference.' );
+		$this->assertStringContainsString( 'No events', $filtered, 'The tab falls through to "No events" instead of the flagship day blank.' );
 	}
 
 	public function test_an_unpublished_flagship_shows_nowhere_public(): void {

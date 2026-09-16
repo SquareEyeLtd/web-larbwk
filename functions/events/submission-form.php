@@ -72,6 +72,59 @@ function law_events_locked_fields( $post, $user_id = 0 ) {
 
 
 /**
+ * The two "Venue needed" answers, in the order the form asks them.
+ *
+ * These strings ARE the stored values: the meta holds the answer as prose, not
+ * a key, because it is shown verbatim on the committee's event panel and read
+ * back by law_events_venue_details_visible() as a "No," prefix test.
+ *
+ * @return string[] 'yes' and 'no' => the canonical label of each answer.
+ */
+function law_events_venue_needed_choices() {
+	return array(
+		'yes' => 'Yes, please share our details with venue hosts',
+		'no'  => 'No, we already have a venue planned',
+	);
+}
+
+/**
+ * The canonical "Venue needed" label for an answer from any era.
+ *
+ * Field 103 (Venue needed) on form 2 (Event > submit an event) is a radio
+ * whose choice VALUES are the bare "Yes" and "No" while its choice TEXTS are
+ * the two sentences above, and a Gravity Forms entry stores the value. So
+ * every migrated event arrived holding "Yes" or "No", which matched neither
+ * radio on the custom form (the answer looked unset and had to be picked
+ * again) nor the "No," prefix the venue detail block keys on (a host who
+ * already had a venue was described to the committee as having asked LAW to
+ * find one). Mapping both vocabularies onto the canonical label here fixes the
+ * events migrated before 16 September 2026 without a data repair, and the
+ * meta sanitiser (law_events_sanitize_value(), 'venue_needed') normalises
+ * every write from here on, migration included.
+ *
+ * Anything else is dropped rather than kept: the field is a two-choice radio,
+ * so a value that is neither answer is a forged post, not an answer.
+ *
+ * @param string $value Stored or posted answer.
+ * @return string The canonical label, or '' when there is no answer.
+ */
+function law_events_venue_needed_label( $value ) {
+	$value   = trim( (string) ( is_scalar( $value ) ? $value : '' ) );
+	$choices = law_events_venue_needed_choices();
+	if ( '' === $value ) {
+		return '';
+	}
+	if ( 0 === stripos( $value, 'no' ) ) {
+		return $choices['no'];
+	}
+	if ( 0 === stripos( $value, 'yes' ) ) {
+		return $choices['yes'];
+	}
+	return '';
+}
+
+
+/**
  * Whether the Venue detail fields (venue name/address, capacity band, places
  * available) are on this submitter's form.
  *
@@ -95,7 +148,7 @@ function law_events_venue_details_visible( $venue_needed, $user_id = 0 ) {
 	if ( law_user_is_committee( $user_id ) ) {
 		return true;
 	}
-	return 0 === strpos( (string) $venue_needed, 'No,' );
+	return law_events_venue_needed_choices()['no'] === law_events_venue_needed_label( $venue_needed );
 }
 
 
@@ -121,7 +174,7 @@ function law_events_venue_details_visible( $venue_needed, $user_id = 0 ) {
  */
 function law_events_venue_details_required( $venue_needed, $user_id = 0 ) {
 	return law_events_venue_details_visible( $venue_needed, $user_id )
-		&& 0 === strpos( (string) $venue_needed, 'No,' );
+		&& law_events_venue_needed_choices()['no'] === law_events_venue_needed_label( $venue_needed );
 }
 
 
@@ -139,9 +192,9 @@ function law_events_venue_details_required( $venue_needed, $user_id = 0 ) {
  */
 function law_events_venue_needed_value( $post, array $locked, array $input ) {
 	if ( in_array( 'venue_needed', $locked, true ) && $post ) {
-		return (string) law_event_meta( $post->ID, '_law_venue_needed' );
+		return law_events_venue_needed_label( law_event_meta( $post->ID, '_law_venue_needed' ) );
 	}
-	return (string) ( $input['venue_needed'] ?? '' );
+	return law_events_venue_needed_label( $input['venue_needed'] ?? '' );
 }
 
 /**
@@ -1335,7 +1388,7 @@ function law_events_form_values( $post, array $state ) {
 		'sectors'             => law_events_post_term_names( $post->ID, 'law_sector' ),
 		'sector_jurisdiction' => law_event_meta( $post->ID, '_law_sector_jurisdiction' ),
 		'sector_other'        => law_event_meta( $post->ID, '_law_sector_other' ),
-		'venue_needed'        => law_event_meta( $post->ID, '_law_venue_needed' ),
+		'venue_needed'        => law_events_venue_needed_label( law_event_meta( $post->ID, '_law_venue_needed' ) ),
 		'venue'               => law_event_meta( $post->ID, '_law_venue' ),
 		'venue_capacity'      => law_event_meta( $post->ID, '_law_venue_capacity' ),
 		'tickets_available'   => law_event_meta( $post->ID, '_law_tickets_available' ),
@@ -1348,7 +1401,10 @@ function law_events_form_values( $post, array $state ) {
 		'invoice_city'        => $address['city'] ?? '',
 		'invoice_state'       => $address['state'] ?? '',
 		'invoice_postal_code' => $address['postal_code'] ?? '',
-		'invoice_country'     => $address['country'] ?? '',
+		// Mapped from a bare ISO code where a migrated event holds one, so the
+		// Country select opens on the country rather than on an option
+		// reading "GB". See law_events_country_display_name().
+		'invoice_country'     => law_events_country_display_name( $address['country'] ?? '' ),
 		'terms'               => ! empty( law_event_meta( $post->ID, '_law_terms_consent' )['accepted'] ),
 		'co_owners'           => law_event_meta( $post->ID, '_law_co_owner_rows' ),
 		'contacts'            => law_event_meta( $post->ID, '_law_contacts' ),

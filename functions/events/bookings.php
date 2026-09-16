@@ -56,6 +56,206 @@ function law_event_tickets_remaining( $event_id ) {
 }
 
 /**
+ * The committee's answer on the booking switch: 'auto', 'disable' or 'enable'.
+ *
+ * Stored as prose rather than derived, and 'auto' is a real answer, not a
+ * missing one: it means "follow the rules", so a change to the rules moves
+ * every automatic event and leaves every decided one alone.
+ *
+ * @param int $event_id law_event post ID.
+ * @return string auto|disable|enable
+ */
+function law_event_booking_override( $event_id ) {
+	$value = (string) law_event_meta( (int) $event_id, '_law_booking_override' );
+	return in_array( $value, array( 'disable', 'enable' ), true ) ? $value : 'auto';
+}
+
+/**
+ * The three answers, in the order the committee's select offers them.
+ *
+ * @return array<string,string> value => label.
+ */
+function law_event_booking_override_choices() {
+	return array(
+		'auto'    => __( 'Automatic', 'law' ),
+		'disable' => __( 'Disable booking', 'law' ),
+		'enable'  => __( 'Enable booking', 'law' ),
+	);
+}
+
+/**
+ * Why booking is not released on this event, '' when it is.
+ *
+ * The rule the client settled on 16 September 2026, in the order it is judged:
+ *
+ *  - 'disabled': the committee chose Disable booking. First, because it is
+ *    meant to hold an otherwise complete event shut.
+ *  - 'places': no places have been released. law_event_tickets_remaining()
+ *    reads 0 and unset alike as "not open" (see its note above). This one is
+ *    checked BEFORE the Enable booking answer and so cannot be overridden: a
+ *    place is allocated out of the capacity, so the booking system has nothing
+ *    to give away without it. The committee's panel says so as an error.
+ *  - 'venue': no venue name or address is recorded. Required whichever way the
+ *    host answered "Venue needed" (client, 16 September 2026): an attendee
+ *    booking a place needs to know where to turn up, and whether LAW found the
+ *    room or the host already had one makes no difference to that. Enable
+ *    booking lifts this one, which is the exception the client asked for -- a
+ *    high-profile event LAW wants to promote before its address is settled --
+ *    and it applies to host submissions only, see
+ *    law_event_venue_gates_booking() below.
+ *
+ * Payment is deliberately NOT one of them. Paying is what publishes an event
+ * (law_event_workflow_actions(): 'mark_paid' and 'confirm' both go to
+ * publish), so law_booking_guard_open()'s status test IS the payment gate, and
+ * Enable booking is honoured there rather than here. Keeping payment out is
+ * also what lets the committee preview show a not-yet-published event the way
+ * an attendee will see it once it is paid for.
+ *
+ * ONE function, asked by both sides: the guard that refuses a submission and
+ * the state resolver that decides what the card and the panel say. Two lists
+ * of conditions would be two lists to drift apart, and the drift would show as
+ * a Register button that is refused when pressed.
+ *
+ * Note that an EXTERNAL event is judged here like any other, even though it
+ * holds no places of ours and its venue is the organiser's to know. That is
+ * deliberate: this is the reading law_booking_guard_open() takes, and it is
+ * what keeps the local waitlist and the booking form off an event whose places
+ * are somebody else's to sell (tests/ExternalEventsTest.php). The card and the
+ * event page never reach it, because law_booking_resolve_state() answers
+ * 'external' first and so keeps the link out to the organiser live; only
+ * Disable booking closes one, and it is checked before that branch.
+ *
+ * @param int $event_id law_event post ID.
+ * @return string '' | 'disabled' | 'places' | 'venue'
+ */
+function law_event_booking_hold_reason( $event_id ) {
+	$event_id = (int) $event_id;
+	$override = law_event_booking_override( $event_id );
+
+	if ( 'disable' === $override ) {
+		return 'disabled';
+	}
+	if ( null === law_event_tickets_remaining( $event_id ) ) {
+		return 'places';
+	}
+	if ( 'enable' === $override ) {
+		return '';
+	}
+	if ( ! law_event_venue_gates_booking( $event_id ) ) {
+		return '';
+	}
+	if ( '' === trim( (string) law_event_meta( $event_id, '_law_venue' ) ) ) {
+		return 'venue';
+	}
+	return '';
+}
+
+/**
+ * Does a missing venue keep booking shut on this event?
+ *
+ * Only on a HOST SUBMISSION. The venue requirement belongs to the submission
+ * workflow: a host tells LAW where their event is, the committee checks it, and
+ * an attendee booking a place needs somewhere to turn up.
+ *
+ * The events LAW runs itself are exempt (Denis, 16 September 2026). The client
+ * manages the receptions on Manage receptions, and "once they are set to be
+ * visible on the programme and have capacity and a price, they should be
+ * bookable right away -- we don't care about the venue for those". The same
+ * reasoning covers the other two kinds law_event_is_managed_by_law() names, and
+ * neither changes behaviour: the flagship is applied for rather than booked, so
+ * law_booking_guard_open() refuses it before this is reached, and an external
+ * event's room is the organiser's to know and is still held shut by the places
+ * limb above (tests/ExternalEventsTest.php depends on that, not on this).
+ *
+ * ONE predicate rather than a reception special case, so "which events LAW runs
+ * itself" keeps being answered in the one place it is answered everywhere else.
+ *
+ * @param int $event_id law_event post ID.
+ */
+function law_event_venue_gates_booking( $event_id ) {
+	return ! ( function_exists( 'law_event_is_managed_by_law' ) && law_event_is_managed_by_law( (int) $event_id ) );
+}
+
+/**
+ * The hold, in the committee's own words, for the Committee controls panel and
+ * the wp-admin box.
+ *
+ * Only the committee ever reads these. The public surfaces say one thing for
+ * every hold ("Places for this event have not been released yet." above a
+ * disabled "Open soon"), because naming the reason would tell an attendee that
+ * a host has not paid or that their venue is unknown.
+ *
+ * @param string $reason law_event_booking_hold_reason().
+ * @return string '' when there is no hold to describe.
+ */
+function law_event_booking_hold_label( $reason ) {
+	$labels = array(
+		'disabled' => __( 'Booking is closed on this event because it is set to Disable booking.', 'law' ),
+		'places'   => __( 'Booking is closed because no places have been released.', 'law' ),
+		'venue'    => __( 'Booking is closed because no venue is recorded.', 'law' ),
+	);
+	return $labels[ (string) $reason ] ?? '';
+}
+
+/**
+ * The line the committee reads under the booking select: the hold that stands,
+ * the one error the panel can produce, or what Automatic is waiting for.
+ *
+ * ALL of the copy, not just the holds, so the dashboard panel and the wp-admin
+ * box cannot describe the same event differently -- and so the explanation
+ * cannot promise a condition that does not apply to the event in front of
+ * them, which is exactly what went wrong when the receptions were exempted
+ * from the venue and two templates still said a venue was needed.
+ *
+ * @param int $event_id law_event post ID.
+ * @return array{text:string,error:bool}
+ */
+function law_event_booking_hold_note( $event_id ) {
+	$event_id = (int) $event_id;
+	$reason   = law_event_booking_hold_reason( $event_id );
+
+	// Enable booking with no capacity is the one combination the committee can
+	// ask for and not get, so it is an error rather than a statement: they have
+	// made a decision the booking system cannot carry out.
+	if ( 'places' === $reason && 'enable' === law_event_booking_override( $event_id ) ) {
+		return array(
+			'text'  => __( 'Booking cannot open until Places available is set: a place is allocated out of the capacity, so the booking system needs one whatever this is set to.', 'law' ),
+			'error' => true,
+		);
+	}
+
+	// An external event is booked on the organiser's own website, so neither its
+	// places nor its venue is a hold of ours to report. Disable booking is the
+	// one answer that reaches one, and it is reported like any other.
+	if ( function_exists( 'law_event_is_external' ) && law_event_is_external( $event_id ) ) {
+		return array(
+			'text'  => 'disabled' === $reason
+				? law_event_booking_hold_label( $reason )
+				: __( 'Registration happens on the organiser\'s own website, so only Disable booking applies here.', 'law' ),
+			'error' => false,
+		);
+	}
+
+	// A hold is reported from approval onwards. Before that, what is keeping
+	// booking shut is the workflow -- the event has not been placed, priced or
+	// invoiced yet -- so naming the venue on a Proposed event would answer a
+	// question nobody has asked. Disable booking is reported whatever the
+	// status, because it is a decision rather than a fact about the event.
+	if ( '' !== $reason && ( 'disabled' === $reason || law_event_has_been_approved( $event_id ) ) ) {
+		return array( 'text' => law_event_booking_hold_label( $reason ), 'error' => false );
+	}
+
+	// Nothing holding it: say what Automatic waits for, naming only the
+	// conditions that actually apply to this event.
+	return array(
+		'text'  => law_event_venue_gates_booking( $event_id )
+			? __( 'Automatic opens booking once the event is paid for, its places are released and a venue is recorded.', 'law' )
+			: __( 'Automatic opens booking once the event is paid for and its places are released.', 'law' ),
+		'error' => false,
+	);
+}
+
+/**
  * Places remaining at or below which the host is warned the event is nearly
  * full: fewer than 10% of the approved places left, with a floor of 5 so a
  * small event still gets a warning before its last place goes (Denis,
@@ -64,7 +264,7 @@ function law_event_tickets_remaining( $event_id ) {
  *
  * Integer arithmetic only, so there is nothing to round at the boundary:
  * ceil( available / 10 ) - 1 is the largest whole number strictly below 10%
- * (100 → 9, 90 → 8, 61 → 6). The floor means the percentage only bites from
+ * (100 -> 9, 90 -> 8, 61 -> 6). The floor means the percentage only bites from
  * 61 places upwards.
  *
  * ONE definition on purpose: law_booking_maybe_capacity_warning() fires on it
@@ -799,9 +999,11 @@ function law_booking_payment_states() {
 /* Guards _____________________________________________________________________ */
 
 /**
- * Is the event LIVE — confirmed, on the CPT source, with a ticket number set,
- * and not yet started (settled: booking closes at event start; an event with
- * no start cannot close by time)?
+ * Is the event LIVE — confirmed (which means paid for: paying is what
+ * publishes an event), on the CPT source, with none of the committee's three
+ * holds standing (law_event_booking_hold_reason()), and not yet started
+ * (settled: booking closes at event start; an event with no start cannot close
+ * by time)?
  *
  * This is the event-state half of the old single guard. It is what the
  * waitlist's internals and the untrash hook ask, because a queue must keep
@@ -815,7 +1017,19 @@ function law_booking_payment_states() {
  */
 function law_booking_guard_open( $event_id ) {
 	$post = get_post( $event_id );
-	if ( ! $post || LAW_EVENT_CPT !== $post->post_type || 'publish' !== $post->post_status || 'cpt' !== law_events_source() ) {
+	if ( ! $post || LAW_EVENT_CPT !== $post->post_type || 'cpt' !== law_events_source() ) {
+		return new WP_Error( 'law_booking_not_bookable', 'This event is not open for booking.' );
+	}
+	// THE PAYMENT GATE. Paying is what publishes an event, so a status that is
+	// not `publish` means the host fee is still outstanding.
+	//
+	// Enable booking lifts it, and only it: the client asked to be able to open
+	// booking on a sponsor's event they want promoted now (16 September 2026).
+	// Limited to an event the public can actually see, so the answer can never
+	// sell places at a rejected, cancelled or unsubmitted one -- those are not
+	// waiting for money, they are not happening.
+	if ( 'publish' !== $post->post_status
+		&& ! ( law_event_is_publicly_listed( $post ) && 'enable' === law_event_booking_override( $event_id ) ) ) {
 		return new WP_Error( 'law_booking_not_bookable', 'This event is not open for booking.' );
 	}
 	// The flagship conference is approval-gated and has its own application
@@ -827,7 +1041,11 @@ function law_booking_guard_open( $event_id ) {
 	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
 		return new WP_Error( 'law_booking_flagship', 'The flagship conference is not booked through this form.' );
 	}
-	if ( null === law_event_tickets_remaining( $event_id ) ) {
+	// The committee's three holds, in one place (law_event_booking_hold_reason()):
+	// Disable booking ticked, no places released, or no venue name on an event
+	// whose host already had a room. One message for all three, matching the
+	// public surfaces: an attendee is never told which.
+	if ( '' !== law_event_booking_hold_reason( $event_id ) ) {
 		return new WP_Error( 'law_booking_not_open', 'Booking for this event has not opened yet.' );
 	}
 	$start = (string) law_event_meta( $event_id, '_law_start' );

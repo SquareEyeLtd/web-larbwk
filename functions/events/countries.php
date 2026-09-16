@@ -57,6 +57,69 @@ function law_events_country_to_iso( $name ) {
 }
 
 /**
+ * The reverse map: ISO 3166-1 alpha-2 code => the country NAME the forms
+ * offer, built from the country list itself so the two can never disagree.
+ *
+ * Only names on that list are candidates, so a code resolves to the one
+ * spelling a select can actually show. The list is checked against
+ * law_events_country_map() directly rather than through
+ * law_events_country_to_iso(), which logs every unmapped name: ten of the 249
+ * choices (Åland Islands, Holy See, Micronesia and friends) have no entry, and
+ * building this map must not fill the error log with them.
+ *
+ * @return array<string,string> e.g. 'GB' => 'United Kingdom'.
+ */
+function law_events_iso_country_names() {
+	static $names = null;
+	if ( null !== $names ) {
+		return $names;
+	}
+	$map   = law_events_country_map();
+	$names = array();
+	foreach ( law_registration_country_choices() as $name ) {
+		$key = law_events_norm_country( $name );
+		if ( ! isset( $map[ $key ] ) || isset( $names[ $map[ $key ] ] ) ) {
+			continue;
+		}
+		$names[ $map[ $key ] ] = (string) $name;
+	}
+	return $names;
+}
+
+/**
+ * The country NAME to show for a stored billing country.
+ *
+ * Form 2 (Event > submit an event) field 74 (Address) input 74.6 (Country) was
+ * filled in by two different front ends over its life and the entries show it:
+ * 231 say "GB" where 198 say "United Kingdom", and the same split runs through
+ * China, Portugal, Singapore and the rest. The custom form's Country select
+ * offers names, so a migrated event whose country is a bare code shows an
+ * option reading "GB" (the form appends an unrecognised stored value as its
+ * own option, which is what stops it being lost). Mapping the code onto its
+ * name here settles that (audit, 16 September 2026).
+ *
+ * Nothing is ever dropped: a name that is not on the list, or a code that maps
+ * to nothing, comes back exactly as it went in. A billing address is the
+ * host's own words and a country the list has never heard of is still better
+ * than a blank.
+ *
+ * Stripe is unaffected either way. It is sent _law_country_iso, a separate
+ * key that has always held a clean alpha-2 code, and law_events_country_to_iso()
+ * accepts a bare code as well as a name, so neither spelling could ever have
+ * blanked it.
+ *
+ * @param string $value Stored or posted country.
+ * @return string
+ */
+function law_events_country_display_name( $value ) {
+	$value = trim( (string) ( is_scalar( $value ) ? $value : '' ) );
+	if ( ! preg_match( '/^[A-Za-z]{2}$/', $value ) ) {
+		return $value;
+	}
+	return law_events_iso_country_names()[ strtoupper( $value ) ] ?? $value;
+}
+
+/**
  * Name => ISO 3166-1 alpha-2 map. Keys are normalised (see
  * law_events_norm_country()). Covers official names, common names and
  * common colloquial spellings. Add any name the log flags as unmapped.

@@ -76,6 +76,7 @@ require_once __DIR__ . '/migration/runner.php';
 require_once __DIR__ . '/migration/page.php';
 require_once __DIR__ . '/migration/repair-owners.php';
 require_once __DIR__ . '/migration/repair-references.php';
+require_once __DIR__ . '/migration/repair-payment-status.php';
 require_once __DIR__ . '/migration/backfill-session-agenda.php';
 require_once __DIR__ . '/migration/fetch-speaker-photos.php';
 require_once __DIR__ . '/migration/content-transfer.php';

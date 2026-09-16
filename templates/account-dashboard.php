@@ -184,18 +184,23 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 						<a class="button" href="<?php echo esc_url( $law_is_external_event ? law_external_event_url( $law_id ) : add_query_arg( array( 'event' => $law_id, 'law_edit' => 1 ), get_permalink() ) ); ?>">Edit event details</a>
 						<?php
 						// The preview renders law_event posts, so there is nothing to
-						// offer pre-cutover. Once the event is Confirmed there is a real
-						// public page, so the button becomes View event and goes to the
-						// permalink -- the preview is only for events the public cannot
-						// reach yet. It opens in a new tab because the public page has no
-						// way back to this dashboard, unlike the preview's back link.
+						// offer pre-cutover. Once the event has a public page the button
+						// becomes View event and goes to the permalink -- the preview is
+						// only for events the public cannot reach yet. It opens in a new
+						// tab because the public page has no way back to this dashboard,
+						// unlike the preview's back link.
+						//
+						// Publicly listed, not Confirmed: an Approved event is on the
+						// programme with a real permalink of its own from
+						// 16 September 2026, so previewing it would be a second route to
+						// the same render.
 						if ( 'cpt' === law_events_source() ) :
-							$law_is_confirmed = 'publish' === $law_detail->post_status;
+							$law_has_public_page = law_event_is_publicly_listed( $law_detail );
 							?>
 							<a class="button second"
-								href="<?php echo esc_url( $law_is_confirmed ? get_permalink( $law_id ) : add_query_arg( 'preview-event', $law_id, get_permalink() ) ); ?>"
-								<?php echo $law_is_confirmed ? ' target="_blank" rel="noopener"' : ''; ?>><?php
-								echo esc_html( $law_is_confirmed ? __( 'View event', 'law' ) : __( 'Preview event', 'law' ) );
+								href="<?php echo esc_url( $law_has_public_page ? get_permalink( $law_id ) : add_query_arg( 'preview-event', $law_id, get_permalink() ) ); ?>"
+								<?php echo $law_has_public_page ? ' target="_blank" rel="noopener"' : ''; ?>><?php
+								echo esc_html( $law_has_public_page ? __( 'View event', 'law' ) : __( 'Preview event', 'law' ) );
 							?></a>
 						<?php endif; ?>
 					</p>
@@ -235,7 +240,7 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 					<dt>Sector</dt><dd><?php echo esc_html( law_event_sector_summary( $law_id ) ?: '—' ); ?></dd>
 					<dt>Slot</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_slot_label' ) ?: 'Not confirmed' ); ?></dd>
 					<dt>Preferred slots</dt><dd><?php echo esc_html( implode( '; ', law_event_meta( $law_id, '_law_preferred_slots' ) ) ?: '—' ); ?></dd>
-					<dt>Venue needed?</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_venue_needed' ) ?: '—' ); ?></dd>
+					<dt>Venue needed?</dt><dd><?php echo esc_html( law_events_venue_needed_label( law_event_meta( $law_id, '_law_venue_needed' ) ) ?: '—' ); ?></dd>
 					<dt>Venue</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_venue' ) ?: '—' ); ?></dd>
 					<dt>Venue capacity</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_venue_capacity' ) ?: '—' ); ?></dd>
 					<dt>Tickets available</dt><dd><?php echo esc_html( (string) law_event_meta( $law_id, '_law_tickets_available' ) ?: '—' ); ?></dd>
@@ -386,7 +391,7 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 									$law_inv_address['city'] ?? '',
 									$law_inv_address['state'] ?? '',
 									$law_inv_address['postal_code'] ?? '',
-									$law_inv_address['country'] ?? '',
+									law_events_country_display_name( $law_inv_address['country'] ?? '' ),
 								) ) ) ) ?: '—' );
 							?></dd>
 							<dt>VAT number</dt><dd><?php echo esc_html( $law_inv_vat ?: '—' ); ?></dd>
@@ -417,6 +422,45 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 					<h2>Committee controls</h2>
 
 					<?php
+					// Override booking availability: the committee's hand on the
+					// booking switch, first control on the panel because it
+					// overrides every other one (client, 16 September 2026).
+					//
+					// A select, not a checkbox, because there are three answers and
+					// not two: "nobody has touched this" has to stay distinguishable
+					// from "the committee decided to leave it open". No sentinel
+					// needed -- unlike a checkbox, a select always posts -- but the
+					// isset() guard in the handler still holds the group absent-safe.
+					$law_hold_note = function_exists( 'law_event_booking_hold_note' )
+						? law_event_booking_hold_note( $law_id )
+						: array( 'text' => '', 'error' => false );
+					?>
+					<p class="law-form-field"><label for="law-dash-booking">Override booking availability</label>
+						<select id="law-dash-booking" name="law_booking_override">
+							<?php foreach ( law_event_booking_override_choices() as $law_bo_value => $law_bo_label ) : ?>
+								<option value="<?php echo esc_attr( $law_bo_value ); ?>" <?php selected( law_event_booking_override( $law_id ), $law_bo_value ); ?>><?php echo esc_html( $law_bo_label ); ?></option>
+							<?php endforeach; ?>
+						</select>
+						<?php
+						// Every word of this line comes from the helper, including the
+						// "Automatic opens booking once..." explanation, so this panel
+						// and the wp-admin box cannot describe the same event
+						// differently -- and so neither can promise a condition that
+						// does not apply to it (a reception's booking does not wait
+						// for a venue). The hold is named here because two of the
+						// three are invisible on this panel otherwise: a member who
+						// releases places on an event with no venue would watch
+						// nothing happen. The public surfaces never name a reason:
+						// they all say "Open soon".
+						//
+						// law-form-error is the class event-form.js renders its inline
+						// field errors in, repainted for this light panel by the
+						// .law-dashboard token block in event-form.css.
+						?>
+						<small class="<?php echo $law_hold_note['error'] ? 'law-form-error' : ''; ?>"><?php echo esc_html( $law_hold_note['text'] ); ?></small>
+					</p>
+
+					<?php
 					// Normalised, so a slot stored with different dash
 					// punctuation still shows as the selected option instead of
 					// falling back to "not confirmed" and clearing the dates on
@@ -441,16 +485,39 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 					// wp-admin are the only doors to them.
 					//
 					// data-law-capacity / data-law-tickets are the same hooks the
-					// event form uses, so event-form.js keeps the number field's
-					// max in step with the band here too. The panel and the edit
-					// form never render together (?law_edit=1 swaps one for the
-					// other), so the single-element lookup in that script is safe.
+					// event form uses, so event-form.js shows its inline band
+					// message here too. The panel and the edit form never render
+					// together (?law_edit=1 swaps one for the other), so the
+					// single-element lookup in that script is safe.
+					//
+					// The number field carries NO min or max (16 September 2026).
+					// Every native constraint on this form is a validation bubble
+					// in front of six buttons: Save changes, Approve, Send back,
+					// Reject, Mark paid, Cancel and Delete all submit this one
+					// <form>, and committee-actions.js hangs off its submit event,
+					// which never fires while the form is invalid. A max printed
+					// from the STORED band was worse still, because nothing
+					// maintained it: event-form.js only syncs the attributes on a
+					// field marked data-law-strict, which this one deliberately is
+					// not, so choosing a wider band left the old ceiling in place
+					// and the band could not be corrected at all. The rule itself
+					// is enforced by that inline message and, for real, by
+					// law_committee_venue_input_error() on the post.
 					$law_dash_capacity = (string) law_event_meta( $law_id, '_law_venue_capacity' );
 					$law_dash_places   = (string) law_event_meta( $law_id, '_law_tickets_available' );
 					$law_dash_bands    = law_events_venue_capacity_bands();
-					$law_dash_max      = $law_dash_bands[ $law_dash_capacity ] ?? null;
 					?>
 					<input type="hidden" name="law_venue_present" value="1">
+
+					<?php
+					// The venue itself, above the band and the places it belongs
+					// with (client, 16 September 2026). Not required -- an event can
+					// sit on the programme before its room is settled -- but booking
+					// does not open until it is filled in, which the line under the
+					// select above says when that is what is holding it.
+					?>
+					<p class="law-form-field"><label for="law-dash-venue">Venue (name and/or address)</label>
+						<input type="text" id="law-dash-venue" name="law_venue" value="<?php echo esc_attr( (string) law_event_meta( $law_id, '_law_venue' ) ); ?>"></p>
 
 					<p class="law-form-field"><label for="law-dash-capacity">Venue capacity</label>
 						<select id="law-dash-capacity" name="law_venue_capacity" data-law-capacity>
@@ -464,8 +531,7 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 						</select></p>
 
 					<p class="law-form-field"><label for="law-dash-places">Places available</label>
-						<input type="number" id="law-dash-places" name="law_tickets_available" min="1"
-							<?php echo null === $law_dash_max ? '' : 'max="' . esc_attr( (string) $law_dash_max ) . '"'; ?>
+						<input type="number" id="law-dash-places" name="law_tickets_available"
 							data-law-tickets value="<?php echo esc_attr( '0' === $law_dash_places ? '' : $law_dash_places ); ?>">
 						<small>Places must fall inside the band; only "TBC" sets no bounds. Leave this blank to keep bookings closed. Raising it offers the new places to anyone on the waitlist.</small></p>
 
@@ -737,9 +803,17 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 									'publish' === $law_detail->post_status
 										? 'The event comes off the published programme.'
 										: 'The event will not be published.',
-									'unpaid' === (string) law_event_meta( $law_id, '_law_payment_status' ) && $law_fee > 0
-										? 'The outstanding Stripe invoice is cancelled (voided), so no payment is due.'
-										: 'A fee that has already been paid is never refunded automatically: the committee is alerted to review the payment in Stripe instead.',
+									// Three cases, not two. A zero-fee event (a sponsor's,
+									// or one the committee overrode to nothing) never had
+									// an invoice at all, and the two-way branch used to
+									// tell the committee that its fee "has already been
+									// paid" and would need reviewing in Stripe, which was
+									// false in both halves.
+									$law_fee <= 0
+										? 'No host fee was ever due on this event, so there is no invoice to cancel and nothing to refund.'
+										: ( 'unpaid' === (string) law_event_meta( $law_id, '_law_payment_status' )
+											? 'The outstanding Stripe invoice is cancelled (voided), so no payment is due.'
+											: 'A fee that has already been paid is never refunded automatically: the committee is alerted to review the payment in Stripe instead.' ),
 									'Everything else you have changed on this form is saved at the same time.',
 								),
 								'field'   => array(
@@ -885,7 +959,9 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 								id="law-dash-kw"
 								name="law_kw"
 								value="<?php echo esc_attr( $law_kw ); ?>"
-								placeholder="<?php esc_attr_e( 'Enter a keyword', 'law' ); ?>"
+								<?php // Names the haystacks: the box matches the title, the host
+								// and the firm, and nothing on screen said so. ?>
+								placeholder="<?php esc_attr_e( 'Title, host or firm', 'law' ); ?>"
 								autocomplete="off"
 							>
 						</p>
@@ -966,8 +1042,19 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 			$law_chart_days = law_slotchart_days( law_slotchart_items() );
 			$law_chart_week = law_calendar_week_days();
 			$law_chart_counts = array();
+			$law_chart_receptions = array();
 			foreach ( $law_chart_days['days'] as $law_chart_date => $law_chart_items ) {
 				$law_chart_counts[ $law_chart_date ] = count( $law_chart_items );
+				// The "Reception" pill, from this view's own rows rather than the
+				// programme's: the two filter different sets, exactly as the
+				// counts and the flagship's day do. law_slotchart_item() has
+				// already resolved the kind, so this costs no extra meta reads.
+				foreach ( $law_chart_items as $law_chart_item ) {
+					if ( 'reception' === (string) ( $law_chart_item['kind'] ?? '' ) ) {
+						$law_chart_receptions[] = (string) $law_chart_date;
+						break;
+					}
+				}
 				if ( ! isset( $law_chart_week[ $law_chart_date ] ) ) {
 					// A day outside the configured programme week still gets a
 					// tab. The committee can produce one (the flagship screen
@@ -984,6 +1071,7 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 					'days'          => $law_chart_week,
 					'counts'        => $law_chart_counts,
 					'flagship_date' => function_exists( 'law_flagship_date' ) ? (string) law_flagship_date() : '',
+					'reception_dates' => $law_chart_receptions,
 					'label'         => __( 'Programme days', 'law' ),
 				)
 			);

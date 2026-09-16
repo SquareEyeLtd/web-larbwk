@@ -1,6 +1,7 @@
 <?php
 /**
- * Programme controls: the keyword / sector / type / organiser filters. The day
+ * Programme controls: the keyword, sector and type filters, plus Organiser on
+ * the committee's programme view only (Denis, 16 September 2026). The day
  * tabs are parts/calendar-daynav.php, which parts/calendar-body.php renders
  * after this and outside it (they are sticky, and have to share a parent with
  * the results).
@@ -67,13 +68,23 @@ $law_types     = law_calendar_field_choices( 63 );
 					</select>
 				</p>
 
-				<?php if ( 'cpt' === law_events_source() ) : ?>
+				<?php if ( law_calendar_organiser_filter_enabled() ) : ?>
 					<?php
-					// Drawn whether or not anything is flagged yet. "LAW events" can
-					// return no cards, but never an empty page: the flagship block is
-					// pinned to its day outside the filtered list (Denis, 11 September
-					// 2026). Only the legacy Gravity Forms source hides it, where the
-					// switch is post meta with no entry field behind it to read.
+					// Committee only since 16 September 2026 (Denis): the public
+					// programme is down to three controls. law_calendar_filters()
+					// blanks ?law_run_by= behind the same predicate, so a bookmark
+					// from before the change cannot filter a page that has nothing
+					// on it to clear the filter with. See
+					// law_calendar_organiser_filter_enabled() for why the gate is the
+					// page template rather than the viewer's capability.
+					//
+					// Drawn whether or not anything carries the switch yet. A
+					// committee planning view has to be able to ask a question that
+					// currently has no answer, and an empty result on the committee's
+					// own screen reads as information rather than as a broken page.
+					// (The older justification here pointed at the flagship block
+					// being pinned outside the filtered list; that stopped being true
+					// on 16 September 2026.)
 					//
 					// A select, not a tick box, and not by taste: calendar-filters.js
 					// reads field.value for every named field with no `checked` test,
@@ -83,7 +94,7 @@ $law_types     = law_calendar_field_choices( 63 );
 					//
 					// "Hosted" is the 4.2 spec's own word for an event run by an
 					// external host (§2, §6); there is no "hosted" switch in the data,
-					// only the absence of the LAW one.
+					// only the absence of the external one.
 					?>
 					<p class="law-cal-filter-form__field">
 						<label class="show-for-sr" for="law-cal-run-by"><?php esc_html_e( 'Organiser', 'law' ); ?></label>

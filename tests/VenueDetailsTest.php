@@ -519,7 +519,9 @@ class VenueDetailsTest extends LAW_Test_Case {
 	 */
 	private function panel_saves_venue( int $event_id, string $capacity, string $tickets ): string {
 		$actor = get_current_user_id();
-		$error = law_committee_venue_input_error( $capacity, $tickets );
+		$error = law_committee_venue_input_unchanged( $event_id, $capacity, $tickets )
+			? ''
+			: law_committee_venue_input_error( $capacity, $tickets );
 		if ( '' !== $error ) {
 			return $error;
 		}
@@ -630,6 +632,102 @@ class VenueDetailsTest extends LAW_Test_Case {
 			'Places available changed: 120 → 0.',
 			implode( "\n", $this->log_messages( $event_id ) )
 		);
+	}
+
+	/* An event whose stored pair already breaches its band (16 September 2026)
+	   _______________________________________________________________________
+
+	   17 migrated events are in that shape. The panel posts both halves with
+	   every action, so judging them as a submission refused approve, send back,
+	   reject, mark paid, cancel and delete alike, and the correction itself
+	   could not be saved. law_committee_venue_input_unchanged() judges the
+	   change instead. */
+
+	/** A breaching pair: 120 places released in a room banded at 51-100. */
+	private const BREACHING = array(
+		'_law_venue'             => 'Guildhall, EC2V 7HH',
+		'_law_venue_capacity'    => '51-100',
+		'_law_tickets_available' => 120,
+	);
+
+	public function test_a_breaching_event_is_corrected_in_one_save(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$event_id = $this->make_event( self::BREACHING, 'law-approved', $host );
+
+		// Widening the band to fit the places is the whole correction, and it
+		// has to go through in a single save: the two halves post together, so
+		// there is no order in which the committee could do it in two.
+		$this->assertSame( '', $this->panel_saves_venue( $event_id, '101-150', '120' ) );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '101-150', 120, 'After the correction:' );
+	}
+
+	public function test_an_untouched_breaching_pair_is_not_judged(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$event_id = $this->make_event( self::BREACHING, 'law-approved', $host );
+
+		// What every panel action posts: the stored pair, handed straight back.
+		$this->assertTrue( law_committee_venue_input_unchanged( $event_id, '51-100', '120' ) );
+		$this->assertSame( '', $this->panel_saves_venue( $event_id, '51-100', '120' ) );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '51-100', 120, 'After an unrelated action:' );
+
+		// The pair itself is still an unacceptable one to submit.
+		$this->assertNotSame( '', law_committee_venue_input_error( '51-100', '120' ) );
+	}
+
+	public function test_a_stored_band_that_is_not_one_of_the_bands_blocks_nothing(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $this->make_committee_user() );
+
+		// Migrated free text. Posting it back is not choosing it, so the
+		// refusal that would otherwise stop a delete does not fire.
+		$event_id = $this->make_event( array( '_law_venue_capacity' => '101 to 150' ), 'law-approved', $host );
+
+		$this->assertTrue( law_committee_venue_input_unchanged( $event_id, '101 to 150', '' ) );
+		$this->assertNotSame( '', law_committee_venue_input_error( '101 to 150', '' ) );
+	}
+
+	public function test_moving_either_half_is_still_judged_in_full(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$event_id = $this->make_event( self::BREACHING, 'law-approved', $host );
+
+		// The places move and the band does not: still refused, and the event
+		// is left exactly as it was.
+		$this->assertFalse( law_committee_venue_input_unchanged( $event_id, '51-100', '130' ) );
+		$this->assertStringContainsString(
+			'cannot exceed the venue capacity band',
+			$this->panel_saves_venue( $event_id, '51-100', '130' )
+		);
+		// And the band moves the wrong way, under the places already released.
+		$this->assertFalse( law_committee_venue_input_unchanged( $event_id, 'Under 50', '120' ) );
+		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '51-100', 120, 'After a refused change:' );
+	}
+
+	public function test_places_that_are_not_a_number_are_never_read_as_unchanged(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $this->make_committee_user() );
+
+		// Stored places of 0 render as a blank field, so blank is the untouched
+		// value; anything else typed into it is a change, whatever it says.
+		$event_id = $this->make_event( array( '_law_venue_capacity' => 'TBC' ), 'law-approved', $host );
+
+		$this->assertTrue( law_committee_venue_input_unchanged( $event_id, 'TBC', '' ) );
+		foreach ( array( 'lots', '0', '-5', '12.5' ) as $bad ) {
+			$this->assertFalse(
+				law_committee_venue_input_unchanged( $event_id, 'TBC', $bad ),
+				"Places of '$bad' are a change, not the stored 0"
+			);
+			$this->assertStringContainsString(
+				'whole number of 1 or more',
+				$this->panel_saves_venue( $event_id, 'TBC', $bad ),
+				"Places of '$bad' are refused"
+			);
+		}
 	}
 
 	public function test_post_approval_host_edit_on_a_placed_event_changes_nothing(): void {
@@ -849,5 +947,62 @@ class VenueDetailsTest extends LAW_Test_Case {
 
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertStringContainsString( 'not one of the venue capacity bands', $result->get_error_message( 'venue_capacity' ) );
+	}
+
+	/**
+	 * Field 103 (Venue needed) on form 2 (Event > submit an event) stores the
+	 * choice VALUE, the bare "Yes" or "No", and that is what the migration
+	 * brought across before 16 September 2026. The answer has to read as the
+	 * answer it is, or a migrated event opens its form with neither radio
+	 * picked and its host described to the committee as needing a venue.
+	 */
+	public function test_a_migrated_answer_is_read_as_its_label(): void {
+		$this->assertSame( self::HAS_VENUE, law_events_venue_needed_label( 'No' ) );
+		$this->assertSame( self::NEEDS_VENUE, law_events_venue_needed_label( 'Yes' ) );
+		$this->assertSame( self::HAS_VENUE, law_events_venue_needed_label( self::HAS_VENUE ), 'Idempotent.' );
+		$this->assertSame( '', law_events_venue_needed_label( '' ) );
+		$this->assertSame( '', law_events_venue_needed_label( 'Maybe' ), 'A two-choice radio has no third answer.' );
+
+		global $wpdb;
+
+		$host     = $this->make_user();
+		$event_id = $this->make_event( array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ), 'law-approved', $host );
+		// Straight into the table: the registered meta sanitiser now maps the
+		// answer on the way in, so a legacy row cannot be made any other way.
+		$wpdb->update( $wpdb->postmeta, array( 'meta_value' => 'No' ), array( 'post_id' => $event_id, 'meta_key' => '_law_venue_needed' ) );
+		wp_cache_delete( $event_id, 'post_meta' );
+
+		$this->assertTrue(
+			law_events_venue_details_visible( law_event_meta( $event_id, '_law_venue_needed' ), $host ),
+			'A migrated host who already has a venue still sees the venue details.'
+		);
+		$this->assertSame(
+			self::HAS_VENUE,
+			law_events_form_values( get_post( $event_id ), array() )['venue_needed'],
+			'The form opens with the stored answer picked.'
+		);
+
+		// And the repair rewrites the row itself, so what the committee's
+		// event panel prints is the answer too. (Its return value is not
+		// asserted: it reports on every event in the database, not just this
+		// one.)
+		law_setup_normalise_venue_needed();
+		$this->assertSame( self::HAS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ) );
+		$this->assertSame(
+			self::HAS_VENUE,
+			$wpdb->get_var( $wpdb->prepare( "SELECT meta_value FROM {$wpdb->postmeta} WHERE post_id = %d AND meta_key = '_law_venue_needed'", $event_id ) ),
+			'The stored row itself, not just what the readers make of it.'
+		);
+	}
+
+	/** A save cannot store an answer that is not one of the two. */
+	public function test_the_meta_sanitiser_keeps_the_vocabulary_closed(): void {
+		$event_id = $this->make_event( array(), 'law-draft', $this->make_user() );
+
+		law_event_update_meta( $event_id, '_law_venue_needed', 'No' );
+		$this->assertSame( self::HAS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ), 'The registered meta sanitiser maps a legacy answer on the way in.' );
+
+		law_event_update_meta( $event_id, '_law_venue_needed', 'Whatever I like' );
+		$this->assertSame( '', law_event_meta( $event_id, '_law_venue_needed' ) );
 	}
 }

@@ -56,13 +56,43 @@ class FeesTest extends LAW_Test_Case {
 	}
 
 	public function test_override_lock_follows_approval(): void {
-		$pending = $this->make_event( array( '_law_fee_tier' => 'uk' ) );
-		$this->assertFalse( law_event_fee_override_locked( $pending ) );
+		foreach ( array( 'law-draft', 'law-proposed', 'law-sent-back' ) as $status ) {
+			$pending = $this->make_event( array( '_law_fee_tier' => 'uk' ), $status );
+			$this->assertFalse( law_event_fee_override_locked( $pending ), $status . ' is before approval.' );
+		}
 
-		// _law_approved_at is written by the approve transition and never
-		// cleared, so it is what "the fee has been snapshotted" means.
-		$approved = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09' ), 'law-approved' );
-		$this->assertTrue( law_event_fee_override_locked( $approved ) );
+		foreach ( array( 'law-approved', 'publish' ) as $status ) {
+			$approved = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09' ), $status );
+			$this->assertTrue( law_event_fee_override_locked( $approved ), $status . ' is past approval.' );
+		}
+	}
+
+	/**
+	 * The lock reads the STATUS, not the _law_approved_at timestamp it used
+	 * to read. Form 2 (Event > submit an event) field 78 (Approval date) is
+	 * empty on every production entry, so no migrated event has that key and
+	 * the lock was off across the whole migrated programme.
+	 */
+	public function test_override_lock_holds_without_an_approval_date(): void {
+		foreach ( array( 'law-approved', 'publish' ) as $status ) {
+			$migrated = $this->make_event( array( '_law_fee_tier' => 'uk' ), $status );
+			$this->assertSame( '', (string) law_event_meta( $migrated, '_law_approved_at' ) );
+			$this->assertTrue( law_event_fee_override_locked( $migrated ), $status . ' with no approval date.' );
+		}
+	}
+
+	/**
+	 * law-cancelled is the one status reached from both sides: `cancel` from
+	 * an approved event and `withdraw` from one that never was. The timestamp
+	 * is what separates them, and it is reliable there because a cancellation
+	 * can only have happened on this site.
+	 */
+	public function test_a_cancelled_event_is_judged_by_its_approval_date(): void {
+		$withdrawn = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-cancelled' );
+		$this->assertFalse( law_event_fee_override_locked( $withdrawn ), 'Withdrawn before it was ever approved.' );
+
+		$cancelled = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09' ), 'law-cancelled' );
+		$this->assertTrue( law_event_fee_override_locked( $cancelled ), 'Cancelled after approval.' );
 	}
 
 	public function test_resnapshot_refreezes_an_unpaid_approved_fee(): void {

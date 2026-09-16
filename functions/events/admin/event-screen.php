@@ -68,8 +68,9 @@ function law_event_box_workflow( $post ) {
 }
 
 /**
- * The committee's two classification switches, mirroring the dashboard
- * sidebar so wp-admin ("Full editing in wp-admin") is not a dead end.
+ * The committee's booking hold and its two classification switches, mirroring
+ * the dashboard sidebar so wp-admin ("Full editing in wp-admin") is not a dead
+ * end.
  *
  * Its own box rather than an addition to the Workflow box: that one returns
  * early when no workflow actions apply, so anything appended to it would
@@ -77,6 +78,23 @@ function law_event_box_workflow( $post ) {
  * does not belong beside the irreversible Approve / Reject / Cancel radios.
  */
 function law_event_box_flags( $post ) {
+	// Override booking availability, first as it is on the dashboard panel,
+	// because it overrides every other control (client, 16 September 2026).
+	law_field_select(
+		'law_booking_override',
+		'Override booking availability',
+		law_event_booking_override( $post->ID ),
+		law_event_booking_override_choices()
+	);
+	// The whole line comes from the helper, so this box and the dashboard panel
+	// cannot describe the same event differently.
+	$note = law_event_booking_hold_note( $post->ID );
+	printf(
+		'<p class="description"%s>%s</p>',
+		$note['error'] ? ' style="color:#b32d2e"' : '',
+		esc_html( $note['text'] )
+	);
+
 	law_field_checkbox( 'law_is_external', 'External: booked on the organiser\'s own website', (bool) law_event_meta( $post->ID, '_law_is_external' ) );
 	law_field_checkbox( 'law_session_agenda', 'This event has a session agenda', (bool) law_event_meta( $post->ID, '_law_session_agenda' ) );
 
@@ -207,11 +225,8 @@ function law_event_box_facts( $post ) {
 	law_field_select(
 		'law_venue_needed',
 		'Venue needed',
-		(string) law_event_meta( $post->ID, '_law_venue_needed' ),
-		array(
-			'Yes, please share our details with venue hosts' => 'Yes, please share our details with venue hosts',
-			'No, we already have a venue planned'            => 'No, we already have a venue planned',
-		),
+		law_events_venue_needed_label( law_event_meta( $post->ID, '_law_venue_needed' ) ),
+		array_combine( array_values( law_events_venue_needed_choices() ), array_values( law_events_venue_needed_choices() ) ),
 		array( 'placeholder' => '(not set)' )
 	);
 	law_field_select(
@@ -240,7 +255,7 @@ function law_event_box_invoice_contact( $post ) {
 	// derivation. A stored value that is not on the list is kept as its own
 	// option (migrated events), and with no list available (Gravity Forms gone)
 	// the field falls back to free text.
-	$country   = (string) ( $address['country'] ?? '' );
+	$country   = law_events_country_display_name( $address['country'] ?? '' );
 	$countries = law_registration_country_choices();
 	if ( $countries && '' !== $country && ! in_array( $country, $countries, true ) ) {
 		$countries[] = $country;
@@ -384,6 +399,7 @@ function law_event_admin_save( $post_id, $post ) {
 		'_law_is_external'   => (int) law_event_meta( $post_id, '_law_is_external' ),
 		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
 	);
+	$before_override = law_event_booking_override( $post_id );
 
 	// LAW's OWN events hold no programme slot, so this screen must not write
 	// the slot keys for them: the slot select posts nothing, and
@@ -489,6 +505,13 @@ function law_event_admin_save( $post_id, $post ) {
 	// nothing, so a flag could be switched on here and then never off. The
 	// nonce gate at the top of this handler already guarantees the box was on
 	// the form (quick edit and bulk edit never carry law_event_admin_nonce).
+	// A select always posts, unlike the checkboxes below, so it needs no
+	// sentinel of its own -- but it does need the isset() guard, because quick
+	// edit and bulk edit reach this handler with neither.
+	if ( isset( $_POST['law_booking_override'] ) ) {
+		law_event_update_meta( $post_id, '_law_booking_override', wp_unslash( $_POST['law_booking_override'] ) );
+		law_event_log_booking_override_change( $post_id, $before_override, $actor );
+	}
 	law_event_update_meta( $post_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 	law_event_log_flag_change( $post_id, $before_flags, $actor );

@@ -9,6 +9,14 @@
  *   'show_status' => false,   // Committee status badge.
  *   'badge'       => array(), // { label, slug }: one extra badge on the card,
  *                             // e.g. Waitlisted on a My bookings card.
+ *   'highlight'   => '',      // A keyword to mark with <mark> in the title, the
+ *                             // venue and the host, and to pull a snippet of
+ *                             // the description out with when the hit is only
+ *                             // there. Passed only by
+ *                             // parts/calendar-events.php and NEVER read from
+ *                             // $_GET here: this card is shared with the speaker
+ *                             // profile, My events and My bookings, and ?law_kw=
+ *                             // belongs to four other dashboards besides.
  *   'show_date'   => false,   // Prefix the time with the full date, for cards shown outside the calendar.
  *   'stacked'     => false,   // Put the buttons on their own line under the card's
  *                             // text instead of in the right-hand column, for
@@ -50,6 +58,7 @@ $law_show_status  = ! empty( $args['show_status'] );
 $law_time_label   = law_calendar_event_time_label( $event );
 $law_hosted       = law_calendar_host_names( $event );
 $law_meta_lines   = isset( $args['meta_lines'] ) && is_array( $args['meta_lines'] ) ? array_filter( array_map( 'strval', $args['meta_lines'] ) ) : array();
+$law_highlight    = (string) ( $args['highlight'] ?? '' );
 
 $law_actions = isset( $args['actions'] ) && is_array( $args['actions'] ) ? $args['actions'] : array();
 if ( ! $law_actions ) {
@@ -78,6 +87,9 @@ if ( ! $law_actions ) {
 // for from the row it is on (Denis, 15 September 2026).
 $law_booking_scope = array_key_exists( 'booking', $args ) ? $args['booking'] : 'full';
 $law_is_flagship   = ! empty( $event['is_flagship'] );
+// Settled here rather than at the price line below, because the surface
+// treatment and the identity pill read it too.
+$law_is_reception  = ! empty( $event['is_reception'] );
 if ( $law_booking_scope ) {
 	$law_card_scope     = 'action' === $law_booking_scope ? 'action' : 'full';
 	$law_booking_action = null;
@@ -143,6 +155,16 @@ if ( ! empty( $args['stacked'] ) ) {
 if ( $law_is_flagship ) {
 	$law_card_classes .= ' law-event-card--flagship';
 }
+
+// A reception takes the same navy surface, for the same reason: on the
+// programme it was an ordinary pale row sitting under the conference's photo
+// block and nobody saw it (Denis, 16 September 2026). The two are told apart
+// by the pill and, on the programme, by the conference being a block rather
+// than a row at all. Never both: the flagship is not a reception, and if a
+// post were ever flagged as both the conference wins, above.
+if ( $law_is_reception && ! $law_is_flagship ) {
+	$law_card_classes .= ' law-event-card--reception';
+}
 ?>
 <article class="<?php echo esc_attr( $law_card_classes ); ?>">
 	<div class="law-event-card__body">
@@ -155,19 +177,13 @@ if ( $law_is_flagship ) {
 		<?php if ( $law_is_flagship ) : ?>
 			<?php /* The same outline pill the programme block and the strip carry, so the fill is never the only thing saying which event this is. */ ?>
 			<span class="law-event-card__flagship-badge"><?php esc_html_e( 'Flagship event', 'law' ); ?></span>
-		<?php endif; ?>
-		<?php if ( ! empty( $event['is_external'] ) ) : ?>
-			<?php
-			/*
-			 * In the flow, not in the absolute corner the status badge occupies.
-			 * It says why this card's Register button leaves the site, which is
-			 * otherwise only discoverable by pressing it.
-			 */
-			?>
-			<span class="law-event-card__external-badge"><?php esc_html_e( 'External', 'law' ); ?></span>
+		<?php elseif ( $law_is_reception ) : ?>
+			<?php /* Same pill, same reason: the navy fill says "not an ordinary event", the words say which kind. */ ?>
+			<span class="law-event-card__reception-badge"><?php esc_html_e( 'Drinks reception', 'law' ); ?></span>
 		<?php endif; ?>
 		<h4 class="law-event-card__title">
-			<a href="<?php echo esc_url( $law_event_url ); ?>"><?php echo esc_html( $event['title'] ); ?></a>
+			<?php /* law_calendar_highlight() returns escaped HTML with only its <mark> tags raw, and falls back to plain esc_html() output whenever there is no keyword or no hit in this field. */ ?>
+			<a href="<?php echo esc_url( $law_event_url ); ?>"><?php echo law_calendar_highlight( $event['title'], $law_highlight ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></a>
 			<?php law_calendar_edit_link( $event ); ?>
 		</h4>
 		<?php if ( $law_time_parts ) : ?>
@@ -175,10 +191,11 @@ if ( $law_is_flagship ) {
 		<?php endif; ?>
 		<?php /* Both meta lines are labelled, the value bold: a bare place name next to a bare organisation name gives no clue which is which. */ ?>
 		<?php if ( ! empty( $event['venue'] ) ) : ?>
-			<p class="law-event-card__meta"><?php echo esc_html__( 'Venue:', 'law' ); ?> <strong><?php echo esc_html( $event['venue'] ); ?></strong></p>
+			<p class="law-event-card__meta"><?php echo esc_html__( 'Venue:', 'law' ); ?> <strong><?php echo law_calendar_highlight( $event['venue'], $law_highlight ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></strong></p>
 		<?php endif; ?>
 		<?php if ( '' !== $law_hosted ) : ?>
-			<p class="law-event-card__meta"><?php echo esc_html__( 'Hosted by:', 'law' ); ?> <strong><?php echo esc_html( $law_hosted ); ?></strong></p>
+			<?php /* The host names are rejoined with ", " where the filter's haystack sees the stored ";", so a keyword spanning two firms matches the card but marks nothing here. Rare, and it degrades to no mark rather than to a wrong one. */ ?>
+			<p class="law-event-card__meta"><?php echo esc_html__( 'Hosted by:', 'law' ); ?> <strong><?php echo law_calendar_highlight( $law_hosted, $law_highlight ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></strong></p>
 		<?php endif; ?>
 		<?php
 		// What a place costs, or that there is no booking route at all. Only
@@ -186,7 +203,7 @@ if ( $law_is_flagship ) {
 		// the figure is the NET the details box quotes, not the total: one
 		// wording for a price, everywhere (RECEPTIONS.md §4.1).
 		$law_card_price = '';
-		if ( ! empty( $event['is_reception'] ) ) {
+		if ( $law_is_reception ) {
 			if ( 'invitation' === (string) ( $event['registration_state'] ?? '' ) ) {
 				$law_card_price = __( 'Invitation only', 'law' );
 			} elseif ( (int) ( $event['price_pence'] ?? 0 ) > 0 ) {
@@ -204,6 +221,18 @@ if ( $law_is_flagship ) {
 		<?php foreach ( $law_meta_lines as $law_meta_line ) : ?>
 			<p class="law-event-card__meta"><?php echo esc_html( $law_meta_line ); ?></p>
 		<?php endforeach; ?>
+		<?php
+		// The description, where the keyword lives in it and nowhere the card
+		// prints. The filter searches the body text and the card never showed a
+		// word of it, so those cards named nothing the visitor had typed
+		// (Denis, 16 September 2026). Empty string when there is no hit, so a
+		// card matched on its title alone grows nothing; see
+		// law_calendar_search_snippet() for the window and the ellipses.
+		$law_snippet = law_calendar_search_snippet( (string) ( $event['description'] ?? '' ), $law_highlight );
+		?>
+		<?php if ( '' !== $law_snippet ) : ?>
+			<p class="law-event-card__snippet"><?php echo $law_snippet; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></p>
+		<?php endif; ?>
 	</div>
 	<div class="law-event-card__actions">
 		<?php foreach ( $law_actions as $law_action ) : ?>

@@ -146,7 +146,11 @@ get_template_part( 'parts/layout/back-link', null, array(
 				// this offers no links to it either. Its details are still
 				// editable here, which is the whole point of the screen.
 				$law_sm_is_draft = 'law-draft' === $law_sm_appearance['event_status'];
-				$law_sm_preview  = 'publish' === $law_sm_appearance['event_status']
+				// Publicly listed means Confirmed or Approved, both of which have
+				// a real page from 16 September 2026, so the preview is only for
+				// events the public still cannot reach.
+				$law_sm_public   = law_event_is_publicly_listed( $law_sm_event );
+				$law_sm_preview  = $law_sm_public
 					? law_events_event_url( $law_sm_event )
 					: add_query_arg( 'preview-event', $law_sm_event, law_account_url( 'dashboard' ) );
 				$law_sm_edit     = add_query_arg( array( 'event' => $law_sm_event, 'law_edit' => 1 ), law_account_url( 'dashboard' ) );
@@ -162,9 +166,9 @@ get_template_part( 'parts/layout/back-link', null, array(
 							<span class="law-speaker-appearance__when"><?php echo esc_html( date_i18n( 'D j M Y, H:i', strtotime( $law_sm_appearance['event_start'] ) ) ); ?></span>
 						<?php endif; ?>
 						<?php if ( ! $law_sm_is_draft ) : ?>
-							<?php // Confirmed events link to their real permalink, so the link says View event there, as on the committee dashboard. ?>
+							<?php // An event with a public page links to its real permalink, so the link says View event there, as on the committee dashboard. ?>
 							<a href="<?php echo esc_url( $law_sm_preview ); ?>" target="_blank" rel="noopener"><?php
-								echo esc_html( 'publish' === $law_sm_appearance['event_status'] ? __( 'View event', 'law' ) : __( 'Preview event', 'law' ) );
+								echo esc_html( $law_sm_public ? __( 'View event', 'law' ) : __( 'Preview event', 'law' ) );
 							?></a>
 							<a href="<?php echo esc_url( $law_sm_edit ); ?>"><?php esc_html_e( 'Edit event', 'law' ); ?></a>
 						<?php endif; ?>

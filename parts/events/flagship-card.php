@@ -2,8 +2,9 @@
 /**
  * The flagship conference's block on the programme.
  *
- * Pinned under its own day by parts/calendar-events.php whatever the filters
- * say, so it is not an ordinary event card and deliberately does not reuse
+ * Pinned under its own day by parts/calendar-events.php, which since
+ * 16 September 2026 renders it only while the conference answers the active
+ * filters. It is not an ordinary event card and deliberately does not reuse
  * parts/loop/event.php: it is a two-column block, photograph left, and it
  * lists the day's sessions with their times rather than one time range.
  *
@@ -17,6 +18,8 @@
  * get_template_part( 'parts/events/flagship-card', null, array(
  *   'event'       => <hydrated calendar event array>, // required
  *   'show_status' => false, // Committee mode: the status pill and edit link.
+ *   'highlight'   => '',    // Keyword to mark in the title and the venue.
+ *                           // Passed by parts/calendar-events.php only.
  * ) );
  */
 
@@ -52,7 +55,18 @@ if ( '' !== $law_fc_image ) {
 
 $law_fc_sessions = isset( $law_fc_event['sessions'] ) && is_array( $law_fc_event['sessions'] ) ? $law_fc_event['sessions'] : array();
 
-$law_fc_meta = array_filter( array( $law_fc_time, $law_fc_venue ), 'strlen' );
+$law_fc_hl = (string) ( $args['highlight'] ?? '' );
+
+// Pre-escaped parts, imploded after, so the highlighter touches only the VENUE.
+// The time can never match a keyword (the filter does not search it) and has no
+// business going through a function that decodes entities.
+$law_fc_meta = array_filter(
+	array(
+		esc_html( $law_fc_time ),
+		'' !== $law_fc_venue ? law_calendar_highlight( $law_fc_venue, $law_fc_hl ) : '',
+	),
+	'strlen'
+);
 
 // Register, or whatever this viewer's own state offers instead (their ticket,
 // their unpaid charge, their registration under review). The same
@@ -79,7 +93,7 @@ if ( ! $law_fc_action && function_exists( 'law_flagship_card_inert_action' ) ) {
 		<?php endif; ?>
 		<span class="law-flagship-card__badge"><?php esc_html_e( 'Flagship event', 'law' ); ?></span>
 		<h3 id="law-flagship-card-title" class="law-flagship-card__title">
-			<a href="<?php echo esc_url( $law_fc_url ); ?>"><?php echo esc_html( $law_fc_event['title'] ); ?></a>
+			<a href="<?php echo esc_url( $law_fc_url ); ?>"><?php echo law_calendar_highlight( $law_fc_event['title'], $law_fc_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></a>
 			<?php
 			if ( $law_fc_status ) {
 				law_calendar_edit_link( $law_fc_event );
@@ -87,7 +101,7 @@ if ( ! $law_fc_action && function_exists( 'law_flagship_card_inert_action' ) ) {
 			?>
 		</h3>
 		<?php if ( $law_fc_meta ) : ?>
-			<p class="law-flagship-card__meta"><?php echo esc_html( implode( ' · ', $law_fc_meta ) ); ?></p>
+			<p class="law-flagship-card__meta"><?php echo implode( ' · ', $law_fc_meta ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- both parts escaped above. ?></p>
 		<?php endif; ?>
 		<?php if ( $law_fc_sessions ) : ?>
 			<ul class="law-flagship-card__sessions">

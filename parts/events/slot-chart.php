@@ -32,6 +32,13 @@ $law_days        = $law_grouped['days'];
 $law_unscheduled = $law_grouped['unscheduled'];
 $law_week        = law_calendar_week_days();
 
+// Search hits on the bars, the same mark the table below and the programme's
+// cards use (law_calendar_highlight(), assets/css/app.css). The bar's title is
+// the one searched field it prints; the tooltip and the aria-label are built
+// elsewhere and stay plain text, because a <mark> inside an attribute would be
+// read out as its own characters.
+$law_hl = sanitize_text_field( wp_unslash( $_GET['law_kw'] ?? '' ) );
+
 $law_total = count( $law_unscheduled );
 foreach ( $law_days as $law_day_items ) {
 	$law_total += count( $law_day_items );
@@ -125,7 +132,7 @@ foreach ( $law_days as $law_day_items ) {
 										// chart already said (Denis, 15 September 2026).
 										// The tooltip and the label still carry it.
 										?>
-										<span class="law-slotchart__bar-title" aria-hidden="true"><?php echo esc_html( $law_item['title'] ); ?></span>
+										<span class="law-slotchart__bar-title" aria-hidden="true"><?php echo law_calendar_highlight( $law_item['title'], $law_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 										<?php if ( $law_item_facts ) : ?>
 											<span class="law-slotchart__bar-facts" aria-hidden="true">
 												<?php foreach ( $law_item_facts as $law_fact ) : ?>

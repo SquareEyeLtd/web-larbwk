@@ -184,6 +184,21 @@ function law_setup_account_pages() {
 			. 'Discounts: pre-flagship unscoped codes limited to the paid receptions';
 	}
 
+	// Events migrated before 16 September 2026 hold the Gravity Forms choice
+	// value of field 103 (Venue needed) rather than its label, so the answer
+	// reads as unset on the event form.
+	if ( function_exists( 'law_setup_normalise_venue_needed' ) ) {
+		$report[] = str_pad( strtoupper( law_setup_normalise_venue_needed() ), 9 )
+			. 'Events: migrated "Venue needed" answers mapped onto their labels';
+	}
+
+	// Half the migrated events hold a bare ISO code as their billing country,
+	// where the Country select offers names.
+	if ( function_exists( 'law_setup_normalise_invoice_countries' ) ) {
+		$report[] = str_pad( strtoupper( law_setup_normalise_invoice_countries() ), 9 )
+			. 'Events: migrated billing countries mapped onto their names';
+	}
+
 	$login_page = get_page_by_path( 'login' );
 	if ( $login_page instanceof WP_Post ) {
 		$block   = "<!-- wp:shortcode -->\n[law_login]\n<!-- /wp:shortcode -->";
@@ -668,6 +683,98 @@ function law_setup_scope_existing_discounts() {
 	}
 
 	update_option( 'law_discounts_scoped_before_flagship', 1, false );
+
+	return $changed ? 'updated' : 'ok';
+}
+
+/**
+ * Rewrite every migrated "Venue needed" answer as the label the form uses.
+ *
+ * Field 103 (Venue needed) on form 2 (Event > submit an event) is a radio
+ * whose choice values are the bare "Yes" and "No", and a Gravity Forms entry
+ * stores the value, so every event the migration brought across before
+ * 16 September 2026 holds "Yes" or "No" where the custom form's radios carry
+ * the full sentences. law_events_venue_needed_label() makes the form and the
+ * venue detail logic read those correctly either way, but the stored answer is
+ * also what the committee's event panel prints and what any later reader will
+ * meet, so it is normalised in place as well.
+ *
+ * Idempotent: only rows whose value is not already the canonical label are
+ * touched, and the write goes through law_event_update_meta() so the meta
+ * sanitiser does the mapping. Deliberately NOT logged on each event -- this
+ * corrects how an answer was recorded, it does not change anyone's answer.
+ * Runs from BOTH the ?setup-account-pages trigger and migration step 10,
+ * because a git push alone has to be enough.
+ *
+ * @return string ok | updated
+ */
+function law_setup_normalise_venue_needed() {
+	global $wpdb;
+
+	if ( ! function_exists( 'law_events_venue_needed_label' ) ) {
+		return 'ok'; // The events module is not loaded on this environment.
+	}
+
+	$rows = $wpdb->get_results(
+		"SELECT post_id, meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_law_venue_needed' AND meta_value <> ''"
+	);
+
+	$changed = 0;
+	foreach ( (array) $rows as $row ) {
+		$label = law_events_venue_needed_label( $row->meta_value );
+		if ( '' === $label || $label === $row->meta_value ) {
+			continue;
+		}
+		law_event_update_meta( (int) $row->post_id, '_law_venue_needed', $label );
+		$changed++;
+	}
+
+	return $changed ? 'updated' : 'ok';
+}
+
+/**
+ * Rewrite every migrated billing country that is a bare ISO code as the
+ * country name the forms offer.
+ *
+ * Form 2 (Event > submit an event) field 74 (Address) input 74.6 (Country)
+ * holds both spellings across the production entries ("GB" on 231, "United
+ * Kingdom" on 198), because two different front ends filled it in over the
+ * form's life. law_events_country_display_name() makes every surface read the
+ * code correctly, but the stored row is what an export and any later reader
+ * meet, so it is normalised in place too.
+ *
+ * Idempotent, and it only ever touches a country that is exactly two letters
+ * and maps to a name; anything else is left alone. The write goes through
+ * law_event_update_meta(), so the address sanitiser does the mapping. Not
+ * logged per event: this corrects a spelling, not the host's answer. Runs from
+ * BOTH the ?setup-account-pages trigger and migration step 10, because a git
+ * push alone has to be enough.
+ *
+ * @return string ok | updated
+ */
+function law_setup_normalise_invoice_countries() {
+	global $wpdb;
+
+	if ( ! function_exists( 'law_events_country_display_name' ) ) {
+		return 'ok'; // The events module is not loaded on this environment.
+	}
+
+	$post_ids = $wpdb->get_col(
+		"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_law_invoice_address' AND meta_value <> ''"
+	);
+
+	$changed = 0;
+	foreach ( array_map( 'intval', (array) $post_ids ) as $post_id ) {
+		$address = law_event_meta( $post_id, '_law_invoice_address' );
+		$country = (string) ( $address['country'] ?? '' );
+		$name    = law_events_country_display_name( $country );
+		if ( '' === $country || $name === $country ) {
+			continue;
+		}
+		$address['country'] = $name;
+		law_event_update_meta( $post_id, '_law_invoice_address', $address );
+		$changed++;
+	}
 
 	return $changed ? 'updated' : 'ok';
 }

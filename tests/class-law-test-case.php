@@ -147,6 +147,12 @@ abstract class LAW_Test_Case extends TestCase {
 			'_law_invoice_name'  => 'Test Contact',
 			'_law_invoice_email' => 'invoice-' . wp_generate_password( 6, false ) . '@example.test',
 			'_law_country_iso'   => 'GB',
+			// A venue, because from 16 September 2026 an event without one
+			// cannot take bookings (law_event_booking_hold_reason()). A fixture
+			// with no address would close booking on every suite that books,
+			// which is not what any of them is testing; the ones that ARE
+			// testing the hold pass '_law_venue' => '' for themselves.
+			'_law_venue'         => '1 Test Street, London',
 		);
 		foreach ( array_merge( $defaults, $meta ) as $key => $value ) {
 			law_event_update_meta( $post_id, $key, $value );

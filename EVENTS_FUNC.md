@@ -246,11 +246,14 @@ repair-references, backfill-session-agenda).
       link back from an event page.
     - The select is drawn whether or not any event carries the switch yet. A
       guard that hid it until something was flagged was built and then removed
-      the same day on Denis's instruction: "LAW events" can return no cards,
-      but it can never produce an empty page, because the flagship block is
-      pinned to its day outside the filtered list. The one condition left is
-      the data source — the legacy Gravity Forms map has no switch to read, so
-      there the control would filter on nothing.
+      the same day on Denis's instruction. The original justification — it can
+      never produce an empty page, because the flagship block is pinned to its
+      day outside the filtered list — died on 16 September 2026 when the
+      flagship started answering the filters. The reason that replaced it is
+      narrower and better suited to a committee-only control: a planning view
+      has to be able to ask a question that currently has no answer, and an
+      empty result on the committee's own screen reads as information rather
+      than as a broken page.
     - A select, not a tick box, and not by taste: `calendar-filters.js` reads
       `field.value` for every named field with no `checked` test, so a checkbox
       would contribute `law_run_by=1` permanently from the moment it rendered,
@@ -261,11 +264,40 @@ repair-references, backfill-session-agenda).
       partial fetch and the mobile modal for free. `parts/calendar-filters.php`
       is shared with the committee programme view, which therefore gained the
       same control.
-    - The flagship block is **not** subject to it, exactly as it is not subject
-      to keyword, sector or type: it stays pinned to its own day whatever the
-      filters say.
     - Note the committee help text under the switch used to promise "It changes
       nothing on the public programme" and no longer does.
+    - **Committee only since 16 September 2026 (Denis).** The public programme
+      is down to three controls: keyword, sector and type. The committee's
+      programme view keeps Organiser, and the committee events dashboard's own
+      "Run by" filter (`templates/account-dashboard.php`) is a different control
+      on a different screen and is untouched.
+      - `law_calendar_organiser_filter_enabled()` is the one predicate behind
+        both halves: `parts/calendar-filters.php` asks it before drawing the
+        select, and `law_calendar_filters()` asks it before honouring
+        `?law_run_by=`. They share a predicate because the halves must never
+        drift — a parameter that still filters with no control on screen is the
+        worse half of the pair, since the visitor sees a shortened programme
+        and has nothing to press to lengthen it again. A bookmark from before
+        the change therefore shows the whole programme rather than half of it.
+      - **The gate is the page template, not the viewer's capability**, and
+        that was a considered choice. The one thing a capability test would buy
+        is keeping a committee member's filter alive on a round trip out to an
+        event page and back — and that round trip does not preserve filters
+        anyway, because `law_calendar_url()` short-circuits on a single
+        `law_event` permalink before it reaches the
+        `law_calendar_search_query_args()` merge. What a capability test *would*
+        do is leave the stale-bookmark bug in place for the only people who have
+        ever seen the control, and therefore the only people who could have
+        bookmarked it. The legacy in-page detail view
+        (`/calendar-committee/?event=123`) is still on the committee page
+        template, so the template test preserves the filter exactly where it can
+        be preserved.
+      - Folding the `'cpt' === law_events_source()` test into the same predicate
+        closed an older hole in passing: in legacy Gravity Forms mode every event
+        maps `is_external => false`, so `?law_run_by=external` emptied the
+        programme with no control anywhere to clear it.
+      - The flagship block **is** subject to it now, exactly as it is subject to
+        keyword, sector and type. It used to be the exception.
   - `_law_session_agenda`: this event has a session-level agenda. This is the
     4.2 §3.6 "opt-in per event, configured by LAW admin" switch, replacing the
     earlier arrangement where the opt-in was merely whether any sessions had
@@ -2944,7 +2976,7 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   (`law_calendar_event_matches_filters()`, which reads the same meta through
   `source.php`'s `host` key) all already did. Reported by the client
   (Emily O'Callaghan, 15 September 2026).
-  The helper ORs three limbs, each a `fields => ids` query over **every**
+  The helper ORs four limbs, each a `fields => ids` query over **every**
   status, `law-draft` included, so the status rules stay in
   `law_committee_events()` alone and are not a second thing to keep in step:
   core `s` (delegated, not reimplemented, so the existing behaviour cannot
@@ -2964,15 +2996,51 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   ID set** rather than left to `post__not_in`. And an **empty** `post__in` is
   skipped rather than matching nothing, so a keyword no event answers has to
   return early; left to `WP_Query` the dashboard would answer a typo with every
-  event on the site. `tests/CommitteeSearchTest.php` (12) covers both, plus the
-  three limbs, the draft rules and the interaction with the "run by" filter.
-  Host name, host email and the LAW reference are deliberately **not** searched
-  (Denis, 15 September 2026); the scope was the firm.
+  event on the site. `tests/CommitteeSearchTest.php` (18) covers both, plus the
+  four limbs, the draft rules and the interaction with the "run by" filter.
+  The fourth limb is the **host's own name**, added 16 September 2026 (Denis):
+  typing "Emma" returned nothing while the Host column of three rows read
+  Emma Higgins. `law_committee_host_name_user_ids()` builds the candidate set
+  from the **distinct `post_author` column of the event CPT**, not from the
+  user table: a host is by definition someone who has submitted an event, and
+  the site's users are overwhelmingly delegates who never will, so a `LIKE`
+  over `wp_users` would scan thousands of rows to find the sixty-odd hosts and
+  would need a cap (and so silently drop matches) to stay affordable. One
+  `DISTINCT` read, `cache_users()` to prime those rows and their
+  `first_name`/`last_name` meta, then the comparison in PHP. **Every word of
+  the keyword must appear** somewhere in the name, in any order, so
+  "higgins emma" finds Emma Higgins and "emma h" narrows rather than widens; a
+  plain substring would answer only one of those, and an OR over the words
+  would answer "Emma Higgins" with every Emma on the programme. `display_name`
+  is what the Host column prints and is matched first, with the
+  `first_name`/`last_name` meta read alongside it for accounts whose
+  `display_name` was left as a login. **Co-owners are not matched** (Denis,
+  16 September 2026): the row names the submitting host only, and a hit on a
+  name that is nowhere on screen reads as a broken filter in exactly the way
+  the missing firm did. Host email and the LAW reference remain deliberately
+  **not** searched.
 - The list's **Host column carries the firm under the person's name**
   (`parts/events/dashboard-list.php`), in the same `.law-dashboard__row-note`
   span the Event and Slot cells use, so it needed no CSS. Without it a
   "Mayer Brown" search would return rows whose visible text never said Mayer
   Brown, which reads as a broken filter rather than a working one.
+  Since 16 September 2026 that column, the event title and the timeline's bar
+  titles also **mark the keyword** with the same `mark.law-hit` the programme
+  uses, through `law_calendar_highlight()`. The part reads `?law_kw=` itself
+  rather than taking an arg (unlike `parts/loop/event.php`, which is shared with
+  four surfaces and must never touch the query var): this one is rendered only
+  by the committee dashboard and its `&law_partial=1` endpoint, where `law_kw`
+  is always that dashboard's own keyword. It marks the phrase as typed, matched
+  whole and case-insensitively, which is the rule on every surface. A row whose
+  hit is in the **description** — searched by core `s`, printed in no column —
+  carries a `law_calendar_search_snippet()` extract on **a second `<tr>`
+  spanning the table** instead, at 260 characters rather than the programme's
+  170. That makes an event two rows, so the zebra stripe is counted in the
+  template (`is-alt` on both rows of a pair) and Foundation's
+  `tbody tr:nth-child(even)` is disarmed under
+  `.law-dashboard__table--striped` — a modifier, because eight other dashboard
+  tables share the base class, have one row per thing, and must keep striping
+  as they are.
   An explicit `?law_status=law-draft` is refused (falls back to the default
   non-draft set): drafts are owner-only unsubmitted host data, and before
   this guard a committee member could list — and once the export existed,
@@ -4366,17 +4434,23 @@ These predate the rebuild and now branch on `law_events_source()`.
   back null publicly and renders with its badge for the committee — there is
   deliberately no explicit `publish` test), `law_calendar_day_is_empty()` (ONE
   rule with two consumers: `parts/calendar-events.php` skips a day section and
-  `parts/calendar-filters.php` greys out its tab, and "empty" now means more
+  `parts/calendar-daynav.php` greys out its tab, and "empty" now means more
   than "no cards") and a `continue` in `law_calendar_events()` for
   `is_flagship`, so the flagship can never appear as an ordinary card, in a
-  slot bar or in the unscheduled bucket. The block is pinned to its own day
-  **whatever the filters say** — it is the main event of the week, and a
-  delegate searching for something else should still see it — which is why it
-  sits outside the filtered list rather than inside it. If its date falls
+  slot bar or in the unscheduled bucket. The block is pinned to its own day,
+  above that day's slot bars. **Since 16 September 2026 it answers the filters**
+  (see the change-history entry): `law_calendar_visible_flagship_event()` is the
+  resolver the programme renders from, and it returns the conference only while
+  it passes `law_calendar_event_matches_filters()`. Between 11 and 16 September
+  it was pinned whatever the filters said, on the reasoning that a delegate
+  searching for something else should still see the main event of the week;
+  Denis reversed that, because an event nobody can filter away is an event
+  nobody can get out of the way. If its date falls
   outside the configured programme week the block renders above the days rather
   than vanishing, so a mis-set week is visible instead of silently costing the
   site its main event. `law_calendar_events()`, `law_calendar_filters()`,
-  `law_calendar_event_by_id()` and `law_calendar_flagship_event()` each took a
+  `law_calendar_event_by_id()`, `law_calendar_flagship_event()` and
+  `law_calendar_visible_flagship_event()` each take a
   `$reset` parameter, and `law_calendar_reset_caches()` flips them together:
   production renders one template per request, but the tests create events
   mid-request.
@@ -4431,7 +4505,52 @@ These predate the rebuild and now branch on `law_events_source()`.
     `law_slotchart_items()` asks for the flagship explicitly. The blank
     count that `law_calendar_day_count_text()` returns for a flagship day is
     therefore unreachable from the programme now, and is kept only for a
-    caller that supplies a 0 of its own.
+    caller that supplies a 0 of its own. Since 16 September 2026 the 1 rides on
+    the **visible** flagship, so a conference the filters have excluded stops
+    being counted at the same moment it stops being drawn, and its tab falls
+    through to "No events" rather than to that blank.
+  - **The keyword is marked in the results** (16 September 2026).
+    `law_calendar_highlight( $text, $keyword )` returns escaped HTML with only
+    its `<mark class="law-hit">` tags raw, and is applied to the card's title,
+    venue and host, and to the flagship block's and strip's title and venue.
+    Read it beside `law_calendar_event_matches_filters()`, never apart from it:
+    the matcher normalises through `law_calendar_normalise_choice()`, which
+    decodes entities and collapses whitespace, and both change the string's
+    length, so the highlighter has to apply the same two transforms to the text
+    it prints before it can locate anything. `parts/calendar-events.php` is the
+    only caller that supplies the keyword, as an explicit `highlight` arg;
+    `parts/loop/event.php` is shared with three other surfaces and must never
+    read `law_kw` itself. The `mark.law-hit` rule lives in `app.css` and is
+    shared with the speakers archive. See the change-history entry for the
+    offset trap, the accepted limitation and the contrast reasoning.
+    The committee's dashboard calls the same helper (16 September 2026) and
+    the rule is the same everywhere: **the whole phrase, case-insensitively**.
+    A word-by-word variant was built for that surface and reversed the same
+    day; see the change-history entry.
+  - **`law_calendar_search_snippet( $description, $keyword, $chars = 170 )`**
+    (16 September 2026) is the other half of the same fix: both keyword boxes
+    search the description and neither surface printed a word of it, so a hit
+    that lived only in the body text explained nothing. It returns a marked
+    keyword-in-context extract, or **`''` when the keyword is not in the
+    description** — the caller prints the line only on a non-empty return, so a
+    card matched on its title alone grows nothing. ~170 characters with ~55
+    before the hit, both edges pulled back to a word boundary, an ellipsis on
+    each edge that is not the real start or end of the text. The description is
+    flattened through `law_rich_text_plain()` first (rich text, so tags,
+    shortcodes and entities have to go before characters can be counted, and
+    block boundaries have to become spaces or a bulleted list runs into one
+    word), and the marking is delegated to `law_calendar_highlight()`, so only
+    the ellipses are added raw. The committee's table passes 260, and prints it
+    on **a row of its own spanning every column** rather than inside the Event
+    cell, whose width is capped at 12rem (Denis, 16 September 2026).
+    `$chars` is a **floor, not a cap**: the window is
+    `max( $chars, 55 + strlen( needle ) + 40 )`, because the lead-in and the
+    phrase cannot be spent out of the same budget. Written as
+    `max( $chars, needle + 40 )` for its first hour, it cropped a 62-character
+    keyword mid-phrase in the table's then-110 window, and
+    `law_calendar_highlight()` — which matches the phrase whole — found nothing
+    to mark, so the snippet appeared with no highlight in it on the one surface
+    whose window was tight. Pinned by a test.
   - `parts/events/flagship-strip.php` (new): one navy line above the days —
     "Flagship event · LAW Flagship Conference · Wednesday 2 December ·
     9:00am - 2:45pm · London · Event details" — linking to the flagship's
@@ -4986,7 +5105,8 @@ These predate the rebuild and now branch on `law_events_source()`.
   `assets/js/calendar-filters.js` and
   `assets/css/calendar.css` drive the shared filter bar used by both the
   programme calendar and the committee dashboard. The programme's own bar is
-  keyword / sector / type / organiser (`parts/calendar-filters.php`).
+  keyword / sector / type (`parts/calendar-filters.php`), plus organiser on the
+  committee's programme view only.
 - **Rich-text assets**: `assets/js/law-rich-text.js` (the TinyMCE layer — see
   `rich-text.php` above), `assets/css/rich-text.css` (the editor as a form
   field — a 1px `#c8c8d4` border round the whole container so the toolbar and
@@ -5231,6 +5351,149 @@ rollback must stay alive.
 ---
 
 ## Change history
+
+Updated 16 September 2026 for **the programme's search results**: the keyword is
+now marked in the cards, the flagship conference answers the filters like every
+other event, and the Organiser filter became committee-only. Three asks in one
+message from Denis, all about `/programme/`.
+
+- **The keyword is marked** (`law_calendar_highlight()`). Filtering told a
+  visitor which cards survived but never why, so a search for "gar live"
+  returned a page of cards with nothing on any of them pointing at the words
+  that matched. The helper wraps hits in `<mark class="law-hit">` in the title,
+  the venue and the host — every field the card prints that the filter also
+  searches.
+  - **Server-side, and that is the whole design.** The programme renders through
+    `parts/calendar-events.php` on the first load, on every filter fetch (the
+    `&law_partial=1` endpoint re-renders the same part) and on the no-JS GET
+    fallback, so one implementation covers all three and the committee's
+    programme view for free, with no change to `calendar-filters.js`.
+  - **The offset trap, which is why this is not three lines of `str_ireplace`.**
+    `law_calendar_event_matches_filters()` searches a string that has been
+    through `law_calendar_normalise_choice()`: entities decoded, whitespace runs
+    collapsed, lower-cased. The first two *change the length* of the string
+    — `&amp;` is five characters before decoding and one after — so an offset
+    found in the normalised string does not point at the same character in the
+    raw one. The helper therefore puts the text it is about to *print* through
+    the same two transforms and searches that, with `mb_stripos()` doing the
+    case-insensitive part so no second folded copy is needed to map offsets back
+    from. A naive `strpos()` on the raw title passes every easy case and puts
+    the mark in the wrong place on "Banking &amp; Finance".
+  - Every branch that marks nothing returns `esc_html()` of the **raw** string,
+    so a field with no hit is byte for byte what it was before the function
+    existed. That matters because `parts/loop/event.php` is shared with the
+    speaker profile, My events and My bookings.
+  - **The card never reads `$_GET`.** `parts/calendar-events.php` reads the
+    keyword once and passes it down as a documented `highlight` arg. `law_kw` is
+    also the query var for four unrelated dashboards, so a card that reached for
+    it would highlight itself on pages nobody asked about. There is a test whose
+    only job is to fail if that ever changes.
+  - **Accepted limitation**: the filter searches six things and the card prints
+    three, so a card matched only on its type, a sector or its description shows
+    with nothing marked. Narrowing the matcher to the printed fields would
+    silently drop results visitors get today, which is a bigger change than the
+    one asked for. Pinned by a test so it stays a decision rather than becoming
+    an oversight.
+  - **One class, site-wide.** `mark.law-hit` is declared once in `app.css` and
+    shared with the speakers archive, whose `speaker-search.js` previously
+    carried its own `.law-speakers__hit`. The two *matchers* stay deliberately
+    different — the speakers archive filters as you type, client-side and
+    per-token; the programme matches one contiguous phrase, server-side — but
+    what the reader sees is the same thing and is now declared in one place.
+  - **The fill alone, no underline.** A darkened `#a85400` `border-bottom` sat
+    under the mark for the first few hours of 16 September 2026, because the
+    pale orange fill is only 1.27:1 against white and 1.12:1 against the
+    sponsored card's `#fdeedd` — a soft signal on one surface and close to none
+    on the other. Denis removed it the same day, on both the programme and the
+    committee dashboard: on a table where several rows carry a hit the
+    underlines read as clutter. Two consequences are worth knowing before anyone
+    reinstates it: **a hit on a sponsored programme card is nearly invisible**,
+    and `forced-colors` mode is now the only place the mark has a hard edge
+    (that block repaints it with the system's own `Mark`/`MarkText` pair).
+    Deepening the fill, not restoring the border, is the way to strengthen it.
+    The text colour is **pinned** rather than inherited: the flagship's three
+    navy surfaces print white text, and white on this fill is 1.27:1, so one
+    declaration settles every surface and a direct rule on the mark also
+    outranks the colour it would otherwise inherit from the theme's global
+    `a:hover { color: #fff }`.
+
+- **The flagship answers the filters** (`law_calendar_visible_flagship_event()`).
+  It had been pinned to its day whatever the filters said since 11 September
+  2026. Denis reversed it: an event nobody can filter away is an event nobody can
+  get out of the way, and a search for a term the conference does not carry
+  should not return it. With no filters set it is pinned to its day exactly as
+  before.
+  - A second resolver rather than filtering inside
+    `law_calendar_flagship_event()`, because the unfiltered answer is still the
+    right one for "is there a flagship at all" — the conference's own page and
+    the committee's screens resolve through it and must not inherit a visitor's
+    search box. Memoised per context, because `law_calendar_day_is_empty()` asks
+    once per day of the week and the matcher runs `law_rich_text_plain()` over
+    the conference's whole rendered description.
+  - The strip, the block, the day's `+1`, the day nav's "Flagship" pill and
+    `law_calendar_day_is_empty()` all move together onto it.
+  - **A bug the change created and the fix for it.** The flagship is not one of
+    the day's *cards*, so `$law_has_events` in `parts/calendar-events.php` never
+    counted it. Harmless while it was pinned; once it could match a search that
+    no card matched, the page would print "No events match this search." directly
+    above a block that plainly matched. `$law_has_events` now includes it.
+  - **A JavaScript trap worth knowing before touching this again.**
+    `calendar-tabs.js` cached the flagship's day from the nav's
+    `data-flagship-day` at init, and the day nav lives *outside*
+    `#law-cal-events` and is never swapped by a filter fetch. So the cached value
+    goes stale the moment a filter hides the conference: the tab would keep its
+    pill and its blank count where it should read "No events". The truth now
+    comes from the swapped markup, where `parts/calendar-events.php` emits a
+    marker on **every** render, empty value and all. The empty value is not
+    laziness: the same script runs on the committee's timeline view, whose
+    swapped markup (`parts/events/slot-chart.php`) knows nothing about the
+    flagship, so "no marker found" has to stay distinguishable from "the marker
+    says there is no visible flagship" — otherwise filtering the dashboard would
+    strip that view's pill. Absent means "not the programme's markup, leave the
+    server's value alone".
+  - **A UI state nobody had seen before.** With the flagship no longer keeping
+    one day alive, a keyword matching nothing now leaves every day tab greyed and
+    no panel shown. `activate(null)` already handles it (only
+    `.law-cal-day-section` elements are hidden, so the empty message survives),
+    but it is newly reachable.
+  - **Two things a delegate can see on the block are still not searchable**: its
+    session titles and its speakers. `law_calendar_event_matches_filters()`
+    searches title, host, venue, type, sectors and description, and `sessions` is
+    a separate key on the mapped event. So searching for a session printed on the
+    block now makes the whole conference disappear, where before it stayed
+    pinned. Left alone deliberately — one matcher, one rule — but it is the most
+    likely thing to be reported as a bug, and widening the haystack for the
+    flagship alone would be the wrong fix.
+  - `programme-old/parts/events.php` had to move onto the same resolver even
+    though it is a frozen snapshot, because it shares `law_calendar_day_is_empty()`
+    with the live layout: leaving it alone would have rendered the block through
+    the out-of-week branch and never through the day one, a third behaviour
+    neither layout has. That directory has now diverged twice from the copy it
+    exists to be compared against, and its own README says it exists to be looked
+    at and then deleted. **Worth asking whether it should go.**
+
+- **Organiser is committee-only.** See the `_law_is_external` section above for
+  the full reasoning, including why the gate is the page template rather than the
+  viewer's capability.
+
+New: `tests/ProgrammeHighlightTest.php`. Changed: `functions/calendar.php`
+(`law_calendar_highlight()`, `law_calendar_visible_flagship_event()`,
+`law_calendar_organiser_filter_enabled()`), `parts/calendar-events.php`,
+`parts/calendar-daynav.php`, `parts/calendar-filters.php`,
+`parts/loop/event.php`, `parts/events/flagship-card.php`,
+`parts/events/flagship-strip.php`, `assets/js/calendar-tabs.js`,
+`assets/js/speaker-search.js`, `assets/css/app.css`, `assets/css/speakers.css`,
+`programme-old/parts/events.php`, `tests/FlagshipRenderTest.php`,
+`tests/EventFlagsTest.php`. **Deliberately not built:** a "Host organisation"
+filter, asked for in the same message and dropped once the live data was
+queried — 57 published events carry 60 distinct values, 55 of them appearing
+exactly once, and the free-text field holds combined firms ("Three Crowns LLP
+and Burford Capital"), a typo ("Evershed Sutherland") and a person's name. A
+dropdown built from that is a 60-item list where almost every choice narrows the
+programme to one event, and "Burford Capital" returns one of its two. The same
+conclusion is already recorded for the committee's search. Making it reliable
+would mean linking each event to an `organisation` post at submission, which is
+separate, larger work.
 
 Updated 15 September 2026 for the **committee's timeline view**, a second view
 of `/account/dashboard/` at `?law_view=slots` that draws a day at a time as a
@@ -6255,11 +6518,12 @@ rewritten, `law_setup_retire_booking_received_emails()` in
 `functions/setup-account-pages.php` is the precedent for dropping a stale key
 from both the `?setup-account-pages` trigger and a migration step.
 
-**Not changed.** The receptions keep "Book now" and "Your place at X is
-confirmed": the client's ask was about the application vocabulary, and a
-pay-now reception place was never applied for. "My bookings" keeps its name as
-the container for all three kinds of place, so the delegate's ticket still lives
-under My bookings rather than under a second, parallel noun.
+**Not changed.** The receptions keep "Your place at X is confirmed": the
+client's ask was about the application vocabulary, and a pay-now reception place
+was never applied for. "My bookings" keeps its name as the container for all
+three kinds of place, so the delegate's ticket still lives under My bookings
+rather than under a second, parallel noun. The receptions also kept "Book now"
+on their button at the time; that part was reversed on 16 September 2026, below.
 
 ### Two buttons on every event card (15 September 2026)
 
@@ -6355,6 +6619,126 @@ submission, which is a larger, separate piece of work. Do not describe this
 search to the committee as exact.
 
 
+### ...and then about host names (16 September 2026)
+
+The same box, the same complaint one step further in: searching "Emma" on
+`/account/dashboard/` returned nothing although three rows on the list printed
+"Emma Higgins" in the Host column (Denis, 16 September 2026). The firm fix the
+day before had added the organisation limbs but left the person out on the
+explicit ground that the scope was the firm; the person is the other thing the
+column prints, so the box is now honest about both.
+
+The limb is described under `committee.php` above. The two decisions worth
+carrying forward: the candidate set is the CPT's authors rather than the user
+table (hosts are a tiny subset of the accounts, and searching users would need
+a row cap to be affordable, which would drop matches without saying so), and
+every word of the keyword has to answer, so a two-word name narrows.
+
+The timeline view and the three exports inherited it for free again, both
+going through `law_committee_events()`. Covered by six new tests in
+`tests/CommitteeSearchTest.php` (18).
+
+
+### The committee's dashboard marks its search hits too (16 September 2026)
+
+The programme's cards had learned that morning to show *why* a row survived the
+filter; the committee's Events dashboard was asked for the same thing hours
+later (Denis). Same helper, same `mark.law-hit`, no second implementation: the
+table marks the **event title, the host's name and the firm** — the three
+printed fields its keyword box actually searches — and the timeline view marks
+the **bar titles**, which is the one searched field a bar prints.
+
+**The word-by-word detour, and why it was reversed within the hour.** This box's
+own search splits on whitespace (core `s` splits its terms, and the host-name
+limb requires every word in any order), so the first build marked the phrase
+*and each of its words*, on the reasoning that a row matched word by word would
+otherwise explain nothing. In use that was noise, not explanation: the committee
+searches with long phrases lifted straight off a title, and
+"Collaboration with Arbitral Institutions in" came back with every "in", every
+"with" and every "in" *inside* a word marked down two columns (Denis, with a
+screenshot). The rule is now the same as everywhere else — the whole phrase,
+case-insensitively, one contiguous run — and `law_calendar_highlight()` went
+back to a single needle rather than keeping an array form nothing calls.
+
+The price is explicit and tested: a row the search matched word by word, or on
+a field the table does not print (the description, a linked organisation
+record), shows with **nothing marked**. That is the same accepted limitation the
+programme carries for a card matched on its description, and the lesson from the
+reversal is that an unmarked row is cheaper than a stippled one.
+
+Unlike the programme's cards, this part **reads `?law_kw=` itself**. The
+argument against that on `parts/loop/event.php` was that four unrelated surfaces
+render it and `law_kw` means something different on each; `dashboard-list.php`
+is rendered by the committee dashboard and its `&law_partial=1` endpoint and
+nothing else, so the query var is unambiguous there. It still accepts a
+`highlight` arg for a caller that wants to override it.
+
+`tests/CommitteeHighlightTest.php` (8) covers the exact-phrase rule, the
+reversal itself, the three marked columns and the accepted silence.
+
+
+### A search-result snippet for a hit in the description (16 September 2026)
+
+The third piece of the same afternoon's work, and the one that closes the hole
+the other two left open. Both keyword boxes search the **description**; neither
+the programme card nor the committee's table prints a word of it. So a search
+for a term that lives only in the body text — which on this site is most of
+them, the descriptions being where the subject matter actually is — returned a
+screen of rows naming nothing the searcher had typed, and the new highlight had
+nothing to mark. Denis asked for the standard answer: show the slice of the
+description the hit is in, cropped sensibly, with the word marked.
+
+`law_calendar_search_snippet()` (`functions/calendar.php`) does it, and the
+shape of the crop is the whole of the design:
+
+- **~170 characters, ~55 of them before the hit.** About two lines on a card,
+  and the length search results have converged on; the lead-in matters because a
+  snippet that starts *at* the keyword gives it no context to be read in. The
+  length is a **floor**: a keyword longer than what is left after the lead-in
+  widens the window, because a crop that lands inside the phrase leaves
+  `law_calendar_highlight()` with nothing to match and the reader with an
+  unmarked snippet. That shipped for an hour and Denis caught it with a
+  62-character search that highlighted on the programme and not on the table.
+- **The committee's table prints it on a row of its own**, spanning every
+  column, at 260 characters. Inside the Event cell it was prose in a 12rem
+  column, which is five lines of two words (Denis, 16 September 2026). An event
+  is therefore two `<tr>`s when it has a snippet, which is why that table now
+  counts its own stripe: `is-alt` on both rows of a pair, Foundation's
+  `nth-child(even)` disarmed under a `--striped` modifier so the eight other
+  tables on the base class keep theirs.
+- **Both edges move to a word boundary**, and neither is allowed to move across
+  the hit itself: the start only travels forward while it stays left of the
+  match, the end only back while it stays right of it. A long phrase gets a
+  window big enough to hold it, so a search for six words is never cut off
+  inside its own `<mark>`.
+- **An ellipsis marks each edge that is not the real start or end.** A hit in
+  the first sentence therefore has no leading ellipsis, and a description
+  shorter than the window is printed whole with none at all — the reader can
+  tell a crop from a complete description.
+- **`''` when the keyword is not in the description**, which is what makes this
+  an explanation rather than a truncated description on every card. The caller
+  prints nothing on an empty return, so a card matched on its title grows no
+  line. Pinned by a test.
+- The description is **flattened through `law_rich_text_plain()`** before
+  anything is counted: it is rich text, and `wp_strip_all_tags()` alone would
+  run a bulleted list into a single word. Marking goes through
+  `law_calendar_highlight()`, so the snippet obeys the same exact-phrase rule as
+  every other surface and markup in a description cannot reach the page.
+
+Styling: `.law-event-card__snippet` is a block under the card's meta line
+(the meta lines are `display: inline` and joined with " · ", so prose spliced
+into that chain would read as one more fact), quieter than the meta at #666,
+and white on the flagship's navy card where #666 would be 2.2:1. On the table,
+`.law-dashboard__snippet-cell` lifts the 12rem column cap (the point of the
+full-width row) and the event row above drops its bottom border, so the pair is
+enclosed by one line rather than divided by one.
+
+**Not on the flagship block** (`parts/events/flagship-card.php`), which prints a
+session list rather than prose and would need its own layout decision;
+`.law-event-card--flagship` — the conference as an ordinary loop card — does get
+it. `tests/SearchSnippetTest.php` (17).
+
+
 ### The venue capacity band gained a floor (15 September 2026)
 
 Places available had to sit **inside** the chosen venue capacity band, not
@@ -6440,6 +6824,8 @@ violates would block every one of them behind a validation bubble.
   actions too, and the message surfaces inside whichever modal is open. A
   capacity rule should not be able to block a delete. Denis chose to raise this
   separately rather than widen the change; this entry is the record of it.
+  **Fixed on 16 September 2026** — see "The band a committee member could not
+  widen" at the end of this document.
 - **"Blank means no limit" is wrong wherever it is written.**
   `law_event_tickets_remaining()` (bookings.php) returns `null` for 0 or unset
   and its own doc block says so plainly — the event is **not open for booking**,
@@ -6658,6 +7044,558 @@ an unrelated booking matches and the per-row assertion fails. It is random, not
 order-dependent, and nothing here touches that path. The fix is to assert the
 target row is among the results rather than that every result matches, but that
 is somebody's decision to take, not a silent edit inside this change.
+
+### "Register" on a reception too (16 September 2026)
+
+A reception's action button read "Book now" while every other event on the site
+read "Register". Denis asked for the one word everywhere: "for their action
+buttons we use wording 'Book now'. Instead it should be 'Register' as all other
+buttons."
+
+This reverses EVENTS_4.2_SPECS.md §3.4, which chose "Book now" deliberately so
+the control would say that money was about to change hands. That job now falls
+to what sits beside the button, which is where a price belongs anyway: the
+programme card carries "Price: £45.00 + VAT" next to the control, the event's
+availability panel carries the same line, and the dialog the button opens is a
+priced checkout with the total, the VAT and a terms tick before anything is
+charged. Nobody reaches Stripe without reading a price first, so the button does
+not have to carry it.
+
+**Two label sites, both in `functions/account-bookings.php`**, and nothing else.
+`law_booking_card_action()` (the second button on every event loop card) and
+`law_booking_render_opener()` (the control in the event's own details box) each
+branched on `$reception` for their wording; both branches are gone and the
+label is now `Join waitlist` or `Register`, the same expression the free events
+already used. The card's screen-reader name changed with it, from "Book a place
+at X" to "Register for X" — a visible label and an accessible name that
+disagree is a WCAG 2.5.3 (Label in Name) failure and would break voice control,
+so the two had to move together.
+
+**What did NOT change is the part that matters.** `$reception` is still read in
+both functions, because it picks the query var through
+`law_booking_opener_param()`: a reception's control still points at
+`?law_reception_checkout=1` (or `?law_reception_waitlist=1`), never at
+`?law_book=1`. The word on the button and the dialog behind it were always
+separate decisions; only the word moved. "Join waitlist" was already shared by
+both kinds of event and is untouched, as are "Continue to payment" on a hold
+awaiting payment, "Manage booking", and the reception confirmation copy.
+
+`BookingCardActionTest::test_a_priced_reception_offers_book_now` is now
+`…_offers_register` and asserts the new label, keeping its assertion that the
+URL still carries `law_reception_checkout=1` — that pairing is the whole point
+of the test. The related suites (Reception*, Booking*, Discounts, Quote,
+AccountHub, Flagship*) pass, 398 tests.
+
+### The migrated "Venue needed" answer read as no answer at all (16 September 2026)
+
+Every event the migration brought across opened its form with **neither Venue
+needed radio picked**, on staging and locally alike, and the answer had to be
+given again before the form would save. New events were fine. The cause is a
+Gravity Forms detail: field 103 (Venue needed) on form 2 (Event > submit an
+event) is a radio whose choice **texts** are the two sentences but whose choice
+**values** are the bare `Yes` and `No`, and an entry stores the value. Migration
+step 1 copied `rgar( $entry, '103' )` straight into `_law_venue_needed`, so 99
+of the 100 migrated events held `Yes` or `No` where the custom form's radios
+carry the sentences, and `checked()` matched nothing. The same mismatch had a
+quieter second effect: `law_events_venue_details_visible()` tests the answer for
+a `"No,"` prefix, which `No` fails, so **every migrated host who already had a
+venue was treated as having asked LAW to find one** — the committee's form
+showed them the "The host asked LAW to find a venue" hint, and the host's own
+form hid the venue name, band and places they had filled in themselves.
+
+`law_migration_normalise_slot_label()` is the exact precedent: field 77
+(Preferred date & time slots) needed the same treatment for the same reason.
+
+**The fix is in three places, deliberately.** `law_events_venue_needed_label()`
+(submission-form.php, beside the two venue predicates) maps an answer in either
+vocabulary onto the canonical label, and returns `''` for anything that is
+neither — a two-choice radio has no third answer, so a forged post no longer
+lands in the meta as free text. `law_events_venue_needed_choices()` beside it is
+now the single source of the two strings, which the form template, the wp-admin
+select and the predicates all read rather than repeating the literals.
+
+1. **On the way in.** `_law_venue_needed` changed sanitiser from `text` to a new
+   `venue_needed` case in `law_events_sanitize_value()`. Because the key is
+   registered through `register_post_meta()` with that sanitiser, even a plain
+   `update_post_meta()` now normalises, so a legacy value cannot be stored again
+   by any path — migration included, which is why the runner needed only a
+   comment.
+2. **On the way out.** The form template, `law_events_form_values()`,
+   `law_events_venue_needed_value()`, both venue predicates, the dashboard
+   panel's "Venue needed?" row and the wp-admin select all read through the
+   label function, so **an unrepaired database behaves correctly on deploy**.
+3. **The stored rows.** `law_setup_normalise_venue_needed()` rewrites each row
+   that is not already canonical, following the
+   `law_setup_retire_booking_received_emails()` pattern: idempotent, and run
+   from **both** the `?setup-account-pages` trigger and migration step 10, so a
+   git push plus the usual trigger is enough on staging. It is not logged per
+   event — it corrects how an answer was recorded, it does not change anyone's
+   answer.
+
+`VenueDetailsTest` gained two cases, one for the migrated answer end to end
+(raw `$wpdb` write, because the sanitiser now blocks every other route to a
+legacy row) and one for the closed vocabulary. 35 tests there, 845 in the full
+suite.
+
+### Auditing the rest of the migrated data (16 September 2026)
+
+The Venue needed bug above was the visible one, so every field the migration
+maps was then checked the same way: the Gravity Forms definitions of forms 1,
+2, 4, 6, 8, 9 and 10 against the vocabulary the custom code expects, and both
+against the values actually in the database. Three more findings, and a list of
+things that turned out to be right so they are not re-audited.
+
+**1. No event could be stored as `free`.** `_law_payment_status` is declared
+twice in the meta schema, once on the event (`payment_status`:
+unpaid/paid/refunded/free) and once on the booking (`booking_payment_status`:
+the longer pending_setup/ready/processing list). `law_events_all_meta_schemas()`
+merges the five schemas with `array_merge()`, so the BOOKING vocabulary won for
+both post types, and `law_event_update_meta()` read the merged map. Writing an
+event's `free` sanitised it to `pending_setup`, which is not an event state, and
+the per-post-type callback registered by `law_events_register_meta()` then read
+THAT as unknown and stored `unpaid`. `unpaid` survived the same round trip by
+accident (`unpaid` → `pending_setup` → `unpaid`), which is why only the free
+events were damaged and why the defect went unexplained for so long.
+
+`law_migration_derive_payment()` calls a Confirmed £0 event `free` and always
+has, so **this is the root cause of the symptom
+`migration/repair-payment-status.php` was written to mop up** — that file
+previously recorded the cause as unestablished. It was not a historical
+accident: every migration run reproduced it, cutover included, which would have
+made that panel a permanent chore rather than a one-off. Locally, 36 published
+zero-fee events read Unpaid and not one `free` row existed anywhere.
+
+The fix is `law_events_meta_type( $post_id, $key )`, which resolves the
+sanitiser from **the post's own post type** and falls back to the merged map
+only for a post that is none of the five types (or no longer exists, where a key
+has one possible meaning anyway). `law_event_update_meta()` and
+`law_event_meta()` both go through it, and `law_events_post_type_meta_schemas()`
+is now the single list that `register_post_meta()` reads too, so the registered
+sanitiser and the helper's cannot drift. `_law_payment_status` is the only key
+in the whole schema whose two declarations disagree; the other seven shared keys
+(`_law_vat`, `_law_speakers`, `_law_gf_entry_id` and the Stripe trio) name the
+same sanitiser on both types and were never at risk.
+
+**2. The post-approval fee lock was off across the whole migrated programme.**
+`law_event_fee_override_locked()` tested `'' !== _law_approved_at`. Form 2
+(Event > submit an event) field 78 (Approval date) is **empty on all 500
+production entries**, so the key is absent on every event the migration created:
+90 approved and Confirmed events locally, every one of them with the fee
+override control still editable on the committee dashboard, in wp-admin and on
+the account dashboard. That control is meant to go read-only at approval because
+the fee is snapshotted once and nothing recalculates it: a later change moves the
+dashboard and the exports while the snapshot, the raised invoice and the `{fee}`
+emails keep the old figure.
+
+There is no source date to backfill, so the lock stopped keying on a timestamp
+at all. `law_event_has_been_approved()` (statuses.php) reads the STATUS:
+`law-approved` and `publish` say it themselves. `law-cancelled` is the one
+status that cannot, because `law_event_transitions()` reaches it from both
+`cancel` (from approved or Confirmed) and `withdraw` (from draft, proposed or
+sent back); the timestamp separates those two and is reliable there, since a
+cancellation can only have happened on this site after the workflow started
+writing the key, and migration never produces a cancelled event at all. No data
+repair is needed, and `_law_approved_at` stays as the displayed approval date.
+
+**3. Half the migrated events held an ISO code as their billing country.**
+Field 74 (Address) input 74.6 (Country) was filled in by two different front
+ends over the form's life and the entries show both: "GB" on 231 and "United
+Kingdom" on 198, with the same split through China, Portugal and Singapore. The
+custom form's Country select offers names, so those events showed an option
+reading "GB" (the form appends an unrecognised stored value as its own option,
+which is what stopped it being lost). `law_events_country_display_name()` maps a
+bare code onto the name the list offers, built by reversing
+`law_events_country_map()` through `law_registration_country_choices()` so the
+two can never disagree; nothing is ever dropped, because a billing address is
+the host's own words. It runs in the `address` meta sanitiser (so the migration
+is fixed by writing through `law_event_update_meta()`), on the three surfaces
+that render the country, and as
+`law_setup_normalise_invoice_countries()` on the `?setup-account-pages` trigger
+and migration step 10. Stripe was never affected: it is sent `_law_country_iso`,
+a separate key that has always held a clean alpha-2 code, and
+`law_events_country_to_iso()` accepts a bare code as well as a name, so
+re-saving one of these events could not have blanked it.
+
+**Checked and clean**, recorded so nobody audits them twice: sector terms (the
+`&amp;` in the term names is standard WordPress, `esc_html()` does not
+double-encode an existing entity, and both sides of the checkbox read term
+names, so a migrated sector ticks); slot labels (the en dash / hyphen split
+between fields 68 and 77 is already normalised, and retired slots stay
+selectable on an event that holds one); accessibility, dietary and country user
+meta (the stored-value-versus-displayed-label mapping is explicit in
+`law_registration_accessibility_choices()` and every stored value is a valid
+choice); session times (24-hour in the entries, so the `time` sanitiser accepts
+them); speaker roles through `law_speaker_role_key()`; the event status and
+payment status label maps; the venue capacity bands (the `array_key_exists`
+versus `isset` trap for the two null-ceiling bands is already avoided, with a
+comment saying so); the fee fields (84 is pence, 81 is pounds, and the one
+negative in the data is clamped to 0); and the organisation links, which all
+resolve to real `organisation` posts.
+
+One documentation correction: the comment in
+`law_migration_populate_external_event()` says all four form 10 (Event >
+external events) entries left the corresponding form 2 fields empty. Field 103
+(Venue needed) reads "No" on all four. Nothing follows from it, because an
+external event has its own edit form with no venue block, but the comment should
+not be relied on.
+
+The payment repair panel's scan gained the same predicate while it was open.
+Its docblock says every qualifying event is Confirmed, which was true when it
+was written; on the current data six **Proposed** sponsor events also had a £0
+fee and an Unpaid status, and calling those Free would answer a question the
+committee has not reached. The fee is snapshotted at approval, and the approve
+transition already sets Free itself when that snapshot comes out at zero, so the
+scan now requires `law_event_has_been_approved()` too: 30 events rather than 36.
+
+**Is Free safe now that events can hold it?** Traced end to end afterwards,
+because the fix means 30 Confirmed events change state when the repair runs and
+every future zero-fee approval keeps a value it previously lost. **An event's
+payment status gates nothing.** The payment gate is the POST STATUS:
+`law_booking_guard_open()` refuses anything that is not `publish` (with the
+committee's "Enable booking" override as the one documented lift), and
+`law_event_booking_hold_reason()` names only the three holds (booking disabled,
+no places, no venue), none of which reads payment. Approving a zero-fee event
+sets Free, raises no invoice, and calls `confirm` in the same breath, so a free
+event is published and bookable immediately. Nothing anywhere queries by
+`_law_payment_status`: every other reader is display (the dashboard table and
+event panel, the export column, the wp-admin column, the `{payment_status}`
+merge tag, and the GF-shaped field 96 map, whose legacy vocabulary is the same
+four words capitalised). The two behavioural readers both do the right thing
+with Free: `law_event_resnapshot_fee()` refuses only `paid` and `refunded`, so a
+free fee stays correctable, and the invoice retry handler requires
+`law-approved` AND `unpaid`, so a free event offers no retry of an invoice that
+was never raised. Cancelling one voids nothing and sends no "cancelled paid"
+alert.
+
+The one thing that was wrong for free events was **the cancel dialog's copy**,
+and it had been wrong since the dialog was written. Its third line had two
+branches, unpaid-with-a-fee and everything else, so a zero-fee event was told
+"a fee that has already been paid is never refunded automatically: the committee
+is alerted to review the payment in Stripe", which is false twice over. It now
+has three branches, and a zero-fee event reads "No host fee was ever due on this
+event, so there is no invoice to cancel and nothing to refund."
+
+`MetaSchemaTest` is new (the per-post-type sanitiser, both vocabularies, the
+lookup edges, and the country mapping and its repair), `FeesTest` gained the
+status-keyed lock across every status including the two routes into
+`law-cancelled`, and `WorkflowTest` gained the free event as a first-class state
+(bookable, snapshot still correctable, lock on) beside the zero-fee approval
+case it already covered. 894 tests in the suite.
+
+### Approved events on the programme, and the four things that open booking (16 September 2026)
+
+The client settled the whole of the programme's visibility rule in one thread,
+and it moved a boundary that had been fixed since the rebuild: **paying no
+longer decides whether an event is SEEN, only whether it can be BOOKED.**
+
+The rule as built:
+
+- An event the committee has **approved** goes straight onto the programme,
+  carrying a disabled "Open soon" button. Anything earlier in the workflow
+  (Proposed, Sent back, Rejected, Draft) stays off it, as before.
+- Booking opens once the event is **paid for** and, on top of that, its
+  **places are released** and a **venue is recorded**. The venue is required
+  whichever way the host answered field 103 (Venue needed) on form 2 (Event >
+  submit an event): an attendee needs to know where to turn up, and whether LAW
+  found the room or the host already had one makes no difference to that. It is
+  required of **host submissions only** -- see the receptions below.
+- **Override booking availability** (Automatic / Disable booking / Enable
+  booking) lets the committee close an event that would otherwise be open, or
+  force one open that is missing its venue or its payment. The client asked for
+  the second of those by name: "we may have a high level sponsor that we need to
+  promote immediately, even if they don't have the venue address, but that is the
+  exception not the rule."
+
+**Why this was work rather than a tweak.** Paying is what publishes an event —
+`approve` goes to `law-approved` and raises the invoice, and only `mark_paid` or
+the `invoice.paid` webhook then runs `confirm`, which goes to `publish`. So
+"approved but unpaid" and "on the programme" had been mutually exclusive by
+construction, and 33 events were sitting invisible with a £600 or £1,200 fee
+outstanding, 31 of them with places already released. The programme showed 54
+cards where 85 events existed.
+
+**The payment gate is a post status, so it is enforced in one line.**
+`law_booking_guard_open()` (bookings.php) has always refused anything that is
+not `publish`, and that refusal is what keeps the booking form, add-a-colleague,
+register-on-behalf, the waitlist's own promotion, the untrash hook and the
+`?law_dialog=1` fragment server off an unpaid event. Nothing had to be added for
+the money; what had to be added was Enable booking lifting it, which it does
+only for an event the public can actually see
+(`law_event_is_publicly_listed()`), so the answer can never sell places at a
+rejected, cancelled or unsubmitted one — those are not waiting for money, they
+are not happening.
+
+**The other three conditions are one predicate.**
+`law_event_booking_hold_reason()` returns `''`, `'disabled'`, `'places'` or
+`'venue'`, and BOTH sides ask it: the guard that refuses a submission and
+`law_booking_resolve_state()`, which decides what the card and the event page
+say. Two lists would be two lists to drift apart, and the drift would show as a
+Register button that is refused when pressed. Order matters twice inside it:
+Disable booking is judged first, because it is meant to hold an otherwise
+complete event shut; and **places are judged before Enable booking, so that
+answer cannot override them** — a place is allocated out of the capacity, so the
+booking system has nothing to give away without one. That combination is the
+only thing the committee can ask for and not get, so the panel says so as an
+error (`law_event_booking_hold_note()`, which is also where the panel's wording
+lives, shared with the wp-admin box so the two screens cannot describe the same
+event differently). That note stays silent before approval and on an external
+event: what keeps booking shut on a Proposed event is the workflow, not its
+venue, and naming one would answer a question nobody has asked. Disable booking
+is reported whatever the status, because it is a decision rather than a fact.
+
+**One public wording for all four reasons, deliberately.** Card and panel both
+say "Open soon" over "Places for this event have not been released yet.",
+whether what is missing is the money, the places, the venue or the committee's
+own decision. Naming the reason on a public page would tell an attendee that a
+host has not paid their invoice or that their venue is unknown. The committee
+reads the actual reason on its own panel.
+
+**An external event is the exception to the derived holds, and not to the
+override.** Its Register button leaves the site for the organiser's own page, so
+its places and its venue are not facts about it;
+`law_booking_resolve_state()` answers `'external'` before it reads any hold, and
+Disable booking is checked before that branch so it still closes one. The hold
+predicate itself judges an external event like any other, which is deliberate:
+that is the reading `law_booking_guard_open()` takes, and it is what keeps the
+local waitlist and booking form off an event whose places are somebody else's to
+sell (`tests/ExternalEventsTest.php` asserts exactly that, and its docblock
+warned about this case before the case existed).
+
+**Making Approved a status WordPress will render took three args, not one.**
+`law_event_statuses()` has always carried a `public` flag that nothing read and
+`law_events_register_statuses()` ignored; it is now honoured, and Approved sets
+it. `public => true` is what stops `WP_Query::get_posts()` emptying a singular
+result for a logged-out visitor (wp-includes/class-wp-query.php, the
+`! $post_status_obj->public` branch), while `publicly_queryable => true` with
+`protected => false` is what `is_post_status_viewable()` wants, which is what
+`wp_force_plain_post_permalink()` asks before `get_permalink()` will return a
+pretty URL — without the pair an approved event's permalink was
+`?post_type=law_event&p=5990`. `exclude_from_search` stays true on every status
+and the CPT is registered `exclude_from_search` anyway, so none of this puts an
+unconfirmed event into site search, and SEOPress builds its sitemap from
+`post_status publish` only. `templates/event-single.php` sends
+`X-Robots-Tag: noindex` for anything that is not published: an approved event can
+still be cancelled, and an indexed page that then 404s is worse than a late
+listing.
+
+**Three other things had to learn the wider rule.**
+`law_calendar_public_statuses()` returns Confirmed **and** Approved — but only
+on the CPT source, because the legacy Gravity Forms programme has no booking
+system at all and an Approved entry there would look bookable with nothing on
+the row to say otherwise. `law_events_cpt_mapped_events()` derives its
+`post_status` list from those labels through the new
+`law_event_status_keys_for_labels()` rather than hardcoding `publish`.
+`law_events_event_url()` returns the permalink for a publicly listed event
+instead of the committee's `?event=` view, which is behind the Members
+restriction and would be a dead end for a visitor; the same predicate flipped
+the committee dashboard's and `speaker-manage.php`'s "Preview event" button to
+"View event" on an approved event.
+
+**The panel gained the Venue field it had been judging.** Committee controls
+now opens with the booking select and then, above the capacity band and the
+places it belongs with, **Venue (name and/or address)** — not required, because
+an event can sit on the programme before its room is settled, but booking does
+not open until it is filled in. Before this the field existed only on the event
+form and in wp-admin, so the one screen that decides whether booking opens could
+not set the one thing it now waits for. The select's value, and the venue, are
+both logged: `law_event_log_booking_override_change()` is its own entry rather
+than a limb of `law_event_log_flag_change()`, because that one carries 0/1 flags
+and this answer has three values.
+
+`law_event_log_flag_change()` was rewritten to derive its key set from what the
+CALLER read before its write, instead of a fixed list. The panel now writes the
+booking select and the two classification switches under separate sentinels, and
+the fixed list would have compared a key the call never touched against a
+default of 0 — an external event would have reported being marked external every
+time somebody changed the booking select.
+
+**The receptions are exempt from the venue, and only from the venue** (Denis,
+16 September 2026): the client manages them on Manage receptions, and "once
+they are set to be visible on the programme and have capacity and a price, they
+should be bookable right away -- we don't care about the venue for those". The
+predicate is `law_event_venue_gates_booking()`, keyed on
+`law_event_is_managed_by_law()` rather than on a reception check, so "which
+events LAW runs itself" keeps being answered in the one place it is answered
+everywhere else. The other two kinds it names change nothing by coming along:
+the flagship is applied for rather than booked and `law_booking_guard_open()`
+refuses it earlier, and an external event's room is the organiser's to know and
+is still held shut by the places limb, which is the limb
+`tests/ExternalEventsTest.php` depends on. A reception's **capacity** still
+decides, because a place is allocated out of it, and Disable booking still
+closes its checkout through `law_reception_guard_open()`.
+
+Worth recording what this exemption does NOT add: a reception's **price** is
+format-validated by `law_reception_validate()` but never required, so a
+reception published with capacity and no price is bookable as a FREE event
+through the ordinary booking form rather than through Checkout. That is
+pre-existing behaviour, it was not part of this change, and whether a £0
+reception should be refused has not been put to anyone.
+
+**Two things to know before this deploys.**
+
+- **The venue rule closes booking on live events.** On the current data eight
+  publicly listed events have no venue recorded and places released: six hosted
+  events and both receptions -- **but the receptions are exempt** (above), so
+  what closes is the six hosted events. They drop to "Open soon" until somebody
+  types an address, which is the intended behaviour and exactly what Enable
+  booking is for.
+- `LAW_Test_Case::make_event()` now seeds `_law_venue`, or every suite that
+  books anything would have been testing the venue hold by accident.
+
+Covered by `tests/ProgrammeVisibilityTest.php` (30 tests): the two statuses the
+programme lists and the one the legacy source lists, the status registration and
+the permalink, the payment gate and the one thing that lifts it, each hold in
+isolation, the venue rule asserted on all three answers to Venue needed, the
+external event's two halves, the receptions' exemption and the two things it does
+not exempt them from, and that the public wording never names the reason.
+
+### The receptions take the navy surface, and their days say so (16 September 2026)
+
+A drinks reception on `/programme` rendered as an ordinary compact row carrying
+one extra "Price: £100.00 + VAT" line, and on the conference's own day it sat
+directly under the flagship's navy photo block and disappeared. Denis: "we have
+receptions on /programme, we need to make them pop more... the reception on
+Wednesday is lost under the big flashy flagship."
+
+**The pale peach surface they were wearing was a bug, not a treatment.**
+`law_events_post_is_sponsored()` has three clauses, and the third is a
+repeat-submitter heuristic: an author with more than one Approved or Confirmed
+event in the programme year is behaving like a sponsor. LAW's own events have no
+host at all -- `law_event_ensure_managed_post()` writes whichever committee
+account created them into `post_author` -- so that account trips the clause on
+its second post and every LAW-run event starts wearing `.law-event-card--sponsored`
+(`#fdeedd` fill, orange left edge). On the live local data both seeded receptions
+came back `sponsored = true`. The programme was telling visitors that LAW's own
+drinks reception was a sponsored event.
+
+The fix skips **only the third clause** for `law_event_is_managed_by_law()`,
+which already knows the flagship, the receptions and the external listings. The
+first two stand: a firm really can sponsor a reception, and a sponsor fee tier or
+a linked sponsor organisation still says so.
+`law_events_cpt_author_counts()` gained the module's usual `$reset` parameter,
+because it is a static memo and a test that creates events mid-request cannot
+otherwise see them.
+
+**The surface.** `.law-event-card--reception` is not a second recipe: it was
+folded into the selector lists that already painted `.law-event-card--flagship`,
+so the two share one set of declarations -- brand navy `#292459` fill, orange
+left edge, white title and meta, the inverted button pair, the white repaint of
+the committee's status badge. Splitting them would have produced two copies of
+the same twelve rules. What tells a reader which is which is the identity pill
+(`.law-event-card__reception-badge`, "Drinks reception", added to the shared
+five-selector pill shape rather than copied) and, on the programme, the fact
+that the conference is a photo block rather than a row at all. The block is
+declared **after** `.law-event-card--sponsored`, which is the whole mechanism by
+which a genuinely sponsor-backed reception still comes out navy: the two
+modifiers tie on specificity, so source order decides. There is a test whose only
+job is to fail if that order changes.
+
+The modifier lands wherever `parts/loop/event.php` is rendered -- the programme,
+My bookings, My events and the single speaker profile's role lists -- which is
+the same reach the flagship's has.
+
+**The day tabs.** A "Reception" pill beside the existing "Flagship" one
+(`law_calendar_reception_dates()`, next to `law_calendar_visible_flagship_event()`).
+It runs on **presence, not booking state**: a reception whose places have not
+been released still marks its day, exactly as the conference's pill does not wait
+for registration to open. It reads the already-filtered day buckets, so a keyword
+search that hides the reception takes its pill with it.
+
+Three details that are not obvious from the diff:
+
+- **Both pills live in a `.law-cal-daynav__flags` wrapper**, rendered on every
+  tab whether or not it has anything in it. Stacking them would make Wednesday's
+  tab taller than the rest, and `--law-cal-daynav-h` is the sticky scroll offset
+  every in-page anchor on the programme is measured against -- a fixed value, not
+  one the script measures. The wrapper is always present because
+  `calendar-tabs.js` adds and removes pills inside it after a filter fetch and a
+  day that GAINS one needs somewhere to put it.
+- **The reception days ride on the flagship's marker**, as a second attribute
+  (`data-law-reception-days`) on the same `<span class="law-cal-flagship-marker">`
+  rather than a second element. The day nav lives outside `#law-cal-events` and
+  is never swapped by a filter fetch, so the script has to be told; and keeping
+  one marker keeps "absent" meaning the one thing it means today -- markup that is
+  not the programme's, whose pills the script must leave alone (the committee's
+  timeline view swaps in `parts/events/slot-chart.php`). That view supplies its
+  own `reception_dates` from `law_slotchart_item()`'s already-resolved `kind`, as
+  it already supplies its own counts and flagship date.
+- **`FlagshipRenderTest` needed tightening, not fixing.** It asserted on the bare
+  string `law-cal-daynav__flag`, which the new `__flags` wrapper matches on every
+  tab of the week. It now asserts the full class attribute, which is the
+  conference's pill alone.
+
+**What was deliberately not built.** A receptions strip above the day sections
+(mirroring `parts/events/flagship-strip.php`, reusing the `.law-strip` utility
+the account banner already paints) and pinning receptions above the flagship on
+their day were both put to Denis and both declined: the page's structure stays
+as it is. Worth knowing that colour is the weaker half of the fix -- a one-line
+navy row beneath a large navy photo block can read as one continuous dark mass --
+so if Wednesday still reads wrong, more vertical padding on the reception row,
+then the strip, are the next moves rather than a different colour.
+
+New: `tests/ReceptionProgrammeTest.php` (11). Changed: `functions/events/source.php`,
+`functions/calendar.php`, `parts/loop/event.php`, `parts/calendar-daynav.php`,
+`parts/calendar-events.php`, `templates/account-dashboard.php`,
+`assets/css/calendar.css`, `assets/js/calendar-tabs.js`,
+`tests/EventFlagsTest.php` (four sponsored cases), `tests/FlagshipRenderTest.php`.
+### The band a committee member could not widen (16 September 2026)
+
+An event stored at "51-100" with 120 places could not be corrected from the
+committee dashboard. Choosing the wider "101-150" and pressing Save changes
+produced the browser's own bubble, "Please select a value that is no more than
+100", and nothing was saved. Both halves of the defect the 15 September entry
+above deferred were live at once, and this is the fix for both.
+
+**An attribute that was printed but never maintained.** `law-dash-places`
+carried a `max` rendered from the STORED band, while `event-form.js` only syncs
+`min`/`max` on a field marked `data-law-strict` — which the panel deliberately
+is not, because its Save changes, Approve, Send back, Reject, Mark paid, Cancel
+and Delete buttons all submit one `<form>` and a stale attribute would block
+every one of them. So the panel had the worst of both readings: the constraint
+was enforced, and it was enforced against the band the member was in the middle
+of replacing. Because the two halves post together there was no order in which
+the correction could be made in two saves either — the pair was simply stuck.
+
+**The panel now renders no `min` or `max` at all.** Every native constraint on
+this form is a validation bubble in front of six action buttons, and
+`committee-actions.js` hangs off the form's `submit` event, which never fires
+while the form is invalid, so a bubble silently disables the modals too. The
+band is enforced by the inline `.law-form-error` that `event-form.js` already
+renders here and, for real, by `law_committee_venue_input_error()` on the post.
+`check()` gained the "whole number of 1 or more" case in the same wording the
+server uses, since the dropped `min="1"` was the only thing that had flagged a
+typed zero.
+
+**The server now judges the change, not the event.** Both halves ride along on
+every panel action, because `committee-actions.js` posts the whole form, so
+`law_committee_action_handler()` was reading a Delete as a submission of the
+stored pair and refusing it. **`law_committee_venue_input_unchanged()`**
+(committee.php, beside the error wrapper) answers whether the posted pair is the
+rendered one handed straight back; the handler skips the check when it is. An
+event that already breaches its band can therefore be approved, sent back,
+rejected, marked paid, cancelled and deleted, which is the point: a capacity
+rule must not be able to block a delete. This is the same reading
+`law_events_form_save()` takes of a pair whose halves the submitter cannot move,
+and it is not grandfathering — moving either half is judged in full, so the
+breaching pair still cannot be saved, and the correction (widening the band)
+goes through in one save.
+
+"Unchanged" means the pair **exactly as rendered**. Stored places of 0 render as
+a blank field, so blank is the untouched value there and a typed `0` is a change
+like any other; anything that is not a plain positive number is a change for the
+same reason, or "lots" against a stored 0 would read as untouched and skip the
+check that refuses it. A migrated free-text band ("101 to 150") is covered by
+the same rule: posting it back is not choosing it, so it no longer blocks the
+delete that is probably what such an event needs.
+
+Touched: `templates/account-dashboard.php`, `assets/js/event-form.js`,
+`functions/events/committee.php`, `tests/VenueDetailsTest.php` (five cases, from
+the one-save correction to the non-numeric places).
+
+The 17 live events that breach a bound are left as they are — each is now
+fixable in one save from the panel, and a bulk repair was not part of this.
+Whether a cleared Places available should mean "no limit" or "bookings closed"
+is still the open product question in the entry above.
 
 ---
 
