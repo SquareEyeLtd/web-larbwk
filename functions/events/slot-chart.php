@@ -211,7 +211,16 @@ function law_slotchart_item( $post ) {
 	// is booked on the organiser's own website, so it can never hold one here.
 	// The same two conditions the table's Bookings column applies, so the two
 	// views cannot disagree about whether a number exists to show.
-	$bookable = 'publish' === (string) $post->post_status && 'external' !== $kind;
+	// Can this event hold a booking here? Not simply `publish`: the committee can
+	// force booking open on an approved event that has not paid yet
+	// (law_event_booking_override()), and a bar printing no numbers against real
+	// bookings would be a bar that lies. The same reading as the table's
+	// law_row_bookable (parts/events/dashboard-list.php).
+	$bookable = 'external' !== $kind
+		&& ( 'publish' === (string) $post->post_status
+			|| ( law_event_is_publicly_listed( $post )
+				&& function_exists( 'law_event_attendee_total' )
+				&& law_event_attendee_total( $id ) > 0 ) );
 
 	return array(
 		'id'           => $id,

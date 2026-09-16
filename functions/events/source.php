@@ -21,9 +21,19 @@ function law_events_cpt_mapped_events( $allowed ) {
 	// Derived from the allowed LABELS rather than hardcoded, so the public
 	// programme picks up Approved (law_calendar_public_statuses()) without a
 	// second list here to keep in step with that one.
+	//
+	// An empty derivation falls back to every status rather than to an empty
+	// post_status, which WP_Query reads as "no status clause given" and answers
+	// with the public statuses -- a silent widening on exactly the input that
+	// meant something else. It happens on the array( '*' ) sentinel, which is a
+	// label list of no labels at all; law_events_map_post() then drops
+	// law-draft, which is what that sentinel means.
 	$statuses = $all
 		? law_event_all_status_keys()
 		: law_event_status_keys_for_labels( is_array( $allowed ) ? $allowed : law_calendar_public_statuses() );
+	if ( ! $statuses ) {
+		$statuses = law_event_all_status_keys();
+	}
 
 	$posts = get_posts(
 		array(
@@ -590,7 +600,10 @@ add_action( 'template_redirect', function () {
 		if ( ! $post_id || get_post_type( $post_id ) !== LAW_EVENT_CPT ) {
 			$post_id = law_events_resolve_event_post_id( $requested );
 		}
-		if ( $post_id && 'publish' === get_post_status( $post_id ) ) {
+		// Publicly listed, not published: an Approved event has a real permalink
+		// of its own now, so an old ?event= link should land on it rather than
+		// render inline on the programme page under a URL nobody can share.
+		if ( $post_id && law_event_is_publicly_listed( $post_id ) ) {
 			wp_safe_redirect( get_permalink( $post_id ), 301 );
 			exit;
 		}

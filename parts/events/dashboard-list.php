@@ -22,9 +22,10 @@
  * ) );
  *
  * The timeline turns the count line off -- it would count the unscheduled
- * handful against every event on the site -- and keeps Review while dropping
- * Bookings, which is the one button that view does without throughout (its bars
- * print the booking numbers instead of offering a way into the list). It passes
+ * handful against every event on the site -- and keeps the first button
+ * (Review, or Edit on a reception) while dropping Bookings, which is the one
+ * button that view does without throughout (its bars print the booking numbers
+ * instead of offering a way into the list). It passes
  * a link_base because law_slotchart_url() carries the view and the current
  * filters, so the detail page's back link returns to the chart rather than
  * dropping the committee on the table with their filters cleared -- the same
@@ -168,7 +169,38 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 					// (Denis, 15 September 2026), and a hollow "0" reads as "nobody has
 					// booked" rather than as "bookings do not happen here".
 					$law_row_external  = function_exists( 'law_event_is_external' ) && law_event_is_external( $law_row->ID );
-					$law_row_bookable  = 'publish' === $law_row->post_status && ! $law_row_external;
+					// "Can this event hold a booking here?", which decides both the
+					// count and the Bookings button. NOT simply `publish` since
+					// 16 September 2026: the committee can force booking open on an
+					// approved event that has not paid yet
+					// (law_event_booking_override()), and once places are taken on
+					// one, keying this on the status alone would print "—" against
+					// real bookings and leave the committee no way into the list --
+					// including after they set the answer back to Automatic. An
+					// unpublished event with no places taken is still a dash rather
+					// than a hollow 0, which is the distinction this line exists for.
+					// PUBLICLY LISTED and places taken, not merely places taken: a
+					// Proposed event can hold no booking at all -- the guard refuses
+					// one and the forced-open answer reaches only an event the public
+					// can see -- so a stray _law_tickets_sold on one is impossible
+					// data, not a booking to offer a way into.
+					$law_row_bookable  = ! $law_row_external
+						&& ( 'publish' === $law_row->post_status
+							|| ( law_event_is_publicly_listed( $law_row ) && $law_row_sold > 0 ) );
+
+					// A RECEPTION is edited on Manage receptions, not reviewed on
+					// the event detail view (Denis, 16 September 2026): it has no
+					// workflow to review -- no host submitted it, nobody approves
+					// it and no invoice is raised -- and every field it does have
+					// (date, times, venue, places, price, the included and
+					// invitation switches) lives on that screen, behind the one
+					// saver law_reception_save(). Sending the committee through a
+					// read-only detail view to reach an Edit button was a hop with
+					// nothing on it, so the row says what it does: Edit.
+					$law_row_reception = function_exists( 'law_reception_is' ) && law_reception_is( $law_row->ID );
+					$law_row_review_url = $law_row_reception && function_exists( 'law_receptions_dashboard_url' )
+						? law_receptions_dashboard_url( $law_row->ID )
+						: add_query_arg( 'event', $law_row->ID, $law_link_base );
 					?>
 					<td>
 						<?php if ( ! $law_row_bookable ) : ?>
@@ -198,7 +230,7 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 						<?php endif; ?>
 					</td>
 					<?php if ( $law_show_actions ) : ?>
-					<td class="law-dashboard__row-actions"><a class="button" href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, $law_link_base ) ); ?>">Review</a>
+					<td class="law-dashboard__row-actions"><a class="button" href="<?php echo esc_url( $law_row_review_url ); ?>"><?php echo esc_html( $law_row_reception ? __( 'Edit', 'law' ) : __( 'Review', 'law' ) ); ?></a>
 					<?php if ( $law_show_bookings && $law_row_bookable && function_exists( 'law_booking_list_url' ) ) : ?>
 						<?php // The same bookings list the host sees: one view, one gate. The
 						// count lives in the Bookings column now, so the button is just a way in. ?>

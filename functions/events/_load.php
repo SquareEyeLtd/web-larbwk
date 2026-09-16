@@ -33,6 +33,10 @@ require_once __DIR__ . '/bookings-dashboard.php';
 require_once __DIR__ . '/discounts-dashboard.php';
 require_once __DIR__ . '/test-mode.php';
 require_once __DIR__ . '/notifications.php';
+// The committee's front-end copy of the wp-admin Emails screen. After
+// notifications.php, whose registry and shared save helpers it renders and
+// writes through.
+require_once __DIR__ . '/emails-dashboard.php';
 require_once __DIR__ . '/speakers.php';
 require_once __DIR__ . '/speakers-dashboard.php';
 require_once __DIR__ . '/flagship.php';

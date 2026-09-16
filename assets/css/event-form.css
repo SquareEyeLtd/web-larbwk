@@ -698,6 +698,15 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-form-notice.is-success { border-left-color: #4caf50; }
 .law-dashboard .law-form-notice.is-success, .law-thread-view .law-form-notice.is-success,
 .law-cal .law-form-notice.is-success { border-left-color: #2e7d32; background: #eef7ee; }
+/* Warning: something is true right now that changes what the page in front of
+   you will do, without anything having failed. Test mode diverting every email
+   away from its real recipients is the first (the committee's Manage emails
+   screen). Amber rather than the base notice's own amber-on-navy, because on a
+   light dashboard the base rule repaints it navy-on-grey and a warning that
+   looks like every other line is not a warning. */
+.law-form-notice.is-warning { border-left-color: #ffb300; }
+.law-dashboard .law-form-notice.is-warning, .law-thread-view .law-form-notice.is-warning,
+.law-cal .law-form-notice.is-warning { border-left-color: #a15c00; background: #fdf4e3; }
 /* Invalid repeater fields: the booking form marks the label wrapping the
    offending input (row-level errors, not one line at the bottom). */
 .law-booking-form label.is-invalid input { outline: 2px solid #b32d2e; outline-offset: 1px; }

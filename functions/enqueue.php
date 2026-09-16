@@ -45,7 +45,7 @@ add_action( 'wp_enqueue_scripts', function () {
 	// (.law-strip), which My bookings renders from the same helper. One
 	// function, two surfaces, and the second one has to be able to paint it.
 	if ( law_calendar_is_calendar_page() || law_speakers_is_single() || law_account_events_is_template()
-		|| is_page_template( array( 'templates/account-bookings.php', 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php', 'templates/account-dashboard-flagship.php', 'templates/account-dashboard-flagship-bookings.php', 'templates/account-dashboard-discounts.php', 'templates/account-dashboard-receptions.php', 'templates/account-hub.php' ) ) ) {
+		|| is_page_template( array( 'templates/account-bookings.php', 'templates/account-dashboard.php', 'templates/account-bookings-dashboard.php', 'templates/account-speakers-dashboard.php', 'templates/account-dashboard-flagship.php', 'templates/account-dashboard-flagship-bookings.php', 'templates/account-dashboard-discounts.php', 'templates/account-dashboard-emails.php', 'templates/account-dashboard-receptions.php', 'templates/account-hub.php' ) ) ) {
 		wp_enqueue_style(
 			'law-calendar',
 			get_theme_file_uri( '/assets/css/calendar.css' ),

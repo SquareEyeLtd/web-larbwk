@@ -36,7 +36,11 @@ function law_event_ics( $event_id ) {
 	}
 
 	$description = wp_trim_words( law_rich_text_plain( $post->post_content ), 40, '…' );
-	if ( 'publish' === $post->post_status ) {
+	// The link only where there is a public page to link to. Since
+	// 16 September 2026 an Approved event has one too, and an invite can be
+	// attached to a booking on one the committee has forced open, so this asks
+	// law_event_is_publicly_listed() rather than testing `publish` itself.
+	if ( law_event_is_publicly_listed( $post ) ) {
 		$description .= "\n" . get_permalink( $post );
 	}
 
