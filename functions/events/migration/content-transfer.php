@@ -1410,7 +1410,11 @@ function law_content_transfer_run_email( $email, $dry, $actor ) {
 
 	$after = array(
 		'subject' => sanitize_text_field( (string) ( $email['subject'] ?? '' ) ),
-		'body'    => sanitize_textarea_field( (string) ( $email['body'] ?? '' ) ),
+		// Through the shared sanitiser, not sanitize_textarea_field(): email
+		// bodies carry formatting since 16 September 2026, and stripping it
+		// here would have quietly flattened every bundle on the one path built
+		// to carry email wording between sites.
+		'body'    => law_events_email_body_sanitize( (string) ( $email['body'] ?? '' ) ),
 		'active'  => ! empty( $email['active'] ),
 	);
 	$before = array(

@@ -568,6 +568,31 @@ function law_events_email_registry() {
 			'subject' => 'Your place at {event_title} is confirmed',
 			'body'    => "Dear {attendee_name},\n\nThank you. Your place at {event_title} is confirmed (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou paid {price_total}, which is {price} plus {price_vat} VAT. {discount_note}\n\nYour VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the night: {profile_link}",
 		),
+		/* The same moment for a place with NOTHING to pay: a reception the
+		 * committee priced at nothing, or one a discount code covered in full.
+		 * Its own pair rather than a placeholder in the two above, for the
+		 * reason the waitlist pair below already exists — every sentence there
+		 * is about an amount taken and a VAT invoice to download, and neither
+		 * exists here, so the delegate was being sent to an invoice link with
+		 * nothing behind it. {discount_note} is empty on a free reception and
+		 * names the code when there was one, so one template says the right
+		 * thing either way (Denis, 16 September 2026). */
+		'user_reception_confirmed_free' => array(
+			'name'    => 'Email to delegate > reception place confirmed, nothing to pay',
+			'trigger' => 'A place at a free reception, or one a discount code covered in full',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title} is confirmed',
+			'body'    => "Dear {attendee_name},\n\nThank you. Your place at {event_title} is confirmed (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nThere is nothing to pay for this place, so no payment has been taken and there is no invoice. {discount_note}\n\nA calendar invitation is attached. Your booking is always available under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the night: {profile_link}",
+		),
+		'committee_reception_booking_free' => array(
+			'name'    => 'Email to committee > reception place booked, nothing to pay',
+			'trigger' => 'A place at a free reception, or one a discount code covered in full',
+			'to'      => 'committee',
+			'active'  => true,
+			'subject' => 'Place booked at {event_title}',
+			'body'    => "A place has been booked at {event_title}. There was nothing to pay for it.\n\nBooking: #{booking_number}\nAttendee: {attendee_list}\n{discount_note}\n\nPlaces taken: {tickets_remaining} of {tickets_available} remain.\n\nThe bookings for this event are on the bookings dashboard: {bookings_link}",
+		),
 		'committee_reception_booking' => array(
 			'name'    => 'Email to committee > reception place booked',
 			'trigger' => 'A reception place is paid for and confirmed',
@@ -616,18 +641,19 @@ function law_events_email_registry() {
 			'subject' => "You're on the waitlist for {event_title}",
 			'body'    => "Dear {attendee_name},\n\nYou are on the waitlist for {event_title} (booking #{booking_number}), and your payment details are saved.\n\nIf a place opens up we will charge {price_total} and confirm your place automatically, then email you straight away. You do not need to do anything else, and you will not be charged unless a place is yours.\n\nYou can leave the waitlist at any time before then, under My bookings: {bookings_link}",
 		),
-		/* The same two moments for an entry a discount code covers in full.
-		 * Their own templates rather than a placeholder in the ones above,
-		 * because every sentence there is about a saved payment method and an
-		 * amount to charge, and neither exists here: nothing to pay means no
-		 * payment step at all (Denis, 15 September 2026). */
+		/* The same two moments for an entry with nothing to pay — a reception
+		 * priced at nothing, or one a discount code covers in full. Their own
+		 * templates rather than a placeholder in the ones above, because every
+		 * sentence there is about a saved payment method and an amount to
+		 * charge, and neither exists here: nothing to pay means no payment step
+		 * at all (Denis, 15 September 2026). */
 		'user_reception_waitlist_joined_free' => array(
 			'name'    => 'Email to delegate > reception waitlist joined, nothing to pay',
 			'trigger' => 'A waitlist entry whose discount code covers the whole price',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => "You're on the waitlist for {event_title}",
-			'body'    => "Dear {attendee_name},\n\nYou are on the waitlist for {event_title} (booking #{booking_number}).\n\n{discount_note} That covers the whole price, so there is nothing to pay and we have not asked you for any payment details.\n\nIf a place opens up we will confirm it automatically and email you straight away. You do not need to do anything else.\n\nYou can leave the waitlist at any time before then, under My bookings: {bookings_link}",
+			'body'    => "Dear {attendee_name},\n\nYou are on the waitlist for {event_title} (booking #{booking_number}).\n\nThere is nothing to pay for this place, so we have not asked you for any payment details. {discount_note}\n\nIf a place opens up we will confirm it automatically and email you straight away. You do not need to do anything else.\n\nYou can leave the waitlist at any time before then, under My bookings: {bookings_link}",
 		),
 		'user_reception_promoted_free' => array(
 			'name'    => 'Email to delegate > reception waitlist place confirmed, nothing to pay',
@@ -635,7 +661,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'A place has opened up: you are booked for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nGood news: a place has opened up at {event_title} and it is yours (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{discount_note} That covered the whole price, so there was nothing to pay and nothing has been charged.\n\nA calendar invitation is attached. Your booking is under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nGood news: a place has opened up at {event_title} and it is yours (booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nThere was nothing to pay for this place, so nothing has been charged. {discount_note}\n\nA calendar invitation is attached. Your booking is under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}",
 		),
 		'user_reception_waitlist_no_card' => array(
 			'name'    => 'Email to delegate > reception waitlist entry closed',
@@ -746,6 +772,69 @@ function law_events_email_is_customised( $slug ) {
 }
 
 /**
+ * Sanitise one email body for storage.
+ *
+ * The same allowlist the event description, speaker biography and session
+ * description use (`law_rich_text_sanitize()`, functions/events/rich-text.php):
+ * bold, italic, the two list types, two heading levels, blockquote and links.
+ * Deliberately not `wp_kses_post()` — an email body should be able to
+ * emphasise and structure a message, not embed media or layout that every
+ * email client would render differently.
+ *
+ * Until 16 September 2026 this was `sanitize_textarea_field()`, which stripped
+ * every tag on save. The wp-admin screen has rendered a `wp_editor()` toolbar
+ * over the field since the module was built, so the formatting people applied
+ * there had always been silently discarded.
+ *
+ * The single write path: both screens and the content-transfer importer go
+ * through this, the way `law_rich_text_sanitize()` is the single write path
+ * for the descriptive fields.
+ *
+ * @param mixed $value Raw submitted body.
+ * @return string Stored HTML, or plain text where no formatting was applied.
+ */
+function law_events_email_body_sanitize( $value ) {
+	return law_rich_text_sanitize( $value );
+}
+
+/**
+ * Render one stored body into the HTML that is actually sent.
+ *
+ * **The escaping rule, which is the whole point of this function.** The BODY
+ * is trusted: only the committee and administrators can write one, and it has
+ * already been through the allowlist above. The placeholder VALUES are not:
+ * `{event_title}`, `{host_name}`, `{latest_comment}` and `{rejection_reason}`
+ * are typed by hosts and delegates. So the values are escaped and the body is
+ * not — the exact inverse of doing nothing, and the opposite of what the old
+ * code did.
+ *
+ * Before this, `esc_html()` ran over the whole string AFTER substitution,
+ * which escaped the values correctly but also guaranteed that any markup in
+ * the body reached the recipient as visible angle brackets. Moving the escape
+ * onto the values is what lets the body carry formatting without opening an
+ * injection route through a host's own event title.
+ *
+ * A tag inside an attribute works too: a body carrying
+ * `<a href="{invoice_url}">Pay now</a>` resolves, because the substitution
+ * happens before the allowlist is re-applied.
+ *
+ * @param string $body         Stored body, plain text or allowlisted HTML.
+ * @param array  $placeholders tag => value, from law_events_email_placeholders().
+ * @return string Safe HTML for wp_mail().
+ */
+function law_events_email_render_body( $body, array $placeholders ) {
+	$body = strtr( (string) $body, array_map( 'esc_html', $placeholders ) );
+
+	// law_rich_text_render() is wpautop + the allowlist again: it turns a
+	// plain-text body's blank lines into paragraphs exactly as before, leaves
+	// an already-formatted one alone, and re-applies the allowlist at output so
+	// a body written straight into the option (by the migrator, say) still
+	// cannot inject markup. make_clickable last, as it always was, so an
+	// {invoice_url} pasted on its own line is still a link.
+	return make_clickable( law_rich_text_render( $body ) );
+}
+
+/**
  * Build one override from a screen's submitted values.
  *
  * 'to' is only accepted for an email whose registry recipients are a FIXED
@@ -753,9 +842,10 @@ function law_events_email_is_customised( $slug ) {
  * 'invoice_contact') are resolved per event by law_events_email_recipients(),
  * so letting a screen post one would silently do nothing.
  *
- * The body is sanitised as plain text, not HTML, because that is what it is:
- * law_events_send() escapes it and runs wpautop() over the result, so any tag
- * typed here would be delivered as visible angle brackets.
+ * The body goes through law_events_email_body_sanitize(), the descriptive
+ * fields' allowlist, and keeps its formatting. Until 16 September 2026 it was
+ * flattened here and escaped again on the way out; see
+ * law_events_email_render_body() for the escaping rule that replaced that.
  *
  * @param string $slug  Registry slug.
  * @param array  $input subject, body, active, and optionally to (a
@@ -776,7 +866,7 @@ function law_events_email_override_from_input( $slug, array $input ) {
 
 	$override = array(
 		'subject' => sanitize_text_field( $scalar( $input['subject'] ?? '' ) ),
-		'body'    => sanitize_textarea_field( $scalar( $input['body'] ?? '' ) ),
+		'body'    => law_events_email_body_sanitize( $scalar( $input['body'] ?? '' ) ),
 		'active'  => ! empty( $input['active'] ),
 	);
 
@@ -800,6 +890,21 @@ function law_events_email_override_from_input( $slug, array $input ) {
 	}
 
 	return $override;
+}
+
+/**
+ * Whether a submitted body still has words in it.
+ *
+ * TinyMCE's idea of an empty field is "<p>&nbsp;</p>", which the sanitiser
+ * correctly reduces to '', so clearing the editor and pressing Save would
+ * otherwise store an email that sends a subject line and a blank page. Both
+ * screens refuse instead. To stop an email being sent, untick "Send this
+ * notification" — that is the control for it.
+ *
+ * @param string $body A sanitised body from law_events_email_body_sanitize().
+ */
+function law_events_email_body_survived( $body ) {
+	return '' !== trim( (string) $body );
 }
 
 /**
@@ -930,7 +1035,9 @@ function law_events_email_send_test( array $override, $user_id = 0 ) {
 	$sent = wp_mail(
 		array( $user->user_email ),
 		'[TEST] ' . strtr( (string) ( $override['subject'] ?? '' ), $placeholders ),
-		make_clickable( wpautop( esc_html( strtr( (string) ( $override['body'] ?? '' ), $placeholders ) ) ) ),
+		// The same renderer law_events_send() uses, so a test is a true
+		// preview of the real thing rather than a second opinion about it.
+		law_events_email_render_body( (string) ( $override['body'] ?? '' ), $placeholders ),
 		array( 'Content-Type: text/html; charset=UTF-8' )
 	);
 
@@ -1155,10 +1262,10 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 	}
 
 	$placeholders = law_events_email_placeholders( $event_id, (array) ( $extra['placeholders'] ?? array() ) );
+	// The subject is a mail header, not HTML: its values go in raw, or a
+	// "Smith & Jones" event would arrive with "&amp;" in the subject line.
 	$subject      = strtr( (string) $definition['subject'], $placeholders );
-	$body         = wpautop( esc_html( strtr( (string) $definition['body'], $placeholders ) ) );
-	// Re-linkify escaped URLs so invoice/dashboard links stay clickable.
-	$body = make_clickable( $body );
+	$body         = law_events_email_render_body( (string) $definition['body'], $placeholders );
 
 	// Optional file attachments (the bookings .ics calendar invites). wp_mail
 	// is synchronous, so a caller may delete its temp file right after this

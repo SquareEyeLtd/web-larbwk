@@ -39,6 +39,7 @@ $law_notice   = isset( $_GET['law_notice'] ) ? sanitize_key( wp_unslash( $_GET['
 			// Test mode was on, so "sent to you" would not have been true.
 			'email-tested-diverted' => array( 'is-warning', __( 'Test mode is on, so the test went to the test address rather than to you. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
 			'email-recipients'  => array( 'is-error', __( 'None of those recipients is a valid email address, so nothing was saved. Separate addresses with commas, or untick "Send this notification" to stop it being sent at all.', 'law' ) ),
+			'email-empty-body'  => array( 'is-error', __( 'The message is empty, so nothing was saved. To stop this notification being sent, untick "Send this notification" instead.', 'law' ) ),
 			'email-test-failed' => array( 'is-error', __( 'The test email could not be sent. Please try again.', 'law' ) ),
 			'email-missing'     => array( 'is-error', __( 'That notification could not be found.', 'law' ) ),
 			'email-denied'      => array( 'is-error', __( 'Sorry, managing the events emails is for the committee.', 'law' ) ),

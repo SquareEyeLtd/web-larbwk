@@ -93,13 +93,31 @@ function law_events_emails_edit_screen( $slug ) {
 				<tr><th scope="row"><label for="law-email-body">Body</label></th>
 					<td>
 						<?php
+						// The button set and the tag allowlist come from
+						// law_rich_text_settings(), the same policy the front-end
+						// screen's editor and the event description run on, so
+						// the two screens cannot offer different formatting. Not
+						// 'teeny': its fixed button row has no headings, and the
+						// allowlist does.
+						$editor_settings = law_rich_text_settings();
 						wp_editor(
 							$email['body'],
 							'law-email-body',
-							array( 'textarea_name' => 'body', 'textarea_rows' => 12, 'media_buttons' => false, 'teeny' => true )
+							array(
+								'textarea_name' => 'body',
+								'textarea_rows' => 14,
+								'media_buttons' => false,
+								'quicktags'     => false,
+								'tinymce'       => array(
+									'toolbar1'       => $editor_settings['toolbar'],
+									'toolbar2'       => '',
+									'block_formats'  => $editor_settings['blockFormats'],
+									'valid_elements' => $editor_settings['validElements'],
+								),
+							)
 						);
 						?>
-						<p class="description">Plain text with placeholder tags; the site-wide email wrapper adds the branding. Available tags:<br>
+						<p class="description">Bold, italics, lists, headings and links are kept; anything else is dropped when you save, and the site-wide email wrapper adds the branding. Available tags:<br>
 						<code><?php echo esc_html( implode( ' ', $tags ) ); ?></code></p>
 					</td></tr>
 			</table>
@@ -132,6 +150,13 @@ function law_events_emails_handle_post( $slug ) {
 	$override = law_events_email_override_from_input( $slug, $input );
 	if ( null === $override ) {
 		echo '<div class="notice notice-error"><p>That notification could not be found.</p></div>';
+		return;
+	}
+
+	// An emptied editor, refused rather than stored: the notification would
+	// otherwise send a subject line over a blank page.
+	if ( ! law_events_email_body_survived( $override['body'] ) ) {
+		echo '<div class="notice notice-error"><p>The message is empty, so nothing was saved. To stop this notification being sent, untick "Send this notification" instead.</p></div>';
 		return;
 	}
 

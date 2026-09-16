@@ -24,12 +24,14 @@
  *    pressing "Send test to me" needs to know why the message arrived
  *    somewhere else.
  *
- * 2. The body is a plain textarea, not a WYSIWYG. That is what an email body
- *    IS: law_events_email_override_from_input() stores it through
- *    sanitize_textarea_field() and law_events_send() renders it with
- *    esc_html() + wpautop(), so any markup typed into it would be delivered as
- *    visible angle brackets. The wp-admin screen's wp_editor() promises
- *    formatting it cannot keep.
+ * 2. The body uses the module's own editor (functions/events/rich-text.php),
+ *    the one behind the event description, rather than wp-admin's wp_editor().
+ *    Same allowlist, same fallback to a plain textarea without JavaScript.
+ *    Formatting has only actually survived since 16 September 2026: the body
+ *    used to be stored through sanitize_textarea_field() and sent through
+ *    esc_html(), so the wp-admin toolbar had always been decorative. See
+ *    law_events_email_render_body() for the escaping rule that made it safe to
+ *    stop escaping the body.
  *
  * NOT LOGGED, on either screen. The module's activity log is per-event
  * (law_event_log() writes a comment on a law_event post and returns early
@@ -211,6 +213,22 @@ function law_email_manage_handler() {
 
 	$override = law_events_email_override_from_input( $slug, $input );
 
+	// An emptied editor. Refused rather than stored, or the notification would
+	// go on sending a subject line over a blank page.
+	if ( ! law_events_email_body_survived( $override['body'] ) ) {
+		law_emails_dashboard_store_state( $slug, $input, array( 'body' => 'Please write the message.' ) );
+		law_events_respond(
+			$is_ajax,
+			false,
+			array(
+				'message' => 'The message is empty, so nothing was saved. To stop this notification being sent, untick "Send this notification" instead.',
+				'field'   => 'law_email[body]',
+				'status'  => 400,
+			),
+			'email-empty-body'
+		);
+	}
+
 	// Every address typed was rejected, so the builder kept the stored ones.
 	// Saying so beats saving something that does not match the screen.
 	if ( ! law_events_email_recipients_survived( $slug, $input, $override ) ) {
@@ -292,5 +310,10 @@ add_action(
 		// submits in the background and falls back to a plain POST without it.
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		// The WYSIWYG behind the body field, only on the editor view: TinyMCE is
+		// a couple of hundred kilobytes and the list has no rich field on it.
+		if ( '' !== law_emails_dashboard_requested() ) {
+			law_rich_text_enqueue();
+		}
 	}
 );
