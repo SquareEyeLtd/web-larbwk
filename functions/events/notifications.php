@@ -409,35 +409,33 @@ function law_events_email_registry() {
 			'body'    => "Dear {attendee_name},\n\nA place opened up at {event_title} {event_when} and we tried to book it for you, but could not:\n\n{blocked_reason}\n\nYou are still on the waitlist and keep your place in the queue. If you sort this out, for example by cancelling the booking that overlaps, we will offer you a place as soon as your turn comes round again.\n\nMy bookings: {bookings_link}",
 		),
 
-		// Two welcome templates, and in practice only the first is sent.
+		// ONE welcome template. There were two until 16 September 2026, picked
+		// first by role and then briefly by an optional tick at registration.
+		// Nothing has collected either since 14 September 2026, so the hosting
+		// variant could not be sent at all, while the Emails screen went on
+		// listing it as ON with a trigger describing a tick that no longer
+		// exists. A committee member could spend an afternoon wording an email
+		// nobody would ever receive, which is a worse outcome than losing a
+		// template we were not using, so it was deleted (Denis, 16 September
+		// 2026). Putting a tick back on a form means reviving this commit, not
+		// just flipping a flag.
 		//
-		// They used to be picked by role, then briefly by an optional tick at
-		// registration. Nothing collects either any more (14 September 2026),
-		// so law_registration_welcome_slug() sees no intent and every new
-		// account gets user_welcome_registered. That copy therefore has to
-		// cover the whole job: browsing, booking, AND submitting an event,
-		// because anybody signed in may do all three (Denis).
+		// What survives is law_intent itself (law_registration_intents()),
+		// because law_registration_hubspot_tags() still reads it for the
+		// "<year> Event Host" and "<year> Sponsor" tags on the 302 accounts
+		// migration step 11 converted. That is storage, not an email switch.
 		//
-		// The hosting variant stays in the registry, editable on the Emails
-		// screen and reachable again the moment anything sets an intent. It is
-		// the same reason law_registration_intents() is still here. Neither
-		// body may describe what the reader is ALLOWED to do, because everybody
-		// signed in can do everything: they differ only in what they lead with.
+		// This copy therefore has to cover the whole job: browsing, booking,
+		// AND submitting an event, because anybody signed in may do all three
+		// (Denis). It may not describe what the reader is ALLOWED to do, since
+		// everybody signed in can do everything.
 		'user_welcome_registered' => array(
 			'name'    => 'Email to new user > welcome after registration',
-			'trigger' => 'user registration (no hosting or sponsor tick)',
+			'trigger' => 'user registration',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
 			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nThe events you book live here, under My bookings: {bookings_link}\n\nYou can also submit an event of your own for the programme, and follow it through review to publication: {submit_link}",
-		),
-		'user_welcome_registered_host' => array(
-			'name'    => 'Email to host or sponsor > welcome after registration',
-			'trigger' => 'user registration (ticked host or sponsor)',
-			'to'      => 'dynamic',
-			'active'  => true,
-			'subject' => 'Welcome to {site_name}',
-			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can submit an event for the programme, then follow it through review, payment and publication: {submit_link}\n\nYour events live here, along with the bookings people make for them: {dashboard_link}\n\nYou can also book places at other events in the programme. Those appear under My bookings: {bookings_link}. If you do book, please add any dietary or accessibility requirements to your profile so the organisers can look after you: {profile_link}",
 		),
 		/* The flagship conference's approval-gated registration and payment
 		 * (FLAGSHIP_PAYMENTS.md §8). Every one of these is addressed to a

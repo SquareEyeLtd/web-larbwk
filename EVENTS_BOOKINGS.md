@@ -786,10 +786,12 @@ needs exactly that export). Spec §7.5's "visible to LAW for customer service" i
   failed validation round-trip.
 - `law_registration_handler()` uses the validated `redirect_to` on the success and honeypot
   redirects, falling back to `/account/?action=registered`, and fires the new welcome
-  email after the admin notifications. `law_registration_welcome_slug()` picks between
-  `user_welcome_registered` (attendee) and `user_welcome_registered_host` (event host or
-  sponsor): host or sponsor wins over attendee, so a host is not asked for dietary and
-  accessibility requirements up front, and no roles at all falls back to the attendee copy.
+  email after the admin notifications. This described a `law_registration_welcome_slug()`
+  helper picking between `user_welcome_registered` (attendee) and
+  `user_welcome_registered_host` (event host or sponsor). Superseded on 16 September 2026:
+  no form has collected the role or the intent behind that choice since 14 September, so
+  the helper and the hosting-side template were both removed and the handler names
+  `user_welcome_registered` directly.
 - Login needs no change: `law_auth_redirect_to()` already round-trips `redirect_to`, and the
   committee override only applies when no explicit target is set.
 
@@ -816,8 +818,7 @@ All in `law_events_email_registry()`, editable on the Emails screen, sent throug
 | `user_attendee_removed_self` | dynamic | self-removal confirmation |
 | `user_booking_cancelled_attendee` | dynamic (each seated attendee) | the owner cancelled the whole booking |
 | `user_booking_event_cancelled` | dynamic (each attendee) | the event was cancelled (sweep) |
-| `user_welcome_registered` | dynamic | self-registration as an attendee only |
-| `user_welcome_registered_host` | dynamic | self-registration as an event host or sponsor; leads with `{submit_link}` and mentions requirements only in the context of booking a place |
+| `user_welcome_registered` | dynamic | self-registration; the one welcome template, covering browsing, booking and submitting (a second, hosting-side copy was listed here until 16 September 2026) |
 | `host_capacity_warning` | host | remaining places at 5 or fewer with a positive limit, one-shot |
 | `user_booking_registered` | dynamic (the registered person) | a host or committee member registered them (existing account); names `{registered_by}`; **.ics attached** |
 | `user_booking_registered_invited` | dynamic (new account) | as above when an account was created: carries the set-password link in the same email, so one email not two; **.ics attached** |

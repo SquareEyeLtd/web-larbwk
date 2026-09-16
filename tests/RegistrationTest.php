@@ -100,21 +100,26 @@ class RegistrationTest extends LAW_Test_Case {
 		);
 	}
 
-	public function test_welcome_email_matches_the_ticks(): void {
-		$this->assertSame( 'user_welcome_registered', law_registration_welcome_slug( array() ), 'No tick means the general welcome.' );
-		$this->assertSame( 'user_welcome_registered_host', law_registration_welcome_slug( array( 'host' ) ) );
-		$this->assertSame( 'user_welcome_registered_host', law_registration_welcome_slug( array( 'sponsor' ) ) );
-		$this->assertSame(
-			'user_welcome_registered_host',
-			law_registration_welcome_slug( array( 'host', 'sponsor' ) ),
-			'Either tick leads with submitting, rather than asking for dietary requirements up front.'
-		);
+	/**
+	 * One welcome template, not two. The hosting-side copy and the
+	 * law_registration_welcome_slug() helper that chose it were removed on
+	 * 16 September 2026: no form has collected an intent since 14 September,
+	 * so the branch had one answer while the Emails screen went on offering
+	 * the committee a template that could never be sent (Denis).
+	 */
+	public function test_only_one_welcome_template_is_registered(): void {
+		$this->assertArrayNotHasKey( 'user_welcome_registered_host', law_events_email_registry() );
+		$this->assertNull( law_events_email( 'user_welcome_registered_host' ) );
+		$this->assertFalse( function_exists( 'law_registration_welcome_slug' ) );
+
+		$welcome = law_events_email( 'user_welcome_registered' );
+		$this->assertNotNull( $welcome );
+		$this->assertSame( 'user registration', $welcome['trigger'], 'The trigger may not describe a tick no form renders.' );
 	}
 
 	/**
-	 * The welcome everybody now gets has to cover the whole job. Nothing
-	 * collects an intent any more, so law_registration_welcome_slug() always
-	 * returns this one, and anybody signed in may book AND submit.
+	 * The welcome everybody now gets has to cover the whole job, because
+	 * anybody signed in may book AND submit.
 	 */
 	public function test_the_welcome_email_offers_booking_and_submitting(): void {
 		$welcome = law_events_email( 'user_welcome_registered' );
@@ -123,12 +128,6 @@ class RegistrationTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'browse the programme', $welcome['body'] );
 		$this->assertStringContainsString( '{bookings_link}', $welcome['body'] );
 		$this->assertStringContainsString( '{submit_link}', $welcome['body'], 'A new account can submit an event, and the welcome must say so (Denis, 14 September 2026).' );
-
-		// The hosting variant stays in the registry, editable and one intent
-		// away from being used again.
-		$host = law_events_email( 'user_welcome_registered_host' );
-		$this->assertNotNull( $host );
-		$this->assertStringContainsString( '{submit_link}', $host['body'] );
 	}
 
 	/**

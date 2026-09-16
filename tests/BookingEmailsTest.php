@@ -473,23 +473,20 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertEmpty( $this->mail_to( 'committee-list@example.test' ), 'The committee list is not copied when an assignee is set.' );
 	}
 
+	/**
+	 * The hosting-side companion to this test went with the second welcome
+	 * template on 16 September 2026, so the {submit_link} coverage it carried
+	 * moved here. That link resolving without an event is the interesting part:
+	 * this is one of the three sends that has no event to resolve against.
+	 */
 	public function test_welcome_email_resolves_with_no_event(): void {
 		$email = $this->unique_email( 'welcome' );
 		law_events_send( 'user_welcome_registered', 0, array( 'to' => array( $email ), 'placeholders' => array( 'user_name' => 'New Person' ) ) );
 		$mail = $this->mail_to( $email );
 		$this->assertNotEmpty( $mail );
 		$this->assertStringContainsString( 'Welcome to', $mail[0]['subject'] );
-		$this->assertStringContainsString( '/account/profile/', wp_strip_all_tags( $mail[0]['message'] ) );
-	}
-
-	public function test_host_welcome_email_leads_with_submitting_an_event(): void {
-		$email = $this->unique_email( 'welcomehost' );
-		law_events_send( 'user_welcome_registered_host', 0, array( 'to' => array( $email ), 'placeholders' => array( 'user_name' => 'New Host' ) ) );
-		$mail = $this->mail_to( $email );
-		$this->assertNotEmpty( $mail );
-		$this->assertStringContainsString( 'Welcome to', $mail[0]['subject'] );
 		$body = wp_strip_all_tags( $mail[0]['message'] );
+		$this->assertStringContainsString( '/account/profile/', $body );
 		$this->assertStringContainsString( '/account/events/submit/', $body, '{submit_link} resolves with no event.' );
-		$this->assertStringContainsString( 'submit an event for the programme', $body );
 	}
 }
