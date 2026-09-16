@@ -4188,7 +4188,7 @@ they stay the same length.
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
 
-### `migration/content-transfer.php`: between environments, as one zip (15 September 2026)
+### `migration/content-transfer.php`: between environments, as one zip (15–16 September 2026)
 
 The Gravity Forms migration above moves data between two *shapes* on one site.
 This is the other move nobody had a tool for: the same shape, between two
@@ -4206,7 +4206,7 @@ repair panels and the cutover form, and does exactly that and no more.
 
 **Scope, as settled on 15 September 2026**: the receptions, the flagship with
 its sessions and speakers, the discount codes, and the committee's customised
-email wording. External events are out.
+email wording. External events were out, for one day — see the widening below.
 **Bookings are out and always will be** — they carry Stripe customer, invoice,
 charge and payment-method IDs from whatever Stripe account the source site
 points at, plus one-shot idempotency latches (`_law_confirmation_sent`,
@@ -4262,6 +4262,242 @@ wording it just restored. Measured on 15 September 2026 against the local
 site's 15 real overrides: export, wipe the option, write two legacy values as
 step 9 would, run `?setup-account-pages`, then import — 15 of 15 restored with
 no mismatch, the legacy values overwritten, and no recipient list carried.
+
+#### The 16 September 2026 widening: the whole programme travels (format 3)
+
+Denis reversed the external-events exclusion and widened the bundle a long way
+past it, because the client had gone on editing the programme itself on staging:
+venues, descriptions, speakers, running orders, the new **Override booking
+availability** switch, and a set of external listings created there from
+scratch. None of that had a route to production. The brief was "make sure we
+migrate all possible data about events", so the new `events` key carries **every
+`law_event` that is not a reception and not the flagship** — those two already
+have keys of their own, and savers that do things a generic event row knows
+nothing about.
+
+**The import is an overlay, never a mirror** (Denis, 16 September 2026): "It
+needs to override existing events data after the general migration process, but
+don't touch any new events that are added and wasn't existing on the staging."
+So it runs **after** the Gravity Forms migration, overwrites the events the
+bundle names, creates the ones this site has never seen, and leaves everything
+else exactly where it was. Nothing is ever deleted, and an event that exists here
+but not on the source is not touched. There is deliberately no
+delete-what-is-missing mode.
+
+**Events are keyed by Gravity Forms entry ID first, slug second**
+(`law_content_transfer_find_event()`). Both environments build their programme by
+migrating the same Gravity Forms entries, so entry 190 on form 2 (Event > submit
+an event) is the same event on both whatever either site did to the title
+afterwards; the slug is the fallback for an event created in the module since,
+which has no entry behind it. `ContentTransferTest` exempts `gf_entry_id` from
+the no-local-IDs rule for exactly that reason, and names the exemption rather
+than widening the pattern.
+
+**A hosted event's workflow status does not travel, and that is the exclusion
+worth reading twice.** Production's status comes from the migration, which reads
+field 95 (Event status) on form 2 (Event > submit an event) — the live workflow
+record. And an approval is an act, not a value:
+`law_event_workflow_side_effects()` snapshots the fee, creates the co-owner
+accounts, raises the Stripe invoice and emails the host. Writing `law-approved`
+onto a post would produce an approved event with no invoice and no host email;
+calling the real transition from an import could email dozens of hosts and raise
+dozens of live invoices from one button press. So the bundle **carries** the
+status, `law_content_transfer_event_status_notes()` **reports** the
+disagreement in the preview so a committee member can go and approve it
+properly, and the import **writes** it only where there is no workflow behind
+it: an external event's `publish` / `law-draft` tick (which means "on the
+programme" and "not yet", exactly as a reception's does, and goes through the
+same `law_event_managed_saving` exemption), and a hosted event being **created**,
+where the status belongs to a new post and no transition has been skipped
+because none has happened anywhere. A created event that lands Approved or
+Confirmed says so in the row, along with the fact that no invoice was raised.
+
+**What an event row carries** is an allow list
+(`law_content_transfer_event_meta_keys()`), not "every key in the schema",
+because roughly a third of the schema must not cross a site boundary and a new
+key should have to be added on purpose. In: when and where (`_law_start`,
+`_law_end`, `_law_slot_label`, `_law_preferred_slots`, `_law_venue`,
+`_law_venue_needed`, `_law_venue_capacity`, `_law_tickets_available`), who is
+putting it on (`_law_host_organisations`, `_law_contacts`,
+`_law_co_owner_rows`), the committee's switches (`_law_booking_override`,
+`_law_is_external`, `_law_external_url`, `_law_session_agenda`,
+`_law_registration_state`), the fee **decision** (`_law_fee_tier`,
+`_law_fee_override`, `_law_fee_override_amount`), the invoicing contact,
+classification, and the record of what was decided (`_law_approved_at`, the
+rejection and cancellation reasons). Out, each for its own reason:
+
+- `_law_stripe_*` and `_law_payment_status` — objects in whichever Stripe
+  account the source site points at. Importing "paid" onto production would mark
+  an unpaid invoice settled, which is the one mistake here nobody would spot
+  until a reconciliation.
+- `_law_fee_pence` and `_law_vat` — the snapshot `law_event_snapshot_fee()` froze
+  at approval and the invoice was raised from. The **inputs** to it travel,
+  because those are the committee's decision about the event; the frozen figure
+  belongs to the site that billed it. So on an already-approved event an imported
+  tier moves the exports and the admin Fee column without moving the invoice,
+  exactly as a wp-admin edit does without `law_event_resnapshot_fee()`, and the
+  preview names the change.
+- `_law_tickets_sold` and the two capacity-warning latches — a recount and two
+  one-shot flags about the far site's own bookings.
+- `_law_co_owner_ids` — user IDs minted on the far site at approval. The **rows**
+  travel; the IDs are production's own.
+- `_law_reference` and `_law_gf_entry_id` — identity. Both sites derive them from
+  the same entry, so they already agree, and rewriting the entry ID from the file
+  would let a bad bundle re-point an event at a different record.
+- `_law_assignee` and `_law_organisation_ids` — IDs of things on the other site.
+  They travel beside the meta instead, as an **email address** and as
+  **organisation slugs**.
+
+**People travel as email addresses, and an import never creates an account**
+(Denis, 16 September 2026). The owner and the assignee are resolved with
+`get_user_by( 'email' )`; an address with no account here is reported in the row
+and the event keeps whoever it had, or falls back to the administrator running
+the import on a create. Creating logins for people who have never heard of the
+new site is a decision for a human.
+
+**A hosted event has no single saver to call**, so this is the one place the
+"caller, never a second write path" rule bends — and only by one layer.
+`law_events_form_save()` is the HOST form's saver, complete with locked-field
+rules that depend on who is posting, so `law_content_transfer_write_event()`
+writes through the layer below it instead: `law_event_update_meta()` for every
+key (the one sanitiser the admin screens, the front-end forms and the migrator
+all share), plus `law_events_set_terms_by_name()`,
+`law_flagship_resolve_speaker_rows()` and `law_flagship_save_sessions()` — the
+same shared repeater savers the host form and the external-events screen call.
+No sanitiser is reimplemented. The two `law_flagship_*` names are historical:
+both functions take an `$event_id` and have always been generic.
+
+**Both repeaters honour a sentinel.** Our exporter always writes `speakers` and
+`sessions`, even when empty, so an agenda emptied on staging really is cleared
+here; a bundle that is *silent* about either (hand-edited, or older than the key)
+leaves it alone. Same distinction a truncated POST needs. The agenda is
+**replaced** rather than edited in place, because every incoming row carries
+`id => 0` — a session ID from the other site means nothing here — so
+`law_flagship_save_sessions()` deletes what the posted rows do not claim.
+
+**Three things a key-by-key audit of a real 105-event programme turned up**, each
+of which an import would otherwise have got quietly wrong.
+
+- **Co-owner account links.** Every other path that writes `_law_co_owner_rows`
+  reconciles them straight afterwards through
+  `law_event_ensure_co_owner_users()` — the approve transition, the host and
+  committee forms, the wp-admin screen — because the module keeps the rows, the
+  `_law_co_owner_ids` array and one flat `_law_co_owner` row per ID in step. An
+  import cannot call that one: it **creates** an account for a row that has none.
+  So `law_content_transfer_link_co_owners()` links the addresses that already
+  have an account here, through the same `law_event_set_co_owner_ids()` write
+  path, and reports the rest. Without it a co-owner added on staging would arrive
+  in the rows, appear on the event, and be unable to open it.
+- **A recreated session's Gravity Forms entry ID.** `law_migration_run_sessions()`
+  dedupes with a meta query on `_law_gf_entry_id`, and an import **replaces** the
+  agenda. Lose the key and re-running the sessions migration step after an import
+  duplicates every agenda it carried. `law_content_transfer_restamp_sessions()`
+  puts it back, pairing by position because that is the order
+  `law_flagship_save_sessions()` returns — and refusing to pair at all, with a
+  note, if any row failed to save, since a mis-paired entry ID would be worse
+  than none.
+- **A created event's date.** `post_date_gmt` is what `speakers.php` orders
+  "first appearance" on, which is what picks the photo and organisation a
+  speaker's archive card and profile show. An event that exists on both sites
+  already agrees, because both took the date from the same entry; one created in
+  the module on staging would otherwise land here dated today and quietly outrank
+  an older record.
+
+**What the same audit confirmed is complete.** All three registered taxonomies
+travel. `post_excerpt`, `post_password`, `menu_order`, `post_parent` and a
+featured image are unused on every event on the site. The only per-event user
+meta is the thread "read at" marker (`unread.php`), a per-viewer convenience. No
+option and no custom table holds event data — the one custom table is the
+migration log. The only event data deliberately left behind is **comments**:
+1,923 activity-log entries and 65 host/committee thread messages on the local
+copy. Production builds both from its own migration run (`law_migration_run_comments()`
+dedupes on the form 11 entry ID, `law_migration_run_history()` latches on
+`_law_history_migrated`), and a module-era comment written on staging has no
+stable cross-site key to dedupe on — so carrying them would duplicate or assert
+activity that never happened here. Each applied event does get one log line of
+its own naming the source site and the fields that moved.
+
+**Two things a security review stopped from shipping**, both worth reading as
+patterns rather than as bugs.
+
+- **A two-run status-guard bypass, through the classification flag.** The status
+  exemption was computed from the bundle's own `external` field. The guard in
+  `workflow.php` correctly checks the STORED `_law_is_external` through
+  `law_event_is_managed_by_law()`, so a bundle claiming `external` against a
+  hosted event had its status write refused — and then `_law_is_external` was
+  written anyway by the ordinary meta loop, so the **next** run found a
+  genuinely external event and the write went through. A submission nobody
+  approved would have landed on the public programme. Closed twice over, either
+  half sufficient: the exemption is now judged on the event's stored
+  classification read **before** any of this run's writes, and an existing
+  event's `_law_is_external` is never written at all. Reclassifying an event is a
+  committee act with its own log line (`law_event_log_flag_change()`), so it
+  belongs on the dashboard beside the status, for exactly the same reason — the
+  bundle carries it, the preview reports the disagreement, the import does not
+  act on it. A CREATE may use it, because a new post has no workflow to bypass.
+  The general lesson: **when an uploaded value decides whether a guard applies,
+  read the guard's own source of truth, not the upload's copy of it** — and
+  check whether the same upload can write that source of truth on an earlier
+  pass.
+- **Ownership could be reassigned.** `post_author` was set on every run, so a
+  bundle naming somebody else's address handed them the event —
+  `law_user_can_manage_event()` treats the author as a full manager, and the
+  same run writes the invoicing contact, address and VAT number the new owner
+  could then read. Ownership is now set on a CREATE only; a difference on an
+  existing event is reported, like the status. **Co-owner links follow the same
+  rule**, after an argument the review won: a co-owner has exactly the author's
+  rights (`law_user_can_manage_event()`), so linking somebody because a bundle
+  named their address is the same unconsented grant. The defence that persuaded
+  me otherwise — "approving the event here would link them anyway" — is wrong
+  precisely where it matters: `law_event_ensure_co_owner_users()` runs on the
+  approve transition and on a save of an already-approved event, so on the LIVE
+  programme, which is every event the client is actually editing, the import
+  would have been the only grant there ever was. The rows still travel; the
+  access does not, and the preview says so. The route back is a committee member
+  opening the event and saving it, which grants access properly, creates the
+  missing accounts and emails them.
+
+Also from that review, and deliberately **not** changed here because both
+pre-date this widening: the extracted-images working directory is protected by
+`.htaccess` plus `index.php` without the runtime self-test the database-snapshot
+gate has (weaker on an nginx host, for ~24 hours, for speaker photographs); and
+`law_speaker_upsert()`'s email-then-name backfill onto a shared speaker profile
+is a module-wide pattern that this file now reaches from an uploaded file rather
+than only from a signed-in host's form.
+
+Two caps join the byte and image ones, for the reason those exist: a run is
+synchronous inside one `admin-post.php` request, unlike the module's own batched
+migration runner. `LAW_CONTENT_TRANSFER_MAX_ROWS` (2,000) bounds each top-level
+list, because an event row costs a lookup, a thirty-key snapshot, several writes
+and a log entry. `LAW_CONTENT_TRANSFER_MAX_NESTED_ROWS` (20,000) bounds the
+sessions and speaker appearances across the whole file, because the first cap
+alone does not: 500 events, comfortably inside it, each carrying tens of
+thousands of minimal session rows is cheap in JSON bytes and still an enormous
+run. Neither is filterable, matching `MAX_IMAGES` and `MAX_BYTES`; only
+`MAX_UNZIPPED` is, and that is for test fixtures rather than a precedent. LAW's
+whole programme is 105 events with 142 speaker appearances and 31 sessions
+between them.
+
+**The preview compares like with like.** Both sides of an event diff go through
+the same schema sanitiser, because several keys have a non-empty default:
+`_law_booking_override` becomes `auto`, an int becomes `0`, a float becomes
+`0.00`. Comparing a raw stored `''` against a sanitised incoming `auto` would
+report "Override booking availability: not set → auto" on every event nobody had
+touched — on a hundred-row programme, enough noise to stop an operator reading
+the preview at all. Measured on the local site (105 events): 79 No change, 26
+Update, and all 26 are the description alone. The description gets
+`law_content_transfer_body_change()` rather than the generic `old → new`, for the
+same reason the email bodies do — two versions of one paragraph share their first
+80 characters, so the generic form prints the same truncation twice. Its
+character count is also what makes the common case legible: 23 of the 99 legacy
+form 2 descriptions carry a stray `class` that `law_rich_text_sanitize()` drops,
+so importing one **cleans** it. That is a real write, it is what every other
+write path for that field does, and the preview reports it as `1,682 characters
+→ 1,377` rather than pretending nothing happened.
+
+Every applied event also gets a line in its **own** activity log naming the
+source site and the fields that moved, so a committee member reading one event's
+history does not have to know a migration screen exists.
 
 **Three format rules, all of them consequences of the one fact that makes a
 cross-site move hard: post IDs do not survive it.**
@@ -4401,7 +4637,9 @@ template set by hand, the email overrides checked separately, and production
 still needing `?setup-account-pages`, the `law_events_source` flip and a real
 system cron on `wp-cron.php`.
 
-- Tests: `tests/ContentTransferTest.php` (52: 22 cover the archive, 8 the email wording). It is the first test class to
+- Tests: `tests/ContentTransferTest.php` (75: 22 cover the archive, 8 the email
+  wording, 23 the events key added on 16 September 2026, 6 of those the security
+  review's findings). It is the first test class to
   reach `law_migration_log()`, whose table is created with DDL — and DDL
   implicitly commits in MariaDB, which would end the transaction
   `LAW_Test_Case` rolls each test back with. So it installs the table once in
@@ -4418,7 +4656,20 @@ system cron on `wp-cron.php`.
   could quietly be passing via a fetch would not prove it.
 
 - The panel's own copy now says images travel inside the archive, and the file
-  input accepts `.zip` and `.json` both.
+  input accepts `.zip` and `.json` both. Since 16 September 2026 it also says
+  what the events half does and does not do: run it after the migration, it
+  updates and creates but never deletes, a hosted event's status is not imported,
+  the host fee snapshot does not travel, and no user account is ever created.
+
+- Two top-level gates fired on purpose when the events key went in, which is what
+  they are for. `test_bookings_are_never_part_of_a_bundle` pins the bundle's
+  top-level keys AND refuses any key containing "booking", "stripe" or "payment"
+  anywhere in the structure; `_law_booking_override` is now a **named** exception
+  beside the pattern rather than a loosened pattern, because it is an event-level
+  committee decision with no Stripe object and no booking behind it. And
+  `test_the_bundle_carries_no_local_ids` exempts `gf_entry_id` alongside
+  `entry_id`, for the reason the keying rule gives: a Gravity Forms entry ID is
+  not a local ID.
 
 ---
 
@@ -6927,8 +7178,8 @@ test to apply if anyone proposes widening it.
 
 The decisions behind the shape, all taken the same day: scope is the
 receptions, the flagship with its sessions and speakers, the discount codes
-and the customised email wording, with external events left out; and the flow
-is always dry run first,
+and the customised email wording, with external events left out (reversed the
+next day — see the widening below); and the flow is always dry run first,
 with apply overwriting the matched records. Bookings and payments are never in
 the bundle and never will be.
 
@@ -6945,6 +7196,23 @@ The full reasoning, the format, and the traps (pence versus pounds, slugs versus
 IDs, derived values, the media allowlist, the zip's own path-traversal and
 decompression-bomb gates) are written up under `migration/content-transfer.php`
 in §2.
+
+**And a second widening the next day, which superseded the scope above.** The
+client had gone on editing the programme itself on staging — venues,
+descriptions, speakers, running orders, the new Override booking availability
+switch, and a set of external listings created from scratch — so format version 3
+added an `events` key carrying every hosted and external event. Three decisions
+came with it and are the ones to carry forward: the import is an **overlay**
+(it runs after the Gravity Forms migration, updates and creates, never deletes,
+and never touches an event the file does not name); a **hosted event's workflow
+status does not travel**, because approving is an act that raises a Stripe
+invoice and emails the host rather than a value a file can set, though an
+external event's on-the-programme tick does; and an import **never creates a
+user account**, so people travel as email addresses and an unresolvable one is
+reported rather than invented. Which also settles the test in the paragraph
+above: the receptions alone did not justify the tool, and neither would a
+handful of external listings — a hundred hosted events with their agendas is
+what earned this second round.
 
 ### Ticket type on the flagship bookings dashboard (15 September 2026)
 
