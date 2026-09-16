@@ -3089,10 +3089,16 @@
   font-size: 0.8rem;
 }
 
-/* The body. A notification runs to several paragraphs and the theme's default
-   textarea height shows about three lines of it. */
-.law-emails-form textarea {
+/* The body. A notification runs to several paragraphs, and both the plain
+   textarea (no JavaScript) and the TinyMCE frame that replaces it need room
+   for more than the theme default's three lines. */
+.law-emails-form .law-rich-text .law-rich-text__area {
   min-height: 18rem;
   font-family: inherit;
   line-height: 1.5;
+}
+
+.law-emails-form .law-rich-text .wp-editor-container iframe,
+.law-emails-form .law-rich-text .mce-tinymce iframe {
+  min-height: 18rem;
 }

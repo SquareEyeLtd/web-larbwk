@@ -131,16 +131,29 @@ get_template_part(
 				</p>
 
 				<?php
-				// A plain textarea, not the WYSIWYG the descriptive fields use:
-				// the body is stored and sent as plain text (it is escaped and
-				// run through wpautop on the way out), so an editor offering
-				// bold and links would promise formatting that never arrives.
+				// The same editor as the event description, speaker biography
+				// and session description (functions/events/rich-text.php), and
+				// the same allowlist behind it. Without JavaScript it stays a
+				// working plain textarea, which is what every other rich field
+				// in the module falls back to.
 				?>
-				<p class="law-form-field">
+				<div class="law-form-field">
 					<label for="law-em-body"><?php esc_html_e( 'Body', 'law' ); ?></label>
-					<textarea id="law-em-body" name="law_email[body]" rows="14"><?php echo esc_textarea( $law_em_values['body'] ); ?></textarea>
-					<span class="law-form-hint"><?php esc_html_e( 'Plain text. Leave a blank line between paragraphs; the site\'s email design adds the branding around it.', 'law' ); ?></span>
-				</p>
+					<?php
+					law_rich_text_field(
+						array(
+							'name'  => 'law_email[body]',
+							'id'    => 'law-em-body',
+							'value' => $law_em_values['body'],
+							'rows'  => 14,
+							// Caught in the browser before the round trip, the
+							// way every other rich field in the module is.
+							'required' => __( 'Please write the message.', 'law' ),
+						)
+					);
+					?>
+					<span class="law-form-hint"><?php esc_html_e( 'Bold, italics, lists, headings and links are kept; the site\'s email design adds the branding around them.', 'law' ); ?></span>
+				</div>
 
 				<div class="law-form-field law-emails__tags">
 					<span class="law-form-label"><?php esc_html_e( 'Tags you can use', 'law' ); ?></span>

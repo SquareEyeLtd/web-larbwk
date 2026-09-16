@@ -42,7 +42,9 @@ The brief supersedes `EVENTS_4.2_SPECS.md` §2.3 and §6.1 where they differ:
 there is **no** £25 flagship-only Monday price and **no** priority sales
 window; both included receptions are simply free to a confirmed flagship
 delegate. Prices themselves are still LAW's to confirm; they are fields the
-committee edits, defaulting to 0 ("not on sale").
+committee edits, defaulting to 0. Since 16 September 2026 a price of 0 means
+the reception is **free to attend**, not "not on sale" — see §20 in the
+deviations.
 
 ### 0.2 Decisions settled by Denis on 14 September 2026 (do not reopen)
 
@@ -266,7 +268,7 @@ event meta.
 | Key | Type | Meaning |
 |---|---|---|
 | `_law_is_reception` | flag | Listed on Manage receptions; edited there and on its wp-admin box only. |
-| `_law_attendee_price_pence` | int | Attendee price, **net of VAT**, in pence. 0 = free / not on sale. Named to sit beside `_law_fee_pence` (the HOST fee) and `_law_flagship_price_pence` without reusing the booking snapshot key `_law_price_pence`. |
+| `_law_attendee_price_pence` | int | Attendee price, **net of VAT**, in pence. 0 = free to attend (§20). Named to sit beside `_law_fee_pence` (the HOST fee) and `_law_flagship_price_pence` without reusing the booking snapshot key `_law_price_pence`. |
 | `_law_flagship_included` | flag | Free with a confirmed flagship place. |
 
 Plus the existing reserved `_law_registration_state` (`meta.php:53`,
@@ -1347,8 +1349,8 @@ merge into staging, push staging, switch back).
 
 ## 15. Risks and follow-ups recorded, not built here
 
-- Prices are unconfirmed by LAW; they default to 0 (not on sale) until the
-  committee types them.
+- Prices are unconfirmed by LAW; they default to 0, which means the reception
+  is free to attend (§20) until the committee types a price.
 - A hold dips "places left" for up to ~40 minutes while somebody is on
   Stripe's page; the count recovers on expiry.
 - Refunds remain manual; committee cancel of a paid place alerts but does not
@@ -1601,3 +1603,55 @@ from the letter of the document, and why.
     DISCOUNTED net with the reduction under it, so the discount appeared to
     have been taken twice. Price is the list price now, Discount is a signed
     deduction, and price − discount + VAT equals the total.
+
+20. **A reception priced at 0 is FREE, not closed** (Denis, 16 September 2026).
+    Both engine guards read `law_event_is_priced()` and refused a £0 reception
+    with "Places at this reception are not on sale", while the page went on
+    rendering a Register button and a full checkout dialog — so a free
+    reception could be published and could not be booked. Zero now means free
+    to attend, everywhere:
+
+    - `law_reception_checkout()` and `law_reception_waitlist_join()` no longer
+      test the price. Everything downstream already handled a zero amount: the
+      checkout confirms without a Stripe call exactly as a 100% discount code
+      does, and a waitlist entry is written `no_charge` and promotes without a
+      charge.
+    - The waitlist's payment-consent tick is required only when the reception
+      charges. It authorises a card being saved and billed later; a free
+      reception saves no card, so the dialog does not show it.
+    - `parts/events/reception-checkout-modal.php` shows no price block, no
+      discount code field and no Stripe line on a free reception. The summary
+      says "Free to attend." beside the places left, which is the row that
+      already carries the one fact governing the decision.
+    - `law_flagship_details_price()` returns "Free" for a free reception, so
+      the event page's facts box and the programme card both state it.
+      Receptions only: a hosted event is free by default and a Price row on
+      every one of them says nothing, and on the flagship two zero prices still
+      mean "not on sale".
+    - `law_booking_guard_form_open()` now refuses the free booking form on ANY
+      reception rather than on a priced one. One place per checkout is a fact
+      about receptions, not about prices, and keying it on the price left a
+      free reception open to the colleague repeater and to "Add a colleague".
+    - The confirmation notice and emails split by cause. "Your discount code
+      covered the full price" is wrong for somebody who never had a code
+      (Denis, 16 September 2026), so `reception-no-charge-confirmed` and
+      `reception-waitlist-no-charge` sit beside the code-covered pair, and
+      `user_reception_confirmed_free` / `committee_reception_booking_free`
+      replace the paid templates whenever the booking owes nothing — the paid
+      pair quotes an amount taken and links a VAT invoice, and a free place has
+      neither.
+    - The committee's own hint under the price field says so:
+      "Zero means the reception is free to attend: the booking form shows no
+      prices and no discount code."
+
+    Pinned by `ReceptionsTest::test_a_reception_priced_at_nothing_books_without_a_payment()`,
+    `::test_a_free_receptions_waitlist_asks_for_no_payment_consent()`,
+    `::test_the_free_booking_form_is_refused_on_a_free_reception()` and
+    `::test_the_dialog_on_a_free_reception_shows_no_price_and_no_code()`.
+
+21. **Every booking dialog is headed "Register"** (Denis, 16 September 2026).
+    "Book your place" is gone from the reception checkout, the hosted booking
+    dialog and the loading placeholder, and the flagship's "Register to attend"
+    with it: one word for the control and for the dialog it opens, matching the
+    button that got there first (§4.1). The waitlist dialogs keep "Join the
+    waitlist", which is a different action.

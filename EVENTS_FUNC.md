@@ -5034,7 +5034,14 @@ These predate the rebuild and now branch on `law_events_source()`.
   submission is not AJAX, because a form with no Apply button was rendered at
   the list price and comparing it against the discounted total refused every
   no-JS redemption (fixed 15 September 2026). No colleague repeater: one place per checkout,
-  self only), `reception-include-modal.php` (the receptions a confirmed
+  self only. A reception priced at 0 is FREE, not closed (Denis, 16 September
+  2026): the dialog then shows no price block, no discount code field and no
+  Stripe line, and its summary says "Free to attend." beside the places left —
+  a £0.00 receipt and a code field on nothing were the two things that read as
+  a bug. Both engine guards stopped testing `law_event_is_priced()` at the same
+  time, because until then a free reception rendered a Register button whose
+  submit answered "Places at this reception are not on sale". Headed
+  "Register", like every other booking dialog on the site), `reception-include-modal.php` (the receptions a confirmed
   flagship place includes, rendered INSIDE the form it confirms; a reception
   already held is checked and DISABLED with a tag saying why, never hidden,
   because a list that silently omitted Monday would read as though Monday were
@@ -7724,11 +7731,11 @@ things.
    pressing "Send a test to me" has to know why the message landed elsewhere.
    The test-send confirmation says so too, naming the diverted address instead
    of claiming the test went to them.
-2. **The body is a plain textarea, not a WYSIWYG.** That is what an email body
-   IS here: the override is stored through `sanitize_textarea_field()` and
-   `law_events_send()` renders it with `esc_html()` + `wpautop()`, so markup
-   typed into it is delivered as visible angle brackets. The wp-admin screen's
-   `wp_editor()` promises formatting it has never been able to keep.
+2. **The body uses the module's own editor, not wp-admin's.**
+   `law_rich_text_field()` — the same TinyMCE the event description, speaker
+   biography and session description use — on the same allowlist, falling back
+   to a plain textarea without JavaScript. See the entry below for why that
+   needed the send path changed first.
 
 **Recipients are never saved empty (both screens).** `'to'` is editable only
 where the registry names a fixed address list; the dynamic audiences (`host`,
@@ -7775,6 +7782,101 @@ onto them), `functions/events/_load.php`, `functions/header-nav.php` (the
 and `assets/css/event-form.css` (the screen, and an `is-warning` notice
 variant), `tests/EmailsDashboardTest.php`, `tests/HeaderNavTest.php` and
 `tests/AccountHubTest.php`.
+
+---
+
+## Email bodies carry formatting (16 September 2026)
+
+**The wp-admin toolbar had been decorative since the module was built.** The
+Emails screen has rendered a `wp_editor()` over the body field from the start,
+but the save ran `sanitize_textarea_field()` (which strips every tag) and
+`law_events_send()` rendered with `esc_html()`, so anything anybody bolded there
+was discarded on save and would have arrived as visible angle brackets if it had
+not been. All 78 registry defaults and all 15 stored overrides in production are
+plain text, so nothing was broken in the database — the feature had simply never
+worked. Denis asked for real formatting on the committee's screen, reusing the
+event description's tooling, and that turned out to need the send path changed
+before any editor could be honest.
+
+**Storage** is now `law_events_email_body_sanitize()`, a named wrapper on
+`law_rich_text_sanitize()` — the same allowlist as the descriptive fields (bold,
+italic, both list types, `h3`/`h4`, blockquote, links; `<script>` and `<style>`
+blocks dropped contents and all). Deliberately not `wp_kses_post()`: an email
+body should be able to emphasise and structure a message, not embed media or
+layout that every client renders differently.
+
+**The escaping rule, which is the whole of the security argument.**
+`law_events_email_render_body()` escapes the placeholder VALUES and leaves the
+BODY alone:
+
+```php
+$body = strtr( $body, array_map( 'esc_html', $placeholders ) );
+return make_clickable( law_rich_text_render( $body ) );   // wpautop + the allowlist
+```
+
+That is the exact inverse of the old code, and the inversion is the point. The
+body is trusted — only the committee and administrators can write one, and it
+has already been through the allowlist. The values are not: `{event_title}`,
+`{host_name}`, `{latest_comment}`, `{rejection_reason}` and `{attendee_list}`
+are all typed by hosts and delegates. Escaping the whole string after
+substitution (the old way) was safe but made formatting impossible; escaping the
+values instead is what lets the body carry markup without opening an injection
+route through somebody's own event title. Every placeholder value is plain text
+or a URL — `{event_summary}` goes through `law_rich_text_plain()`,
+`{attendee_list}` is a newline-joined list — so escaping all of them is right
+and nothing is double-encoded.
+
+Three consequences worth knowing:
+
+- A **plain-text body renders exactly as it always did.** `wpautop()` still
+  turns blank lines into paragraphs and single newlines into `<br>`, so the 78
+  defaults and the 15 overrides are unchanged on the wire. Pinned by
+  `test_a_plain_text_body_renders_exactly_as_it_always_did()`.
+- A **placeholder inside an attribute resolves**: a body carrying
+  `<a href="{invoice_url}">Pay now</a>` works, because substitution happens
+  before the allowlist is re-applied at render.
+- The **subject is still not escaped**, on purpose. It is a mail header, and
+  `esc_html()` there would put a literal `&amp;` in front of the reader in their
+  inbox list.
+
+**One sanitiser, three writers.** The two screens and the content-transfer
+importer all call `law_events_email_body_sanitize()`. The importer used to have
+its own inline `sanitize_textarea_field()`, which would have flattened every
+bundle on the one path built specifically to carry email wording between sites.
+
+**An emptied editor is refused, not stored.** TinyMCE's idea of empty is
+`<p>&nbsp;</p>`, which the sanitiser correctly reduces to `''`, so clearing the
+field and pressing Save would have left the notification sending a subject line
+over a blank page. `law_events_email_body_survived()` is the floor and both
+screens act on it, with the same "untick Send this notification instead"
+wording as the empty-recipients refusal. The front-end field also carries
+`data-law-rich-required`, so the browser catches it before the round trip.
+
+**Both screens offer the same buttons.** The wp-admin `wp_editor()` dropped
+`teeny` (whose fixed row has no headings, though the allowlist does) and now
+takes its `toolbar1`, `block_formats` and `valid_elements` from
+`law_rich_text_settings()` — the same policy object the front-end editor and the
+event description run on, so the two cannot drift into offering different
+formatting against one shared allowlist.
+
+**"Send a test to me" renders through `law_events_email_render_body()` too**, so
+a test is a preview of the real thing rather than a second opinion about it.
+
+Verified end to end through Mailpit: a formatted body arrives with its
+`<strong>`, `<ul>`, `<h3>` and `<a href>` intact inside the Email Templates
+plugin's branded wrapper.
+
+**Worth doing next:** migration step 9 imported the legacy Gravity Forms
+notifications through `wp_strip_all_tags()`, so several stored bodies still
+carry the wreckage of stripped lists (tab-indented lines where `<li>` used to
+be). Those can now be repaired by hand on either screen.
+
+Touched: `functions/events/notifications.php`, `functions/events/rich-text.php`
+(read only — reused as is), `functions/events/admin/emails-screen.php`,
+`functions/events/emails-dashboard.php`, `parts/events/emails-manage.php`,
+`templates/account-dashboard-emails.php`,
+`functions/events/migration/content-transfer.php`, `assets/css/calendar.css`,
+`tests/EmailsDashboardTest.php`.
 
 ---
 

@@ -28,8 +28,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * The Price row in the event details box, or '' for any event that does not
- * charge for a place.
+ * The Price row in the event details box: the advertised price, "Free" on a
+ * reception that costs nothing, or '' for any other event that does not charge
+ * for a place.
  *
  * The advertised figure, "£550.00 + VAT" — the net price plus a note that VAT
  * is added, NOT the total. Denis, 10 September 2026: the box states the price
@@ -48,7 +49,18 @@ function law_flagship_details_price( array $event ) {
 	// details box that calls this (RECEPTIONS.md §4.1).
 	$price = function_exists( 'law_event_price_pence' ) ? law_event_price_pence( $event_id ) : 0;
 	if ( $price < 1 ) {
-		return '';
+		// A RECEPTION priced at nothing is free to attend, and says so where
+		// its price would be (Denis, 16 September 2026). Only a reception: a
+		// hosted event is free by default and a Price row on all several
+		// hundred of them says nothing anybody needed telling, and on the
+		// flagship two zero prices mean "not on sale", not "free". An
+		// invitation-only reception is left alone too — it takes no bookings
+		// at all, so what a place would have cost is not the fact to state.
+		$free_reception = function_exists( 'law_reception_is' )
+			&& law_reception_is( $event_id )
+			&& ! ( function_exists( 'law_event_is_invitation_only' ) && law_event_is_invitation_only( $event_id ) );
+
+		return $free_reception ? __( 'Free', 'law' ) : '';
 	}
 
 	return sprintf(

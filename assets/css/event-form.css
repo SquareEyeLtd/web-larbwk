@@ -684,6 +684,11 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
   padding-top: .6rem;
   border-top: 1px solid #e3e0ec;
 }
+/* "Free to attend." sits in the same row as the places left: on a reception
+   that costs nothing, that IS the price, and the dialog shows no price block
+   at all (Denis, 16 September 2026). Given the row's own weight so it reads as
+   a fact about the reception rather than as a footnote. */
+.law-event-summary__free { font-weight: 600; }
 .law-event-summary__label {
   font-size: .75rem;
   font-weight: 600;

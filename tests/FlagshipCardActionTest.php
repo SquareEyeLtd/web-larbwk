@@ -471,7 +471,9 @@ class FlagshipCardActionTest extends LAW_Test_Case {
 		get_template_part( 'parts/events/booking-loading-modal' );
 		$html = (string) ob_get_clean();
 		// Matching parts/events/flagship-apply-modal.php's own heading, so
-		// nothing jumps when the fetched dialog replaces the placeholder.
-		$this->assertStringContainsString( 'data-law-loading-apply="Register to attend"', $html );
+		// nothing jumps when the fetched dialog replaces the placeholder. One
+		// word, the same as every other booking dialog's (Denis, 16 September
+		// 2026).
+		$this->assertStringContainsString( 'data-law-loading-apply="Register"', $html );
 	}
 }

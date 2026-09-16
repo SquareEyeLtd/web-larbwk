@@ -72,6 +72,9 @@ class EmailsDashboardTest extends LAW_Test_Case {
 			'law_events_email_trigger_label',
 			'law_events_email_send_test',
 			'law_events_email_recipients_survived',
+			'law_events_email_body_survived',
+			'law_events_email_body_sanitize',
+			'law_events_email_render_body',
 		) as $function ) {
 			$file = ( new ReflectionFunction( $function ) )->getFileName();
 			$this->assertSame(
@@ -136,18 +139,267 @@ class EmailsDashboardTest extends LAW_Test_Case {
 		$this->assertSame( array( 'one@example.test', 'two@example.test' ), $override['to'], 'Anything that is not an address is dropped.' );
 	}
 
-	public function test_the_body_is_stored_as_plain_text(): void {
-		// law_events_send() escapes the body and runs wpautop over it, so markup
-		// stored here would be DELIVERED as visible angle brackets. The editor
-		// on the front end is a plain textarea for exactly this reason.
+	/* Formatting (16 September 2026) ______________________________________ */
+
+	public function test_the_body_keeps_the_formatting_the_editor_offers(): void {
+		// Until 16 September 2026 this stored through sanitize_textarea_field()
+		// and the wp-admin wp_editor() toolbar was decorative: everything below
+		// was stripped on save.
 		$override = law_events_email_override_from_input(
 			'user_submitted',
-			array( 'subject' => 'Hello', 'body' => "Line one\n\n<strong>bold</strong><script>alert(1)</script>", 'active' => true )
+			array( 'subject' => 'Hello', 'body' => '<p>Dear <strong>you</strong></p><ul><li>One</li></ul><h3>Next</h3><a href="https://law.test">Link</a>', 'active' => true )
 		);
 
-		$this->assertStringNotContainsString( '<strong>', $override['body'] );
-		$this->assertStringNotContainsString( '<script>', $override['body'] );
-		$this->assertStringContainsString( 'Line one', $override['body'] );
+		foreach ( array( '<strong>', '<ul>', '<li>', '<h3>', '<a href="https://law.test"' ) as $kept ) {
+			$this->assertStringContainsString( $kept, $override['body'], $kept . ' is on the allowlist and must survive.' );
+		}
+	}
+
+	public function test_the_body_allowlist_is_the_one_the_descriptions_use(): void {
+		// Not wp_kses_post(): an email body may emphasise and structure a
+		// message, not embed media or layout every client renders differently.
+		$override = law_events_email_override_from_input(
+			'user_submitted',
+			array( 'subject' => 'x', 'body' => '<p>Keep</p><table><tr><td>Drop</td></tr></table><img src="x.png"><script>alert(1)</script><style>p{}</style>', 'active' => true )
+		);
+
+		$this->assertStringContainsString( '<p>Keep</p>', $override['body'] );
+		foreach ( array( '<table', '<img', '<script', '<style' ) as $dropped ) {
+			$this->assertStringNotContainsString( $dropped, $override['body'], $dropped . ' must not be storable in an email body.' );
+		}
+		// wp_kses strips the tag but leaves the code as visible text; the
+		// shared sanitiser drops the block, contents and all.
+		$this->assertStringNotContainsString( 'alert(1)', $override['body'] );
+	}
+
+	public function test_one_sanitiser_serves_every_writer_of_a_body(): void {
+		// Three things write this option: the two screens and the
+		// content-transfer importer. If any of them kept its own
+		// sanitize_textarea_field() it would flatten formatting on that path
+		// alone, which is exactly how the bundle importer would have
+		// silently undone every edit somebody made on either screen.
+		$this->assertSame(
+			'notifications.php',
+			basename( (string) ( new ReflectionFunction( 'law_events_email_body_sanitize' ) )->getFileName() )
+		);
+		$transfer = file_get_contents( get_theme_file_path( 'functions/events/migration/content-transfer.php' ) );
+		$this->assertStringContainsString( 'law_events_email_body_sanitize(', $transfer );
+		$this->assertStringNotContainsString( "'body'    => sanitize_textarea_field(", $transfer );
+	}
+
+	public function test_an_emptied_editor_is_refused_not_stored(): void {
+		// TinyMCE's idea of empty is "<p>&nbsp;</p>", which the sanitiser
+		// correctly reduces to ''. Storing that would leave the notification
+		// sending a subject line over a blank page.
+		foreach ( array( '', '   ', '<p>&nbsp;</p>', '<p></p>', '<br>' ) as $empty ) {
+			$override = law_events_email_override_from_input( 'user_submitted', array( 'subject' => 'x', 'body' => $empty, 'active' => true ) );
+			$this->assertFalse(
+				law_events_email_body_survived( $override['body'] ),
+				var_export( $empty, true ) . ' must not count as a message.'
+			);
+		}
+
+		$this->assertTrue(
+			law_events_email_body_survived(
+				law_events_email_override_from_input( 'user_submitted', array( 'subject' => 'x', 'body' => '<p>Real words</p>', 'active' => true ) )['body']
+			)
+		);
+
+		// And both screens act on it.
+		foreach ( array( 'functions/events/emails-dashboard.php', 'functions/events/admin/emails-screen.php' ) as $screen ) {
+			$this->assertStringContainsString(
+				'law_events_email_body_survived(',
+				file_get_contents( get_theme_file_path( $screen ) ),
+				$screen . ' must refuse an emptied body.'
+			);
+		}
+	}
+
+	/* The escaping rule ____________________________________________________ */
+
+	public function test_a_placeholder_value_cannot_inject_markup(): void {
+		// THE security property this change turns on. The body is trusted
+		// (committee-authored, allowlisted); the VALUES are not — an event
+		// title, a host's display name and a rejection reason are all typed by
+		// people outside the committee. The old code escaped the whole string
+		// after substitution, which was safe but made formatting impossible;
+		// the escape now sits on the values instead.
+		$rendered = law_events_email_render_body(
+			'<p>Hello {host_name}</p><p>About {event_title}</p>',
+			array(
+				'{host_name}'  => '<script>alert(1)</script>',
+				'{event_title}' => '<b onclick="x()">Bold title</b>',
+			)
+		);
+
+		// No LIVE tag and no LIVE attribute. "onclick" still appears in the
+		// output, but as the inert text onclick=&quot;x()&quot; inside an
+		// escaped &lt;b&gt;, which is the whole point of escaping rather than
+		// stripping: the recipient sees what the host actually typed.
+		$this->assertStringNotContainsString( '<script', $rendered );
+		$this->assertStringNotContainsString( '<b ', $rendered );
+		$this->assertStringNotContainsString( 'onclick="', $rendered );
+		$this->assertStringContainsString( '&lt;script&gt;', $rendered, 'The value is shown as text, not executed.' );
+		$this->assertStringContainsString( 'onclick=&quot;x()&quot;', $rendered );
+		// And the BODY'S own markup is untouched by that.
+		$this->assertStringContainsString( '<p>', $rendered );
+	}
+
+	public function test_an_ampersand_in_a_value_is_not_broken_html(): void {
+		$rendered = law_events_email_render_body( 'Host: {host_name}', array( '{host_name}' => 'Smith & Jones' ) );
+
+		$this->assertStringContainsString( 'Smith &amp; Jones', $rendered );
+		$this->assertStringNotContainsString( 'Smith & Jones', $rendered );
+	}
+
+	public function test_a_body_holding_a_list_is_delivered_as_a_list(): void {
+		// The regression this change was really about. A body carrying real
+		// <ul>/<li> was esc_html'd on the way out, so the recipient saw the
+		// tags. Found live on 16 September 2026 in the stored override for
+		// user_submitted ("Email to user > event submitted") — the email every
+		// host receives the moment they submit an event.
+		$body = "What happens next?\n<ul>\n\t<li>We review it.</li>\n\t<li>We confirm the slot.</li>\n</ul>\nReply any time.";
+
+		$rendered = law_events_email_render_body( $body, array() );
+
+		$this->assertStringContainsString( '<li>We review it.</li>', $rendered );
+		$this->assertStringNotContainsString( '&lt;ul&gt;', $rendered, 'The recipient must not see the tags.' );
+		$this->assertStringNotContainsString( '&lt;li&gt;', $rendered );
+	}
+
+	public function test_no_registry_default_changes_meaning_under_the_new_renderer(): void {
+		// The whole registry, rendered the old way and the new way. They may
+		// differ in entity encoding — the body's own apostrophes are no longer
+		// escaped, which is the point — but not in content. This is what makes
+		// the change safe to deploy against 78 live notifications.
+		$placeholders = array(
+			'{host_name}'    => "Pat O'Neill",
+			'{event_title}'  => 'Arbitration & Co',
+			'{law_reference}' => '1234',
+			'{latest_comment}' => 'Please add the venue & a contact.',
+		);
+		$decode = static fn( $html ) => html_entity_decode( $html, ENT_QUOTES, 'UTF-8' );
+		$drifted = array();
+
+		foreach ( law_events_email_registry() as $slug => $definition ) {
+			$body = (string) $definition['body'];
+			$old  = make_clickable( wpautop( esc_html( strtr( $body, $placeholders ) ) ) );
+			$new  = law_events_email_render_body( $body, $placeholders );
+			// A default that genuinely carries markup SHOULD render differently
+			// — that is the fix, not a regression — so only the plain ones are
+			// held to byte-for-byte sameness.
+			if ( preg_match( '#</?[a-z][^>]*>#i', $body ) ) {
+				continue;
+			}
+			if ( $decode( $old ) !== $decode( $new ) ) {
+				$drifted[] = $slug;
+			}
+		}
+
+		$this->assertSame( array(), $drifted, 'Plain-text defaults must render exactly as they always did.' );
+	}
+
+	public function test_a_plain_text_body_renders_exactly_as_it_always_did(): void {
+		// Every one of the 78 registry defaults, and all 15 stored overrides in
+		// production, are plain text with blank lines between paragraphs. They
+		// must come out of the new renderer as paragraphs, not as one run-on
+		// block, or this change would have quietly reformatted every email the
+		// site sends.
+		$rendered = law_events_email_render_body(
+			"Dear {host_name},\n\nThank you for submitting your event.\n\nRegards",
+			array( '{host_name}' => 'Pat' )
+		);
+
+		$this->assertSame( 3, substr_count( $rendered, '<p>' ), 'Blank lines are still paragraph breaks.' );
+		$this->assertStringContainsString( 'Dear Pat,', $rendered );
+	}
+
+	public function test_a_multi_line_placeholder_keeps_its_line_breaks(): void {
+		// {event_summary} and {attendee_list} are newline-joined blocks.
+		$rendered = law_events_email_render_body( '{attendee_list}', array( '{attendee_list}' => "One\nTwo\nThree" ) );
+
+		$this->assertSame( 2, substr_count( $rendered, '<br' ), 'Single newlines stay line breaks.' );
+	}
+
+	public function test_a_url_is_still_linkified(): void {
+		$rendered = law_events_email_render_body( 'Pay here: {invoice_url}', array( '{invoice_url}' => 'https://invoice.test/abc' ) );
+
+		$this->assertStringContainsString( '<a href="https://invoice.test/abc"', $rendered );
+	}
+
+	public function test_a_placeholder_inside_an_attribute_resolves(): void {
+		// Substitution happens before the allowlist is re-applied, so the
+		// committee can write a real button-style link.
+		$rendered = law_events_email_render_body(
+			'<a href="{invoice_url}">Pay now</a>',
+			array( '{invoice_url}' => 'https://invoice.test/abc' )
+		);
+
+		$this->assertStringContainsString( 'href="https://invoice.test/abc"', $rendered );
+		$this->assertStringContainsString( '>Pay now</a>', $rendered );
+	}
+
+	public function test_the_subject_is_never_html_escaped(): void {
+		// It is a mail header. esc_html there would put "&amp;" in front of
+		// the reader in their inbox list.
+		$file = file_get_contents( get_theme_file_path( 'functions/events/notifications.php' ) );
+		$this->assertStringContainsString( "\$subject      = strtr( (string) \$definition['subject'], \$placeholders );", $file );
+	}
+
+	public function test_a_test_send_renders_through_the_same_path_as_a_real_one(): void {
+		// Otherwise "Send a test to me" would be a second opinion about the
+		// wording rather than a preview of it. Asserted on the mail that
+		// actually leaves, not on the shape of the source: an earlier version
+		// of this test counted occurrences of the renderer's name in the file
+		// and broke the moment a docblock mentioned it.
+		$slug = 'user_submitted';
+		$user = $this->make_user( 'events_committee' );
+		// An author, or the 'host' audience resolves to nobody and
+		// law_events_send() logs the drop and returns without mailing.
+		$event = $this->make_event( array(), 'law-proposed', $user );
+		$body  = '<p>Dear {host_name}</p><ul><li>{event_title}</li></ul>';
+
+		$captured = array();
+		$capture  = static function ( $atts ) use ( &$captured ) {
+			$captured[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $capture );
+
+		try {
+			wp_set_current_user( $user );
+			law_events_email_send_test( array( 'subject' => 'S', 'body' => $body ), $user );
+
+			law_events_email_save_override(
+				$slug,
+				law_events_email_override_from_input( $slug, array( 'subject' => 'S', 'body' => $body, 'active' => true ) )
+			);
+			law_events_send( $slug, $event );
+		} finally {
+			remove_filter( 'wp_mail', $capture );
+		}
+
+		$this->assertCount( 2, $captured, 'A test send and a real send both reached wp_mail().' );
+		// The test renders against the most recent event and the real one
+		// against its own, so compare the STRUCTURE the renderer produced
+		// rather than the values it resolved.
+		foreach ( $captured as $mail ) {
+			$this->assertStringContainsString( '<ul>', $mail['message'] );
+			$this->assertStringContainsString( '<li>', $mail['message'] );
+			$this->assertStringContainsString( '<p>Dear ', $mail['message'] );
+		}
+	}
+
+	public function test_both_screens_offer_the_same_formatting_buttons(): void {
+		// One policy (law_rich_text_settings()), so the wp-admin toolbar and
+		// the front-end one cannot drift into offering different formatting
+		// against one shared allowlist.
+		$admin = file_get_contents( get_theme_file_path( 'functions/events/admin/emails-screen.php' ) );
+		$this->assertStringContainsString( 'law_rich_text_settings()', $admin );
+		$this->assertStringNotContainsString( "'teeny' => true", $admin );
+
+		$front = file_get_contents( get_theme_file_path( 'parts/events/emails-manage.php' ) );
+		$this->assertStringContainsString( 'law_rich_text_field(', $front );
 	}
 
 	/* The front-end screen _________________________________________________ */

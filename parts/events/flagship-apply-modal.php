@@ -44,7 +44,7 @@ $law_fa_permalink = get_permalink( $law_fa_id );
 $law_fa_price     = law_flagship_price_pence( 0, $law_fa_id );
 $law_fa_places    = law_flagship_places();
 $law_fa_dialog    = 'law-flagship-modal';
-$law_fa_heading   = __( 'Register to attend', 'law' );
+$law_fa_heading   = __( 'Register', 'law' );
 
 // The money, from the server, exactly as the reception dialog does it: the
 // Apply button re-asks the same function and swaps the figures in place. The
