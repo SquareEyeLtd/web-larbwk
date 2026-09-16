@@ -1,6 +1,6 @@
 <?php
 /**
- * Content transfer: the committee's receptions, flagship and discount
+ * Content transfer: the committee's events, receptions, flagship and discount
  * configuration, moved between environments as one JSON file.
  *
  * The client fills the real details in on staging. Production gets the same
@@ -12,21 +12,49 @@
  * ticks, the whole flagship session agenda with its speakers, and the discount
  * catalogue. This panel exports exactly that, and imports it again.
  *
- * Three rules hold the format together, all of them consequences of the one
- * fact that makes a cross-site move hard: POST IDS DO NOT SURVIVE IT.
+ * HOSTED AND EXTERNAL EVENTS JOINED THE BUNDLE ON 16 SEPTEMBER 2026 (format
+ * version 3, Denis), reversing the 15 September exclusion. The client had gone
+ * on editing the programme itself on staging — venues, descriptions, speakers,
+ * running orders, the new Override booking availability switch, and a set of
+ * external listings created there from scratch — and none of that had a route
+ * to production. The brief was "make sure we migrate all possible data about
+ * events", so the `events` key carries every law_event that is not a reception
+ * and not the flagship, which are the two kinds that already had keys of their
+ * own.
+ *
+ * Four rules hold the format together, the first three of them consequences of
+ * the one fact that makes a cross-site move hard: POST IDS DO NOT SURVIVE IT.
  *
  * 1. Receptions and discount scope are keyed by SLUG, never by ID. The slug is
  *    what law_event_ensure_managed_post() provisions by, so it means the same
- *    thing on both sites.
+ *    thing on both sites. An event is keyed by its GRAVITY FORMS ENTRY ID
+ *    first and its slug second (law_content_transfer_find_event()): both sites
+ *    migrate from the same Gravity Forms data, so the entry ID is the one
+ *    identifier that is the same number on both, and the slug is what an event
+ *    created in the module since has instead.
  * 2. Speakers are keyed by IDENTITY, not by ID: each row carries the first
  *    name, last name, email and website inline, is marked is_new, and is
  *    handed to law_flagship_resolve_speaker_rows(), which calls
  *    law_speaker_upsert() — that already dedupes by email first and normalised
- *    name second. So there is no speaker matching logic here at all.
+ *    name second. So there is no speaker matching logic here at all. People —
+ *    an event's owner, its assignee — travel as EMAIL ADDRESSES for the same
+ *    reason, and are resolved with get_user_by( 'email' ). An import never
+ *    creates a user account (Denis, 16 September 2026): an unresolvable owner
+ *    leaves the event with the administrator running the import and the row
+ *    says so.
  * 3. Derived values are never exported. _law_start, _law_end and the
  *    event-level _law_speakers union on the flagship are recomputed from the
  *    sessions by law_flagship_recompute(); exporting them would only give the
- *    importer a chance to write something stale.
+ *    importer a chance to write something stale. The same rule keeps
+ *    _law_fee_pence, _law_vat, _law_tickets_sold and _law_co_owner_ids out of
+ *    an event row: each is a snapshot or a recount belonging to the site that
+ *    took it.
+ * 4. AN IMPORT UPDATES AND CREATES, AND NEVER DELETES (Denis, 16 September
+ *    2026). It runs AFTER the Gravity Forms migration, overwrites the events
+ *    the bundle names, and leaves everything else on the far site exactly
+ *    where it was — an event that exists on production and was never on
+ *    staging is not touched, not reset and not removed. There is no "make this
+ *    site look like that one" mode and there should not be one.
  *
  * IMAGES TRAVEL INSIDE THE FILE (format version 2, Denis, 15 September 2026).
  * The bundle is a zip: bundle.json plus an images/ folder. Version 1 shipped
@@ -41,12 +69,20 @@
  * law_content_transfer_attachment()), so re-import idempotency is unchanged and
  * a version 1 bundle still imports by the old route.
  *
- * And the whole import writes through the EXISTING savers —
- * law_reception_save(), law_flagship_save(), law_discount_save() — so this
- * file is a caller, never a second write path. That is what keeps the
- * validation, the workflow status-guard exemption, the recompute and the
- * per-event activity log identical to a committee member typing the same
- * values in by hand.
+ * And the import writes through the EXISTING savers — law_reception_save(),
+ * law_flagship_save(), law_discount_save() — so this file is a caller, never a
+ * second write path. That is what keeps the validation, the workflow
+ * status-guard exemption, the recompute and the per-event activity log
+ * identical to a committee member typing the same values in by hand. A hosted
+ * event has no single saver to call (law_events_form_save() is the HOST form's,
+ * complete with the locked-field rules that depend on who is posting), so
+ * law_content_transfer_run_event() writes through the layer below it instead:
+ * law_event_update_meta() for every key — the one sanitiser the admin screens,
+ * the front-end forms and the migrator all share — plus
+ * law_events_set_terms_by_name(), law_flagship_resolve_speaker_rows() and
+ * law_flagship_save_sessions(), which are the same shared repeater savers the
+ * host form and the external-events screen call. No sanitiser is reimplemented
+ * here.
  *
  * NOT transferred, deliberately: bookings and everything hanging off them.
  * They carry Stripe customer, invoice, charge and payment-method IDs from
@@ -56,6 +92,34 @@
  * (account-specific), every one-shot version latch, and an email's RECIPIENTS
  * (see law_content_transfer_emails() — the wording travels, the addresses
  * do not).
+ *
+ * TWO THINGS AN IMPORT MAY NOT DECIDE, both because they are acts rather than
+ * values: an event's WORKFLOW STATUS and who OWNS it. The status is set out
+ * below. Ownership (post_author) is written on a CREATE only, because
+ * law_user_can_manage_event() treats the author as a full manager and the same
+ * run writes the invoicing contact and address they would then be able to read;
+ * a difference on an existing event is reported instead (security review,
+ * 16 September 2026). An event's CLASSIFICATION — _law_is_external — is the
+ * third, for a reason that only shows when the three are read together: it is
+ * what law_event_is_managed_by_law() reads, so it is what unlocks the status
+ * guard's exemption, and an import that could write it could unlock the guard on
+ * one run and use it on the next.
+ *
+ * A HOSTED EVENT'S WORKFLOW STATUS IS OUT TOO, and that is the one exclusion
+ * worth reading twice (Denis, 16 September 2026). Production's status comes
+ * from the Gravity Forms migration, which reads field 95 (Event status) on
+ * form 2 (Event > submit an event) — the live workflow record — and an
+ * approval is not a value, it is an act: law_event_workflow_side_effects()
+ * snapshots the fee, creates the co-owner accounts, raises the Stripe invoice
+ * and emails the host. Writing `law-approved` onto a post would produce an
+ * approved event with no invoice and no host email, and calling the real
+ * transition from an import could email dozens of hosts and raise dozens of
+ * live invoices from one button. So the bundle CARRIES the status, the preview
+ * REPORTS it where it differs, and the import WRITES it only where there is no
+ * workflow behind it: an external event's publish / law-draft tick, which
+ * means "on the programme" and "not yet" exactly as a reception's does, and a
+ * hosted event being CREATED, where the status is the new post's own and no
+ * transition has been skipped because none has happened anywhere.
  *
  * Email wording joined the bundle on 15 September 2026, reversing its original
  * exclusion, because the client had spent time polishing it on staging and the
@@ -67,7 +131,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const LAW_CONTENT_TRANSFER_FORMAT  = 'law-content-transfer';
-const LAW_CONTENT_TRANSFER_VERSION = 2;
+const LAW_CONTENT_TRANSFER_VERSION = 3;
 /**
  * The biggest upload this will read.
  *
@@ -97,6 +161,41 @@ const LAW_CONTENT_TRANSFER_IMAGE_DIR = 'images/';
  * Well above any real agenda; a run that hits it says so and carries on.
  */
 const LAW_CONTENT_TRANSFER_MAX_IMAGES = 400;
+
+/**
+ * How many records of one kind a bundle may carry.
+ *
+ * The 64MB upload cap and the image cap bound the bytes and the outbound
+ * requests; nothing bounded the ROW COUNT until events joined the bundle
+ * (security review, 16 September 2026). A run is synchronous inside one
+ * admin-post.php request — unlike the module's own migration runner, which
+ * batches over AJAX — and every event row costs a lookup, a thirty-key
+ * snapshot, a handful of writes, term lookups and an activity-log entry. Tens
+ * of thousands of minimal rows would therefore exhaust max_execution_time on an
+ * ordinary admin request.
+ *
+ * Well clear of anything real: LAW's whole programme is about 105 events, 3
+ * receptions and a few dozen discount codes, and the email registry ships 78
+ * entries. A bundle past this is not a LAW bundle.
+ */
+const LAW_CONTENT_TRANSFER_MAX_ROWS = 2000;
+
+/**
+ * How many NESTED rows — sessions, and speaker appearances — one bundle may
+ * carry in total.
+ *
+ * The cap above bounds the four top-level lists, which is not the same thing:
+ * 500 events, comfortably inside it, each carrying tens of thousands of minimal
+ * session rows is cheap in JSON bytes, fits the upload limit, and still drives a
+ * very large synchronous run (security review, 16 September 2026). Counted
+ * across the whole file rather than per event, because that is what the work
+ * actually scales with — and the work is real: a session row is a post insert,
+ * a speaker row an upsert.
+ *
+ * The local programme's 105 events carry 142 speaker appearances and 31
+ * sessions between them.
+ */
+const LAW_CONTENT_TRANSFER_MAX_NESTED_ROWS = 20000;
 
 /**
  * The most an archive may weigh once unpacked.
@@ -143,6 +242,7 @@ function law_content_transfer_bundle() {
 		'programme_year' => (string) law_events_setting( 'year', '' ),
 		'receptions'     => law_content_transfer_receptions(),
 		'flagship'       => law_content_transfer_flagship(),
+		'events'         => law_content_transfer_events(),
 		'discounts'      => law_content_transfer_discounts(),
 		'emails'         => law_content_transfer_emails(),
 	);
@@ -422,6 +522,304 @@ function law_content_transfer_archive_source( $archive_path ) {
 	return ( '' !== $file && is_readable( $file ) ) ? $file : '';
 }
 
+/* The programme's own events _________________________________________________
+ *
+ * Hosted submissions and the committee's external listings. Receptions and the
+ * flagship are excluded here because they already have keys of their own, and
+ * their savers do things (price switches, the derived start and end) that a
+ * generic event row knows nothing about.
+ */
+
+/**
+ * The law_event meta an event row carries, and nothing else.
+ *
+ * An allow list rather than "every key in the schema", because roughly a third
+ * of the schema must NOT cross a site boundary and a new key should have to be
+ * added here on purpose. What is deliberately absent, and why:
+ *
+ * - `_law_stripe_customer_id`, `_law_stripe_invoice_id`, `_law_stripe_invoice_url`,
+ *   `_law_stripe_error`, `_law_payment_status`: objects in whichever Stripe
+ *   account the source site points at. Importing "paid" onto production would
+ *   mark an unpaid invoice settled, which is the one mistake in this file
+ *   nobody would spot until a reconciliation.
+ * - `_law_fee_pence`, `_law_vat`: the snapshot law_event_snapshot_fee() froze
+ *   at approval, which the invoice was raised from. The INPUTS to it —
+ *   `_law_fee_tier`, `_law_fee_override`, `_law_fee_override_amount` — do
+ *   travel, because those are the committee's decision about the event; the
+ *   frozen figure belongs to the site that billed it. (So on an
+ *   already-approved event an imported tier moves the exports and the admin
+ *   Fee column without moving the invoice, exactly as a wp-admin edit does
+ *   without law_event_resnapshot_fee(). The preview names the change.)
+ * - `_law_tickets_sold`, `_law_capacity_warned`, `_law_capacity_full_warned`:
+ *   a recount and two one-shot latches, all three about the far site's own
+ *   bookings. Carrying the latches would suppress a real nearly-full warning.
+ * - `_law_co_owner_ids`: user IDs minted on the far site when the event was
+ *   approved there. The ROWS (`_law_co_owner_rows`) travel, because those are
+ *   what the host typed; the IDs are production's own.
+ * - `_law_reference`, `_law_gf_entry_id`: identity. Both sites derive them from
+ *   the same Gravity Forms entry, so they already agree, and the entry ID is
+ *   the key this whole format matches on — rewriting it from the file would
+ *   let a bad bundle re-point an event at a different record.
+ * - `_law_assignee`, `_law_organisation_ids`: IDs of things on the other site.
+ *   They travel beside the meta, as an email address and as organisation slugs.
+ * - `_law_is_flagship`, `_law_is_reception`, `_law_hero_image_id`, the flagship
+ *   price keys and `_law_flagship_date`: not a hosted or external event's. The
+ *   banner is the flagship's alone today, and it is an attachment ID besides,
+ *   so it could not travel as a bare meta value even if that changed — it would
+ *   need the {url, filename, alt, archive} shape law_content_transfer_attachment()
+ *   writes, like every other picture in this file.
+ * - `_edit_lock`: core's "somebody has this open" marker, meaningless here.
+ * - `_law_history_migrated`: a migration latch belonging to the far site's own
+ *   run. Carrying it would tell that site its history had been imported when it
+ *   had not.
+ *
+ * @return string[]
+ */
+function law_content_transfer_event_meta_keys() {
+	return array(
+		// When and where.
+		'_law_start',
+		'_law_end',
+		'_law_slot_label',
+		'_law_preferred_slots',
+		'_law_venue',
+		'_law_venue_needed',
+		'_law_venue_capacity',
+		'_law_tickets_available',
+		// Who is putting it on.
+		'_law_host_organisations',
+		'_law_contacts',
+		'_law_co_owner_rows',
+		// The committee's switches, including Override booking availability
+		// (client, 16 September 2026), which is the key this widening was asked
+		// for and which nothing else in the bundle could carry.
+		//
+		// `_law_is_external` is in this list so it CROSSES, and
+		// law_content_transfer_write_event() then refuses to write it on an
+		// EXISTING event. It is not squeamishness: the flag is what
+		// law_event_is_managed_by_law() reads, and that is what unlocks the
+		// status guard's exemption. Let an import flip it and the exemption can
+		// be unlocked by the same file that then uses it — one run to turn an
+		// event external, the next to write `publish` onto it, and a submission
+		// nobody approved is on the public programme (security review,
+		// 16 September 2026). Reclassifying an event is a committee act with a
+		// log line of its own (law_event_log_flag_change()), so it belongs on the
+		// dashboard beside the status, for exactly the same reason. A CREATE may
+		// use it, because a new post has no workflow behind it to bypass.
+		'_law_booking_override',
+		'_law_is_external',
+		'_law_external_url',
+		'_law_session_agenda',
+		'_law_registration_state',
+		// The fee decision, not the fee snapshot. See the note above.
+		'_law_fee_tier',
+		'_law_fee_override',
+		'_law_fee_override_amount',
+		// Invoicing details: the host's own billing contact, which the client
+		// does correct on staging. Nothing here is a Stripe object.
+		'_law_invoice_name',
+		'_law_invoice_email',
+		'_law_invoice_address',
+		'_law_country_iso',
+		'_law_vat_number',
+		// Classification and the record of what was decided.
+		'_law_sector_jurisdiction',
+		'_law_sector_other',
+		'_law_terms_consent',
+		'_law_approved_at',
+		'_law_rejection_reason',
+		'_law_cancellation_reason',
+	);
+}
+
+/**
+ * Every hosted and external event, with its speakers and its agenda.
+ *
+ * @return array[]
+ */
+function law_content_transfer_events() {
+	$ids = get_posts(
+		array(
+			'post_type'        => LAW_EVENT_CPT,
+			// The module's own statuses, spelled out. post_status => 'any'
+			// silently drops custom statuses, which would leave every event
+			// that is not Confirmed out of the bundle — the same trap
+			// law_reception_ids() documents.
+			'post_status'      => law_event_all_status_keys(),
+			'posts_per_page'   => -1,
+			'orderby'          => 'ID',
+			'order'            => 'ASC',
+			'fields'           => 'ids',
+			'suppress_filters' => false,
+			'no_found_rows'    => true,
+		)
+	);
+
+	$rows = array();
+
+	foreach ( $ids as $event_id ) {
+		$event_id = (int) $event_id;
+		if ( law_reception_is( $event_id ) || law_flagship_is( $event_id ) ) {
+			continue; // Their own keys, their own savers.
+		}
+		$post = get_post( $event_id );
+		if ( ! $post ) {
+			continue;
+		}
+
+		$meta = array();
+		foreach ( law_content_transfer_event_meta_keys() as $key ) {
+			$meta[ $key ] = law_event_meta( $event_id, $key );
+		}
+
+		$rows[] = array(
+			// The two keys, in the order law_content_transfer_find_event()
+			// tries them.
+			'gf_entry_id'   => (int) law_event_meta( $event_id, '_law_gf_entry_id' ),
+			'slug'          => (string) $post->post_name,
+			// Printed in the preview so an operator can find the row in the
+			// committee dashboard without counting down the table.
+			'reference'     => (string) law_event_meta( $event_id, '_law_reference' ),
+			'external'      => (bool) law_event_meta( $event_id, '_law_is_external' ),
+			'title'         => (string) $post->post_title,
+			'description'   => (string) $post->post_content,
+			// Applied on a CREATE only. It decides "first appearance" ordering
+			// (law_speakers.php sorts on post_date_gmt), which is what picks the
+			// photo and organisation a speaker's archive card and profile show.
+			// An event that exists on both sites already agrees, because both
+			// took the date from the same Gravity Forms entry; one created in
+			// the module on staging would otherwise land here dated today and
+			// quietly outrank an older record.
+			'created'       => (string) $post->post_date_gmt,
+			// Carried for every event; APPLIED only where there is no workflow
+			// behind it. See the note in the file header.
+			'status'        => (string) $post->post_status,
+			'owner_email'   => law_content_transfer_user_email( (int) $post->post_author ),
+			'assignee_email' => law_content_transfer_user_email( absint( law_event_meta( $event_id, '_law_assignee' ) ) ),
+			'event_type'    => (string) law_events_post_term_name( $event_id, 'law_event_type' ),
+			'sectors'       => array_values( law_events_post_term_names( $event_id, 'law_sector' ) ),
+			'organisations' => law_content_transfer_organisation_slugs( $event_id ),
+			'meta'          => $meta,
+			'speakers'      => law_content_transfer_event_speakers( law_event_meta( $event_id, '_law_speakers' ) ),
+			'sessions'      => law_content_transfer_event_sessions( $event_id ),
+		);
+	}
+
+	return $rows;
+}
+
+/**
+ * Appearance rows in the identity-bearing shape rule 2 describes.
+ *
+ * The same shape law_content_transfer_flagship() writes, so the importer can
+ * hand both to law_flagship_resolve_speaker_rows() without caring which key of
+ * the bundle they came out of. `is_new` is not added here: it is what the
+ * IMPORT means by the row ("match or create"), and a bundle that already said
+ * so would be describing the far site's behaviour rather than this site's data.
+ *
+ * @param array[] $rows _law_speakers, from the event or from one session.
+ * @return array[]
+ */
+function law_content_transfer_event_speakers( $rows ) {
+	$out = array();
+
+	foreach ( (array) $rows as $row ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+		$speaker_id = absint( $row['speaker_id'] ?? 0 );
+		$parts      = $speaker_id ? law_speaker_name_parts( $speaker_id ) : array( 'first' => '', 'last' => '' );
+
+		$out[] = array(
+			'first_name'   => (string) ( $parts['first'] ?? '' ),
+			'last_name'    => (string) ( $parts['last'] ?? '' ),
+			'email'        => $speaker_id ? (string) law_event_meta( $speaker_id, '_law_speaker_email' ) : '',
+			'website'      => $speaker_id ? (string) law_event_meta( $speaker_id, '_law_website' ) : '',
+			'role'         => (string) ( $row['role'] ?? '' ),
+			'organisation' => (string) ( $row['organisation'] ?? '' ),
+			'job_title'    => (string) ( $row['job_title'] ?? '' ),
+			'bio'          => (string) ( $row['bio'] ?? '' ),
+			'photo'        => law_content_transfer_attachment( absint( $row['photo_id'] ?? 0 ) ),
+		);
+	}
+
+	return $out;
+}
+
+/**
+ * The session agenda, read as EDITABLE rows rather than through
+ * law_event_session_rows(), whose speakers are rendered cards that cannot
+ * round-trip. Mirrors law_flagship_form_values() field for field, plus the
+ * speaker identity every row needs to cross a site boundary.
+ *
+ * @return array[]
+ */
+function law_content_transfer_event_sessions( $event_id ) {
+	$sessions = array();
+
+	foreach ( law_event_session_ids( (int) $event_id ) as $session_id ) {
+		$session = get_post( $session_id );
+		if ( ! $session ) {
+			continue;
+		}
+		$sessions[] = array(
+			// Carried for one reason, and it is not identity within this format:
+			// the Gravity Forms migration dedupes sessions with a meta query on
+			// this key (law_migration_run_sessions()), and an import REPLACES the
+			// agenda. Without re-stamping it, re-running the migration after an
+			// import would create a second copy of every session it had already
+			// made. The rows themselves are still matched by position, never by
+			// this.
+			'gf_entry_id' => (int) law_event_meta( $session_id, '_law_gf_entry_id' ),
+			'title'       => (string) $session->post_title,
+			'start'       => (string) law_event_meta( $session_id, '_law_start_time' ),
+			'end'         => (string) law_event_meta( $session_id, '_law_end_time' ),
+			'description' => (string) $session->post_content,
+			'speakers'    => law_content_transfer_event_speakers( law_event_meta( $session_id, '_law_speakers' ) ),
+		);
+	}
+
+	return $sessions;
+}
+
+/**
+ * A user as the only thing about them that means anything on another site.
+ *
+ * @return string '' when there is no such user, or they have no address.
+ */
+function law_content_transfer_user_email( $user_id ) {
+	$user_id = (int) $user_id;
+	if ( $user_id < 1 ) {
+		return '';
+	}
+	$user = get_userdata( $user_id );
+	return ( $user && is_email( $user->user_email ) ) ? (string) $user->user_email : '';
+}
+
+/**
+ * The event's linked organisations as SLUGS.
+ *
+ * `organisation` is a post type of the main theme rather than this module, and
+ * `_law_organisation_ids` holds its post IDs, so the same slug rule the
+ * receptions follow applies: the ID means nothing on the far site, the slug
+ * means the same thing on both. An organisation whose slug is not on the far
+ * site is dropped there and the row says so.
+ *
+ * @return string[]
+ */
+function law_content_transfer_organisation_slugs( $event_id ) {
+	$slugs = array();
+
+	foreach ( array_map( 'intval', law_event_meta( (int) $event_id, '_law_organisation_ids' ) ) as $org_id ) {
+		$org = $org_id ? get_post( $org_id ) : null;
+		if ( $org instanceof WP_Post && '' !== $org->post_name ) {
+			$slugs[] = (string) $org->post_name;
+		}
+	}
+
+	return $slugs;
+}
+
 /**
  * Every discount code.
  *
@@ -477,9 +875,21 @@ function law_content_transfer_discounts() {
 	return $rows;
 }
 
-/** "3 receptions, the flagship and its 14 sessions, 6 discount codes". */
+/** "51 hosted events, 4 external events, 3 receptions, the flagship …". */
 function law_content_transfer_summary( array $bundle ) {
 	$bits = array();
+
+	$hosted   = 0;
+	$external = 0;
+	foreach ( (array) ( $bundle['events'] ?? array() ) as $event ) {
+		if ( ! empty( $event['external'] ) ) {
+			$external++;
+		} else {
+			$hosted++;
+		}
+	}
+	$bits[] = sprintf( _n( '%d hosted event', '%d hosted events', $hosted, 'law' ), $hosted );
+	$bits[] = sprintf( _n( '%d external event', '%d external events', $external, 'law' ), $external );
 
 	$receptions = count( (array) ( $bundle['receptions'] ?? array() ) );
 	$bits[]     = sprintf( _n( '%d reception', '%d receptions', $receptions, 'law' ), $receptions );
@@ -959,12 +1369,79 @@ function law_content_transfer_parse( $raw ) {
 		);
 	}
 
+	// The row-count gate, before anything walks these arrays. Refused rather
+	// than truncated: a silently shortened import is the shape of failure this
+	// whole panel exists to avoid.
+	foreach ( array( 'receptions', 'events', 'discounts', 'emails' ) as $law_ct_list ) {
+		$law_ct_count = is_array( $bundle[ $law_ct_list ] ?? null ) ? count( $bundle[ $law_ct_list ] ) : 0;
+		if ( $law_ct_count > LAW_CONTENT_TRANSFER_MAX_ROWS ) {
+			return new WP_Error(
+				'law_ct_too_many_rows',
+				sprintf(
+					'That bundle carries %s %s, more than the %s this screen will read in one go. It was not made by this theme.',
+					number_format_i18n( $law_ct_count ),
+					$law_ct_list,
+					number_format_i18n( LAW_CONTENT_TRANSFER_MAX_ROWS )
+				)
+			);
+		}
+	}
+
+	$law_ct_nested = law_content_transfer_count_nested( $bundle );
+	if ( $law_ct_nested > LAW_CONTENT_TRANSFER_MAX_NESTED_ROWS ) {
+		return new WP_Error(
+			'law_ct_too_many_rows',
+			sprintf(
+				'That bundle carries %s sessions and speaker appearances between its events, more than the %s this screen will read in one go. It was not made by this theme.',
+				number_format_i18n( $law_ct_nested ),
+				number_format_i18n( LAW_CONTENT_TRANSFER_MAX_NESTED_ROWS )
+			)
+		);
+	}
+
 	$bundle['receptions'] = array_values( array_filter( (array) ( $bundle['receptions'] ?? array() ), 'is_array' ) );
+	// Absent in a version 1 or 2 bundle, which is not an error: an older file
+	// simply carries no events and the import leaves this site's alone.
+	$bundle['events']     = array_values( array_filter( (array) ( $bundle['events'] ?? array() ), 'is_array' ) );
 	$bundle['discounts']  = array_values( array_filter( (array) ( $bundle['discounts'] ?? array() ), 'is_array' ) );
 	$bundle['emails']     = array_values( array_filter( (array) ( $bundle['emails'] ?? array() ), 'is_array' ) );
 	$bundle['flagship']   = is_array( $bundle['flagship'] ?? null ) ? $bundle['flagship'] : null;
 
 	return $bundle;
+}
+
+/**
+ * Every session and speaker row in a bundle, counted before anything walks them.
+ *
+ * Counts the flagship's agenda as well as the events', because both go through
+ * the same savers and cost the same. Deliberately not recursive over the whole
+ * structure: an arbitrary walk of attacker-shaped JSON is the thing being
+ * guarded against, so this only looks where rows are actually read from.
+ *
+ * @return int
+ */
+function law_content_transfer_count_nested( array $bundle ) {
+	$total = 0;
+
+	$containers = (array) ( $bundle['events'] ?? array() );
+	if ( is_array( $bundle['flagship'] ?? null ) ) {
+		$containers[] = $bundle['flagship'];
+	}
+
+	foreach ( $containers as $container ) {
+		if ( ! is_array( $container ) ) {
+			continue;
+		}
+		$total += count( (array) ( $container['speakers'] ?? array() ) );
+		foreach ( (array) ( $container['sessions'] ?? array() ) as $session ) {
+			$total++;
+			if ( is_array( $session ) ) {
+				$total += count( (array) ( $session['speakers'] ?? array() ) );
+			}
+		}
+	}
+
+	return $total;
 }
 
 /* ===========================================================================
@@ -1310,6 +1787,15 @@ function law_content_transfer_run( array $bundle, $dry, $actor = 0 ) {
 		$rows[] = law_content_transfer_run_flagship( (array) $bundle['flagship'], $bundle, $dry, $actor );
 	}
 
+	// After the two managed kinds and before the discounts. Nothing here feeds
+	// the discount scope — only receptions and the flagship can be scoped — so
+	// the position is about reading order rather than dependency: the operator
+	// sees LAW's own records settle before the fifty-odd programme rows scroll
+	// past.
+	foreach ( (array) ( $bundle['events'] ?? array() ) as $event ) {
+		$rows[] = law_content_transfer_run_event( $event, $bundle, $dry, $actor );
+	}
+
 	foreach ( (array) $bundle['discounts'] as $discount ) {
 		$rows[] = law_content_transfer_run_discount( $discount, $slugs, $dry, $actor );
 	}
@@ -1332,13 +1818,13 @@ function law_content_transfer_run( array $bundle, $dry, $actor = 0 ) {
  * where a rewrite almost always shows. Quoting the divergence rather than the
  * opening is the whole point: the opening is usually identical.
  */
-function law_content_transfer_body_change( $before, $after ) {
+function law_content_transfer_body_change( $before, $after, $label = 'Body' ) {
 	$was  = (string) $before;
 	$now  = (string) $after;
 	$size = sprintf( '%s characters → %s', number_format_i18n( mb_strlen( $was ) ), number_format_i18n( mb_strlen( $now ) ) );
 
 	if ( '' === trim( $was ) ) {
-		return sprintf( 'Body: set for the first time (%s)', $size );
+		return sprintf( '%s: set for the first time (%s)', $label, $size );
 	}
 
 	$old_lines = preg_split( '/\R/', $was );
@@ -1352,7 +1838,8 @@ function law_content_transfer_body_change( $before, $after ) {
 			continue;
 		}
 		return sprintf(
-			'Body: %s, first change on line %d: %s → %s',
+			'%s: %s, first change on line %d: %s → %s',
+			$label,
 			$size,
 			$i + 1,
 			law_content_transfer_show( $old_line ),
@@ -1361,7 +1848,7 @@ function law_content_transfer_body_change( $before, $after ) {
 	}
 
 	// Same lines, different string: trailing whitespace or line endings only.
-	return sprintf( 'Body: %s (whitespace only)', $size );
+	return sprintf( '%s: %s (whitespace only)', $label, $size );
 }
 
 /**
@@ -1922,6 +2409,930 @@ function law_content_transfer_session_change( array $before, array $after ) {
 	return $lines;
 }
 
+/* Hosted and external events ________________________________________________ */
+
+/**
+ * The local post a bundle row means, or 0.
+ *
+ * Gravity Forms entry ID first, slug second. The entry ID is the stronger key
+ * by a distance: both sites build their programme by running the same migration
+ * against the same Gravity Forms entries, so entry 190 on form 2 (Event >
+ * submit an event) is the same event here and there whatever either site did to
+ * the title afterwards. The slug is the fallback for an event created in the
+ * module since, which has no entry behind it — weaker, because a slug moves
+ * when a title is edited before the post is first published, but it is the only
+ * other thing the two sites can agree on.
+ *
+ * @return int 0 when this site has no such event.
+ */
+function law_content_transfer_find_event( array $event ) {
+	$entry_id = absint( $event['gf_entry_id'] ?? 0 );
+	if ( $entry_id ) {
+		$found = get_posts(
+			array(
+				'post_type'        => LAW_EVENT_CPT,
+				'post_status'      => law_event_all_status_keys(),
+				'meta_key'         => '_law_gf_entry_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+				'meta_value'       => $entry_id,          // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'posts_per_page'   => 1,
+				'fields'           => 'ids',
+				'no_found_rows'    => true,
+				'suppress_filters' => false,
+			)
+		);
+		if ( $found ) {
+			return (int) $found[0];
+		}
+	}
+
+	$slug = sanitize_title( (string) ( $event['slug'] ?? '' ) );
+	if ( '' === $slug ) {
+		return 0;
+	}
+	$post = get_page_by_path( $slug, OBJECT, LAW_EVENT_CPT );
+
+	return $post instanceof WP_Post ? (int) $post->ID : 0;
+}
+
+/**
+ * One hosted or external event: update it, or create it if this site has none.
+ *
+ * Never deletes and never touches an event the bundle does not name (Denis,
+ * 16 September 2026). The run is an overlay on top of whatever the Gravity
+ * Forms migration has already built, not a mirror of the source site.
+ */
+function law_content_transfer_run_event( $event, array $bundle, $dry, $actor ) {
+	$event    = (array) $event;
+	$external = ! empty( $event['external'] );
+	$title    = trim( (string) ( $event['title'] ?? '' ) );
+	$label    = trim( (string) ( $event['reference'] ?? '' ) );
+	// Set from the bundle's claim here and corrected below, once this site's own
+	// classification has been read, so the log line and the results table cannot
+	// disagree about what kind of event a misclassified row is.
+	$ref      = 'event ' . ( $label ?: ( $event['slug'] ?? '?' ) );
+
+	$row = array(
+		'kind'     => $external ? 'External event' : 'Hosted event',
+		'ref'      => ( $label ? $label . ' — ' : '' ) . ( $title ?: '(untitled)' ),
+		'verdict'  => 'No change',
+		'changes'  => array(),
+		'event_id' => 0,
+	);
+
+	if ( '' === $title ) {
+		$row['verdict'] = 'Skipped';
+		$row['changes'] = array( 'The bundle row has no title.' );
+		law_migration_log( 'content_transfer', 'warning', $ref, 'Skipped: no title.' );
+		return $row;
+	}
+
+	$event_id = law_content_transfer_find_event( $event );
+
+	// A reception or the flagship answering to the same slug. Their own keys
+	// own them, and their savers do things this one knows nothing about, so the
+	// row is refused rather than written through the generic path.
+	if ( $event_id && ( law_reception_is( $event_id ) || law_flagship_is( $event_id ) ) ) {
+		$row['verdict'] = 'Skipped';
+		$row['changes'] = array( sprintf( 'Post %d is one of LAW\'s own events (a reception or the flagship) and is handled by its own row. Nothing was written.', $event_id ) );
+		law_migration_log( 'content_transfer', 'warning', $ref, sprintf( 'Skipped: post %d is a reception or the flagship.', $event_id ) );
+		return $row;
+	}
+
+	$creating = ! $event_id;
+	$notes    = array();
+	$values   = law_content_transfer_event_values( $event, $bundle, $dry, $notes );
+
+	// WHAT THE EVENT IS HERE, read before this run writes anything, versus what
+	// the bundle SAYS it is. Only the first may decide whether the status
+	// travels; the second is a claim in an uploaded file. On a create there is
+	// nothing stored yet, so the claim is all there is — and safe, because a new
+	// post has no workflow behind it to bypass.
+	$claimed  = $external;
+	$external = $creating ? $external : (bool) get_post_meta( $event_id, '_law_is_external', true );
+	$row['kind'] = $external ? 'External event' : 'Hosted event';
+	$ref         = ( $external ? 'external event ' : 'event ' ) . ( $label ?: ( $event['slug'] ?? '?' ) );
+	if ( ! $creating && $claimed !== $external ) {
+		$notes[] = sprintf(
+			'Classified as %s here and %s on the other site. An import does not reclassify an event, because that is what decides whether its status is a workflow decision — change it on the committee dashboard if it is wrong.',
+			$external ? 'an external event' : 'a hosted event',
+			$claimed ? 'an external event' : 'a hosted event'
+		);
+	}
+
+	// Status, reported either way and written only where it is not a workflow
+	// decision. See the file header.
+	$status = (string) ( $event['status'] ?? '' );
+	if ( ! array_key_exists( $status, law_event_statuses() ) ) {
+		$status = '';
+	}
+
+	if ( ! $creating && $values['owner_id'] && $event_id
+		&& (int) $values['owner_id'] !== (int) get_post_field( 'post_author', $event_id ) ) {
+		$notes[] = sprintf(
+			'Owner left alone: %s here, %s on the other site. Ownership is who can open the event, so an import only sets it on an event it creates — reassign it in wp-admin if it is wrong.',
+			law_content_transfer_show( law_content_transfer_user_email( (int) get_post_field( 'post_author', $event_id ) ) ),
+			law_content_transfer_show( law_content_transfer_user_email( (int) $values['owner_id'] ) )
+		);
+	}
+
+	if ( $dry ) {
+		$before  = $event_id ? law_content_transfer_event_snapshot( $event_id ) : law_content_transfer_empty_event_snapshot();
+		$after   = law_content_transfer_event_after( $values, $event_id, $external, $creating, $status );
+		$changes = law_content_transfer_diff( $before, $after, law_content_transfer_event_labels() );
+		$changes = array_merge(
+			$changes,
+			law_content_transfer_event_description_change( $before, $after ),
+			law_content_transfer_event_agenda_diff( $before, $values ),
+			law_content_transfer_event_status_notes( $before['status'], $status, $external, $creating ),
+			$notes
+		);
+
+		$row['event_id'] = $event_id;
+		$row['verdict']  = $creating ? 'Create' : ( $changes ? 'Update' : 'No change' );
+		$row['changes']  = $changes;
+		return $row;
+	}
+
+	if ( $creating ) {
+		// A NEW post may be inserted at any status: the wp_insert_post_data
+		// guard passes new inserts straight through, and nothing fires — no
+		// transition, no email, no Stripe call. That is why a created event may
+		// carry the source site's status while an existing one may not.
+		$insert = array(
+			'post_type'    => LAW_EVENT_CPT,
+			'post_status'  => $status ?: 'law-draft',
+			'post_title'   => $values['title'],
+			'post_name'    => sanitize_title( (string) ( $event['slug'] ?? '' ) ),
+			'post_content' => $values['description'],
+			'post_author'  => $values['owner_id'] ?: (int) $actor,
+		);
+		$created_at = (string) law_events_sanitize_value( $event['created'] ?? '', 'datetime' );
+		if ( '' !== $created_at ) {
+			// Both halves, or core derives post_date from the server clock and
+			// the two disagree by whatever the site's offset is.
+			$insert['post_date_gmt'] = $created_at . ':00';
+			$insert['post_date']     = get_date_from_gmt( $created_at . ':00' );
+		}
+		$event_id = wp_insert_post( wp_slash( $insert ), true );
+		if ( is_wp_error( $event_id ) ) {
+			$row['verdict'] = 'Failed';
+			$row['changes'] = array( $event_id->get_error_message() );
+			law_migration_log( 'content_transfer', 'error', $ref, $event_id->get_error_message() );
+			return $row;
+		}
+		$event_id = (int) $event_id;
+		// Before anything else: law_event_is_managed_by_law() reads it, and the
+		// status guard's exemption for external events depends on it.
+		if ( $external ) {
+			law_event_update_meta( $event_id, '_law_is_external', 1 );
+		}
+		// The entry ID is the key every later import matches on, so a created
+		// event has to carry the one it came with or the next run would create
+		// a second copy.
+		$entry_id = absint( $event['gf_entry_id'] ?? 0 );
+		if ( $entry_id ) {
+			law_event_update_meta( $event_id, '_law_gf_entry_id', $entry_id );
+		}
+		law_events_ensure_reference( $event_id );
+
+		// The slug is the fallback key, so a slug WordPress had to uniquify
+		// ("drinks" already taken, stored as "drinks-2") would make the next
+		// import of the same bundle create a second copy rather than matching
+		// this one. It cannot happen silently: a law_event already holding the
+		// slug would have been found above, so this only fires against a
+		// collision outside the post type. Reported rather than worked around,
+		// because the fix is a human deciding which record should own the slug.
+		$wanted = sanitize_title( (string) ( $event['slug'] ?? '' ) );
+		$given  = (string) get_post_field( 'post_name', $event_id );
+		if ( '' !== $wanted && $wanted !== $given ) {
+			$notes[] = sprintf(
+				'The slug "%s" was already in use here, so this event was created as "%s". It carries %s, so re-importing the same file will %s.',
+				$wanted,
+				$given,
+				$entry_id ? 'the Gravity Forms entry ID' : 'no entry ID',
+				$entry_id ? 'still match it' : 'create a second copy unless the slug is corrected'
+			);
+		}
+	}
+
+	$row['event_id'] = $event_id;
+	$before          = law_content_transfer_event_snapshot( $event_id );
+
+	law_content_transfer_write_event( $event_id, $values, $external, $creating, $status, $actor, $notes );
+
+	$after   = law_content_transfer_event_snapshot( $event_id );
+	$changes = law_content_transfer_diff( $before, $after, law_content_transfer_event_labels() );
+	$changes = array_merge(
+		$changes,
+		law_content_transfer_event_description_change( $before, $after ),
+		law_content_transfer_event_status_notes( $before['status'], $status, $external, $creating ),
+		$notes
+	);
+
+	$row['verdict'] = $creating ? 'Create' : ( $changes ? 'Update' : 'No change' );
+	$row['changes'] = $changes;
+
+	if ( $changes || $creating ) {
+		// The event's own activity log, so a committee member reading the
+		// history of one event sees where the values came from without having
+		// to know a migration screen exists.
+		law_event_log(
+			$event_id,
+			sprintf(
+				'%s from a content transfer bundle made on %s: %s',
+				$creating ? 'Created' : 'Updated',
+				(string) ( $bundle['site']['url'] ?? 'another site' ),
+				$changes ? implode( '; ', $changes ) : 'no field changed'
+			),
+			array( 'action' => 'content_transfer', 'source' => 'migration' ),
+			array( 'user_id' => (int) $actor )
+		);
+	}
+
+	law_migration_log(
+		'content_transfer',
+		$creating ? 'created' : ( $changes ? 'created' : 'skipped' ),
+		$ref,
+		$changes ? implode( '; ', $changes ) : 'Already matched the bundle.'
+	);
+
+	return $row;
+}
+
+/**
+ * The bundle row, sanitised into exactly what would be written.
+ *
+ * Every meta value goes through law_events_sanitize_value() HERE rather than
+ * only inside law_event_update_meta(), which is what lets the dry run promise
+ * something real: the value shown in the preview is byte for byte the value the
+ * apply will store, because both came out of the same sanitiser.
+ *
+ * A key the bundle does not carry is left out of the returned `meta` array
+ * entirely, and the writer skips it. That is the difference between "the client
+ * cleared this field" and "this bundle is older than that field", and getting
+ * it wrong would let an old file blank a column nobody had touched.
+ *
+ * @param string[] $notes Collected notes, by reference.
+ */
+function law_content_transfer_event_values( array $event, array $bundle, $dry, array &$notes ) {
+	// law_event_meta_schema() directly, not law_events_meta_type(), which needs
+	// a post ID to read the type from — and a Create has none yet. Its fallback
+	// searches every schema at once, where `_law_speakers` means one thing on an
+	// event and another on a session; asking the event's own schema cannot be
+	// ambiguous.
+	$schema = law_event_meta_schema();
+	$meta   = array();
+	$raw    = (array) ( $event['meta'] ?? array() );
+	foreach ( law_content_transfer_event_meta_keys() as $key ) {
+		if ( ! array_key_exists( $key, $raw ) || ! isset( $schema[ $key ] ) ) {
+			continue;
+		}
+		$meta[ $key ] = law_events_sanitize_value( $raw[ $key ], $schema[ $key ] );
+	}
+
+	// People, resolved by address. A missing account is a note, never a new
+	// user: an import creating logins for people who have never heard of the
+	// new site is a decision for a human (Denis, 16 September 2026).
+	$owner_id = law_content_transfer_resolve_user( $event['owner_email'] ?? '' );
+	if ( '' !== trim( (string) ( $event['owner_email'] ?? '' ) ) && ! $owner_id ) {
+		$notes[] = sprintf( 'Owner "%s" has no account on this site, so the event keeps the owner it already had.', law_content_transfer_show( $event['owner_email'] ) );
+	}
+	$assignee_id = law_content_transfer_resolve_user( $event['assignee_email'] ?? '' );
+	if ( '' !== trim( (string) ( $event['assignee_email'] ?? '' ) ) && ! $assignee_id ) {
+		$notes[] = sprintf( 'Assignee "%s" has no account on this site, so the assignee was left alone.', law_content_transfer_show( $event['assignee_email'] ) );
+	}
+
+	// Organisations, resolved from slugs. Dropped rather than invented: this
+	// module does not own the `organisation` post type and must not create
+	// records in it.
+	$organisation_ids = array();
+	foreach ( (array) ( $event['organisations'] ?? array() ) as $slug ) {
+		$slug = sanitize_title( (string) $slug );
+		$org  = $slug ? get_page_by_path( $slug, OBJECT, 'organisation' ) : null;
+		if ( $org instanceof WP_Post ) {
+			$organisation_ids[] = (int) $org->ID;
+		} elseif ( '' !== $slug ) {
+			$notes[] = sprintf( 'Linked organisation "%s" does not exist on this site, so it was left off.', $slug );
+		}
+	}
+
+	// What an image note names the event as, so a run over fifty events says
+	// which one could not find its photograph.
+	$label = (string) ( $event['reference'] ?? '' );
+	if ( '' === $label ) {
+		$label = (string) ( $event['slug'] ?? '' );
+	}
+
+	return array(
+		'title'            => sanitize_text_field( (string) ( $event['title'] ?? '' ) ),
+		'description'      => law_rich_text_sanitize( $event['description'] ?? '' ),
+		'owner_id'         => $owner_id,
+		'assignee_id'      => $assignee_id,
+		'event_type'       => sanitize_text_field( (string) ( $event['event_type'] ?? '' ) ),
+		'sectors'          => array_values( array_filter( array_map( 'sanitize_text_field', (array) ( $event['sectors'] ?? array() ) ), 'strlen' ) ),
+		'organisation_ids' => $organisation_ids,
+		'meta'             => $meta,
+		'speakers'         => law_content_transfer_event_speaker_input( $event['speakers'] ?? array(), $bundle, $dry, $label, $notes ),
+		'sessions'         => law_content_transfer_event_session_input( $event['sessions'] ?? array(), $bundle, $dry, $label, $notes ),
+		// The two repeater sentinels, and the distinction they protect is the
+		// same one a truncated POST needs: "the client deleted every speaker"
+		// and "this file says nothing about speakers" must not be the same
+		// input. Our own exporter always writes both keys, even when empty, so
+		// an emptied agenda on staging really does clear production's; a bundle
+		// that is silent — hand-edited, or written before the key existed —
+		// leaves both alone.
+		'speakers_present' => array_key_exists( 'speakers', $event ),
+		'sessions_present' => array_key_exists( 'sessions', $event ),
+	);
+}
+
+/**
+ * Bundle speaker rows as law_flagship_resolve_speaker_rows() input.
+ *
+ * `is_new` on every row, for the reason rule 2 in the file header gives: it
+ * means "match or create", law_speaker_upsert() dedupes by email then by
+ * normalised name, and a speaker who already exists here is reused with their
+ * shared profile gap-filled rather than overwritten.
+ *
+ * @param string[] $notes Collected image notes, by reference.
+ */
+function law_content_transfer_event_speaker_input( $rows, array $bundle, $dry, $ref, array &$notes ) {
+	$out = array();
+
+	foreach ( (array) $rows as $speaker ) {
+		if ( ! is_array( $speaker ) ) {
+			continue;
+		}
+		$first = sanitize_text_field( (string) ( $speaker['first_name'] ?? '' ) );
+		$last  = sanitize_text_field( (string) ( $speaker['last_name'] ?? '' ) );
+		if ( '' === trim( $first . $last ) ) {
+			continue; // law_speaker_upsert() would refuse it anyway.
+		}
+
+		$photo = law_content_transfer_image( $speaker['photo'] ?? null, $bundle, (string) $ref, $dry );
+		if ( '' !== $photo['note'] ) {
+			$notes[] = sprintf( '%s %s: %s', $first, $last, $photo['note'] );
+		}
+
+		$out[] = array(
+			'speaker_id'   => 0,
+			'is_new'       => true,
+			'first_name'   => $first,
+			'last_name'    => $last,
+			'email'        => sanitize_email( (string) ( $speaker['email'] ?? '' ) ),
+			'website'      => esc_url_raw( (string) ( $speaker['website'] ?? '' ) ),
+			'role'         => law_speaker_role_key( $speaker['role'] ?? '' ),
+			'organisation' => sanitize_text_field( (string) ( $speaker['organisation'] ?? '' ) ),
+			'job_title'    => sanitize_text_field( (string) ( $speaker['job_title'] ?? '' ) ),
+			'photo_id'     => (int) $photo['id'],
+			'bio'          => law_rich_text_sanitize( $speaker['bio'] ?? '' ),
+		);
+	}
+
+	return $out;
+}
+
+/** Bundle session rows as law_flagship_save_sessions() input. */
+function law_content_transfer_event_session_input( $rows, array $bundle, $dry, $ref, array &$notes ) {
+	$out = array();
+
+	foreach ( (array) $rows as $index => $session ) {
+		if ( ! is_array( $session ) ) {
+			continue;
+		}
+		$session_ref = sprintf( '%s, session %d', $ref, (int) $index + 1 );
+		$out[]       = array(
+			// Always 0: a session ID from the other site means nothing here, and
+			// law_flagship_save_sessions() honours a posted ID only when the
+			// session is already a child of this event. So an import rewrites
+			// the agenda rather than editing it in place, which is the right
+			// trade for a reconciler whose rows carry no stable key of their own.
+			'id'          => 0,
+			// Not part of law_flagship_save_sessions()'s input shape, which
+			// ignores it; read back off the row afterwards to re-stamp the
+			// session it created. See law_content_transfer_write_event().
+			'gf_entry_id' => absint( $session['gf_entry_id'] ?? 0 ),
+			'title'       => sanitize_text_field( (string) ( $session['title'] ?? '' ) ),
+			'start'       => (string) law_events_sanitize_value( $session['start'] ?? '', 'time' ),
+			'end'         => (string) law_events_sanitize_value( $session['end'] ?? '', 'time' ),
+			'description' => law_rich_text_sanitize( $session['description'] ?? '' ),
+			'speakers'    => law_content_transfer_event_speaker_input( $session['speakers'] ?? array(), $bundle, $dry, $session_ref, $notes ),
+		);
+	}
+
+	return $out;
+}
+
+/** A user ID from an email address, or 0. Never creates one. */
+function law_content_transfer_resolve_user( $email ) {
+	$email = sanitize_email( (string) $email );
+	if ( ! is_email( $email ) ) {
+		return 0;
+	}
+	$user = get_user_by( 'email', $email );
+
+	return $user ? (int) $user->ID : 0;
+}
+
+/**
+ * Point the co-owner ACCOUNT LINKS at the rows — on an event this run created,
+ * and only then.
+ *
+ * The module keeps three things in step: `_law_co_owner_rows` (what the host
+ * typed), `_law_co_owner_ids` (the array the module reads) and one flat
+ * `_law_co_owner` row per ID (what the dashboard's query matches, because a
+ * REGEXP against the serialised array would confuse array keys with user IDs).
+ * law_event_set_co_owner_ids() is the single write path for the last two, so
+ * that is what this calls. An account is never created: a row whose address has
+ * none here is reported.
+ *
+ * WHY AN EXISTING EVENT'S LINKS ARE LEFT ALONE, which is the same rule
+ * post_author follows and for the same reason (security review, 16 September
+ * 2026). law_user_can_manage_event() treats a co-owner exactly as it treats the
+ * author: full edit and view rights, including the invoicing contact, address
+ * and VAT number this very run writes. So linking somebody because a bundle
+ * named their address is an unconsented grant of access to a real person, and
+ * the fact that the ROW travels does not make the LINK a detail — the same
+ * distinction the owner rule already draws.
+ *
+ * The argument that talked me into linking anyway was that approving the event
+ * here would link the same people regardless. It is wrong exactly where it
+ * matters: law_event_ensure_co_owner_users() runs on the approve transition and
+ * on a save of an ALREADY-approved event, so on the live programme — every event
+ * the client is actually editing — an import would have been the only grant
+ * there was, with no human decision behind it. Reporting the difference instead
+ * costs a committee member opening the event and saving it, which runs that
+ * function properly, creates the missing accounts and sends the emails.
+ *
+ * @param bool     $creating Whether this run created the event.
+ * @param string[] $notes    Collected notes, by reference.
+ */
+function law_content_transfer_link_co_owners( $event_id, $rows, $creating, array &$notes ) {
+	$ids     = array();
+	$unknown = array();
+
+	foreach ( (array) $rows as $row ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+		$email = sanitize_email( (string) ( $row['email'] ?? '' ) );
+		if ( ! is_email( $email ) ) {
+			continue; // A row with no address links to nothing on any site.
+		}
+		$user_id = law_content_transfer_resolve_user( $email );
+		if ( $user_id ) {
+			$ids[] = $user_id;
+			continue;
+		}
+		$unknown[] = trim( (string) ( $row['name'] ?? '' ) ) ?: $email;
+	}
+
+	if ( ! $creating ) {
+		$have = array_map( 'intval', law_event_meta( (int) $event_id, '_law_co_owner_ids' ) );
+		sort( $have );
+		$want = array_values( array_unique( $ids ) );
+		sort( $want );
+		if ( $have !== $want ) {
+			$notes[] = 'Co-owner access left alone: the rows travelled, but who can OPEN the event did not. Open the event and save it on the committee dashboard to grant access properly, which also creates any missing accounts and emails them.';
+		}
+		return;
+	}
+
+	law_event_set_co_owner_ids( (int) $event_id, array_values( array_unique( $ids ) ) );
+
+	if ( $unknown ) {
+		$notes[] = sprintf(
+			'%s: %s. They are on the event, but cannot open it until the committee approves it here, which is what creates the account.',
+			1 === count( $unknown ) ? 'Co-owner with no account on this site' : 'Co-owners with no account on this site',
+			implode( ', ', array_slice( $unknown, 0, 5 ) ) . ( count( $unknown ) > 5 ? ' and others' : '' )
+		);
+	}
+}
+
+/**
+ * Write one event. The apply half of law_content_transfer_run_event().
+ *
+ * Every meta write goes through law_event_update_meta(), the single sanitising
+ * write path the admin screens, the front-end forms and the migrator share, so
+ * nothing here is a second validation rule.
+ */
+function law_content_transfer_write_event( $event_id, array $values, $external, $creating, $status, $actor, array &$notes ) {
+	$post = array(
+		'ID'           => (int) $event_id,
+		'post_title'   => $values['title'],
+		'post_content' => $values['description'],
+	);
+
+	// OWNERSHIP IS SET ON A CREATE ONLY (security review, 16 September 2026).
+	// post_author is not a detail about the event, it is who can open it:
+	// law_user_can_manage_event() gives the author full edit and view rights,
+	// which includes the invoicing contact and address this same run writes. A
+	// bundle that named somebody else's address would hand them the event, and
+	// while the operator is already an administrator, "an administrator was
+	// talked into uploading this file" is the threat model this whole file is
+	// written against. A difference on an existing event is reported instead,
+	// the way the workflow status is.
+	if ( $creating && $values['owner_id'] ) {
+		$post['post_author'] = (int) $values['owner_id'];
+	}
+
+	// An EXISTING event's status is reverted by the guard unless the saver
+	// announces itself. An external event has no workflow, so it announces
+	// itself exactly as law_external_event_save(), law_reception_save() and
+	// law_flagship_save() do, and the guard honours the flag for publish and
+	// law-draft only — which are the only two states an external event has. A
+	// hosted event's status is never written here at all: the guard would
+	// revert it, and it is right that it would.
+	//
+	// $external is what the event IS on this site, read before any of this run's
+	// writes, never what the bundle claims to be. The two are the same on an
+	// honest file and the difference is the whole P0: a bundle claiming
+	// `external` against a hosted event used to announce the exemption to a
+	// guard that (correctly) refused it, and then write `_law_is_external` 1
+	// anyway, so the NEXT run found a genuinely external event and the write
+	// went through. Judging on the stored value closes half of that; refusing to
+	// write the flag on an existing event closes the other half, and either
+	// alone would be enough.
+	$managed = $external && ! $creating && in_array( $status, array( 'publish', 'law-draft' ), true );
+	if ( $managed ) {
+		$post['post_status']                 = $status;
+		$GLOBALS['law_event_managed_saving'] = true;
+	}
+	// try/finally, not a bare unset: an exception thrown inside wp_update_post
+	// (a filter on save_post, say) would otherwise leave the exemption standing
+	// for every later save in the request.
+	try {
+		wp_update_post( wp_slash( $post ) );
+	} finally {
+		unset( $GLOBALS['law_event_managed_saving'] );
+	}
+
+	foreach ( $values['meta'] as $key => $value ) {
+		// The classification stays put on an existing event. See the note on
+		// law_content_transfer_event_meta_keys().
+		if ( '_law_is_external' === $key && ! $creating ) {
+			continue;
+		}
+		law_event_update_meta( $event_id, $key, $value );
+	}
+	if ( $values['assignee_id'] ) {
+		law_event_update_meta( $event_id, '_law_assignee', $values['assignee_id'] );
+	}
+	if ( $values['organisation_ids'] ) {
+		law_event_update_meta( $event_id, '_law_organisation_ids', $values['organisation_ids'] );
+	}
+
+	// Co-owner ACCOUNT LINKS, reconciled from the rows just written. Every other
+	// path that changes `_law_co_owner_rows` does this — the approve transition,
+	// the host and committee forms, the wp-admin screen — through
+	// law_event_ensure_co_owner_users(), which CREATES an account for a row that
+	// has none. An import may not (Denis, 16 September 2026), and on an event it
+	// did not create it may not grant the access either — a co-owner has the same
+	// rights as the owner, so the rule is the owner's rule. See the function.
+	if ( array_key_exists( '_law_co_owner_rows', $values['meta'] ) ) {
+		law_content_transfer_link_co_owners( $event_id, $values['meta']['_law_co_owner_rows'], $creating, $notes );
+	}
+
+	// Terms by NAME and creating none: an unknown type or sector is dropped
+	// rather than invented, the same rule every other write path follows.
+	law_events_set_terms_by_name( $event_id, 'law_event_type', array( $values['event_type'] ) );
+	law_events_set_terms_by_name( $event_id, 'law_sector', $values['sectors'] );
+	$year = (string) law_events_setting( 'year', '' );
+	if ( '' !== $year ) {
+		wp_set_object_terms( $event_id, $year, 'law_year', false );
+	}
+
+	if ( $values['speakers_present'] ) {
+		law_event_update_meta(
+			$event_id,
+			'_law_speakers',
+			law_flagship_resolve_speaker_rows( $values['speakers'], (int) $event_id, (int) $actor )
+		);
+	}
+	// A reconciler: law_flagship_save_sessions() deletes whatever the posted
+	// rows do not claim, and every row here carries id 0 because a session ID
+	// from the other site means nothing on this one. So an import REPLACES the
+	// agenda rather than editing it in place, which is the right trade for rows
+	// with no stable key of their own — and the reason the sentinel above has
+	// to be honoured rather than inferred from an empty array.
+	if ( $values['sessions_present'] ) {
+		$kept = law_flagship_save_sessions( (int) $event_id, $values['sessions'], (int) $actor );
+		law_content_transfer_restamp_sessions( $kept, $values['sessions'], $notes );
+	}
+}
+
+/**
+ * Give each recreated session back the Gravity Forms entry ID it came with.
+ *
+ * law_flagship_save_sessions() returns the surviving session IDs in the order
+ * of the rows it was given, so position pairs them — but only while every row
+ * survived, which is why an uneven count is reported rather than guessed at. A
+ * mis-paired entry ID would be worse than none: the migration would then skip
+ * the wrong session and duplicate another.
+ *
+ * @param int[]    $kept  law_flagship_save_sessions()'s return.
+ * @param array[]  $rows  The input rows, in the same order.
+ * @param string[] $notes Collected notes, by reference.
+ */
+function law_content_transfer_restamp_sessions( array $kept, array $rows, array &$notes ) {
+	if ( count( $kept ) !== count( $rows ) ) {
+		$notes[] = sprintf(
+			'%d of %d sessions were saved, so their Gravity Forms entry IDs were not restored. Re-running the sessions migration step would duplicate this agenda; check the sessions on this event by hand.',
+			count( $kept ),
+			count( $rows )
+		);
+		return;
+	}
+
+	foreach ( $kept as $index => $session_id ) {
+		$entry_id = absint( $rows[ $index ]['gf_entry_id'] ?? 0 );
+		if ( $entry_id ) {
+			law_event_update_meta( (int) $session_id, '_law_gf_entry_id', $entry_id );
+		}
+	}
+}
+
+/**
+ * What a run might change, flattened to strings so the shared diff can compare
+ * it. Every value is a string: law_content_transfer_diff() casts, and an array
+ * reaching that cast would print "Array" and emit a notice.
+ */
+function law_content_transfer_event_snapshot( $event_id ) {
+	$event_id = (int) $event_id;
+	$post     = get_post( $event_id );
+
+	$snapshot = array(
+		'title'        => $post ? (string) $post->post_title : '',
+		'description'  => $post ? (string) $post->post_content : '',
+		'status'       => $post ? (string) $post->post_status : '',
+		'owner'        => $post ? law_content_transfer_user_email( (int) $post->post_author ) : '',
+		'assignee'     => law_content_transfer_user_email( absint( law_event_meta( $event_id, '_law_assignee' ) ) ),
+		'event_type'   => (string) law_events_post_term_name( $event_id, 'law_event_type' ),
+		'sectors'      => implode( ', ', law_events_post_term_names( $event_id, 'law_sector' ) ),
+		'organisations' => implode( ', ', law_content_transfer_organisation_slugs( $event_id ) ),
+		'speakers'     => (string) count( law_event_meta( $event_id, '_law_speakers' ) ),
+		'sessions'     => (string) count( law_event_session_ids( $event_id ) ),
+	);
+
+	// Read through the SAME sanitiser the write goes through. Several keys have
+	// a non-empty default — `_law_booking_override` becomes 'auto', an int
+	// becomes 0, a float becomes 0.00 — so a key that has never been written
+	// stores '' and reads back as its default the moment anything saves it.
+	// Comparing the raw stored value against the sanitised incoming one would
+	// therefore report "Override booking availability: not set → auto" on every
+	// event nobody has touched, which on a hundred-row programme is enough noise
+	// to stop an operator reading the preview at all.
+	$schema = law_event_meta_schema();
+	foreach ( law_content_transfer_event_meta_keys() as $key ) {
+		$stored = law_event_meta( $event_id, $key );
+		$snapshot[ $key ] = law_content_transfer_flatten(
+			isset( $schema[ $key ] ) ? law_events_sanitize_value( $stored, $schema[ $key ] ) : $stored
+		);
+	}
+
+	return $snapshot;
+}
+
+/** The "before" for an event this site does not have yet. */
+function law_content_transfer_empty_event_snapshot() {
+	$snapshot = array(
+		'title' => '', 'description' => '', 'status' => '', 'owner' => '', 'assignee' => '',
+		'event_type' => '', 'sectors' => '', 'organisations' => '', 'speakers' => '0', 'sessions' => '0',
+	);
+	foreach ( law_content_transfer_event_meta_keys() as $key ) {
+		$snapshot[ $key ] = '';
+	}
+
+	return $snapshot;
+}
+
+/**
+ * What the write above would leave behind, in snapshot shape.
+ *
+ * Mirrors law_content_transfer_write_event() decision for decision, including
+ * the three places it deliberately does nothing: an unresolved owner or
+ * assignee, an empty organisation list, and a hosted event's status.
+ */
+function law_content_transfer_event_after( array $values, $event_id, $external, $creating, $status ) {
+	$event_id = (int) $event_id;
+
+	$after = array(
+		'title'       => $values['title'],
+		'description' => $values['description'],
+		// Set on a create only, so an existing event's "after" is what it
+		// already had. The preview must not show a change the apply refuses.
+		'owner'       => ( $creating && $values['owner_id'] )
+			? law_content_transfer_user_email( $values['owner_id'] )
+			: ( $event_id ? law_content_transfer_user_email( (int) get_post_field( 'post_author', $event_id ) ) : '' ),
+		'assignee'    => $values['assignee_id']
+			? law_content_transfer_user_email( $values['assignee_id'] )
+			: ( $event_id ? law_content_transfer_user_email( absint( law_event_meta( $event_id, '_law_assignee' ) ) ) : '' ),
+		'event_type'  => $values['event_type'],
+		'sectors'     => implode( ', ', $values['sectors'] ),
+		'speakers'    => $values['speakers_present']
+			? (string) count( $values['speakers'] )
+			: ( $event_id ? (string) count( law_event_meta( $event_id, '_law_speakers' ) ) : '0' ),
+	);
+
+	// Only written when there is something to write, so the "after" has to fall
+	// back to what is stored rather than to nothing.
+	$after['organisations'] = $values['organisation_ids']
+		? implode( ', ', array_filter( array_map( fn( $id ) => (string) get_post_field( 'post_name', $id ), $values['organisation_ids'] ) ) )
+		: ( $event_id ? implode( ', ', law_content_transfer_organisation_slugs( $event_id ) ) : '' );
+
+	$after['sessions'] = $values['sessions_present']
+		? (string) count( $values['sessions'] )
+		: ( $event_id ? (string) count( law_event_session_ids( $event_id ) ) : '0' );
+
+	// The status rule, in one expression: a created event takes the bundle's,
+	// an external event takes the bundle's two-state tick, a hosted event keeps
+	// whatever the far site's own workflow put there.
+	if ( $creating ) {
+		$after['status'] = $status ?: 'law-draft';
+	} elseif ( $external && in_array( $status, array( 'publish', 'law-draft' ), true ) ) {
+		$after['status'] = $status;
+	} else {
+		$after['status'] = $event_id ? (string) get_post_status( $event_id ) : '';
+	}
+
+	// A key the bundle does not carry is not written, so the "after" is
+	// whatever is stored — normalised the same way the snapshot normalises it,
+	// or a key the file is silent about would report a change of its own.
+	$schema = law_event_meta_schema();
+	foreach ( law_content_transfer_event_meta_keys() as $key ) {
+		// Same rule as the owner: the classification is not written on an
+		// existing event, so it must not appear in the preview as if it were.
+		$writes = array_key_exists( $key, $values['meta'] )
+			&& ! ( '_law_is_external' === $key && ! $creating );
+		if ( $writes ) {
+			$after[ $key ] = law_content_transfer_flatten( $values['meta'][ $key ] );
+			continue;
+		}
+		$stored        = $event_id ? law_event_meta( $event_id, $key ) : '';
+		$after[ $key ] = law_content_transfer_flatten(
+			isset( $schema[ $key ] ) ? law_events_sanitize_value( $stored, $schema[ $key ] ) : $stored
+		);
+	}
+
+	return $after;
+}
+
+/**
+ * The status line the preview prints when the two sites disagree about a hosted
+ * event, and the warning a created one earns.
+ *
+ * This is the only place in the file that reports something it is deliberately
+ * NOT doing. It earns the space: a committee member who sees "Approved there,
+ * Proposed here" can go and approve it properly, which raises the invoice and
+ * emails the host; without the line they would never know the disagreement
+ * existed.
+ *
+ * @return string[]
+ */
+function law_content_transfer_event_status_notes( $before, $status, $external, $creating ) {
+	if ( '' === (string) $status ) {
+		return array();
+	}
+
+	if ( $creating ) {
+		if ( in_array( $status, array( 'law-approved', 'publish' ), true ) ) {
+			return array(
+				sprintf(
+					'Created as %s, which is the status it had on the other site. No Stripe invoice was raised and no host email was sent, because no approval happened here — put it through the committee dashboard if it is meant to be invoiced.',
+					law_event_status_label( $status )
+				),
+			);
+		}
+		return array();
+	}
+
+	if ( $external || (string) $before === (string) $status ) {
+		return array();
+	}
+
+	return array(
+		sprintf(
+			'Status left alone: %s here, %s on the other site. A hosted event\'s status is a workflow decision, so it is not imported — make the change on the committee dashboard, where it raises the invoice and emails the host.',
+			law_event_status_label( (string) $before ),
+			law_event_status_label( (string) $status )
+		),
+	);
+}
+
+/**
+ * The description, described rather than quoted twice.
+ *
+ * Almost always a rewrite on staging, and occasionally something quieter: the
+ * allowlist in law_rich_text_sanitize() drops attributes the legacy Gravity
+ * Forms descriptions carry (a stray `class` from a pasted editor), so importing
+ * one cleans it. That is a real change and belongs in the preview, but it is
+ * one an operator should be able to recognise as cosmetic from the character
+ * count alone rather than by squinting at two identical-looking truncations.
+ *
+ * @return string[] Empty when nothing changed.
+ */
+function law_content_transfer_event_description_change( array $before, array $after ) {
+	$was = (string) ( $before['description'] ?? '' );
+	$now = (string) ( $after['description'] ?? '' );
+
+	return $was === $now ? array() : array( law_content_transfer_body_change( $was, $now, 'Description' ) );
+}
+
+/** The agenda and speakers, as a dry run can see them: counts and titles. */
+function law_content_transfer_event_agenda_diff( array $before, array $values ) {
+	$lines = array();
+
+	if ( $values['speakers_present'] && (string) ( $before['speakers'] ?? '0' ) !== (string) count( $values['speakers'] ) ) {
+		$lines[] = sprintf( 'Speakers: %s → %d', $before['speakers'] ?? '0', count( $values['speakers'] ) );
+	}
+	if ( $values['sessions_present'] && (string) ( $before['sessions'] ?? '0' ) !== (string) count( $values['sessions'] ) ) {
+		$lines[] = sprintf( 'Session agenda: %s session(s) → %d session(s)', $before['sessions'] ?? '0', count( $values['sessions'] ) );
+	}
+
+	return $lines;
+}
+
+/** The label each snapshot key prints under, and the order they print in. */
+function law_content_transfer_event_labels() {
+	return array_merge(
+		array(
+			'title'         => 'Title',
+			'status'        => 'Status',
+			// `description` is deliberately absent: it goes through
+			// law_content_transfer_body_change() instead, for the reason the
+			// email bodies do. Two versions of one paragraph routinely share
+			// their first 80 characters, so the generic "old → new" prints the
+			// same truncated string twice on the one field an operator most
+			// needs to be able to judge.
+			'owner'         => 'Owner',
+			'assignee'      => 'Assignee',
+			'event_type'    => 'Event type',
+			'sectors'       => 'Sectors',
+			'organisations' => 'Linked organisations',
+		),
+		array(
+			'_law_start'               => 'Starts',
+			'_law_end'                 => 'Ends',
+			'_law_slot_label'          => 'Slot',
+			'_law_preferred_slots'     => 'Preferred slots',
+			'_law_venue'               => 'Venue',
+			'_law_venue_needed'        => 'Venue needed',
+			'_law_venue_capacity'      => 'Venue capacity',
+			'_law_tickets_available'   => 'Places available',
+			'_law_host_organisations'  => 'Host organisation(s)',
+			'_law_contacts'            => 'Contacts',
+			'_law_co_owner_rows'       => 'Co-owners',
+			'_law_booking_override'    => 'Override booking availability',
+			'_law_is_external'         => 'External event',
+			'_law_external_url'        => 'Booking link',
+			'_law_session_agenda'      => 'Has a session agenda',
+			'_law_registration_state'  => 'How a place is obtained',
+			'_law_fee_tier'            => 'Fee tier',
+			'_law_fee_override'        => 'Fee overridden',
+			'_law_fee_override_amount' => 'Fee override amount',
+			'_law_invoice_name'        => 'Invoice name',
+			'_law_invoice_email'       => 'Invoice email',
+			'_law_invoice_address'     => 'Invoice address',
+			'_law_country_iso'         => 'Invoice country code',
+			'_law_vat_number'          => 'VAT number',
+			'_law_sector_jurisdiction' => 'Jurisdiction',
+			'_law_sector_other'        => 'Other sector',
+			'_law_terms_consent'       => 'Terms accepted',
+			'_law_approved_at'         => 'Approved on',
+			'_law_rejection_reason'    => 'Rejection reason',
+			'_law_cancellation_reason' => 'Cancellation reason',
+		)
+	);
+}
+
+/**
+ * Any stored meta value as one comparable string.
+ *
+ * law_content_transfer_show() truncates for display; this is the step before
+ * it, and its job is only to make an array comparable — people rows, an
+ * address, the preferred slots, the consent record. Nothing is dropped that
+ * would let two different values flatten to the same string.
+ */
+function law_content_transfer_flatten( $value ) {
+	if ( is_bool( $value ) ) {
+		return $value ? '1' : '0';
+	}
+	if ( ! is_array( $value ) ) {
+		return (string) $value;
+	}
+
+	$parts = array();
+	foreach ( $value as $key => $item ) {
+		$flat = law_content_transfer_flatten( $item );
+		if ( '' === $flat ) {
+			continue;
+		}
+		$parts[] = is_int( $key ) ? $flat : $key . '=' . $flat;
+	}
+
+	return implode( is_array( reset( $value ) ) ? '; ' : ', ', $parts );
+}
+
 /**
  * One discount code, matched by its punctuation-free match key.
  *
@@ -2201,16 +3612,32 @@ function law_content_transfer_panel() {
 	?>
 	<h2>Content transfer: staging → production</h2>
 	<p class="description" style="max-width:900px">
-		Moves the committee's own configuration between environments: the receptions, the flagship conference
-		with its full session agenda and speakers, the discount codes, and any email wording customised on the
-		Emails screen. A git deploy already creates the empty records on a new site; this carries what was typed
-		into them.
+		Moves the programme between environments: every hosted and external event with its venue, dates,
+		speakers, session agenda and committee switches (Override booking availability included), the
+		receptions, the flagship conference with its full session agenda and speakers, the discount codes,
+		and any email wording customised on the Emails screen. A git deploy already creates the empty records
+		on a new site; this carries what was typed into them.
+	</p>
+	<p class="description" style="max-width:900px">
+		<strong>Run it after the Gravity Forms migration, not before.</strong> The import is an overlay: it
+		updates the events the file names, creates the ones this site has never seen, and leaves everything
+		else exactly where it was. Nothing is ever deleted, and an event that exists here but not on the other
+		site is not touched.
+	</p>
+	<p class="description" style="max-width:900px">
+		<strong>A hosted event's status is never imported.</strong> Approving an event raises the Stripe
+		invoice and emails the host, so it has to be done on the committee dashboard rather than by a file
+		upload; where the two sites disagree the preview says so and leaves the status alone. An external
+		event's &ldquo;on the programme&rdquo; tick does travel, because there is no workflow behind it.
 		<strong>Bookings, attendees, payments and Stripe records are never transferred</strong>, because they
-		belong to the site they were made on. The Stripe tax rate and rendering template in Events &rarr; Settings
-		are also out of scope and must be set on the far site separately.
+		belong to the site they were made on, and nor is the host fee snapshot the invoice was raised from.
+		The Stripe tax rate and rendering template in Events &rarr; Settings are also out of scope and must be
+		set on the far site separately.
 		<strong>Email recipients do not travel either</strong> &mdash; the four emails with a typed address list
 		keep whichever addresses the far site already has, because pointing a live notification at a test mailbox
 		is a mistake nobody would notice.
+		<strong>No user account is ever created by an import</strong>: an owner or assignee with no account here
+		is reported and the event keeps the one it had.
 	</p>
 
 	<div class="law-mig-grid">
@@ -2273,12 +3700,12 @@ function law_content_transfer_panel() {
 		</table>
 
 		<?php if ( ! $applied ) : ?>
-			<form method="post" onsubmit="return confirm('Apply this import? It overwrites the receptions, the flagship and its agenda, and the discount codes on this site with the values in the file.');">
+			<form method="post" onsubmit="return confirm('Apply this import? It overwrites the events, receptions, flagship agenda and discount codes listed above with the values in the file. Events this site holds that the file does not name are left alone.');">
 				<?php wp_nonce_field( 'law_content_transfer', 'law_content_transfer_nonce' ); ?>
 				<input type="hidden" name="law_ct_action" value="apply">
 				<p>
 					<button type="submit" class="button button-primary">Apply this import</button>
-					<span class="description" style="margin-left:8px">Overwrites the records above with the values in the file. Bookings and payments are never touched.</span>
+					<span class="description" style="margin-left:8px">Overwrites the records above with the values in the file. Nothing else is touched, nothing is deleted, and bookings and payments are never written.</span>
 				</p>
 			</form>
 		<?php endif; ?>

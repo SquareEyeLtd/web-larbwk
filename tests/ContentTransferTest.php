@@ -191,10 +191,16 @@ class ContentTransferTest extends LAW_Test_Case {
 
 		$bundle = law_content_transfer_bundle();
 		$found  = array();
+		// The two exemptions are the same exemption: a GRAVITY FORMS entry ID is
+		// not a local ID. Both sites build their programme by migrating the same
+		// Gravity Forms entries, so entry 190 on form 2 (Event > submit an
+		// event) is the same event on both, which is exactly why
+		// law_content_transfer_find_event() matches on it first.
+		$entry_keys = array( 'entry_id', 'gf_entry_id' );
 		array_walk_recursive(
 			$bundle,
-			function ( $value, $key ) use ( &$found ) {
-				if ( preg_match( '/(^|_)id$/', (string) $key ) && 'entry_id' !== $key ) {
+			function ( $value, $key ) use ( &$found, $entry_keys ) {
+				if ( preg_match( '/(^|_)id$/', (string) $key ) && ! in_array( (string) $key, $entry_keys, true ) ) {
 					$found[] = $key;
 				}
 			}
@@ -582,14 +588,24 @@ class ContentTransferTest extends LAW_Test_Case {
 		// the bundle carries the whole site's receptions, so a venue or a
 		// description could legitimately contain any word.
 		$this->assertSame(
-			array( 'format', 'version', 'generated_at', 'site', 'programme_year', 'receptions', 'flagship', 'discounts', 'emails' ),
+			array( 'format', 'version', 'generated_at', 'site', 'programme_year', 'receptions', 'flagship', 'events', 'discounts', 'emails' ),
 			array_keys( $bundle ),
 			'A new top-level key means a new decision about what crosses environments.'
 		);
 
-		$keys = array();
+		// One deliberate exception, named rather than pattern-matched away:
+		// _law_booking_override is the committee's hand on the booking switch,
+		// an event-level decision with no Stripe object and no booking behind
+		// it, and carrying it is what the 16 September 2026 widening was asked
+		// for. Everything else matching these three words is a record of the
+		// source site's own money and must not cross.
+		$allowed = array( '_law_booking_override' );
+		$keys    = array();
 		array_walk_recursive( $bundle, function ( $value, $key ) use ( &$keys ) { $keys[ (string) $key ] = true; } );
 		foreach ( array_keys( $keys ) as $key ) {
+			if ( in_array( $key, $allowed, true ) ) {
+				continue;
+			}
 			$this->assertStringNotContainsStringIgnoringCase( 'booking', $key );
 			$this->assertStringNotContainsStringIgnoringCase( 'stripe', $key );
 			$this->assertStringNotContainsStringIgnoringCase( 'payment', $key );
@@ -1065,7 +1081,603 @@ class ContentTransferTest extends LAW_Test_Case {
 		$this->assertDirectoryDoesNotExist( $dir, 'Extracted images live exactly as long as the decision they belong to.' );
 	}
 
+	/* Hosted and external events (16 September 2026) ________________________ */
+
+	public function test_an_event_is_matched_by_its_gravity_forms_entry_id(): void {
+		// The stronger of the two keys, and the reason it is stronger: the title
+		// and the slug have both moved since, and the row still finds its event.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90210, '_law_venue' => 'The old hall' ) );
+		wp_update_post( array( 'ID' => $event_id, 'post_name' => $this->slug( 'ct-renamed' ), 'post_title' => 'Renamed here' ) );
+
+		$rows = law_content_transfer_run(
+			$this->bundle( array( 'events' => array( $this->event_row( array( 'gf_entry_id' => 90210, 'slug' => 'a-slug-this-site-never-had', 'title' => 'Arbitration after lunch', 'meta' => array( '_law_venue' => 'The new hall' ) ) ) ) ) ),
+			false,
+			0
+		);
+
+		$this->assertSame( 'Update', $rows[0]['verdict'] );
+		$this->assertSame( $event_id, (int) $rows[0]['event_id'], 'The entry ID found the event whose title and slug had both changed.' );
+		$this->assertSame( 'The new hall', (string) law_event_meta( $event_id, '_law_venue' ) );
+		$this->assertSame( 'Arbitration after lunch', (string) get_post_field( 'post_title', $event_id ) );
+	}
+
+	public function test_the_override_booking_availability_switch_travels(): void {
+		// The key this whole widening was asked for (client, 16 September 2026).
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90211, '_law_booking_override' => 'auto' ) );
+
+		law_content_transfer_run(
+			$this->bundle( array( 'events' => array( $this->event_row( array( 'gf_entry_id' => 90211, 'meta' => array( '_law_booking_override' => 'enable' ) ) ) ) ) ),
+			false,
+			0
+		);
+
+		$this->assertSame( 'enable', law_event_booking_override( $event_id ) );
+	}
+
+	public function test_a_hosted_events_workflow_status_is_never_imported(): void {
+		// An approval is an act, not a value: law_event_workflow_side_effects()
+		// snapshots the fee, creates the co-owner accounts, raises the Stripe
+		// invoice and emails the host. A file upload can do none of that, so it
+		// may not write the status either — it reports the disagreement instead.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90212 ), 'law-proposed' );
+
+		$rows = law_content_transfer_run(
+			$this->bundle( array( 'events' => array( $this->event_row( array( 'gf_entry_id' => 90212, 'status' => 'law-approved' ) ) ) ) ),
+			false,
+			0
+		);
+
+		$this->assertSame( 'law-proposed', get_post_status( $event_id ), 'The workflow status is the committee dashboard\'s to change, never an import\'s.' );
+		$this->assertNotEmpty(
+			preg_grep( '/Status left alone/', $rows[0]['changes'] ),
+			'And the operator is told, so they can go and approve it properly: ' . implode( ' | ', $rows[0]['changes'] )
+		);
+	}
+
+	public function test_an_external_events_programme_tick_does_travel(): void {
+		// No workflow behind it: publish and law-draft mean "on the programme"
+		// and "not yet", exactly as a reception's do.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90213, '_law_is_external' => 1 ), 'publish' );
+
+		law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90213, 'external' => true, 'status' => 'law-draft', 'meta' => array( '_law_is_external' => 1 ) ) ),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( 'law-draft', get_post_status( $event_id ) );
+	}
+
+	public function test_an_event_the_bundle_does_not_name_is_never_touched(): void {
+		// Denis, 16 September 2026: the import is an overlay on top of the
+		// Gravity Forms migration, not a mirror of the source site.
+		$named    = $this->make_event( array( '_law_gf_entry_id' => 90214, '_law_venue' => 'Old' ) );
+		$bystander = $this->make_event( array( '_law_gf_entry_id' => 90215, '_law_venue' => 'Untouched' ), 'law-approved' );
+
+		law_content_transfer_run(
+			$this->bundle( array( 'events' => array( $this->event_row( array( 'gf_entry_id' => 90214, 'meta' => array( '_law_venue' => 'New' ) ) ) ) ) ),
+			false,
+			0
+		);
+
+		$this->assertSame( 'New', (string) law_event_meta( $named, '_law_venue' ) );
+		$this->assertSame( 'Untouched', (string) law_event_meta( $bystander, '_law_venue' ), 'An event the file does not name is left exactly where it was.' );
+		$this->assertSame( 'law-approved', get_post_status( $bystander ) );
+		$this->assertInstanceOf( WP_Post::class, get_post( $bystander ), 'And nothing is ever deleted.' );
+	}
+
+	public function test_an_event_this_site_does_not_have_is_created_with_its_owner_matched_by_email(): void {
+		$owner = $this->make_user();
+		$email = (string) get_userdata( $owner )->user_email;
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 0,
+								'slug'        => $this->slug( 'ct-brand-new' ),
+								'title'       => 'A brand new listing',
+								'owner_email' => $email,
+								'status'      => 'law-draft',
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( 'Create', $rows[0]['verdict'] );
+		$created = (int) $rows[0]['event_id'];
+		$this->posts[] = $created;
+		$this->assertGreaterThan( 0, $created );
+		$this->assertSame( $owner, (int) get_post_field( 'post_author', $created ), 'People travel as email addresses, because user IDs do not survive the move.' );
+		$this->assertSame( 'law-draft', get_post_status( $created ) );
+	}
+
+	public function test_an_owner_with_no_account_here_is_reported_rather_than_created(): void {
+		// An import never creates a login (Denis, 16 September 2026).
+		$before = count_users()['total_users'];
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90216, 'slug' => $this->slug( 'ct-orphan' ), 'owner_email' => 'nobody-here@example.test' ) ),
+					),
+				)
+			),
+			true,
+			0
+		);
+
+		$this->assertNotEmpty( preg_grep( '/has no account on this site/', $rows[0]['changes'] ) );
+		$this->assertSame( $before, count_users()['total_users'], 'No account was invented.' );
+	}
+
+	public function test_a_dry_run_writes_no_event(): void {
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90217, '_law_venue' => 'Unchanged' ) );
+		$counts   = $this->post_counts();
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90217, 'title' => 'Would be renamed', 'meta' => array( '_law_venue' => 'Would move' ) ) ),
+						$this->event_row( array( 'gf_entry_id' => 0, 'slug' => $this->slug( 'ct-would-create' ) ) ),
+					),
+				)
+			),
+			true,
+			0
+		);
+
+		$this->assertSame( 'Update', $rows[0]['verdict'] );
+		$this->assertSame( 'Create', $rows[1]['verdict'] );
+		$this->assertSame( 'Unchanged', (string) law_event_meta( $event_id, '_law_venue' ) );
+		$this->assertSame( $counts, $this->post_counts(), 'A preview writes nothing at all.' );
+	}
+
+	public function test_a_slug_held_by_a_reception_is_refused(): void {
+		// The receptions and the flagship have keys and savers of their own.
+		$slug = $this->slug( 'ct-drinks' );
+		$this->make_reception( $slug );
+
+		$rows = law_content_transfer_run(
+			$this->bundle( array( 'events' => array( $this->event_row( array( 'gf_entry_id' => 0, 'slug' => $slug ) ) ) ) ),
+			false,
+			0
+		);
+
+		$this->assertSame( 'Skipped', $rows[0]['verdict'] );
+	}
+
+	public function test_a_bundle_written_before_events_travelled_leaves_them_alone(): void {
+		// A version 2 file has no `events` key at all, which is not an error.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90218, '_law_venue' => 'Still here' ) );
+
+		law_content_transfer_run( $this->bundle( array( 'version' => 2 ) ), false, 0 );
+
+		$this->assertSame( 'Still here', (string) law_event_meta( $event_id, '_law_venue' ) );
+	}
+
+	public function test_an_events_money_never_travels(): void {
+		// The fee SNAPSHOT the invoice was raised from, the payment state and
+		// every Stripe object belong to the site that billed it. The fee tier,
+		// which is the committee's decision about the event, does travel.
+		$event_id = $this->make_event(
+			array(
+				'_law_gf_entry_id'        => 90219,
+				'_law_fee_pence'          => 95000,
+				'_law_payment_status'     => 'paid',
+				'_law_stripe_invoice_id'  => 'in_staging_only',
+				'_law_stripe_customer_id' => 'cus_staging_only',
+				'_law_fee_tier'           => 'uk',
+			)
+		);
+
+		$row = $this->row_by( law_content_transfer_events(), 'gf_entry_id', '90219' );
+
+		$this->assertArrayHasKey( '_law_fee_tier', $row['meta'] );
+		foreach ( array( '_law_fee_pence', '_law_vat', '_law_payment_status', '_law_stripe_invoice_id', '_law_stripe_customer_id', '_law_tickets_sold', '_law_co_owner_ids' ) as $key ) {
+			$this->assertArrayNotHasKey( $key, $row['meta'], $key . ' belongs to the site that raised the invoice.' );
+		}
+
+		$this->assertGreaterThan( 0, $event_id );
+	}
+
+	public function test_a_speaker_and_an_agenda_cross_with_the_event(): void {
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90220 ) );
+		$existing = $this->make_speaker_post( 'Ali', 'Malek KC', 'ali-ct@example.test' );
+		$speakers = count( get_posts( array( 'post_type' => LAW_SPEAKER_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => -1 ) ) );
+
+		law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 90220,
+								'speakers'    => array(
+									array( 'first_name' => 'Ali', 'last_name' => 'Malek KC', 'email' => 'ali-ct@example.test', 'website' => '', 'role' => 'moderator', 'organisation' => '3VB', 'job_title' => 'Barrister', 'bio' => '<p>Bio.</p>', 'photo' => null ),
+								),
+								'sessions'    => array(
+									array( 'title' => 'Opening remarks', 'start' => '09:30', 'end' => '10:00', 'description' => '<p>Welcome.</p>', 'speakers' => array() ),
+									array( 'title' => 'The panel', 'start' => '10:00', 'end' => '11:00', 'description' => '<p>Discussion.</p>', 'speakers' => array() ),
+								),
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$rows = law_event_meta( $event_id, '_law_speakers' );
+		$this->assertCount( 1, $rows );
+		$this->assertSame( $existing, (int) $rows[0]['speaker_id'], 'Matched by email, not duplicated.' );
+		$this->assertSame( '3VB', (string) $rows[0]['organisation'], 'And the appearance details are this event\'s own.' );
+		$this->assertCount( 2, law_event_session_ids( $event_id ) );
+		$this->assertSame(
+			$speakers,
+			count( get_posts( array( 'post_type' => LAW_SPEAKER_CPT, 'post_status' => 'any', 'fields' => 'ids', 'posts_per_page' => -1 ) ) ),
+			'No second record for a person this site already knows.'
+		);
+	}
+
+	public function test_a_bundle_silent_about_the_agenda_leaves_it_alone(): void {
+		// The sentinel rule the host form and the external-events screen both
+		// apply to a truncated POST. The row simply has no `sessions` key,
+		// which is what a hand-edited or older file looks like.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90221 ) );
+		$session  = wp_insert_post(
+			array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'publish', 'post_parent' => $event_id, 'post_title' => 'Kept' )
+		);
+		$this->posts[] = $session;
+
+		$row = $this->event_row( array( 'gf_entry_id' => 90221 ) );
+		unset( $row['sessions'], $row['speakers'] );
+
+		law_content_transfer_run( $this->bundle( array( 'events' => array( $row ) ) ), false, 0 );
+
+		$this->assertSame( array( (int) $session ), array_map( 'intval', law_event_session_ids( $event_id ) ) );
+	}
+
+	public function test_an_agenda_emptied_on_the_source_really_is_cleared(): void {
+		// The other half of the sentinel, and the half that makes the import an
+		// overwrite rather than a merge: our own exporter always writes the key,
+		// so an empty array means the client deleted the agenda.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90222 ) );
+		$session  = wp_insert_post(
+			array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'publish', 'post_parent' => $event_id, 'post_title' => 'Deleted on staging' )
+		);
+		$this->posts[] = $session;
+		$speaker = $this->make_speaker_post( 'Gone', 'Fromhere', 'gone-ct@example.test' );
+		law_event_update_meta( $event_id, '_law_speakers', array( array( 'speaker_id' => $speaker, 'role' => 'speaker' ) ) );
+
+		law_content_transfer_run(
+			$this->bundle( array( 'events' => array( $this->event_row( array( 'gf_entry_id' => 90222, 'sessions' => array(), 'speakers' => array() ) ) ) ) ),
+			false,
+			0
+		);
+
+		$this->assertSame( array(), law_event_session_ids( $event_id ) );
+		$this->assertSame( array(), law_event_meta( $event_id, '_law_speakers' ) );
+		$this->assertInstanceOf( WP_Post::class, get_post( $speaker ), 'The person is untouched; only this event\'s appearance row went.' );
+	}
+
+	public function test_co_owner_access_is_granted_on_a_create_and_only_there(): void {
+		// A co-owner has the same rights as the owner (law_user_can_manage_event()),
+		// so the link follows the owner's rule: set on an event this run creates,
+		// reported on one it did not. No account is created either way.
+		$existing = $this->make_user();
+		$email    = (string) get_userdata( $existing )->user_email;
+		$before   = count_users()['total_users'];
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 0,
+								'slug'        => $this->slug( 'ct-coowner' ),
+								'meta'        => array(
+									'_law_co_owner_rows' => array(
+										array( 'name' => 'Has An Account', 'organisation' => 'Firm', 'email' => $email ),
+										array( 'name' => 'No Account Here', 'organisation' => 'Firm', 'email' => 'nobody-co@example.test' ),
+									),
+								),
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$created       = (int) $rows[0]['event_id'];
+		$this->posts[] = $created;
+		$this->assertSame( array( $existing ), array_map( 'intval', law_event_meta( $created, '_law_co_owner_ids' ) ) );
+		$this->assertSame(
+			array( (string) $existing ),
+			get_post_meta( $created, '_law_co_owner' ),
+			'The flat rows the dashboard query matches are written too, through law_event_set_co_owner_ids().'
+		);
+		$this->assertCount( 2, law_event_meta( $created, '_law_co_owner_rows' ), 'Both rows travel; only the link is conditional.' );
+		$this->assertNotEmpty( preg_grep( '/No Account Here/', $rows[0]['changes'] ) );
+		$this->assertSame( $before, count_users()['total_users'], 'And no account was created.' );
+	}
+
+	public function test_an_existing_events_co_owner_access_is_reported_not_granted(): void {
+		// The half the security review talked me out of. On an already-approved
+		// event law_event_ensure_co_owner_users() never runs again, so linking
+		// here would be the ONLY grant there ever was, with no human behind it.
+		$stranger = $this->make_user();
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90243 ), 'publish' );
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 90243,
+								'meta'        => array(
+									'_law_co_owner_rows' => array(
+										array( 'name' => 'Stranger', 'organisation' => 'Firm', 'email' => (string) get_userdata( $stranger )->user_email ),
+									),
+								),
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( array(), law_event_meta( $event_id, '_law_co_owner_ids' ), 'Nobody was handed access.' );
+		$this->assertSame( array(), get_post_meta( $event_id, '_law_co_owner' ) );
+		$this->assertCount( 1, law_event_meta( $event_id, '_law_co_owner_rows' ), 'The row itself still travels.' );
+		$this->assertNotEmpty( preg_grep( '/Co-owner access left alone/', $rows[0]['changes'] ) );
+	}
+
+	public function test_a_recreated_session_keeps_its_gravity_forms_entry_id(): void {
+		// The migration dedupes sessions with a meta query on this key, and an
+		// import replaces the agenda. Losing it would make a re-run of the
+		// sessions step duplicate every imported agenda.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90231 ) );
+		$old      = wp_insert_post(
+			array( 'post_type' => LAW_SESSION_CPT, 'post_status' => 'publish', 'post_parent' => $event_id, 'post_title' => 'Replaced' )
+		);
+		$this->posts[] = $old;
+
+		law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 90231,
+								'sessions'    => array(
+									array( 'gf_entry_id' => 5501, 'title' => 'One', 'start' => '09:00', 'end' => '10:00', 'description' => '', 'speakers' => array() ),
+									array( 'gf_entry_id' => 5502, 'title' => 'Two', 'start' => '10:00', 'end' => '11:00', 'description' => '', 'speakers' => array() ),
+								),
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$sessions = law_event_session_ids( $event_id );
+		$this->assertCount( 2, $sessions );
+		foreach ( $sessions as $session_id ) {
+			$this->posts[] = $session_id;
+		}
+		$this->assertSame(
+			array( 5501, 5502 ),
+			array_map( fn( $id ) => (int) law_event_meta( $id, '_law_gf_entry_id' ), $sessions ),
+			'Paired by position, which is what law_flagship_save_sessions() returns.'
+		);
+	}
+
+	public function test_a_created_event_keeps_the_date_it_was_created_on(): void {
+		// law_speakers.php orders "first appearance" on post_date_gmt, and that
+		// is what picks the photo and organisation a speaker's archive card
+		// shows. An event created here dated today would outrank an older one.
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 0,
+								'slug'        => $this->slug( 'ct-dated' ),
+								'created'     => '2026-03-04 11:22',
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$created = (int) $rows[0]['event_id'];
+		$this->posts[] = $created;
+		$this->assertSame( 'Create', $rows[0]['verdict'] );
+		$this->assertSame( '2026-03-04 11:22:00', (string) get_post_field( 'post_date_gmt', $created ) );
+	}
+
+	/* What an uploaded file may not do (security review, 16 September 2026) __ */
+
+	public function test_a_bundle_cannot_reclassify_a_hosted_event_into_a_status_bypass(): void {
+		// The P0. The status guard exempts an event law_event_is_managed_by_law()
+		// answers yes for, which reads the STORED _law_is_external. A bundle used
+		// to be able to claim `external`, have its status write correctly
+		// refused, and still write the flag — so the NEXT run found a genuinely
+		// external event and put an unapproved submission on the public
+		// programme. Run the same bundle twice; neither run may move the status.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90240 ), 'law-proposed' );
+
+		$bundle = $this->bundle(
+			array(
+				'events' => array(
+					$this->event_row(
+						array(
+							'gf_entry_id' => 90240,
+							'external'    => true,          // The claim.
+							'status'      => 'publish',     // What it wants.
+							'meta'        => array( '_law_is_external' => 1 ), // The lever.
+						)
+					),
+				),
+			)
+		);
+
+		foreach ( array( 'first', 'second' ) as $run ) {
+			$rows = law_content_transfer_run( $bundle, false, 0 );
+			$this->assertSame( 'law-proposed', get_post_status( $event_id ), "The status moved on the {$run} run." );
+			$this->assertSame( '', (string) law_event_meta( $event_id, '_law_is_external' ), "The classification was rewritten on the {$run} run." );
+		}
+
+		$this->assertNotEmpty(
+			preg_grep( '/does not reclassify/', $rows['0']['changes'] ),
+			'And the operator is told the file disagrees: ' . implode( ' | ', $rows[0]['changes'] )
+		);
+	}
+
+	public function test_the_preview_never_promises_a_reclassification_the_apply_refuses(): void {
+		// The same bug corrupted the dry run, which is the half an operator
+		// actually reads.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90241 ), 'law-proposed' );
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90241, 'external' => true, 'status' => 'publish', 'meta' => array( '_law_is_external' => 1 ) ) ),
+					),
+				)
+			),
+			true,
+			0
+		);
+
+		$this->assertSame( 'Hosted event', $rows[0]['kind'], 'The row is labelled by what this site holds, not by what the file claims.' );
+		$this->assertEmpty( preg_grep( '/^Status: /', $rows[0]['changes'] ), 'The preview must not show a status change: ' . implode( ' | ', $rows[0]['changes'] ) );
+		$this->assertEmpty( preg_grep( '/^External event: /', $rows[0]['changes'] ), 'Nor a classification change.' );
+		$this->assertSame( 'law-proposed', get_post_status( $event_id ) );
+	}
+
+	public function test_an_existing_events_owner_is_never_reassigned(): void {
+		// post_author is who can open the event (law_user_can_manage_event()),
+		// and the same run writes the invoicing contact and address into it. A
+		// bundle naming somebody else's address may not hand it to them.
+		$owner    = $this->make_user();
+		$stranger = $this->make_user();
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90242 ) );
+		wp_update_post( array( 'ID' => $event_id, 'post_author' => $owner ) );
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90242, 'owner_email' => (string) get_userdata( $stranger )->user_email ) ),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( $owner, (int) get_post_field( 'post_author', $event_id ) );
+		$this->assertNotEmpty( preg_grep( '/Owner left alone/', $rows[0]['changes'] ) );
+	}
+
+	public function test_a_bundle_carrying_absurdly_many_rows_is_refused(): void {
+		// A run is synchronous inside one admin-post.php request, and each event
+		// row costs a lookup, a snapshot, several writes and a log entry.
+		$bundle           = $this->bundle();
+		$bundle['events'] = array_fill( 0, LAW_CONTENT_TRANSFER_MAX_ROWS + 1, $this->event_row() );
+
+		$parsed = law_content_transfer_parse( (string) wp_json_encode( $bundle ) );
+
+		$this->assertInstanceOf( WP_Error::class, $parsed );
+		$this->assertSame( 'law_ct_too_many_rows', $parsed->get_error_code() );
+	}
+
+	public function test_a_bundle_of_few_events_with_endless_sessions_is_refused(): void {
+		// The top-level cap alone does not bound the work: a handful of events
+		// each carrying tens of thousands of session rows is cheap in bytes and
+		// still a very large synchronous run.
+		$session          = array( 'title' => 'x', 'start' => '09:00', 'end' => '10:00', 'description' => '', 'speakers' => array() );
+		$bundle           = $this->bundle();
+		$bundle['events'] = array(
+			$this->event_row( array( 'sessions' => array_fill( 0, LAW_CONTENT_TRANSFER_MAX_NESTED_ROWS + 1, $session ) ) ),
+		);
+
+		$parsed = law_content_transfer_parse( (string) wp_json_encode( $bundle ) );
+
+		$this->assertInstanceOf( WP_Error::class, $parsed );
+		$this->assertSame( 'law_ct_too_many_rows', $parsed->get_error_code() );
+	}
+
 	/* Helpers _______________________________________________________________ */
+
+	/** A bundle row for one hosted event, in the shape the exporter writes. */
+	private function event_row( array $overrides = array() ): array {
+		$row = array_merge(
+			array(
+				'gf_entry_id'    => 0,
+				'slug'           => 'ct-event',
+				'reference'      => 'CT-TEST',
+				'external'       => false,
+				'title'          => 'Test transfer event',
+				'description'    => '<p>Imported.</p>',
+				'status'         => 'law-proposed',
+				'created'        => '',
+				'owner_email'    => '',
+				'assignee_email' => '',
+				'event_type'     => '',
+				'sectors'        => array(),
+				'organisations'  => array(),
+				'meta'           => array(),
+				'speakers'       => array(),
+				'sessions'       => array(),
+			),
+			$overrides
+		);
+		// Merged rather than replaced, so a test naming one key does not have to
+		// restate the rest of a realistic event.
+		$row['meta'] = array_merge(
+			array(
+				'_law_start'             => '2026-12-01 09:00',
+				'_law_end'               => '2026-12-01 11:00',
+				'_law_venue'             => 'A venue',
+				'_law_tickets_available' => 40,
+				'_law_booking_override'  => 'auto',
+			),
+			(array) ( $overrides['meta'] ?? array() )
+		);
+
+		return $row;
+	}
 
 	/** @var string[] Temp files to unlink. */
 	private array $files = array();
