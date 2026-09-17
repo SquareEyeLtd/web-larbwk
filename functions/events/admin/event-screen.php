@@ -78,6 +78,11 @@ function law_event_box_workflow( $post ) {
  * does not belong beside the irreversible Approve / Reject / Cancel radios.
  */
 function law_event_box_flags( $post ) {
+	// The off switch, first as it is on the dashboard panel, because it outranks
+	// everything under it: a disabled event is off the programme, off its own
+	// page and takes no bookings (Denis, 17 September 2026).
+	law_field_checkbox( 'law_disabled', 'Disable this event (hide it from the programme)', (bool) law_event_meta( $post->ID, '_law_disabled' ) );
+
 	// Override booking availability, first as it is on the dashboard panel,
 	// because it overrides every other control (client, 16 September 2026).
 	law_field_select(
@@ -426,6 +431,7 @@ function law_event_admin_save( $post_id, $post ) {
 	$before_flags    = array(
 		'_law_is_external'   => (int) law_event_meta( $post_id, '_law_is_external' ),
 		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
+		'_law_disabled'      => (int) law_event_meta( $post_id, '_law_disabled' ),
 	);
 	// NOT $before_override: that name already holds the FEE override read four
 	// lines up, and this assignment used to overwrite it. Both readers of the
@@ -550,6 +556,7 @@ function law_event_admin_save( $post_id, $post ) {
 	}
 	law_event_update_meta( $post_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
+	law_event_update_meta( $post_id, '_law_disabled', ! empty( $_POST['law_disabled'] ) );
 	law_event_log_flag_change( $post_id, $before_flags, $actor );
 
 	// The Reception box, through the SAME saver the committee's Manage

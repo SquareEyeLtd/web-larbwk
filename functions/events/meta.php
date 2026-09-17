@@ -87,10 +87,22 @@ function law_event_meta_schema() {
 		// "the committee has not touched this" has to be distinguishable from
 		// "the committee decided to leave it open", or a later rule change would
 		// silently reinterpret every event nobody has looked at.
+		//
+		// _law_disabled: the committee's off switch for a whole event (Denis,
+		// 17 September 2026). It takes the event off the public programme, off
+		// its own public page and out of the .ics feed whatever its status,
+		// slot or booking answer says, which is what "no matter what" means:
+		// it is read by law_event_is_publicly_listed(), so every surface that
+		// already asks that question asks this one too. Deliberately NOT a
+		// status: a disabled event is still Confirmed or Approved, keeps its
+		// invoice, its bookings and its place in the committee's own lists, and
+		// ticking the box back off puts it where it was. Cancelled is the
+		// status for an event that is not happening.
 		'_law_is_external'          => 'flag',
 		'_law_external_url'         => 'url',
 		'_law_session_agenda'       => 'flag',
 		'_law_booking_override'     => 'booking_override',
+		'_law_disabled'             => 'flag',
 		// The flagship conference (functions/events/flagship.php). Exactly one
 		// law_event post carries _law_is_flagship; it is edited on the Flagship
 		// screen, its date is fixed (2 December by default) and its _law_start /

@@ -803,9 +803,14 @@ function law_committee_action_handler() {
 		$before_flags = array(
 			'_law_is_external'   => (int) law_event_meta( $event_id, '_law_is_external' ),
 			'_law_session_agenda' => (int) law_event_meta( $event_id, '_law_session_agenda' ),
+			// The off switch at the top of the panel. Same sentinel as the two
+			// switches below it, because the panel renders all three together and
+			// an unticked box posts nothing.
+			'_law_disabled'      => (int) law_event_meta( $event_id, '_law_disabled' ),
 		);
 		law_event_update_meta( $event_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 		law_event_update_meta( $event_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
+		law_event_update_meta( $event_id, '_law_disabled', ! empty( $_POST['law_disabled'] ) );
 
 		// The confirmation override, only for an event that can carry one. The
 		// panel hides the box otherwise, and writing the key regardless would
