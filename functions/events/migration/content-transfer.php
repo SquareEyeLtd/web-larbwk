@@ -533,23 +533,43 @@ function law_content_transfer_archive_source( $archive_path ) {
 /**
  * The law_event meta an event row carries, and nothing else.
  *
- * An allow list rather than "every key in the schema", because roughly a third
- * of the schema must NOT cross a site boundary and a new key should have to be
- * added here on purpose. What is deliberately absent, and why:
+ * DESCRIPTIVE DATA ONLY (Denis, 17 September 2026). The rule this list follows
+ * is his: by the time a bundle is imported, production's events have been
+ * approved, invoiced, paid and confirmed for real, and none of that record may
+ * be touched by a file made on a site where the same events were test data. So
+ * what crosses is what an event IS — its title, description, when and where it
+ * happens, who is speaking, its running order, its sectors — plus the
+ * committee's operational switches. What an event has BEEN THROUGH stays on the
+ * site it happened on.
+ *
+ * An allow list rather than "every key in the schema", so a new key has to be
+ * added here on purpose and gets read against that rule when it is. What is
+ * deliberately absent, and why:
  *
  * - `_law_stripe_customer_id`, `_law_stripe_invoice_id`, `_law_stripe_invoice_url`,
  *   `_law_stripe_error`, `_law_payment_status`: objects in whichever Stripe
  *   account the source site points at. Importing "paid" onto production would
  *   mark an unpaid invoice settled, which is the one mistake in this file
  *   nobody would spot until a reconciliation.
- * - `_law_fee_pence`, `_law_vat`: the snapshot law_event_snapshot_fee() froze
- *   at approval, which the invoice was raised from. The INPUTS to it —
- *   `_law_fee_tier`, `_law_fee_override`, `_law_fee_override_amount` — do
- *   travel, because those are the committee's decision about the event; the
- *   frozen figure belongs to the site that billed it. (So on an
- *   already-approved event an imported tier moves the exports and the admin
- *   Fee column without moving the invoice, exactly as a wp-admin edit does
- *   without law_event_resnapshot_fee(). The preview names the change.)
+ * - `_law_fee_pence` and `_law_vat`, the snapshot law_event_snapshot_fee() froze
+ *   at approval and the invoice was raised from — and, since 17 September 2026,
+ *   the INPUTS to it as well: `_law_fee_tier`, `_law_fee_override` and
+ *   `_law_fee_override_amount`. Those three did travel at first, on the argument
+ *   that they are the committee's decision about the event rather than a payment
+ *   record. That is true and beside the point: nothing recalculates the snapshot
+ *   after approval, so importing a different tier onto a PAID event moves the
+ *   admin Fee column and the exports while the invoice, the emails and the
+ *   reconciliation all keep the old figure. A number that disagrees with the
+ *   money is worse than a number that is merely out of date.
+ * - `_law_invoice_name`, `_law_invoice_email`, `_law_invoice_address`,
+ *   `_law_country_iso`, `_law_vat_number`: who was billed. On an event whose
+ *   invoice has been raised and paid, these are the record of that transaction,
+ *   not an editable detail, and a staging test address must never overwrite it.
+ * - `_law_approved_at`, `_law_rejection_reason`, `_law_cancellation_reason`,
+ *   `_law_terms_consent`: the record of decisions that happened somewhere. They
+ *   belong to the site where they happened. `law_event_has_been_approved()`
+ *   still falls back to `_law_approved_at`, so importing one would also be
+ *   telling this site that an approval it never made had happened.
  * - `_law_tickets_sold`, `_law_capacity_warned`, `_law_capacity_full_warned`:
  *   a recount and two one-shot latches, all three about the far site's own
  *   bookings. Carrying the latches would suppress a real nearly-full warning.
@@ -611,24 +631,9 @@ function law_content_transfer_event_meta_keys() {
 		'_law_external_url',
 		'_law_session_agenda',
 		'_law_registration_state',
-		// The fee decision, not the fee snapshot. See the note above.
-		'_law_fee_tier',
-		'_law_fee_override',
-		'_law_fee_override_amount',
-		// Invoicing details: the host's own billing contact, which the client
-		// does correct on staging. Nothing here is a Stripe object.
-		'_law_invoice_name',
-		'_law_invoice_email',
-		'_law_invoice_address',
-		'_law_country_iso',
-		'_law_vat_number',
-		// Classification and the record of what was decided.
+		// Classification.
 		'_law_sector_jurisdiction',
 		'_law_sector_other',
-		'_law_terms_consent',
-		'_law_approved_at',
-		'_law_rejection_reason',
-		'_law_cancellation_reason',
 	);
 }
 
@@ -2967,10 +2972,31 @@ function law_content_transfer_write_event( $event_id, array $values, $external, 
 		unset( $GLOBALS['law_event_managed_saving'] );
 	}
 
+	$seated = $creating ? 0 : law_event_attendee_total( $event_id );
+
 	foreach ( $values['meta'] as $key => $value ) {
 		// The classification stays put on an existing event. See the note on
 		// law_content_transfer_event_meta_keys().
 		if ( '_law_is_external' === $key && ! $creating ) {
+			continue;
+		}
+		// PLACES AVAILABLE ARE NOT DESCRIPTIVE ONCE ANYBODY HAS BOOKED (Denis,
+		// 17 September 2026). They are the booking and waitlist capacity: lower
+		// them under confirmed bookings and the event is oversubscribed against
+		// its own record, raise them and the waitlist should have been offered
+		// the new seats — which an import cannot do, because it writes through
+		// law_event_update_meta() rather than law_event_tickets_changed(). So
+		// on an event that has seated anybody, the number is reported and left
+		// alone. On one that has not, it is ordinary event data and travels;
+		// that is every event whose bookings have not opened, which is what the
+		// client is editing on staging.
+		if ( '_law_tickets_available' === $key && $seated > 0 && (int) $value !== (int) law_event_meta( $event_id, $key ) ) {
+			$notes[] = sprintf(
+				'Places available left at %d (the file says %d): %s already booked on this site, and changing the capacity under them is a booking decision, not a detail. Change it on the committee dashboard, where raising it offers the new places to the waitlist.',
+				(int) law_event_meta( $event_id, $key ),
+				(int) $value,
+				sprintf( _n( '%d person is', '%d people are', $seated, 'law' ), $seated )
+			);
 			continue;
 		}
 		law_event_update_meta( $event_id, $key, $value );
@@ -3174,6 +3200,12 @@ function law_content_transfer_event_after( array $values, $event_id, $external, 
 		);
 	}
 
+	// Mirrors the places guard in the writer, so the preview cannot promise a
+	// capacity change the apply refuses.
+	if ( ! $creating && $event_id && law_event_attendee_total( $event_id ) > 0 ) {
+		$after['_law_tickets_available'] = law_content_transfer_flatten( law_event_meta( $event_id, '_law_tickets_available' ) );
+	}
+
 	return $after;
 }
 
@@ -3287,20 +3319,8 @@ function law_content_transfer_event_labels() {
 			'_law_external_url'        => 'Booking link',
 			'_law_session_agenda'      => 'Has a session agenda',
 			'_law_registration_state'  => 'How a place is obtained',
-			'_law_fee_tier'            => 'Fee tier',
-			'_law_fee_override'        => 'Fee overridden',
-			'_law_fee_override_amount' => 'Fee override amount',
-			'_law_invoice_name'        => 'Invoice name',
-			'_law_invoice_email'       => 'Invoice email',
-			'_law_invoice_address'     => 'Invoice address',
-			'_law_country_iso'         => 'Invoice country code',
-			'_law_vat_number'          => 'VAT number',
 			'_law_sector_jurisdiction' => 'Jurisdiction',
 			'_law_sector_other'        => 'Other sector',
-			'_law_terms_consent'       => 'Terms accepted',
-			'_law_approved_at'         => 'Approved on',
-			'_law_rejection_reason'    => 'Rejection reason',
-			'_law_cancellation_reason' => 'Cancellation reason',
 		)
 	);
 }

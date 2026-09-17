@@ -1358,9 +1358,23 @@ block the queue. Joining is refused while places are free.
     both audiences on every submission, and Manage bookings lists the same
     thing). Their entries and send calls are still in place, so ticking "Send
     this notification" on the Emails screen brings either back;
-    `user_attendee_invited` / `user_attendee_added` (.ics attached; each names
-    who booked the place and carries that person's own number);
-    `user_booking_registered` / `_invited` (registered on their behalf); the
+    the single `user_booking_registered` (.ics attached; names who booked the
+    place and carries that person's own number), which since 17 September 2026
+    covers every "someone else booked this for you" case: a colleague bringing
+    a party, and a host or committee member registering someone on their
+    behalf, with or without an account being created. It replaced four
+    near-identical entries (`user_attendee_invited` / `user_attendee_added` and
+    `user_booking_registered` / `_invited`) that differed by a sentence apiece
+    (Denis: four rows on the Emails screen for one message is too much).
+    `{invited_by}` names whoever did it, falling back to "the organisers" when
+    a manager acted, because an on-behalf registration writes `_law_booked_by`
+    equal to the author and so reads as self-booked; `{account_note}` carries
+    either the set-password block or the sign-in-as-usual line, built already
+    resolved by `law_booking_account_note()` because the renderer substitutes
+    in one `strtr()` pass. `{registered_by}` retired with them, still mapped to
+    `''` so a stored override carrying the tag renders empty. Overrides are
+    keyed by slug and merged only when the registry still has the key, so any
+    customisation of the three retired slugs is inert rather than broken; the
     per-context cancellation family `user_booking_rejected` /
     `user_booking_cancelled_by_booker` / `user_booking_cancelled_self` /
     `user_booking_event_cancelled`; the single registration welcome
@@ -4312,31 +4326,47 @@ where the status belongs to a new post and no transition has been skipped
 because none has happened anywhere. A created event that lands Approved or
 Confirmed says so in the row, along with the fact that no invoice was raised.
 
+**Descriptive data only** (Denis, 17 September 2026), and this narrowed the
+scope after the first cut shipped. His question was the right one: by the time a
+bundle is imported, production's events have been approved, invoiced, paid and
+confirmed for real, while on staging the same events are test data. So the rule
+is that what an event **is** travels, and what it has **been through** stays on
+the site it happened on.
+
 **What an event row carries** is an allow list
-(`law_content_transfer_event_meta_keys()`), not "every key in the schema",
-because roughly a third of the schema must not cross a site boundary and a new
-key should have to be added on purpose. In: when and where (`_law_start`,
-`_law_end`, `_law_slot_label`, `_law_preferred_slots`, `_law_venue`,
-`_law_venue_needed`, `_law_venue_capacity`, `_law_tickets_available`), who is
-putting it on (`_law_host_organisations`, `_law_contacts`,
-`_law_co_owner_rows`), the committee's switches (`_law_booking_override`,
-`_law_is_external`, `_law_external_url`, `_law_session_agenda`,
-`_law_registration_state`), the fee **decision** (`_law_fee_tier`,
-`_law_fee_override`, `_law_fee_override_amount`), the invoicing contact,
-classification, and the record of what was decided (`_law_approved_at`, the
-rejection and cancellation reasons). Out, each for its own reason:
+(`law_content_transfer_event_meta_keys()`), not "every key in the schema", so a
+new key has to be added on purpose and gets read against that rule when it is.
+In: when and where (`_law_start`, `_law_end`, `_law_slot_label`,
+`_law_preferred_slots`, `_law_venue`, `_law_venue_needed`,
+`_law_venue_capacity`, `_law_tickets_available`), who is putting it on
+(`_law_host_organisations`, `_law_contacts`, `_law_co_owner_rows`), the
+committee's operational switches (`_law_booking_override`, `_law_is_external`,
+`_law_external_url`, `_law_session_agenda`, `_law_registration_state`) and the
+sector "please specify" inputs. Out, each for its own reason:
 
 - `_law_stripe_*` and `_law_payment_status` — objects in whichever Stripe
   account the source site points at. Importing "paid" onto production would mark
   an unpaid invoice settled, which is the one mistake here nobody would spot
   until a reconciliation.
-- `_law_fee_pence` and `_law_vat` — the snapshot `law_event_snapshot_fee()` froze
-  at approval and the invoice was raised from. The **inputs** to it travel,
-  because those are the committee's decision about the event; the frozen figure
-  belongs to the site that billed it. So on an already-approved event an imported
-  tier moves the exports and the admin Fee column without moving the invoice,
-  exactly as a wp-admin edit does without `law_event_resnapshot_fee()`, and the
-  preview names the change.
+- `_law_fee_pence` and `_law_vat`, the snapshot `law_event_snapshot_fee()` froze
+  at approval and the invoice was raised from — and, since 17 September 2026, the
+  **inputs** to it as well: `_law_fee_tier`, `_law_fee_override` and
+  `_law_fee_override_amount`. Those three did travel at first, on the argument
+  that they are the committee's decision about the event rather than a payment
+  record. That is true and beside the point: nothing recalculates the snapshot
+  after approval, so importing a different tier onto a **paid** event moves the
+  admin Fee column and the exports while the invoice, the `{fee}` emails and the
+  reconciliation all keep the old figure. A number that disagrees with the money
+  is worse than a number that is merely out of date.
+- `_law_invoice_name`, `_law_invoice_email`, `_law_invoice_address`,
+  `_law_country_iso`, `_law_vat_number` — who was billed. On an event whose
+  invoice has been raised and paid these are the record of that transaction, not
+  an editable detail, and a staging test address must never overwrite one.
+- `_law_approved_at`, `_law_rejection_reason`, `_law_cancellation_reason`,
+  `_law_terms_consent` — the record of decisions that happened somewhere, which
+  belongs to the site where they happened. `law_event_has_been_approved()` still
+  falls back to `_law_approved_at`, so importing one would also tell this site
+  that an approval it never made had happened.
 - `_law_tickets_sold` and the two capacity-warning latches — a recount and two
   one-shot flags about the far site's own bookings.
 - `_law_co_owner_ids` — user IDs minted on the far site at approval. The **rows**
@@ -4444,7 +4474,15 @@ patterns rather than as bugs.
   `law_user_can_manage_event()` treats the author as a full manager, and the
   same run writes the invoicing contact, address and VAT number the new owner
   could then read. Ownership is now set on a CREATE only; a difference on an
-  existing event is reported, like the status. **Co-owner links follow the same
+  existing event is reported, like the status. **Places available are a fourth**,
+  and conditionally: capacity is ordinary event data until somebody books, and a
+  booking decision afterwards. Lower it under confirmed bookings and the event is
+  oversubscribed against its own record; raise it and the waitlist should have
+  been offered the new seats, which an import cannot do because it writes through
+  `law_event_update_meta()` rather than `law_event_tickets_changed()`. So on an
+  event with anybody seated the number is reported and left alone, and on one
+  with nobody seated — every event whose bookings have not opened, which is what
+  the client is editing on staging — it travels. **Co-owner links follow the same
   rule**, after an argument the review won: a co-owner has exactly the author's
   rights (`law_user_can_manage_event()`), so linking somebody because a bundle
   named their address is the same unconsented grant. The defence that persuaded
@@ -4637,9 +4675,9 @@ template set by hand, the email overrides checked separately, and production
 still needing `?setup-account-pages`, the `law_events_source` flip and a real
 system cron on `wp-cron.php`.
 
-- Tests: `tests/ContentTransferTest.php` (75: 22 cover the archive, 8 the email
-  wording, 23 the events key added on 16 September 2026, 6 of those the security
-  review's findings). It is the first test class to
+- Tests: `tests/ContentTransferTest.php` (78: 22 cover the archive, 8 the email
+  wording, 26 the events key added on 16 September 2026, 6 of those the security
+  review's findings and 3 the descriptive-only narrowing of 17 September). It is the first test class to
   reach `law_migration_log()`, whose table is created with DDL — and DDL
   implicitly commits in MariaDB, which would end the transaction
   `LAW_Test_Case` rolls each test back with. So it installs the table once in
