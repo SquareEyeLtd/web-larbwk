@@ -254,37 +254,30 @@ function law_events_email_registry() {
 			'subject' => 'New booking: {event_title} ({law_reference})',
 			'body'    => "A new booking has been made for {event_title} ({law_reference}): {booking_numbers}.\n\nAttendees:\n{attendee_list}\n\nPlaces remaining: {tickets_remaining} of {tickets_available}.\n\nView the event on the committee dashboard: {committee_link}",
 		),
+		/*
+		 * ONE template covers every "someone else booked this for you" email
+		 * (Denis, 17 September 2026): a colleague bringing a party, and a host or
+		 * committee member registering someone on their behalf, whether an account
+		 * was created for them or they already had one. There were four entries
+		 * here until then (user_booking_registered / _invited and
+		 * user_attendee_invited / _added), differing by a sentence apiece, which is
+		 * four rows for the committee to keep in step on the Emails screen and four
+		 * bodies to drift apart.
+		 *
+		 * {invited_by} names whoever did it, falling back to "the organisers" when
+		 * a manager acted; {account_note} carries either the set-password block or
+		 * the sign-in-as-usual line. Both are built ALREADY RESOLVED in
+		 * law_booking_notify_attendee(), because law_events_email_render_body()
+		 * substitutes with a single strtr() pass and would leave a tag nested
+		 * inside a replacement printing literally.
+		 */
 		'user_booking_registered' => array(
-			'name'    => 'Email to attendee > registered by the organisers (existing account)',
-			'trigger' => 'a host or committee member registers someone onto an event',
-			'to'      => 'dynamic',
-			'active'  => true,
-			'subject' => 'You are registered for {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the event will be listed under My bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
-		),
-		'user_booking_registered_invited' => array(
-			'name'    => 'Email to attendee > registered by the organisers (new account)',
-			'trigger' => 'a host or committee member registers someone onto an event and an account is created',
-			'to'      => 'dynamic',
-			'active'  => true,
-			'subject' => 'You are registered for {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{registered_by} has registered a place for you at {event_title}, part of London Arbitration Week (Booking #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have created an account for you. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address. If that link has expired, you can request a new one here: {forgot_link}\n\nOnce signed in, please add any dietary or accessibility requirements to your profile, so the organisers can look after you on the day: {profile_link}\n\nThe events you are booked onto are listed under My bookings, where you can also cancel if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
-		),
-		'user_attendee_invited' => array(
-			'name'    => 'Email to attendee > invited to an event (new account)',
-			'trigger' => 'booking attendee account created',
+			'name'    => 'Email to attendee > booked onto an event by someone else',
+			'trigger' => 'a colleague, host or committee member books a place for someone',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have been booked onto {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{invited_by} has booked a place for you at {event_title}, part of London Arbitration Week. Your booking number is #{booking_number}.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have created an account for you. Set your password to get started:\n\n{set_password_link}\n\nYou sign in with this email address. If that link has expired, you can request a new one here: {forgot_link}\n\nOnce signed in, please add any dietary or accessibility requirements to your profile, so the organisers can look after you on the day: {profile_link}\n\nThe booking is yours: it is listed under My bookings, where you can cancel it if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
-		),
-		'user_attendee_added' => array(
-			'name'    => 'Email to attendee > added to a booking (existing account)',
-			'trigger' => 'booking attendee linked to an existing account',
-			'to'      => 'dynamic',
-			'active'  => true,
-			'subject' => 'You have been booked onto {event_title}',
-			'body'    => "Dear {attendee_name},\n\n{invited_by} has booked a place for you at {event_title}, part of London Arbitration Week. Your booking number is #{booking_number}.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nYou already have an account on {site_name}, so sign in with your usual details and the booking will be listed under My bookings, where you can cancel it if you cannot attend: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile: {profile_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
+			'body'    => "Dear {attendee_name},\n\n{invited_by} has booked a place for you at {event_title}, part of London Arbitration Week. Your booking number is #{booking_number}.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile, so the organisers can look after you on the day: {profile_link}\n\nThe booking is yours: it is listed under My bookings, where you can cancel it if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
 		),
 		'user_booking_rejected' => array(
 			'name'    => 'Email to attendee > booking cancelled by the committee',
@@ -308,7 +301,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'You have cancelled your place at {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThis confirms that you have cancelled your booking (Booking #{booking_number}) for {event_title} {event_when}. Your place has been freed for someone else.\n\nIf you change your mind and places are still available, you can book again from the event page.",
+			'body'    => "Dear {attendee_name},\n\nThis confirms that you have cancelled your booking (Booking #{booking_number}) for {event_title} {event_when}. Your place has been released for someone else.\n\nIf you change your mind and places are still available, you can book again from the event page.",
 		),
 		'user_booking_event_cancelled' => array(
 			'name'    => 'Email to attendee > event cancelled',
@@ -732,8 +725,121 @@ function law_events_email_registry() {
 	);
 }
 
-/** One email definition with any stored override merged in. */
-function law_events_email( $slug ) {
+/* Per-event confirmation overrides __________________________________________ */
+
+/*
+ * One event can say its own thing in its booking confirmation without touching
+ * the wording every other event on the programme sends. The committee ticks
+ * "Override booking confirmation" on the event, writes the wording on a page of
+ * its own, and from then on that event's confirmation comes from its post meta
+ * instead of the registry.
+ *
+ * It resolves in law_events_email() below, which law_events_send() already
+ * calls with the event ID, so not one send site had to change. The override
+ * replaces SUBJECT AND BODY ONLY: never `active`, never `to`. An event may not
+ * switch on an email the site has switched off, and storing an `active` per
+ * event would repeat the trap law_setup_strip_user_roles_from_emails() and
+ * law_setup_retire_booking_received_emails() exist to undo. The tick is the
+ * override's own on/off and nothing else reads it.
+ */
+
+/**
+ * Which confirmation templates this event's override displaces, and which of
+ * the two stored bodies replaces each.
+ *
+ * A hosted event has ONE body serving both templates, which is the whole point
+ * of the feature: the person who booked and the colleagues they brought read
+ * the same words. A reception has two, because its confirmation is genuinely
+ * two templates (receptions.php:1255) and flattening them is what produced
+ * "You paid £0.00" above an empty invoice link, fixed 16 September 2026.
+ *
+ * @param int $event_id law_event post ID.
+ * @return array slug => 'main' | 'free'. EMPTY when this event cannot be
+ *               overridden, which the send path treats as "no override".
+ */
+function law_event_override_slug_map( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( $event_id <= 0 || LAW_EVENT_CPT !== get_post_type( $event_id ) ) {
+		return array();
+	}
+	// The flagship has its own dashboard and its own booking family, and
+	// law_committee_requested_event() refuses it, so there is no screen on
+	// which its tick could be set or cleared. Refusing it here as well means
+	// the send path can never honour a flag nothing can reach.
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return array();
+	}
+	if ( law_event_meta( $event_id, '_law_is_reception' ) ) {
+		return array(
+			'user_reception_confirmed'      => 'main',
+			'user_reception_confirmed_free' => 'free',
+		);
+	}
+	return array(
+		'user_booking_confirmed'  => 'main',
+		'user_booking_registered' => 'main',
+	);
+}
+
+/**
+ * Is this event overriding its booking confirmation right now?
+ *
+ * Reads the flag rather than asking whether the meta row exists: an unticked
+ * box stores a literal 0, because law_event_update_meta() deletes on '' but not
+ * on 0.
+ */
+function law_event_override_active( $event_id ) {
+	return (bool) law_event_meta( (int) $event_id, '_law_email_override' );
+}
+
+/**
+ * This event's stored wording for one of the two bodies.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param string $which    'main' or 'free'.
+ * @return array subject and body, each '' when nothing is stored.
+ */
+function law_event_override_wording( $event_id, $which ) {
+	$suffix = 'free' === $which ? '_free' : '';
+	return array(
+		'subject' => (string) law_event_meta( (int) $event_id, '_law_email_override_subject' . $suffix ),
+		'body'    => (string) law_event_meta( (int) $event_id, '_law_email_override_body' . $suffix ),
+	);
+}
+
+/**
+ * Where the committee writes this event's confirmation.
+ *
+ * A sub-mode on the committee dashboard rather than a page of its own, so there
+ * is no new database state to provision on every environment for a screen that
+ * is already there. Resolved by path like every other account screen, because a
+ * page created with a different ID elsewhere must still resolve.
+ *
+ * @return string '' when this event cannot be overridden at all.
+ */
+function law_event_override_url( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( ! law_event_override_slug_map( $event_id ) ) {
+		return '';
+	}
+	$base = function_exists( 'law_account_url' ) ? law_account_url( 'dashboard' ) : '';
+	if ( '' === $base ) {
+		$base = home_url( '/account/dashboard/' );
+	}
+	return add_query_arg( array( 'event' => $event_id, 'law_email' => 1 ), $base );
+}
+
+/**
+ * One email definition with any stored override merged in.
+ *
+ * @param string $slug     Registry slug.
+ * @param int    $event_id Optional: resolve this event's per-event override on
+ *                         top of the site-wide one. Every caller that edits or
+ *                         lists templates passes nothing and so keeps the
+ *                         site-wide view; only the send path passes an event.
+ * @return array|null
+ */
+function law_events_email( $slug, $event_id = 0 ) {
 	$registry = law_events_email_registry();
 	if ( ! isset( $registry[ $slug ] ) ) {
 		return null;
@@ -742,7 +848,26 @@ function law_events_email( $slug ) {
 	$override  = is_array( $overrides ) && isset( $overrides[ $slug ] ) && is_array( $overrides[ $slug ] )
 		? $overrides[ $slug ]
 		: array();
-	return array_merge( $registry[ $slug ], array_intersect_key( $override, array_flip( array( 'subject', 'body', 'to', 'active', 'name' ) ) ) );
+	$email = array_merge( $registry[ $slug ], array_intersect_key( $override, array_flip( array( 'subject', 'body', 'to', 'active', 'name' ) ) ) );
+
+	$event_id = (int) $event_id;
+	if ( $event_id <= 0 || ! law_event_override_active( $event_id ) ) {
+		return $email;
+	}
+	$map = law_event_override_slug_map( $event_id );
+	if ( ! isset( $map[ $slug ] ) ) {
+		return $email;
+	}
+	// Each field swaps only when the event actually has one, so a half-written
+	// override falls back to the site wording for the missing half rather than
+	// sending a blank subject line.
+	$wording = law_event_override_wording( $event_id, $map[ $slug ] );
+	foreach ( array( 'subject', 'body' ) as $field ) {
+		if ( '' !== trim( (string) $wording[ $field ] ) ) {
+			$email[ $field ] = $wording[ $field ];
+		}
+	}
+	return $email;
 }
 
 /* Editing one email _________________________________________________________ */
@@ -1136,6 +1261,15 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{tickets_available}' => '',
 		'{tickets_remaining}' => '',
 		'{removal_reason}'    => '',
+		// The set-password block or the sign-in-as-usual line on the single
+		// "someone else booked this for you" email, built already resolved by
+		// law_booking_notify_attendee() (strtr() makes one pass).
+		'{account_note}'      => '',
+		// Retired 17 September 2026 with the four-into-one email merge: the
+		// surviving template names the booker with {invited_by}, which the rest
+		// of the booking family already used. Mapped to '' for the same reason
+		// as {user_roles} above, so a stored override still carrying the tag
+		// renders empty rather than printing it literally.
 		'{registered_by}'     => '',
 		// The waitlist (WAITLIST.md §B4).
 		'{party_list}'        => '',
@@ -1235,7 +1369,10 @@ function law_events_email_recipients( $definition, $event_id, array $extra = arr
  * @return bool Whether wp_mail() accepted the send.
  */
 function law_events_send( $slug, $event_id, array $extra = array() ) {
-	$definition = law_events_email( $slug );
+	// The event goes in, so a per-event confirmation override resolves here and
+	// nowhere else. Every other caller of law_events_email() passes no event and
+	// keeps the site-wide view.
+	$definition = law_events_email( $slug, $event_id );
 	if ( ! $definition || empty( $definition['active'] ) ) {
 		return false;
 	}

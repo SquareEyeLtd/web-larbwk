@@ -129,6 +129,28 @@ function law_event_meta_schema() {
 		'_law_flagship_price_pence'      => 'int',
 		'_law_flagship_price_late_pence' => 'int',
 		'_law_flagship_price_switch'     => 'datetime',
+		// The per-event booking confirmation (EVENTS_FUNC.md). When
+		// _law_email_override is on, law_events_email() swaps this event's
+		// subject and body in place of the registry's confirmation templates,
+		// so ONE event can say its own thing without touching the wording every
+		// other event on the programme sends.
+		//
+		// The _free pair is receptions only. A reception's confirmation is
+		// genuinely two templates (user_reception_confirmed and
+		// user_reception_confirmed_free), because the paid wording quotes an
+		// amount and links a VAT invoice and a place with nothing to pay has
+		// neither; collapsing them is what produced "You paid £0.00" above an
+		// empty invoice link, fixed 16 September 2026. The override keeps the
+		// split rather than reintroducing it. A hosted event has no such split:
+		// its one body serves the booker and the colleagues alike.
+		//
+		// 'rich' rather than 'multiline': the body carries allowlisted markup,
+		// and sanitize_textarea_field() would strip it.
+		'_law_email_override'              => 'flag',
+		'_law_email_override_subject'      => 'text',
+		'_law_email_override_body'         => 'rich',
+		'_law_email_override_subject_free' => 'text',
+		'_law_email_override_body_free'    => 'rich',
 		'_law_gf_entry_id'          => 'int',
 		'_law_rejection_reason'     => 'multiline',
 		'_law_cancellation_reason'  => 'multiline',
@@ -351,6 +373,13 @@ function law_events_sanitize_value( $value, $type ) {
 			return sanitize_text_field( (string) ( is_scalar( $value ) ? $value : '' ) );
 		case 'multiline':
 			return sanitize_textarea_field( (string) ( is_scalar( $value ) ? $value : '' ) );
+		// Allowlisted markup, for the per-event email bodies. Deliberately NOT
+		// 'multiline': sanitize_textarea_field() would strip the formatting the
+		// committee just wrote. law_events_email_render_body() re-applies the
+		// same allowlist at output, so neither escape may be dropped on the
+		// assumption the other ran.
+		case 'rich':
+			return law_rich_text_sanitize( (string) ( is_scalar( $value ) ? $value : '' ) );
 		case 'int':
 			return max( 0, (int) $value );
 		case 'float':

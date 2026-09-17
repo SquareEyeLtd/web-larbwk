@@ -1470,6 +1470,9 @@ add_action( 'wp_enqueue_scripts', function () {
 		// bookings dashboard or the register form would be pure weight.
 		if ( is_page_template( 'templates/account-event-form.php' )
 			|| ( is_page_template( 'templates/account-dashboard.php' ) && ! empty( $_GET['law_edit'] ) )
+			// The per-event booking confirmation, on the same page behind its
+			// own query arg (parts/events/committee-email-override.php).
+			|| ( is_page_template( 'templates/account-dashboard.php' ) && ! empty( $_GET['law_email'] ) )
 			|| ( is_page_template( 'templates/account-speakers-dashboard.php' ) && ! empty( $_GET['law_speaker'] ) ) ) {
 			law_rich_text_enqueue();
 		}

@@ -219,6 +219,36 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 		</p>
 	</fieldset>
 
+	<?php if ( ! $law_rm_new ) : ?>
+		<?php
+		// Only on a reception that exists: the editor is addressed by event ID,
+		// and a reception being created has none yet.
+		$law_rm_override_on  = law_event_override_active( $law_rm_id );
+		$law_rm_override_url = law_event_override_url( $law_rm_id );
+		?>
+		<?php if ( '' !== $law_rm_override_url ) : ?>
+			<fieldset>
+				<legend><?php esc_html_e( 'The confirmation email', 'law' ); ?></legend>
+
+				<input type="hidden" name="law_reception[email_override_present]" value="1">
+
+				<p class="law-form-field">
+					<label>
+						<input type="checkbox" id="law-rm-email-override" name="law_reception[email_override]" value="1" <?php checked( $law_rm_override_on ); ?>>
+						<?php esc_html_e( 'Override booking confirmation', 'law' ); ?>
+					</label>
+					<?php if ( $law_rm_override_on ) : ?>
+						<span class="law-form-hint"><?php esc_html_e( 'This reception sends its own confirmation instead of the standard one.', 'law' ); ?>
+							<a href="<?php echo esc_url( $law_rm_override_url ); ?>"><?php esc_html_e( 'Edit the wording', 'law' ); ?></a>.</span>
+					<?php else : ?>
+						<span class="law-form-hint"><?php esc_html_e( 'Give this one reception its own booking confirmation. Every other event keeps the standard wording.', 'law' ); ?></span>
+						<span class="law-form-hint" data-law-toggle-for="law-rm-email-override" hidden><?php esc_html_e( 'Save the reception, then a link to write the wording appears here.', 'law' ); ?></span>
+					<?php endif; ?>
+				</p>
+			</fieldset>
+		<?php endif; ?>
+	<?php endif; ?>
+
 	<p class="law-form-buttons">
 <a class="button second" href="<?php echo esc_url( law_receptions_dashboard_url() ); ?>"><?php esc_html_e( 'Cancel', 'law' ); ?></a>
 <button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Saving…', 'law' ); ?>">

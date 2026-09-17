@@ -1384,42 +1384,20 @@ class ContentTransferTest extends LAW_Test_Case {
 		$this->assertSame( 'Staging venue', (string) law_event_meta( $event_id, '_law_venue' ) );
 	}
 
-	public function test_places_available_are_not_lowered_under_people_who_have_booked(): void {
-		// Capacity is a booking decision once anybody is seated: lowering it
-		// oversubscribes the event against its own record, and raising it should
-		// offer the new seats to the waitlist, which an import cannot do.
+	public function test_places_available_travel_even_on_an_event_with_bookings(): void {
+		// Denis, 17 September 2026: places travel, full stop. I had made the
+		// number conditional on nobody having booked; he overrode that.
 		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90251, '_law_tickets_available' => 60 ), 'publish' );
 		$booking  = law_booking_insert( $event_id, $this->make_user(), 'publish', array( 'name' => 'Seated', 'email' => 'seated-ct@example.test' ) );
 		$this->posts[] = $booking;
 		law_event_recount_attendees( $event_id );
 		$this->assertSame( 1, law_event_attendee_total( $event_id ), 'The fixture really seats somebody.' );
 
-		$rows = law_content_transfer_run(
-			$this->bundle(
-				array(
-					'events' => array(
-						$this->event_row( array( 'gf_entry_id' => 90251, 'meta' => array( '_law_tickets_available' => 5 ) ) ),
-					),
-				)
-			),
-			false,
-			0
-		);
-
-		$this->assertSame( 60, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
-		$this->assertNotEmpty( preg_grep( '/Places available left at 60/', $rows[0]['changes'] ) );
-	}
-
-	public function test_places_available_travel_on_an_event_nobody_has_booked(): void {
-		// The other half: before bookings open the number is ordinary event data,
-		// which is what the client is editing on staging.
-		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90252, '_law_tickets_available' => 60 ) );
-
 		law_content_transfer_run(
 			$this->bundle(
 				array(
 					'events' => array(
-						$this->event_row( array( 'gf_entry_id' => 90252, 'meta' => array( '_law_tickets_available' => 120 ) ) ),
+						$this->event_row( array( 'gf_entry_id' => 90251, 'meta' => array( '_law_tickets_available' => 120 ) ) ),
 					),
 				)
 			),
@@ -1428,6 +1406,91 @@ class ContentTransferTest extends LAW_Test_Case {
 		);
 
 		$this->assertSame( 120, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
+	}
+
+	public function test_a_places_change_goes_through_the_modules_own_path(): void {
+		// Writing the meta alone would leave an event whose places doubled still
+		// holding a queue the module promises to seat automatically. The import
+		// calls law_event_tickets_changed(), so it logs the change and runs the
+		// waitlist exactly as a committee member typing the number would.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90253, '_law_tickets_available' => 1 ), 'publish' );
+		$seated   = law_booking_insert( $event_id, $this->make_user(), 'publish', array( 'name' => 'Seated', 'email' => 'seated-wl@example.test' ) );
+		$waiting  = law_booking_insert( $event_id, $this->make_user(), 'law-waitlisted', array( 'name' => 'Waiting', 'email' => 'waiting-wl@example.test' ) );
+		$this->posts[] = $seated;
+		$this->posts[] = $waiting;
+		law_event_recount_attendees( $event_id );
+		$this->assertSame( 1, law_waitlist_count( $event_id ), 'The fixture really has somebody waiting.' );
+
+		law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90253, 'meta' => array( '_law_tickets_available' => 10 ) ) ),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( 10, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
+		$this->assertSame( 'publish', get_post_status( $waiting ), 'The place that opened was given to the person waiting for it.' );
+		$this->assertSame( 0, law_waitlist_count( $event_id ) );
+	}
+
+	public function test_the_preview_says_when_a_drop_puts_an_event_below_its_bookings(): void {
+		// Places travel whatever the number, so the operator is told when the
+		// number they are about to apply is smaller than the people already on it.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90255, '_law_tickets_available' => 60 ), 'publish' );
+		foreach ( array( 'a', 'b' ) as $who ) {
+			$booking       = law_booking_insert( $event_id, $this->make_user(), 'publish', array( 'name' => 'Seated ' . $who, 'email' => 'seated-' . $who . '-ct@example.test' ) );
+			$this->posts[] = $booking;
+		}
+		law_event_recount_attendees( $event_id );
+		$this->assertSame( 2, law_event_attendee_total( $event_id ) );
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90255, 'meta' => array( '_law_tickets_available' => 1 ) ) ),
+					),
+				)
+			),
+			true,
+			0
+		);
+
+		$this->assertNotEmpty(
+			preg_grep( '/below the 2 already booked/', $rows[0]['changes'] ),
+			implode( ' | ', $rows[0]['changes'] )
+		);
+	}
+
+	public function test_the_preview_says_a_raise_will_seat_and_email_the_waitlist(): void {
+		// The one outward-facing thing an import does to people who are not the
+		// operator, so it is named rather than left as a number change.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90254, '_law_tickets_available' => 1 ), 'publish' );
+		$waiting  = law_booking_insert( $event_id, $this->make_user(), 'law-waitlisted', array( 'name' => 'Waiting', 'email' => 'waiting-preview@example.test' ) );
+		$this->posts[] = $waiting;
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90254, 'meta' => array( '_law_tickets_available' => 10 ) ) ),
+					),
+				)
+			),
+			true,
+			0
+		);
+
+		$this->assertNotEmpty(
+			preg_grep( '/will seat 1 person from the waitlist/', $rows[0]['changes'] ),
+			implode( ' | ', $rows[0]['changes'] )
+		);
+		$this->assertSame( 'law-waitlisted', get_post_status( $waiting ), 'And a preview still writes nothing.' );
 	}
 
 	public function test_a_speaker_and_an_agenda_cross_with_the_event(): void {

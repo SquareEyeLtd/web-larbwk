@@ -1399,8 +1399,71 @@ block the queue. Joining is refused while places are free.
     `user_waitlist_rejected` / `user_waitlist_event_cancelled`, and
     `user_waitlist_blocked` (a place came up but a clash stopped it being
     taken; sent once per reason).
-- `law_events_email()`: the registry entry with any admin override merged in
-  (overrides live in one option, editable on the Emails screen).
+- `law_events_email( $slug, $event_id = 0 )`: the registry entry with any admin
+  override merged in (overrides live in one option, editable on the Emails
+  screen), and since 17 September 2026 with the PER-EVENT booking confirmation
+  merged on top of that when an event is passed. Every screen that edits or
+  lists templates calls it with one argument and so keeps the site-wide view;
+  only `law_events_send()` passes an event, which is why not one send site had
+  to change.
+
+### The per-event booking confirmation (`email-override.php`)
+
+One event can say its own thing in its confirmation without touching the
+wording every other event on the programme sends (Denis, 17 September 2026).
+A committee member ticks **Override booking confirmation** on the event, saves,
+then follows the link that appears and writes that event's confirmation.
+
+- `law_event_override_slug_map( $event_id )`: which confirmation templates this
+  event's override displaces, and which of the two stored bodies replaces each.
+  A hosted event maps **both** `user_booking_confirmed` and
+  `user_booking_registered` to one body, which is the point of the feature: the
+  person who booked and the colleagues they brought read the same words. A
+  reception maps `user_reception_confirmed` to one body and
+  `user_reception_confirmed_free` to a second, because its confirmation is
+  genuinely two templates and flattening them is what produced "You paid £0.00"
+  above an empty invoice link, fixed 16 September 2026. The flagship returns an
+  empty map: it has its own dashboard and `law_committee_requested_event()`
+  refuses it, so there is no screen on which its tick could be set or cleared,
+  and refusing it here means the send path can never honour a flag nothing can
+  reach.
+- `law_event_override_active()`, `law_event_override_wording()`,
+  `law_event_override_url()`, `law_event_override_fields()`,
+  `law_event_override_written()`. The editor seeds each field from
+  `law_events_email( <slug> )`, so the committee starts from what the event
+  would really send, including a site-wide override already in force, rather
+  than from the shipped text underneath it.
+- Storage is five post meta keys on the `law_event` (`_law_email_override` plus
+  a subject and body pair, and a second `_free` pair for receptions), not the
+  `law_events_email_overrides` option: meta travels with the event through the
+  content transfer bundle, is deleted when the event is so no orphan rows
+  accumulate, and one event can only ever have one override by construction.
+  The bodies use a **new `rich` sanitiser type** in
+  `law_events_sanitize_value()`; `multiline` is `sanitize_textarea_field()` and
+  would strip the markup the committee just wrote.
+- The override replaces **subject and body only**, never `active` and never
+  `to`. An event may not switch on an email the site has switched off, and
+  storing an `active` per event would repeat the trap
+  `law_setup_retire_booking_received_emails()` exists to undo. Each field swaps
+  only when the event actually has one, so a half-written override falls back to
+  the site wording rather than sending a blank subject line.
+- Two entry points, because `law_committee_event_url()` routes a reception to
+  the receptions dashboard and so a reception is never edited at `?event=<id>`:
+  the committee controls form in `templates/account-dashboard.php` for hosted
+  events, and `parts/events/reception-manage.php` for receptions. Both follow
+  the session-agenda pattern, rendering the link from the stored flag and a
+  "save first" hint from `data-law-toggle-for` until then, because the editor
+  reads the flag and a link offered before the save would bounce straight back.
+- The editor is a sub-mode on the committee dashboard,
+  `?event=<id>&law_email=1` (`parts/events/committee-email-override.php`), not a
+  page of its own: a new page would be database state to provision on every
+  environment for a screen that is already there, the same argument the template
+  makes for `law_edit`. `law_committee_requested_event()` already accepts a
+  reception, so one branch serves both kinds, and the back-link goes through
+  `law_committee_event_url()` so each kind returns to its own home.
+- Unlike the site-wide Emails screen, which deliberately logs nothing because
+  wording belongs to no event, **every save here is logged on the event**. This
+  wording belongs to exactly one.
 - `law_events_email_placeholders()`: builds the merge values for an event
   (title, reference, host, fee, dashboard/committee/invoice links, etc.). The
   account links `{bookings_link}`, `{profile_link}` and `{submit_link}` (via
@@ -4474,15 +4537,20 @@ patterns rather than as bugs.
   `law_user_can_manage_event()` treats the author as a full manager, and the
   same run writes the invoicing contact, address and VAT number the new owner
   could then read. Ownership is now set on a CREATE only; a difference on an
-  existing event is reported, like the status. **Places available are a fourth**,
-  and conditionally: capacity is ordinary event data until somebody books, and a
-  booking decision afterwards. Lower it under confirmed bookings and the event is
-  oversubscribed against its own record; raise it and the waitlist should have
-  been offered the new seats, which an import cannot do because it writes through
-  `law_event_update_meta()` rather than `law_event_tickets_changed()`. So on an
-  event with anybody seated the number is reported and left alone, and on one
-  with nobody seated — every event whose bookings have not opened, which is what
-  the client is editing on staging — it travels. **Co-owner links follow the same
+  existing event is reported, like the status. **Places available are the
+  exception**, and Denis said so directly: I had made the number conditional on
+  nobody having booked, on the reasoning that capacity is the booking and
+  waitlist limit rather than a description, and he overrode it the same day.
+  They travel unconditionally. What that makes important is the consequence
+  rather than the number, so the import calls `law_event_tickets_changed()`
+  after every other field — the module's own "the places moved" path, the one
+  the committee panel and both form savers call — which writes the log line and,
+  on a raise, runs the waitlist. An event whose places double therefore seats the
+  people queuing for them, exactly as a committee member typing the number would,
+  instead of quietly holding a queue the module promises to clear. The preview
+  names it, because seating somebody emails them and an import is the one place
+  an operator might not expect an outward-facing effect; it also names a drop that
+  puts an event below the bookings already on it. **Co-owner links follow the same
   rule**, after an argument the review won: a co-owner has exactly the author's
   rights (`law_user_can_manage_event()`), so linking somebody because a bundle
   named their address is the same unconsented grant. The defence that persuaded
@@ -4675,9 +4743,9 @@ template set by hand, the email overrides checked separately, and production
 still needing `?setup-account-pages`, the `law_events_source` flip and a real
 system cron on `wp-cron.php`.
 
-- Tests: `tests/ContentTransferTest.php` (78: 22 cover the archive, 8 the email
-  wording, 26 the events key added on 16 September 2026, 6 of those the security
-  review's findings and 3 the descriptive-only narrowing of 17 September). It is the first test class to
+- Tests: `tests/ContentTransferTest.php` (80: 22 cover the archive, 8 the email
+  wording, 28 the events key added on 16 September 2026, 6 of those the security
+  review's findings and 5 the descriptive-only narrowing of 17 September). It is the first test class to
   reach `law_migration_log()`, whose table is created with DDL — and DDL
   implicitly commits in MariaDB, which would end the transaction
   `LAW_Test_Case` rolls each test back with. So it installs the table once in

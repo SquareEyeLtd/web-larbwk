@@ -189,6 +189,19 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'action=reset', wp_strip_all_tags( $invited[0]['message'] ) );
 		$this->assertStringContainsString( '#' . (int) law_event_meta( $ids[2], '_law_booking_number' ), wp_strip_all_tags( $invited[0]['message'] ) );
 
+		// Both branches come from ONE template since 17 September 2026, with
+		// {account_note} carrying the difference. law_events_email_render_body()
+		// substitutes in a single strtr() pass, so a tag left nested inside a
+		// placeholder's own value would reach the recipient printed literally:
+		// assert nothing of the sort survives.
+		foreach ( array( $added[0], $invited[0] ) as $message ) {
+			$this->assertDoesNotMatchRegularExpression(
+				'/\{[a-z_]+\}/',
+				$message['message'],
+				'No unresolved placeholder tag in a sent email.'
+			);
+		}
+
 		// The booker's own confirmation lists everyone with their numbers.
 		$confirmation = $this->mail_to( get_userdata( $booker )->user_email );
 		$this->assertNotEmpty( $confirmation );
@@ -219,7 +232,9 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$committee = $this->make_committee_user();
 		wp_update_user( array( 'ID' => $committee, 'display_name' => 'Casey Committee' ) );
 
-		// Existing account: the plain "registered" template, no password link.
+		// Existing account: the shared template's sign-in-as-usual note, no
+		// password link. Since 17 September 2026 one template serves every
+		// booked-for-you case and {account_note} carries the difference.
 		$existing = $this->make_user();
 		$email    = get_userdata( $existing )->user_email;
 		$booking  = law_booking_register_by_manager( $event, array( 'name' => 'Ex Isting', 'email' => $email, 'organisation' => 'Test Org', 'job_title' => 'Associate' ), $committee );
@@ -227,13 +242,14 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->posts[] = $booking;
 		$sent = $this->mail_to( $email );
 		$this->assertCount( 1, $sent, 'Exactly one email to the registered person.' );
-		$this->assertStringContainsString( 'Casey Committee has registered a place for you', $sent[0]['message'] );
+		$this->assertStringContainsString( 'Casey Committee has booked a place for you', $sent[0]['message'] );
 		$this->assertStringContainsString( 'You already have an account', $sent[0]['message'] );
 		$this->assertStringNotContainsString( 'action=rp', $sent[0]['message'] );
 		$this->assertNotEmpty( $sent[0]['attachments'], 'The .ics invite rides the confirmation.' );
 
-		// New account: the "invited" variant with a set-password link, and
-		// still exactly one email (no separate invite + confirmation).
+		// New account: the same template, with {account_note} resolving to the
+		// set-password block, and still exactly one email (no separate invite
+		// plus confirmation).
 		$new_email = $this->unique_email( 'new' );
 		$booking2  = law_booking_register_by_manager( $event, array( 'name' => 'New Person', 'email' => $new_email, 'organisation' => 'Test Org', 'job_title' => 'Associate' ), $committee );
 		$this->assertIsInt( $booking2 );
@@ -241,9 +257,14 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->users[] = (int) get_user_by( 'email', $new_email )->ID;
 		$sent = $this->mail_to( $new_email );
 		$this->assertCount( 1, $sent );
-		$this->assertStringContainsString( 'Casey Committee has registered a place for you', $sent[0]['message'] );
+		$this->assertStringContainsString( 'Casey Committee has booked a place for you', $sent[0]['message'] );
 		$this->assertStringContainsString( 'Set your password', $sent[0]['message'] );
 		$this->assertMatchesRegularExpression( '/key=[A-Za-z0-9]+/', $sent[0]['message'], 'A minted set-password link.' );
+		$this->assertDoesNotMatchRegularExpression(
+			'/\{[a-z_]+\}/',
+			$sent[0]['message'],
+			'No unresolved placeholder tag: {account_note} is built already resolved.'
+		);
 
 		// The host hears ONCE per submission, not once per person. Both people
 		// above were registered separately, so two submissions means two emails

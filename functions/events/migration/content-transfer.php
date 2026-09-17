@@ -2531,6 +2531,32 @@ function law_content_transfer_run_event( $event, array $bundle, $dry, $actor ) {
 		$status = '';
 	}
 
+	// A raise in places seats whoever is waiting, automatically, the moment the
+	// apply runs — and that emails them. It is the one outward-facing thing an
+	// import does to people who are not the operator, so the preview says it
+	// plainly rather than leaving "Places available: 60 → 120" to be read as a
+	// number change.
+	if ( ! $creating && $event_id && array_key_exists( '_law_tickets_available', $values['meta'] ) ) {
+		$waiting = law_waitlist_count( $event_id );
+		$wanted  = (int) $values['meta']['_law_tickets_available'];
+		$have    = (int) law_event_meta( $event_id, '_law_tickets_available' );
+		if ( $waiting > 0 && $wanted > $have ) {
+			$notes[] = sprintf(
+				'Raising the places from %d to %d will seat %s from the waitlist straight away, and email them. That is what the module does whenever places open; it is listed here because an import is the one place somebody might not expect it.',
+				$have,
+				$wanted,
+				sprintf( _n( '%d person', '%d people', min( $waiting, $wanted - $have ), 'law' ), min( $waiting, $wanted - $have ) )
+			);
+		} elseif ( $wanted < $have && law_event_attendee_total( $event_id ) > $wanted ) {
+			$notes[] = sprintf(
+				'Lowering the places from %d to %d puts this event below the %d already booked on it. Nobody is removed, but it will show as oversubscribed until the number is corrected.',
+				$have,
+				$wanted,
+				law_event_attendee_total( $event_id )
+			);
+		}
+	}
+
 	if ( ! $creating && $values['owner_id'] && $event_id
 		&& (int) $values['owner_id'] !== (int) get_post_field( 'post_author', $event_id ) ) {
 		$notes[] = sprintf(
@@ -2972,31 +2998,15 @@ function law_content_transfer_write_event( $event_id, array $values, $external, 
 		unset( $GLOBALS['law_event_managed_saving'] );
 	}
 
-	$seated = $creating ? 0 : law_event_attendee_total( $event_id );
+	// Read before the writes: raising the places is what offers them to anyone
+	// waiting, and law_event_tickets_changed() below needs the number this event
+	// had when the run started.
+	$before_places = (int) law_event_meta( $event_id, '_law_tickets_available' );
 
 	foreach ( $values['meta'] as $key => $value ) {
 		// The classification stays put on an existing event. See the note on
 		// law_content_transfer_event_meta_keys().
 		if ( '_law_is_external' === $key && ! $creating ) {
-			continue;
-		}
-		// PLACES AVAILABLE ARE NOT DESCRIPTIVE ONCE ANYBODY HAS BOOKED (Denis,
-		// 17 September 2026). They are the booking and waitlist capacity: lower
-		// them under confirmed bookings and the event is oversubscribed against
-		// its own record, raise them and the waitlist should have been offered
-		// the new seats — which an import cannot do, because it writes through
-		// law_event_update_meta() rather than law_event_tickets_changed(). So
-		// on an event that has seated anybody, the number is reported and left
-		// alone. On one that has not, it is ordinary event data and travels;
-		// that is every event whose bookings have not opened, which is what the
-		// client is editing on staging.
-		if ( '_law_tickets_available' === $key && $seated > 0 && (int) $value !== (int) law_event_meta( $event_id, $key ) ) {
-			$notes[] = sprintf(
-				'Places available left at %d (the file says %d): %s already booked on this site, and changing the capacity under them is a booking decision, not a detail. Change it on the committee dashboard, where raising it offers the new places to the waitlist.',
-				(int) law_event_meta( $event_id, $key ),
-				(int) $value,
-				sprintf( _n( '%d person is', '%d people are', $seated, 'law' ), $seated )
-			);
 			continue;
 		}
 		law_event_update_meta( $event_id, $key, $value );
@@ -3045,6 +3055,31 @@ function law_content_transfer_write_event( $event_id, array $values, $external, 
 		$kept = law_flagship_save_sessions( (int) $event_id, $values['sessions'], (int) $actor );
 		law_content_transfer_restamp_sessions( $kept, $values['sessions'], $notes );
 	}
+
+	// PLACES AVAILABLE TRAVEL (Denis, 17 September 2026), and so does what a
+	// change to them means. I had made the number conditional on nobody having
+	// booked, because capacity is the booking and waitlist limit rather than a
+	// description; Denis's answer was that it should travel, full stop.
+	//
+	// Which makes this call the important half. Writing the meta alone would
+	// leave an event whose places went from 60 to 120 still holding a queue of
+	// people the module promises to seat automatically the moment places open
+	// (WAITLIST.md). law_event_tickets_changed() is the module's own "the places
+	// moved" path, the same one the committee panel and both form savers call:
+	// it writes the log line and, on a RAISE, runs the waitlist. So an import
+	// that changes the number has the same consequences as a committee member
+	// typing it, which is the whole principle this file is built on.
+	//
+	// LAST, after every other field, exactly as its docblock requires: a run that
+	// moves the date and raises the places must not email an invitation carrying
+	// the old date.
+	law_event_tickets_changed(
+		$event_id,
+		$before_places,
+		(int) law_event_meta( $event_id, '_law_tickets_available' ),
+		(int) $actor,
+		'content_transfer'
+	);
 }
 
 /**
@@ -3198,12 +3233,6 @@ function law_content_transfer_event_after( array $values, $event_id, $external, 
 		$after[ $key ] = law_content_transfer_flatten(
 			isset( $schema[ $key ] ) ? law_events_sanitize_value( $stored, $schema[ $key ] ) : $stored
 		);
-	}
-
-	// Mirrors the places guard in the writer, so the preview cannot promise a
-	// capacity change the apply refuses.
-	if ( ! $creating && $event_id && law_event_attendee_total( $event_id ) > 0 ) {
-		$after['_law_tickets_available'] = law_content_transfer_flatten( law_event_meta( $event_id, '_law_tickets_available' ) );
 	}
 
 	return $after;

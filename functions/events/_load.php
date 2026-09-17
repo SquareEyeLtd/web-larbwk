@@ -37,6 +37,10 @@ require_once __DIR__ . '/notifications.php';
 // notifications.php, whose registry and shared save helpers it renders and
 // writes through.
 require_once __DIR__ . '/emails-dashboard.php';
+// The per-event booking confirmation. After the emails dashboard because it
+// reads the same registry through law_events_email(), and after notifications
+// because law_event_override_slug_map() lives there.
+require_once __DIR__ . '/email-override.php';
 require_once __DIR__ . '/speakers.php';
 require_once __DIR__ . '/speakers-dashboard.php';
 require_once __DIR__ . '/flagship.php';

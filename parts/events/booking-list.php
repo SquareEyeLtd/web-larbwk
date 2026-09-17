@@ -343,7 +343,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 											: sprintf( __( 'Cancel the booking for %s', 'law' ), $law_bl_person['name'] ),
 										'copy'    => $law_bl_waiting
 											? sprintf( __( 'This takes %s off the waitlist. They are emailed to let them know.', 'law' ), $law_bl_person['name'] )
-											: sprintf( __( 'This cancels the booking for %s and frees their place. They are emailed to let them know.', 'law' ), $law_bl_person['name'] ),
+											: sprintf( __( 'This cancels the booking for %s and releases their place. They are emailed to let them know.', 'law' ), $law_bl_person['name'] ),
 										'field'   => array(
 											'name'     => 'law_reject_reason',
 											'label'    => $law_bl_waiting
