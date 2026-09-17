@@ -880,7 +880,8 @@ Pre-declare the new tags in the booking-tags block: `{price}`, `{price_vat}`,
 
 | Slug | To | Trigger | .ics |
 |---|---|---|---|
-| `user_flagship_applied` | delegate | card saved, or a free code applied; acknowledgement, price, what happens next | no |
+| `user_flagship_applied` | delegate | card saved before the price cutover; acknowledgement, price, what happens next | no |
+| `user_flagship_applied_late` | delegate | the same, for a registration made on or after the cutover (17 September 2026) | no |
 | `committee_flagship_application` | committee | a new application is ready for review | no |
 | `user_flagship_approved` | delegate | charged and confirmed; invoice link, terms (§4.3) | **yes** |
 | `user_flagship_declined` | delegate | declined; card removed (§4.3) | no |
@@ -1105,7 +1106,13 @@ granted.
 
 Two emails exist only for this path, `user_flagship_applied_free` and
 `user_flagship_approved_free`, because every sentence the paying templates say
-about a saved payment method is false when none was ever asked for.
+about a saved payment method is false when none was ever asked for. Since
+17 September 2026 the acknowledgement half of that is itself a pair,
+`user_flagship_applied_free` and `user_flagship_applied_free_late`, split on the
+price cutover like the paying acknowledgement: chosen by
+`law_flagship_applied_email()` from the registration's own date, and shipped
+with identical bodies so that late registrants can be told something different
+without it being said to everybody.
 
 ### 13.4 Release
 

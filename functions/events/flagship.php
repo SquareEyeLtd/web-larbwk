@@ -169,6 +169,29 @@ function law_flagship_price_is_late( $at = 0, $event_id = 0 ) {
 }
 
 /**
+ * The cutover as a bare day, "17 October", for the words around it.
+ *
+ * The two acknowledgement emails are a pair, one for each side of this date,
+ * and their names on the Emails screen say which is which. Naming the day is
+ * the only way the committee can tell the two rows apart at a glance, and
+ * deriving it here rather than typing it into the registry means moving the
+ * cutover on the Flagship screen relabels both rows with it, instead of
+ * leaving last year's date sitting in front of them.
+ *
+ * Falls back to the default cutover's day when the stored value cannot be
+ * read, so the label is never blank.
+ *
+ * @param int $event_id Defaults to the flagship.
+ */
+function law_flagship_price_switch_day( $event_id = 0 ) {
+	$ts = law_flagship_price_switch_ts( $event_id );
+	if ( $ts < 1 ) {
+		$ts = strtotime( law_flagship_default_price_switch() . ' UTC' );
+	}
+	return $ts ? wp_date( 'j F', $ts ) : '17 October';
+}
+
+/**
  * The list price in pence, net of VAT, at a moment in time.
  *
  * Two distinct zeroes, which is why this is not a one-liner:

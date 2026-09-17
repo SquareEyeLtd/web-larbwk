@@ -700,9 +700,9 @@ function law_committee_action_handler() {
 	}
 
 	// Validated above. The band and the places available are the committee's at
-	// every status: on an event LAW found the venue for, the host is never shown
-	// these two at all (law_events_venue_details_visible()), so this panel and
-	// wp-admin are the only places they can be set.
+	// every status: the places lock for a host from submission onwards and the
+	// band at approval, so once an event is under review this panel and
+	// wp-admin are the only places either can be changed.
 	if ( $venue_present ) {
 		$before_capacity = (string) law_event_meta( $event_id, '_law_venue_capacity' );
 		$before_places   = (int) law_event_meta( $event_id, '_law_tickets_available' );

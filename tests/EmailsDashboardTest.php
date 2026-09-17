@@ -22,13 +22,32 @@ class EmailsDashboardTest extends LAW_Test_Case {
 		// the wording the local site actually sends.
 		$this->isolate_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION );
 		update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array(), false );
+		// The shared sign-off is appended by the renderer, so every rendering
+		// assertion below would otherwise be counting the site's real sign-off
+		// as well as the body it means to test. Switched off by default here;
+		// the tests that are ABOUT the sign-off set their own.
+		$this->set_signoff( '' );
 	}
 
 	protected function tearDown(): void {
+		remove_all_filters( 'pre_option_' . LAW_EVENTS_EMAIL_SIGNOFF_OPTION );
 		delete_transient( 'law_email_state_' . get_current_user_id() );
 		$_GET  = array();
 		$_POST = array();
 		parent::tearDown();
+	}
+
+	/**
+	 * Force the shared sign-off for the length of one test.
+	 *
+	 * A filter rather than isolate_option(): that helper overlays an ARRAY, and
+	 * this option is a string whose unset state ('never edited', which is what
+	 * law_events_email_signoff() answers with the shipped default) has to stay
+	 * distinguishable from an empty one ('deliberately switched off').
+	 */
+	private function set_signoff( string $value ): void {
+		remove_all_filters( 'pre_option_' . LAW_EVENTS_EMAIL_SIGNOFF_OPTION );
+		add_filter( 'pre_option_' . LAW_EVENTS_EMAIL_SIGNOFF_OPTION, static fn() => $value );
 	}
 
 	/** A slug whose registry recipients are a fixed address list. */
@@ -319,6 +338,139 @@ class EmailsDashboardTest extends LAW_Test_Case {
 		$rendered = law_events_email_render_body( '{attendee_list}', array( '{attendee_list}' => "One\nTwo\nThree" ) );
 
 		$this->assertSame( 2, substr_count( $rendered, '<br' ), 'Single newlines stay line breaks.' );
+	}
+
+	/* The shared sign-off _________________________________________________ */
+
+	/*
+	 * The promise: every email ends the same way, and it is stored ONCE. The
+	 * request that produced it was "add this ending to each email template we
+	 * have, even if it is customly modified" (Denis, 17 September 2026), and
+	 * the second half is the half these tests exist for. A sign-off pasted into
+	 * the 78 code defaults would reach neither a body reworded on the Emails
+	 * screen nor a per-event booking confirmation, so it is appended by the
+	 * renderer instead — the one place all three go through.
+	 */
+
+	public function test_the_signoff_is_appended_to_a_shipped_default(): void {
+		$this->set_signoff( "Best regards,\nLondon Arbitration Week" );
+
+		$rendered = law_events_email_render_body( 'Your event is confirmed.', array() );
+
+		$this->assertStringContainsString( 'Best regards,', $rendered );
+		$this->assertStringContainsString( 'London Arbitration Week', $rendered );
+	}
+
+	public function test_the_signoff_is_a_paragraph_of_its_own(): void {
+		// "Make sure to add the new Enter line before the previous content":
+		// a blank line between the message and the sign-off, so it reads as a
+		// closing rather than as the last sentence of the last paragraph.
+		$this->set_signoff( "Best regards,\nLondon Arbitration Week" );
+
+		$rendered = law_events_email_render_body( 'Your event is confirmed.', array() );
+
+		$this->assertSame( 2, substr_count( $rendered, '<p>' ), 'The sign-off is its own paragraph.' );
+		$this->assertStringContainsString( 'Best regards,<br', $rendered, 'Its two lines stay two lines.' );
+	}
+
+	public function test_a_customised_body_gets_the_signoff_too(): void {
+		// The point of the whole design. An override saved on either screen is
+		// stored without a sign-off and still sends one.
+		$slug = $this->dynamic_to_slug();
+		$this->set_signoff( "Best regards,\nLondon Arbitration Week" );
+		law_events_email_save_override(
+			$slug,
+			law_events_email_override_from_input( $slug, array( 'subject' => 'Hello', 'body' => 'Wording of our own.', 'active' => true ) )
+		);
+
+		$email    = law_events_email( $slug );
+		$rendered = law_events_email_render_body( $email['body'], array() );
+
+		$this->assertStringNotContainsString( 'Best regards', (string) $email['body'], 'The stored body carries no sign-off.' );
+		$this->assertStringContainsString( 'Wording of our own.', $rendered );
+		$this->assertStringContainsString( 'Best regards,', $rendered, 'And the sent version still signs off.' );
+	}
+
+	public function test_an_empty_signoff_adds_nothing(): void {
+		// Clearing the field is how an administrator switches the sign-off off,
+		// so an empty one must not fall back to the shipped default.
+		$this->set_signoff( '' );
+
+		$rendered = law_events_email_render_body( 'Your event is confirmed.', array() );
+
+		$this->assertSame( 1, substr_count( $rendered, '<p>' ) );
+		$this->assertStringNotContainsString( 'Best regards', $rendered );
+	}
+
+	public function test_the_signoff_resolves_placeholders(): void {
+		// It is appended before substitution, so it can carry a tag exactly as
+		// a body does. Cheap to keep true, and surprising if it were not.
+		$this->set_signoff( 'Best regards, {site_name}' );
+
+		$rendered = law_events_email_render_body( 'Hello.', array( '{site_name}' => 'London Arbitration Week' ) );
+
+		$this->assertStringContainsString( 'Best regards, London Arbitration Week', $rendered );
+		$this->assertStringNotContainsString( '{site_name}', $rendered );
+	}
+
+	public function test_an_unedited_site_signs_off_with_the_shipped_wording(): void {
+		remove_all_filters( 'pre_option_' . LAW_EVENTS_EMAIL_SIGNOFF_OPTION );
+		add_filter( 'pre_option_' . LAW_EVENTS_EMAIL_SIGNOFF_OPTION, '__return_false' );
+
+		$this->assertSame( law_events_email_signoff_default(), law_events_email_signoff() );
+		$this->assertStringContainsString( 'London Arbitration Week', law_events_email_signoff_default() );
+	}
+
+	public function test_the_signoff_survives_the_bodies_sanitiser(): void {
+		// Both screens write through law_events_email_signoff_save(), so the
+		// line break between the two lines has to come back out of storage.
+		$this->set_signoff( '' );
+		remove_all_filters( 'pre_option_' . LAW_EVENTS_EMAIL_SIGNOFF_OPTION );
+		$this->isolate_option( LAW_EVENTS_EMAIL_SIGNOFF_OPTION );
+
+		$stored = law_events_email_signoff_save( "Best regards,\nLondon Arbitration Week" );
+
+		$this->assertStringContainsString( "Best regards,\nLondon Arbitration Week", $stored );
+	}
+
+	public function test_a_body_that_already_signs_off_is_repaired_not_guessed_at(): void {
+		// The migrated Gravity Forms wording ends with its own "Best, / London
+		// Arbitration Week", which would now sign off twice. That is fixed ONCE
+		// in the stored wording (functions/events/migration/repair-signoff.php),
+		// never guessed at per send — a renderer that decided for itself which
+		// closing lines to swallow would have to be right about every wording
+		// anyone writes in future too.
+		$strip = law_events_signoff_strip( "Thanks for your patience.\n\nBest,\n\nLondon Arbitration Week" );
+
+		$this->assertSame( 'Thanks for your patience.', $strip['body'] );
+		$this->assertSame( 'Best, / London Arbitration Week', $strip['removed'] );
+	}
+
+	public function test_the_repair_never_truncates_a_real_message(): void {
+		// The guard that matters: the stripper only ever takes a short trailing
+		// line that is nothing but a valediction or the organisation's name,
+		// and only when a valediction is among them.
+		$safe = array(
+			'no sign-off at all'   => "Your event is confirmed.\n\nView it: {event_link}",
+			'name inside a line'   => 'Thank you for submitting your event to London Arbitration Week',
+			'name but no farewell' => "We hope to see you at other events run by\nLondon Arbitration Week",
+			'a long last line'     => 'Best regards from everyone on the organising committee of London Arbitration Week',
+		);
+
+		foreach ( $safe as $label => $body ) {
+			$strip = law_events_signoff_strip( $body );
+			$this->assertSame( $body, $strip['body'], $label . ' must be left alone.' );
+			$this->assertSame( '', $strip['removed'], $label . ' must report nothing removed.' );
+		}
+	}
+
+	public function test_the_repair_reads_a_body_written_as_markup(): void {
+		// Bodies have kept their formatting since 16 September 2026, so the
+		// closing lines may be <p> blocks rather than plain lines.
+		$strip = law_events_signoff_strip( '<p>Thanks for your patience.</p><p>Kind regards,</p><p>London Arbitration Week</p><p>&nbsp;</p>' );
+
+		$this->assertSame( '<p>Thanks for your patience.</p>', $strip['body'] );
+		$this->assertSame( 'Kind regards, / London Arbitration Week', $strip['removed'] );
 	}
 
 	public function test_a_url_is_still_linkified(): void {

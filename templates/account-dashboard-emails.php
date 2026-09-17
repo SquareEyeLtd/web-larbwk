@@ -33,17 +33,19 @@ $law_notice   = isset( $_GET['law_notice'] ) ? sanitize_key( wp_unslash( $_GET['
 
 		<?php
 		$law_notices = array(
-			'email-saved'       => array( 'is-success', __( 'The notification has been saved.', 'law' ) ),
-			'email-reset'       => array( 'is-success', __( 'The notification has been returned to its standard wording.', 'law' ) ),
-			'email-tested'      => array( 'is-success', __( 'A test has been sent to your own email address. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
+			'email-saved'           => array( 'is-success', __( 'The notification has been saved.', 'law' ) ),
+			'email-signoff-saved'   => array( 'is-success', __( 'The sign-off has been saved. It applies from the next email sent onwards.', 'law' ) ),
+			'email-signoff-cleared' => array( 'is-success', __( 'The sign-off has been cleared. Notifications will now end with whatever their own wording ends with.', 'law' ) ),
+			'email-reset'           => array( 'is-success', __( 'The notification has been returned to its standard wording.', 'law' ) ),
+			'email-tested'          => array( 'is-success', __( 'A test has been sent to your own email address. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
 			// Test mode was on, so "sent to you" would not have been true.
 			'email-tested-diverted' => array( 'is-warning', __( 'Test mode is on, so the test went to the test address rather than to you. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
-			'email-recipients'  => array( 'is-error', __( 'None of those recipients is a valid email address, so nothing was saved. Separate addresses with commas, or untick "Send this notification" to stop it being sent at all.', 'law' ) ),
-			'email-empty-body'  => array( 'is-error', __( 'The message is empty, so nothing was saved. To stop this notification being sent, untick "Send this notification" instead.', 'law' ) ),
-			'email-test-failed' => array( 'is-error', __( 'The test email could not be sent. Please try again.', 'law' ) ),
-			'email-missing'     => array( 'is-error', __( 'That notification could not be found.', 'law' ) ),
-			'email-denied'      => array( 'is-error', __( 'Sorry, managing the events emails is for the committee.', 'law' ) ),
-			'rate-limited'      => array( 'is-error', __( 'Too many changes in a short time; please wait a moment and try again.', 'law' ) ),
+			'email-recipients'      => array( 'is-error', __( 'None of those recipients is a valid email address, so nothing was saved. Separate addresses with commas, or untick "Send this notification" to stop it being sent at all.', 'law' ) ),
+			'email-empty-body'      => array( 'is-error', __( 'The message is empty, so nothing was saved. To stop this notification being sent, untick "Send this notification" instead.', 'law' ) ),
+			'email-test-failed'     => array( 'is-error', __( 'The test email could not be sent. Please try again.', 'law' ) ),
+			'email-missing'         => array( 'is-error', __( 'That notification could not be found.', 'law' ) ),
+			'email-denied'          => array( 'is-error', __( 'Sorry, managing the events emails is for the committee.', 'law' ) ),
+			'rate-limited'          => array( 'is-error', __( 'Too many changes in a short time; please wait a moment and try again.', 'law' ) ),
 		);
 		?>
 		<?php if ( isset( $law_notices[ $law_notice ] ) ) : ?>
@@ -89,6 +91,12 @@ $law_notice   = isset( $_GET['law_notice'] ) ? sanitize_key( wp_unslash( $_GET['
 			</p>
 
 			<?php get_template_part( 'parts/events/emails-list' ); ?>
+
+			<?php
+			// Under the table, because it is the one setting that belongs to
+			// all of the notifications above rather than to any of them.
+			?>
+			<?php get_template_part( 'parts/events/emails-signoff' ); ?>
 
 		<?php endif; ?>
 	<?php endif; ?>

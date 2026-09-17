@@ -1,9 +1,13 @@
 <?php
 /**
- * The Venue details rule (9 September 2026): the venue name/address, capacity
- * band and places available are only asked of a host who already has a venue,
- * the committee always sees them, and a save that did not render them must
- * never blank the stored values.
+ * The Venue details rule. Until 17 September 2026 the venue name/address,
+ * capacity band and places available were only asked of a host who already had
+ * a venue, gated on the "Venue needed?" radios. Those radios are gone: every
+ * submitter is recorded as having their own venue, so all three fields are on
+ * every form and all three are required of everyone, host and committee alike
+ * (Denis, 17 September 2026). What survives unchanged is the lock rule -- the
+ * places freeze for a host at submission and the band at approval -- and the
+ * promise that a save which did not render a field must never blank it.
  */
 class VenueDetailsTest extends LAW_Test_Case {
 
@@ -34,7 +38,11 @@ class VenueDetailsTest extends LAW_Test_Case {
 				'host_organisations'  => 'Edited Org LLP',
 				'preferred_slots'     => $slot_labels ? array( $slot_labels[0] ) : array( 'Any slot' ),
 				'sectors'             => array(),
-				'venue_needed'        => self::NEEDS_VENUE,
+				// All three venue details are required of every submitter, so a
+				// valid input carries all three, with the places inside the band.
+				'venue'               => '1 Test Venue, London',
+				'venue_capacity'      => '51-100',
+				'tickets_available'   => '75',
 				'fee_tier'            => 'uk',
 				'invoice_name'        => 'Edited Contact',
 				'invoice_email'       => 'edited-invoice@example.test',
@@ -53,49 +61,69 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$this->assertSame( $tickets, (int) law_event_meta( $event_id, '_law_tickets_available' ), $message . ' places' );
 	}
 
-	public function test_visibility_predicate(): void {
+	/**
+	 * Both predicates are unconditional now: nobody is asked whether they need
+	 * a venue, so nothing is left to key the block or its stars on. The test
+	 * stands as the record that this is deliberate rather than a branch that
+	 * went missing, and it is asserted for both audiences because the committee
+	 * used to be the only one who always saw the block.
+	 */
+	public function test_the_venue_details_are_on_every_form_and_required_of_everyone(): void {
 		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 
-		$this->assertFalse( law_events_venue_details_visible( self::NEEDS_VENUE, $host ) );
-		$this->assertFalse( law_events_venue_details_visible( '', $host ), 'An unanswered question asks nothing further.' );
-		$this->assertTrue( law_events_venue_details_visible( self::HAS_VENUE, $host ) );
-
-		// The committee sets the venue on the events LAW places, so they always
-		// see the block, whichever way the host answered.
-		$this->assertTrue( law_events_venue_details_visible( self::NEEDS_VENUE, $committee ) );
-		$this->assertTrue( law_events_venue_details_visible( self::HAS_VENUE, $committee ) );
-
-		// No explicit user: falls back to the current one.
-		wp_set_current_user( $committee );
-		$this->assertTrue( law_events_venue_details_visible( self::NEEDS_VENUE ) );
 		wp_set_current_user( $host );
-		$this->assertFalse( law_events_venue_details_visible( self::NEEDS_VENUE ) );
+		$this->assertTrue( law_events_venue_details_visible() );
+		$this->assertTrue( law_events_venue_details_required() );
+
+		wp_set_current_user( $committee );
+		$this->assertTrue( law_events_venue_details_visible() );
+		$this->assertTrue( law_events_venue_details_required() );
 	}
 
-	public function test_host_save_leaves_a_placed_events_venue_alone(): void {
+	public function test_host_save_leaves_the_locked_places_alone(): void {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( self::PLACED, 'law-proposed', $host );
 
-		// The fields were never on this host's form, so the post carries none of
-		// them. An absent value must not be read as a cleared one.
-		$result = law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $host );
+		// Under review the venue and its band are still the host's to correct,
+		// but the places are locked from submission onwards and a disabled input
+		// posts nothing: their crafted 75 must not touch the stored 120. The
+		// band they post has to cover those stored 120 places, or the pair check
+		// refuses the save on the band -- which is a rule of its own, tested
+		// below, not the one this test is about.
+		$result = law_events_form_save(
+			$this->valid_input( array( 'venue_capacity' => '101-150' ) ),
+			array(),
+			get_post( $event_id ),
+			$host
+		);
 		$this->assertSame( $event_id, $result );
 
-		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '101-150', 120, 'After a host save:' );
+		$this->assert_venue_values( $event_id, '1 Test Venue, London', '101-150', 120, 'After a host save:' );
 		// The rest of the form still saved.
 		$this->assertSame( 'Edited title', get_post( $event_id )->post_title );
-		$this->assertSame( self::NEEDS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ) );
+		// And the answer nobody is asked any more is recorded on their behalf.
+		$this->assertSame( self::HAS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ) );
 	}
 
-	public function test_host_save_logs_no_places_change_when_the_fields_were_hidden(): void {
+	public function test_host_save_logs_no_places_change_when_the_places_are_locked(): void {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( self::PLACED, 'law-proposed', $host );
-		law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $host );
+		// A band that covers the stored places, so the save actually goes
+		// through and the absence of the log line means something.
+		$this->assertSame(
+			$event_id,
+			law_events_form_save(
+				$this->valid_input( array( 'venue_capacity' => '101-150' ) ),
+				array(),
+				get_post( $event_id ),
+				$host
+			)
+		);
 
 		$messages = wp_list_pluck( law_event_log_entries( $event_id ), 'comment_content' );
 		$this->assertSame(
@@ -188,15 +216,15 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$this->assertNotEmpty( $result->get_error_message( 'tickets_available' ) );
 	}
 
-	public function test_a_venue_is_required_only_when_the_host_has_one(): void {
+	public function test_a_venue_is_required_of_every_host(): void {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
 		$event_id = $this->make_event( array(), 'law-proposed', $host );
 
-		// "No, we already have a venue planned" with no venue typed: an error.
+		// No venue typed: an error, whatever the event's stored answer was.
 		$result = law_events_form_save(
-			$this->valid_input( array( 'venue_needed' => self::HAS_VENUE ) ),
+			$this->valid_input( array( 'venue' => '' ) ),
 			array(),
 			get_post( $event_id ),
 			$host
@@ -204,7 +232,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$this->assertInstanceOf( WP_Error::class, $result );
 		$this->assertNotEmpty( $result->get_error_message( 'venue' ) );
 
-		// Needing a venue is a complete answer on its own.
+		// With it, the same save goes through.
 		$this->assertSame(
 			$event_id,
 			law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $host )
@@ -223,8 +251,9 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$result = law_events_form_save(
 			$this->valid_input(
 				array(
-					'venue_needed' => self::HAS_VENUE,
-					'venue'        => 'Their own offices',
+					'venue'             => 'Their own offices',
+					'venue_capacity'    => '',
+					'tickets_available' => '',
 				)
 			),
 			array(),
@@ -242,7 +271,6 @@ class VenueDetailsTest extends LAW_Test_Case {
 			law_events_form_save(
 				$this->valid_input(
 					array(
-						'venue_needed'      => self::HAS_VENUE,
 						'venue'             => 'Their own offices',
 						'venue_capacity'    => 'TBC',
 						'tickets_available' => '40',
@@ -256,31 +284,68 @@ class VenueDetailsTest extends LAW_Test_Case {
 		);
 	}
 
-	public function test_the_venue_details_are_not_required_of_a_host_who_needs_a_venue(): void {
+	/**
+	 * The old exemption, in the one place it could still hide: an event whose
+	 * stored answer says its host asked LAW to find them a venue. They are
+	 * asked for all three like everybody else now, and the stored answer has no
+	 * say in it.
+	 */
+	public function test_a_host_whose_event_was_placed_by_law_is_asked_for_all_three(): void {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
-		$event_id = $this->make_event( array(), 'law-proposed', $host );
+		$event_id = $this->make_event( array( '_law_venue_needed' => self::NEEDS_VENUE ), 'law-proposed', $host );
 
-		// The block is off their form entirely, so an empty band and no places
-		// must not block the rest of it -- and a crafted post is ignored, not
-		// judged.
-		$this->assertSame(
-			$event_id,
-			law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $host )
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue'             => '',
+					'venue_capacity'    => '',
+					'tickets_available' => '',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$host
 		);
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertNotEmpty( $result->get_error_message( 'venue' ) );
+		$this->assertNotEmpty( $result->get_error_message( 'venue_capacity' ) );
+		// The places are locked for a host from submission onwards, so they are
+		// the one of the three this host is not asked for.
+		$this->assertSame( '', $result->get_error_message( 'tickets_available' ) );
 	}
 
-	public function test_the_committee_is_not_blocked_on_an_event_that_needs_a_venue(): void {
+	public function test_the_committee_is_held_to_the_same_three_fields(): void {
 		$host      = $this->make_user();
 		$committee = $this->make_committee_user();
 		wp_set_current_user( $committee );
 
-		// The committee sees the three fields whichever way the host answered;
-		// on "Yes" they are theirs to fill in once the event is placed, so a
-		// save of anything else must not be held up by them.
-		$event_id = $this->make_event( array( '_law_venue_needed' => self::NEEDS_VENUE ), 'law-approved', $host );
+		// The committee used to be able to save an event with no venue at all,
+		// because on "Yes" the three fields were theirs to fill in later. With
+		// the question gone, the rule that applied on "No" is the only one left
+		// and it applies to them too -- including the places, which no lock
+		// keeps from them.
+		$event_id = $this->make_event( array(), 'law-approved', $host );
 
+		$result = law_events_form_save(
+			$this->valid_input(
+				array(
+					'venue'             => '',
+					'venue_capacity'    => '',
+					'tickets_available' => '',
+				)
+			),
+			array(),
+			get_post( $event_id ),
+			$committee
+		);
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertNotEmpty( $result->get_error_message( 'venue' ) );
+		$this->assertNotEmpty( $result->get_error_message( 'venue_capacity' ) );
+		$this->assertNotEmpty( $result->get_error_message( 'tickets_available' ) );
+
+		// And a complete one saves.
 		$this->assertSame(
 			$event_id,
 			law_events_form_save( $this->valid_input(), array(), get_post( $event_id ), $committee )
@@ -319,19 +384,18 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
-		// venue_needed is locked for a host on an approved event, so the disabled
-		// radios post nothing: the stored answer is what decides.
+		// venue_needed is not a form field any more, so it is not in the lock
+		// list either: there is no control for a lock to disable.
 		$event_id = $this->make_event(
 			array_merge( self::PLACED, array( '_law_venue_needed' => self::HAS_VENUE ) ),
 			'law-approved',
 			$host
 		);
-		$this->assertContains( 'venue_needed', law_events_locked_fields( get_post( $event_id ), $host ) );
+		$this->assertNotContains( 'venue_needed', law_events_locked_fields( get_post( $event_id ), $host ) );
 
 		$result = law_events_form_save(
 			$this->valid_input(
 				array(
-					'venue_needed'      => '',
 					'venue'             => 'A different hall, EC1',
 					'tickets_available' => '90',
 				)
@@ -730,7 +794,7 @@ class VenueDetailsTest extends LAW_Test_Case {
 		}
 	}
 
-	public function test_post_approval_host_edit_on_a_placed_event_changes_nothing(): void {
+	public function test_post_approval_host_edit_cannot_move_the_locked_band_or_places(): void {
 		$host = $this->make_user();
 		wp_set_current_user( $host );
 
@@ -740,12 +804,13 @@ class VenueDetailsTest extends LAW_Test_Case {
 			$host
 		);
 
-		// Even a crafted post carrying the three fields is ignored: they were
-		// never on this host's form.
+		// The venue name is the host's own to correct at any status, so their
+		// post takes. The band and the places are locked after approval and the
+		// disabled controls post nothing, so a crafted post carrying them is
+		// ignored rather than judged.
 		$result = law_events_form_save(
 			$this->valid_input(
 				array(
-					'venue_needed'      => self::HAS_VENUE,
 					'venue'             => 'Somewhere else entirely',
 					'venue_capacity'    => '251+',
 					'tickets_available' => '900',
@@ -757,8 +822,10 @@ class VenueDetailsTest extends LAW_Test_Case {
 		);
 		$this->assertSame( $event_id, $result );
 
-		$this->assert_venue_values( $event_id, 'Guildhall, EC2V 7HH', '101-150', 120, 'After a crafted host post:' );
-		$this->assertSame( self::NEEDS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ), 'The locked answer holds.' );
+		$this->assert_venue_values( $event_id, 'Somewhere else entirely', '101-150', 120, 'After a crafted host post:' );
+		// The answer nobody is asked any more is rewritten on every save, so an
+		// event migrated as "Yes" stops claiming LAW found it a venue.
+		$this->assertSame( self::HAS_VENUE, law_event_meta( $event_id, '_law_venue_needed' ), 'Every save records the one answer.' );
 	}
 
 	/* The band floor (15 September 2026) ____________________________________ */
@@ -952,9 +1019,10 @@ class VenueDetailsTest extends LAW_Test_Case {
 	/**
 	 * Field 103 (Venue needed) on form 2 (Event > submit an event) stores the
 	 * choice VALUE, the bare "Yes" or "No", and that is what the migration
-	 * brought across before 16 September 2026. The answer has to read as the
-	 * answer it is, or a migrated event opens its form with neither radio
-	 * picked and its host described to the committee as needing a venue.
+	 * brought across before 16 September 2026. Nobody is asked the question any
+	 * more, but the answer is still printed on the committee's event panel, so
+	 * a legacy row has to read as the answer it is rather than as no answer at
+	 * all.
 	 */
 	public function test_a_migrated_answer_is_read_as_its_label(): void {
 		$this->assertSame( self::HAS_VENUE, law_events_venue_needed_label( 'No' ) );
@@ -972,14 +1040,15 @@ class VenueDetailsTest extends LAW_Test_Case {
 		$wpdb->update( $wpdb->postmeta, array( 'meta_value' => 'No' ), array( 'post_id' => $event_id, 'meta_key' => '_law_venue_needed' ) );
 		wp_cache_delete( $event_id, 'post_meta' );
 
-		$this->assertTrue(
-			law_events_venue_details_visible( law_event_meta( $event_id, '_law_venue_needed' ), $host ),
-			'A migrated host who already has a venue still sees the venue details.'
-		);
 		$this->assertSame(
 			self::HAS_VENUE,
-			law_events_form_values( get_post( $event_id ), array() )['venue_needed'],
-			'The form opens with the stored answer picked.'
+			law_events_venue_needed_label( law_event_meta( $event_id, '_law_venue_needed' ) ),
+			'A legacy row reads as the answer it is.'
+		);
+		$this->assertArrayNotHasKey(
+			'venue_needed',
+			law_events_form_values( get_post( $event_id ), array() ),
+			'The form does not seed an answer it no longer asks for.'
 		);
 
 		// And the repair rewrites the row itself, so what the committee's
