@@ -86,6 +86,15 @@ $law_edit_mode = $law_detail && ! empty( $_GET['law_edit'] );
 // page would be database state to provision on every environment for a screen
 // that is already here.
 $law_external = function_exists( 'law_external_event_requested' ) ? law_external_event_requested() : 0;
+// ?event=<id>&law_email=1 swaps in the per-event booking confirmation editor
+// (parts/events/committee-email-override.php), on this page for the same reason
+// as law_edit above. law_committee_requested_event() already accepts a
+// reception, so one branch serves a reception and a hosted event alike; the
+// slug map is what refuses anything that cannot carry an override.
+$law_email_mode = $law_detail
+	&& ! empty( $_GET['law_email'] )
+	&& function_exists( 'law_event_override_slug_map' )
+	&& law_event_override_slug_map( $law_detail->ID );
 ?>
 
 <?php if ( have_posts() ) : while ( have_posts() ) : the_post(); ?>
@@ -118,6 +127,9 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 		// event, and the form that edits it is one branch up.
 		get_template_part( 'parts/events/external-manage', null, array( 'event_id' => (int) $law_detail->ID ) );
 		?>
+
+	<?php elseif ( $law_email_mode ) : ?>
+		<?php get_template_part( 'parts/events/committee-email-override', null, array( 'event_id' => (int) $law_detail->ID ) ); ?>
 
 	<?php elseif ( $law_edit_mode ) : ?>
 		<?php get_template_part( 'parts/events/committee-event-form', null, array( 'post' => $law_detail ) ); ?>
@@ -161,6 +173,16 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 			<div class="law-form-notice" role="status">Session agenda turned off. This event still has
 				<?php echo esc_html( sprintf( _n( '%d session', '%d sessions', $law_kept_sessions, 'law' ), $law_kept_sessions ) ); ?>,
 				so the section stays on its form until they are deleted.</div>
+		<?php elseif ( isset( law_event_override_notices()[ $law_notice ] ) ) : ?>
+			<?php
+			// The per-event confirmation editor saves and then returns here, so
+			// its notices have to be readable on this screen rather than on the
+			// one they were raised from (email-override.php).
+			$law_eo_notices = law_event_override_notices();
+			?>
+			<div class="law-form-notice <?php echo esc_attr( $law_eo_notices[ $law_notice ][0] ); ?>" role="status">
+				<?php echo esc_html( $law_eo_notices[ $law_notice ][1] ); ?>
+			</div>
 		<?php elseif ( 'invoice-sent' === $law_notice ) : ?>
 			<div class="law-form-notice" role="status">Invoice created and sent.</div>
 		<?php elseif ( 'invoice-failed' === $law_notice ) : ?>
@@ -583,6 +605,32 @@ $law_external = function_exists( 'law_external_event_requested' ) ? law_external
 							<small>Adds a Session agenda section to this event's form, so the running order can be broken into sessions with their own times and speakers.</small>
 						<?php endif; ?>
 					</div>
+
+					<?php
+					$law_email_override_on  = law_event_override_active( $law_id );
+					$law_email_override_url = law_event_override_url( $law_id );
+					?>
+					<?php if ( '' !== $law_email_override_url ) : ?>
+						<div class="law-form-field">
+							<div class="law-choices">
+								<label><input type="checkbox" id="law-dash-email-override" name="law_email_override" value="1" <?php checked( $law_email_override_on ); ?>> Override booking confirmation</label>
+							</div>
+							<?php if ( $law_email_override_on ) : ?>
+								<small>This event sends its own confirmation instead of the standard one.
+									<a href="<?php echo esc_url( $law_email_override_url ); ?>">Edit the wording</a>.</small>
+							<?php else : ?>
+								<?php
+								// The link is useless until the tick is stored, because the
+								// editor reads the flag to decide whether to save anything.
+								// So say "save first" rather than offering a link that would
+								// bounce them straight back, the same way the session agenda
+								// control above talks about a state it cannot act on yet.
+								?>
+								<small>Give this one event its own booking confirmation. Every other event keeps the standard wording.</small>
+								<small data-law-toggle-for="law-dash-email-override" hidden>Save changes, then a link to write the wording appears here.</small>
+							<?php endif; ?>
+						</div>
+					<?php endif; ?>
 
 					<input type="hidden" name="law_orgs_present" value="1">
 					<p class="law-form-field"><label for="law-dash-orgs">Linked organisations (sponsor highlighting)</label>

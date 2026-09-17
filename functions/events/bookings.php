@@ -1793,19 +1793,58 @@ function law_booking_resolve_attendee_user( array $row, $event_id, $actor ) {
 }
 
 /**
- * Tell a colleague about the booking someone made for them: the invite with a
- * set-password link for a brand-new account, or the "you have a place" email
- * for an existing one. Both carry THAT person's own booking number.
+ * The account paragraph on the "someone else booked this for you" email: the
+ * set-password block when an account was created just now, or the
+ * sign-in-as-usual line when the person already had one.
  *
- * @param int   $booking_id The colleague's own booking.
+ * It lives here rather than in the template because the four near-identical
+ * bodies that used to carry this difference became one on 17 September 2026
+ * (Denis: four rows on the Emails screen for one message is too much), and
+ * because law_events_email_render_body() substitutes with a single strtr()
+ * pass, so a {set_password_link} nested inside another placeholder's value
+ * would reach the recipient printed literally. Same idiom as {party_note} and
+ * {waitlist_note}: a whole resolved sentence, or nothing.
+ *
+ * @param string $set_password_link '' when the account already existed.
+ * @return string One paragraph, already resolved.
+ */
+function law_booking_account_note( $set_password_link ) {
+	$set_password_link = (string) $set_password_link;
+	if ( '' === $set_password_link ) {
+		return sprintf(
+			/* translators: %s: site name. */
+			__( 'You already have an account on %s, so sign in with your usual details.', 'law' ),
+			get_bloginfo( 'name' )
+		);
+	}
+	return sprintf(
+		/* translators: 1: set-password URL, 2: forgotten-password URL. */
+		__( "We have created an account for you. Set your password to get started:\n\n%1\$s\n\nYou sign in with this email address. If that link has expired, you can request a new one here: %2\$s", 'law' ),
+		$set_password_link,
+		law_auth_login_url( array( 'action' => 'forgot' ) )
+	);
+}
+
+/**
+ * Tell someone about the booking another person made for them, carrying THAT
+ * person's own booking number.
+ *
+ * One template does the whole job since 17 September 2026:
+ * `user_booking_registered` reads correctly whether a colleague brought them or
+ * a host or committee member registered them, and whether an account was
+ * created for them or they already had one. The difference that used to split
+ * it into four entries is now {account_note}. The invited / added opts stay,
+ * because the waitlist still substitutes its own pair of slugs.
+ *
+ * @param int   $booking_id The person's own booking.
  * @param bool  $created    Their account was created for this booking.
- * @param array $opts       invited / added (slugs) and ics (bool) — the
- *                          waitlist sends the same shape with its own wording
- *                          and no calendar invite, since it has no place yet.
+ * @param array $opts       invited / added (slugs) and ics (bool). The waitlist
+ *                          sends the same shape with its own wording and no
+ *                          calendar invite, since it has no place yet.
  */
 function law_booking_notify_attendee( $booking_id, $created, array $opts = array() ) {
 	$opts = array_merge(
-		array( 'invited' => 'user_attendee_invited', 'added' => 'user_attendee_added', 'ics' => true ),
+		array( 'invited' => 'user_booking_registered', 'added' => 'user_booking_registered', 'ics' => true ),
 		$opts
 	);
 	$booking = get_post( $booking_id );
@@ -1821,10 +1860,14 @@ function law_booking_notify_attendee( $booking_id, $created, array $opts = array
 	$person   = law_booking_attendee( $booking );
 	$user     = get_user_by( 'id', (int) $booking->post_author );
 	$extra    = array( 'attendee_name' => $person['name'] );
+	$link     = '';
 	if ( $created && $user ) {
+		$link                       = law_events_password_setup_link( $user, $event_id, 'booking_attendee_error' );
 		$extra['username']          = $user->user_login;
-		$extra['set_password_link'] = law_events_password_setup_link( $user, $event_id, 'booking_attendee_error' );
+		$extra['set_password_link'] = $link;
 	}
+	// Harmless on the waitlist's own templates, which do not use the tag.
+	$extra['account_note'] = law_booking_account_note( $link );
 
 	$slug = $created ? $opts['invited'] : $opts['added'];
 	$args = array(
@@ -2602,19 +2645,28 @@ function law_booking_send_submission_emails( array $ids, array $people, array $a
 	$placeholders = law_booking_email_placeholders( $ids[0], $ids );
 
 	if ( $args['on_behalf'] ) {
-		// Registered by a host or the committee: the confirmation says so, and
-		// a brand-new account gets its set-password link in the same email
-		// (one email, not an invite plus a confirmation).
+		// Registered by a host or the committee. _law_booked_by equals the
+		// author here (the registered person IS the booker), so the booking reads
+		// as self-booked and law_booking_invited_by_label() returns '': name the
+		// manager explicitly, falling back to "the organisers". A brand-new
+		// account gets its set-password link in {account_note} of the same email,
+		// so it is one email rather than an invite plus a confirmation.
+		$link = ! empty( $args['new_account'] )
+			? law_events_password_setup_link( $booker, $event_id, 'booking_attendee_error' )
+			: '';
 		$extra = array(
-			'attendee_name' => $people[0]['name'],
-			'registered_by' => $actor ? $actor->display_name : 'the organisers',
+			'attendee_name'     => $people[0]['name'],
+			'invited_by'        => $actor && '' !== trim( (string) $actor->display_name )
+				? $actor->display_name
+				: __( 'the organisers', 'law' ),
+			'set_password_link' => $link,
+			'account_note'      => law_booking_account_note( $link ),
 		);
-		if ( ! empty( $args['new_account'] ) ) {
-			$extra['username']          = $booker->user_login;
-			$extra['set_password_link'] = law_events_password_setup_link( $booker, $event_id, 'booking_attendee_error' );
+		if ( '' !== $link ) {
+			$extra['username'] = $booker->user_login;
 		}
 		law_booking_send_with_ics(
-			! empty( $args['new_account'] ) ? 'user_booking_registered_invited' : 'user_booking_registered',
+			'user_booking_registered',
 			$event_id,
 			array( 'to' => array( $booker->user_email ), 'placeholders' => array_merge( $placeholders, $extra ) )
 		);
@@ -2652,10 +2704,11 @@ function law_booking_send_submission_emails( array $ids, array $people, array $a
  * press). The person gets a booking OF THEIR OWN (they are its author, it
  * sits under their "My bookings", they can cancel it), created through
  * law_booking_create() so every guard, the recount and the host/committee
- * emails run exactly as for a self-service booking. What differs is the
- * confirmation: `user_booking_registered` (existing account) or
- * `user_booking_registered_invited` (new account, with the set-password link),
- * both naming who registered them.
+ * emails run exactly as for a self-service booking. What differs is only the
+ * wording of the confirmation: the shared `user_booking_registered` template
+ * names the manager as {invited_by} rather than the colleague who would
+ * otherwise appear there, and carries the set-password link in {account_note}
+ * when an account was created.
  *
  * A new account is created before the booking (post_author needs a user) and
  * deleted again if the booking is then refused, so a failed attempt leaves no
@@ -3559,7 +3612,7 @@ function law_booking_cancel_handler() {
 			'title'    => $waitlisted ? 'Waitlist entry cancelled' : 'Booking cancelled',
 			'message'  => $waitlisted
 				? ( $is_self ? 'You are off the waitlist. Reloading the page…' : 'They are off the waitlist and have been emailed. Reloading the page…' )
-				: ( $is_self ? 'Your place has been freed. Reloading the page…' : 'They have been emailed to let them know. Reloading the page…' ),
+				: ( $is_self ? 'Your place has been released. Reloading the page…' : 'They have been emailed to let them know. Reloading the page…' ),
 			'redirect' => $party
 				? add_query_arg( 'law_notice', $notice, law_booking_manage_url( $party[0]->ID ) )
 				: add_query_arg( 'law_notice', $notice, law_account_url( 'my_bookings' ) ),

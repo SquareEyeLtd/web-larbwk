@@ -664,7 +664,7 @@ each behind a `parts/layout/modal.php` confirm; an add-attendee block (one repea
 3 minus current, hidden when the event is full), and for the owner a Cancel booking button
 behind a confirm modal. Specified confirm copy:
 
-- Remove me: "Your place is freed for someone else, but your colleagues keep theirs and you
+- Remove me: "Your place is released for someone else, but your colleagues keep theirs and you
   can still manage this booking."
 - Cancel booking: "This cancels the place of everyone on this booking ({names}). Each person
   is emailed to let them know."
@@ -708,7 +708,9 @@ inline (duplicate, clash, capacity, invalid email); the no-JS fallback re-render
 row via the form-state transient. Success reloads the list with the `attendee-registered`
 notice. The person is emailed `user_booking_registered` (existing account) or
 `user_booking_registered_invited` (new account, set-password link), both naming who
-registered them; the host and committee copies go out as for any booking. The container carries the `.law-dashboard` class so the existing light-section
+registered them. Both slugs merged into the single `user_booking_registered` on
+17 September 2026, which reads correctly for a new or an existing account; the host and
+committee copies go out as for any booking. The container carries the `.law-dashboard` class so the existing light-section
 colour resets apply (account-events.php wraps in `.law-cal` only). Per attendee, a Reject button
 behind a confirm modal with an optional reason field, submitted over fetch with the plain
 POST fallback. Cancelled bookings show collapsed at the bottom with the existing
@@ -811,8 +813,8 @@ All in `law_events_email_registry()`, editable on the Emails screen, sent throug
 | `user_booking_confirmed` | dynamic (the booker) | booking created; event details, attendee list, accounts-created note; **.ics attached** |
 | `host_booking_received` | host | booking created; full attendee list including the booker, places remaining |
 | `committee_booking_received` | registry `to => 'committee'`; the caller passes `$extra['to']` = the assignee's email when `_law_assignee` resolves (the `committee_assignee` pattern) | booking created |
-| `user_attendee_invited` | dynamic (new account) | account created; set-password link, profile link for dietary and accessibility, prominent link to their events; **.ics attached** |
-| `user_attendee_added` | dynamic (existing account) | linked to a booking; **.ics attached** |
+| `user_attendee_invited` | dynamic (new account) | account created; set-password link, profile link for dietary and accessibility, prominent link to their events; **.ics attached**. **Retired 17 September 2026**: merged into `user_booking_registered` below |
+| `user_attendee_added` | dynamic (existing account) | linked to a booking; **.ics attached**. **Retired 17 September 2026**: merged into `user_booking_registered` below |
 | `user_attendee_rejected` | dynamic | host or committee reject; carries `{removal_reason}` and a host contact line ("If you think this is a mistake, please contact the host at {host_email}") |
 | `user_attendee_removed` | dynamic | the owner removed a colleague |
 | `user_attendee_removed_self` | dynamic | self-removal confirmation |
@@ -820,8 +822,8 @@ All in `law_events_email_registry()`, editable on the Emails screen, sent throug
 | `user_booking_event_cancelled` | dynamic (each attendee) | the event was cancelled (sweep) |
 | `user_welcome_registered` | dynamic | self-registration; the one welcome template, covering browsing, booking and submitting (a second, hosting-side copy was listed here until 16 September 2026) |
 | `host_capacity_warning` | host | remaining places at 5 or fewer with a positive limit, one-shot |
-| `user_booking_registered` | dynamic (the registered person) | a host or committee member registered them (existing account); names `{registered_by}`; **.ics attached** |
-| `user_booking_registered_invited` | dynamic (new account) | as above when an account was created: carries the set-password link in the same email, so one email not two; **.ics attached** |
+| `user_booking_registered` | dynamic (whoever the place was booked for) | **the single booked-for-you template since 17 September 2026** (Denis: four near-identical rows on the Emails screen is too much). Covers a colleague bringing a party and a host or committee member registering someone, new account or existing. `{invited_by}` names whoever did it ("the organisers" when a manager acted, since an on-behalf booking reads as self-booked); `{account_note}` carries the set-password block or the sign-in-as-usual line; **.ics attached** |
+| `user_booking_registered_invited` | dynamic (new account) | **Retired 17 September 2026**: the set-password block it existed for is now `{account_note}` on the row above, so it is still one email not two |
 
 One removal-family template per context, because a single "you have been removed" email
 mis-describes three of the four contexts and is the removed person's only explanation.
@@ -837,7 +839,13 @@ registration has none (`admins_user_registered` already behaves the same).
 `_law_start`/`_law_end`), plus per-send values via `$extra`: `{attendee_name}`,
 `{attendee_list}`, `{booking_number}`, `{tickets_remaining}`, `{tickets_available}`,
 `{profile_link}`, `{bookings_link}`, `{removal_reason}`, `{host_email}`, and (8 September
-2026) `{registered_by}` for the registered-on-behalf pair.
+2026) `{registered_by}` for the registered-on-behalf pair. `{registered_by}` was retired on
+17 September 2026 with the four-into-one merge, the surviving template naming the booker
+with `{invited_by}` as the rest of the booking family already did; it stays mapped to `''`
+so a stored override still carrying the tag renders empty rather than printing it. The same
+merge added `{account_note}`, built already resolved by `law_booking_account_note()`
+because `law_events_email_render_body()` substitutes in a single `strtr()` pass and would
+leave a tag nested inside a replacement value printing literally.
 
 ### 9.3 Attachments and the .ics generator
 

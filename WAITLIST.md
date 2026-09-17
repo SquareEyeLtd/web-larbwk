@@ -329,8 +329,8 @@ $party_ids = array() )`: per-booking `booking_number`, `attendee_name` (snapshot
 |---|---|---|
 | `user_booking_confirmed` | booker | `{booking_number}` their own; "Who is coming" lists each colleague with their number; add "Each colleague has their own booking number and has been emailed their own confirmation." |
 | `host_booking_received`, `committee_booking_received` | once per submission | "New booking(s) ({booking_numbers}) … Attendees: {attendee_list}" |
-| `user_attendee_invited`, `user_attendee_added` | colleague (new / existing account) | "{invited_by} has booked a place for you at {event_title} (Booking #{booking_number})."; .ics kept |
-| `user_booking_registered`, `_invited` | registered person | unchanged |
+| `user_attendee_invited`, `user_attendee_added` | colleague (new / existing account) | "{invited_by} has booked a place for you at {event_title} (Booking #{booking_number})."; .ics kept. **All four of these merged into the single `user_booking_registered` on 17 September 2026**, with `{account_note}` carrying the new-account / existing-account difference; the waitlist's own `user_waitlist_attendee_invited` / `_added` pair is untouched and still substituted through `law_booking_notify_attendee()`'s `invited` / `added` opts |
+| `user_booking_registered`, `_invited` | registered person | unchanged at the time; see the row above for the 17 September 2026 merge |
 | `user_attendee_rejected` → **`user_booking_rejected`** | attendee | "The events committee has cancelled your booking (Booking #{booking_number}) …" + `{removal_reason}` + host contact line (the actor became committee-only on 11 September 2026, so the copy names them) |
 | `user_attendee_removed` → **`user_booking_cancelled_by_booker`** | attendee | "{invited_by}, who booked your place, has cancelled your booking (Booking #{booking_number}) …" |
 | `user_attendee_removed_self` → **`user_booking_cancelled_self`** | attendee | "This confirms you have cancelled your booking (Booking #{booking_number}) …" |
@@ -347,8 +347,8 @@ $party_ids = array() )`: per-booking `booking_number`, `attendee_name` (snapshot
   #N", "(you)" on the own row, snapshot organisation and job title; **never** colleagues'
   dietary or accessibility, the current behaviour), per row "Cancel my booking" / "Cancel
   this booking" (form `law_booking_cancel`, booking_id) behind a confirm (own with
-  colleagues: "Your place is freed for someone else. Your colleagues keep theirs and you can
-  still manage them here."; colleague: "This cancels {name}'s booking (#N) and frees their
+  colleagues: "Your place is released for someone else. Your colleagues keep theirs and you can
+  still manage them here."; colleague: "This cancels {name}'s booking (#N) and releases their
   place. They are emailed to let them know."; close "Keep the booking"), "Add a colleague"
   (form `law_booking_add_attendee`, event_id, **wrapped in `[data-law-booking-rows]`** so
   booking-form.js's `markField()` can mark errors; today's row lacks the wrapper and error

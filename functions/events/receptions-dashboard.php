@@ -110,7 +110,10 @@ function law_receptions_dashboard_notices() {
 		'reception-invalid' => array( 'is-error', __( 'The reception was not saved. Please check the fields below.', 'law' ) ),
 		'reception-denied'  => array( 'is-error', __( 'Sorry, managing the receptions is for the committee.', 'law' ) ),
 		'rate-limited'      => array( 'is-error', __( 'Too many changes in a short time; please wait a moment and try again.', 'law' ) ),
-	);
+	// The per-event confirmation editor returns a reception to THIS screen,
+	// because law_committee_event_url() calls it a reception's home, so its
+	// notices have to be readable here too (email-override.php).
+	) + law_event_override_notices();
 }
 
 /* The rows the table reads ___________________________________________________ */
@@ -203,6 +206,20 @@ function law_reception_manage_handler() {
 	}
 
 	$result = law_reception_save( $input, get_current_user_id() );
+
+	// The confirmation override rides alongside the saver rather than inside it:
+	// it is a plain event flag, and threading it through law_reception_save()
+	// would mean widening that function's snapshot/diff contract for a field it
+	// knows nothing about. Written only for an existing reception, and only when
+	// the form actually carried the fieldset, so a partial POST cannot clear it.
+	if ( ! is_wp_error( $result ) && ! empty( $_POST['law_reception']['email_override_present'] ) ) {
+		$law_ro_event = (int) $result;
+		if ( law_event_override_slug_map( $law_ro_event ) ) {
+			$law_ro_before = array( '_law_email_override' => (int) law_event_meta( $law_ro_event, '_law_email_override' ) );
+			law_event_update_meta( $law_ro_event, '_law_email_override', ! empty( $_POST['law_reception']['email_override'] ) );
+			law_event_log_flag_change( $law_ro_event, $law_ro_before, get_current_user_id() );
+		}
+	}
 
 	if ( is_wp_error( $result ) ) {
 		$errors = array();

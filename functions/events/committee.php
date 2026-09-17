@@ -766,6 +766,14 @@ function law_committee_action_handler() {
 		);
 		law_event_update_meta( $event_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 		law_event_update_meta( $event_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
+
+		// The confirmation override, only for an event that can carry one. The
+		// panel hides the box otherwise, and writing the key regardless would
+		// log a switch-off on an event that never had the switch.
+		if ( law_event_override_slug_map( $event_id ) ) {
+			$before_flags['_law_email_override'] = (int) law_event_meta( $event_id, '_law_email_override' );
+			law_event_update_meta( $event_id, '_law_email_override', ! empty( $_POST['law_email_override'] ) );
+		}
 		law_event_log_flag_change( $event_id, $before_flags, $actor );
 
 		// Which notice the redirect below should use. Turning the agenda on puts
