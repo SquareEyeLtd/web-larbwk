@@ -295,6 +295,62 @@ function law_email_manage_handler() {
 	);
 }
 
+/* The shared sign-off ______________________________________________________ */
+
+/*
+ * Its own admin-post action rather than a flag on law_email_manage: that
+ * handler resolves a registry slug before it does anything else, and the
+ * sign-off belongs to no single notification. Same guard sequence, same
+ * respond tail, same write path as wp-admin
+ * (law_events_email_signoff_save() in notifications.php), so the two screens
+ * cannot come to mean different things here either.
+ *
+ * NOT LOGGED, for the reason the rest of this screen is not: the module's
+ * activity log is per-event, and the sign-off belongs to every future send.
+ */
+
+add_action( 'admin_post_law_email_signoff', 'law_email_signoff_handler' );
+add_action( 'admin_post_nopriv_law_email_signoff', 'law_events_nopriv_json' );
+
+function law_email_signoff_handler() {
+	$is_ajax = law_events_guard_post(
+		'law_email_signoff',
+		array(
+			'rate'            => array( 'email_manage', 60, 600, 300 ),
+			'honeypot_json'   => array( 'message' => 'Saved.' ),
+			'honeypot_notice' => 'email-signoff-saved',
+		)
+	);
+
+	if ( ! law_user_is_committee() ) {
+		law_events_respond(
+			$is_ajax,
+			false,
+			array( 'message' => 'Sorry, managing the events emails is for the committee.', 'status' => 403 ),
+			'email-denied'
+		);
+	}
+
+	// An empty sign-off is a valid answer, not a refused save: clearing the
+	// field is how the committee switches it off. The body field next door is
+	// refused when emptied because an email with no message is a bug; an email
+	// with no sign-off is a decision.
+	$stored = law_events_email_signoff_save( wp_unslash( $_POST['law_email_signoff'] ?? '' ) );
+
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => '' === $stored ? 'Sign-off cleared' : 'Sign-off saved',
+			'message'  => '' === $stored
+				? 'Notifications will now end with whatever their own wording ends with.'
+				: 'It applies from the next email sent onwards.',
+			'redirect' => law_emails_dashboard_url(),
+		),
+		'' === $stored ? 'email-signoff-cleared' : 'email-signoff-saved'
+	);
+}
+
 /* Assets ____________________________________________________________________ */
 
 add_action(

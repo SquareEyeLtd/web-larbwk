@@ -155,8 +155,8 @@ repair-references, backfill-session-agenda).
   "Under 50" allows 50, not 49. The legacy band list from form 2 (Event > submit
   an event) field 55 (Venue capacity) runs "Under 50" then "51-100", so a strict
   49 left exactly 50 with no band that would accept it. The form's capacity
-  select is only rendered when `law_events_venue_details_visible()` says so, so
-  on the host form it appears only for a host who already has a venue.
+  select is on every form since 17 September 2026, and required on it — see
+  "The Venue needed question comes off the form" below.
 - `law_events_settings_page()`, `law_events_settings_save()`: the editable
   settings screen — programme year, week start/end, the slot list, committee
   recipients, the fee tiers, the Stripe tax rate and rendering template IDs and
@@ -1352,7 +1352,7 @@ block the queue. Joining is refused while places are free.
 
 ### `notifications.php`: the email registry
 
-- `law_events_email_registry()`: all 50 module emails as definitions (slug →
+- `law_events_email_registry()`: all 78 module emails as definitions (slug →
   recipients, subject, body with `{placeholders}`, trigger, active flag).
   - **Host**: `user_submitted`, `user_sent_back`, `user_payment_due`,
     `user_confirmed_paid`, `user_confirmed_free`, `user_rejected`,
@@ -1429,6 +1429,53 @@ block the queue. Joining is refused while places are free.
   lists templates calls it with one argument and so keeps the site-wide view;
   only `law_events_send()` passes an event, which is why not one send site had
   to change.
+
+### The shared sign-off
+
+Every module email ends with the same closing lines, stored once rather than
+written into each body (Denis, 17 September 2026: "add this ending to each
+email text template we have, even if it's customly modified").
+
+- `law_events_email_signoff_default()` is the shipped wording, "Best regards, /
+  London Arbitration Week". `law_events_email_signoff()` returns the stored
+  value, falling back to the default only when the option has never been
+  written: `get_option()` is called with a `null` default precisely so that
+  "never edited" stays distinguishable from "deliberately emptied", since
+  clearing the field is how the sign-off is switched off.
+- `law_events_email_with_signoff()` appends it after a blank line, and the ONE
+  place that calls it is `law_events_email_render_body()` — before the
+  placeholder substitution, so a sign-off may carry `{site_name}` exactly as a
+  body does. That seam is the whole design: the renderer is what the shipped
+  default, a site-wide override and a per-event override all pass through, so
+  the awkward half of the request ("even if it's customly modified") is
+  satisfied by construction rather than by remembering to. Pasting the lines
+  into the 78 registry bodies would have reached neither the 15 bodies already
+  reworded on the Emails screen nor the post-meta confirmations, and the next
+  person to edit any body could have deleted them without noticing.
+- The editing UI is a panel at the FOOT of the notifications list on both
+  screens, not a field on each email's editor, because it is not one email's
+  wording: `law_events_emails_signoff_card()` in `admin/emails-screen.php` and
+  `parts/events/emails-signoff.php` behind `admin_post_law_email_signoff` in
+  `emails-dashboard.php`. Both write through `law_events_email_signoff_save()`,
+  which sanitises on the bodies' allowlist, so the two screens cannot drift
+  here either. An empty save is accepted rather than refused, unlike an empty
+  body: an email with no message is a bug, an email with no sign-off is a
+  decision.
+- **The migrated wording already signed off.** Six of the fifteen stored
+  overrides carried over from Gravity Forms (`user_submitted`, `user_sent_back`,
+  `user_payment_due`, `user_confirmed_paid`, `user_confirmed_free`,
+  `user_rejected`) end with their own "Best, / London Arbitration Week", so they
+  would now sign off twice. `functions/events/migration/repair-signoff.php`
+  strips those closing lines out of the stored bodies, as a dry-run panel on
+  LAW → Migration. Deliberately a one-off repair and not a render-time check:
+  a renderer that decided for itself which closing lines to swallow would have
+  to keep being right about every wording anyone writes in future, and a
+  committee member who wanted a different closing line on one email would find
+  it silently eaten. `law_events_signoff_strip()` only ever takes a short (≤ 60
+  character) trailing line that is nothing but a valediction or the
+  organisation's name, at most four of them, and only when a valediction is
+  among them — so the worst case is a sign-off left in place, never a message
+  truncated.
 
 ### The per-event booking confirmation (`email-override.php`)
 
@@ -2798,10 +2845,12 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   is the single seam the POST handler, the header bar and the form template all
   ask), the edited event ID, and
   the per-status, per-user lock list. For hosts — title, type, preferred
-  slots, fee tier, invoice block, sectors, host organisations, venue capacity
-  and `venue_needed` all freeze once the event leaves
+  slots, fee tier, invoice block, sectors, host organisations and venue
+  capacity all freeze once the event leaves
   draft/proposed/sent-back; description, speakers, venue, agenda,
-  contacts and co-owners stay editable. **Places available freezes earlier
+  contacts and co-owners stay editable. (`venue_needed` was in that list until
+  17 September 2026, when the question came off the form altogether and there
+  was no longer a control for a lock to disable.) **Places available freezes earlier
   than any of them**: it is read-only for a host from submission onwards
   (Denis, 14 September 2026), so `law-draft` is the only status at which they
   set it — see the change history entry below. **Committee members
@@ -5495,8 +5544,9 @@ These predate the rebuild and now branch on `law_events_source()`.
   details, Speakers, Venue, Owners & contacts, Fees, Session agenda —
   consumed by both the host form template and the committee edit view so the
   two cannot drift; the Finish fieldset stays in each consumer, being the
-  part that differs; the Venue fieldset's three detail fields are conditional,
-  see `law_events_venue_details_visible()`) and `committee-event-form.php` (the committee edit
+  part that differs; the Venue fieldset's three detail fields are unconditional
+  and required since 17 September 2026, see `law_events_venue_details_visible()`)
+  and `committee-event-form.php` (the committee edit
   view, see `committee.php` above).
 - **Front-end assets**: `assets/js/event-form.js` (repeaters, conditional
   toggles, the WordPress-core `wp.passwordStrength` meter — score 5 = mismatch,
@@ -6396,7 +6446,10 @@ builds for an AJAX-added speaker). An unset role still reads as Speaker on the
 public cards, which `law_speaker_role_display()` remains the one line to change.
 
 Updated 9 September 2026 again for **the venue details being asked only of a
-host who already has a venue**. On the Venue section, the venue name/address,
+host who already has a venue**. (**Superseded on 17 September 2026**: the
+question came off the form and the three details are now on every form and
+required of everyone. The paragraphs below describe the arrangement as it stood
+between those dates.) On the Venue section, the venue name/address,
 **Venue capacity** and **Places available** are now hidden from a host who
 answers "Yes, please share our details with venue hosts", and stay hidden even
 after the committee has filled them in; a host only ever sees the three by
@@ -6700,6 +6753,11 @@ argument for callers whose rows are not keyed `$name[$i]`.
 
 ### All three venue details required of a host who has a venue (11 September 2026)
 
+> **Superseded on 17 September 2026**, and only in its scope: the answer this
+> rule keyed on is no longer asked, so all three are required of *every*
+> submitter. The rule itself, and both of its exemptions, are unchanged. See
+> "The Venue needed question comes off the form" at the foot of this document.
+
 On the Venue section, answering **"No, we already have a venue planned"** now
 makes **Venue (name and/or address)**, **Venue capacity** and **Places
 available** all required, on the host form (create and manage alike) and on the
@@ -6868,7 +6926,8 @@ posts nothing, so clamping only showed the host a number the event does not
 have. Both fields also fall back to the stored value on an error re-render
 (`$law_locked_value` in `parts/events/event-form-fields.php`), since
 `law_events_form_values()` returns the posted input, which for a disabled
-control is empty — the same fallback `venue_needed` has had since 9 September.
+control is empty. (`venue_needed` used the same fallback until the question
+came off the form on 17 September 2026.)
 
 **Three host emails were wrong the moment this landed.** `host_capacity_warning`,
 `host_event_full` and `host_waitlist_activated` all told hosts they could raise the
@@ -8397,6 +8456,229 @@ no longer exists, and the surviving trigger reads plainly "user registration".
 Touched: `functions/events/notifications.php`,
 `functions/events/registration.php`, `tests/RegistrationTest.php`,
 `tests/BookingEmailsTest.php`.
+
+## One sign-off, not seventy-eight (17 September 2026)
+
+**The request and the trap in it.** "Add this ending to each email text
+template we have (even if it's customly modified)", with a blank line before it
+(Denis, 17 September 2026). The obvious reading — paste the two lines into all
+78 bodies in `law_events_email_registry()` — satisfies the first half and fails
+the second. The wording that is actually sent is not always the registry's: 15
+bodies are overridden site-wide on the Emails screen and stored in
+`law_events_email_overrides`, and since earlier the same day an event can carry
+its own booking confirmation in post meta (`email-override.php`). Editing the
+code defaults would reach none of those, and the next person to reword any body
+could drop the sign-off without noticing.
+
+So it is **stored once and appended by the renderer**, in
+`law_events_email_render_body()`, which is the one path the shipped default,
+the site-wide override and the per-event override all pass through. Nothing at
+any of the 78 send sites changed. It goes on before the placeholder
+substitution, so a sign-off can carry `{site_name}` exactly as a body can.
+
+**The setting, at the foot of both lists.** Denis asked for it on the same turn:
+a textarea and a save button under the notifications table, on the wp-admin
+Emails screen and on the committee's front-end Manage emails page. It belongs
+under the table rather than on each email's editor because it is not one
+email's wording — it is the last thing all of them say, and changing it changes
+every notification at once. `law_events_emails_signoff_card()` renders the
+wp-admin half; `parts/events/emails-signoff.php` and
+`admin_post_law_email_signoff` render and save the front-end half, on the same
+guard/respond pattern as every other dashboard form. Both write through
+`law_events_email_signoff_save()`, so the two screens cannot drift, exactly as
+they cannot for a body.
+
+Clearing the field is how the sign-off is switched off, which is why
+`law_events_email_signoff()` reads the option with a `null` default: an empty
+string has to mean "deliberately none" rather than falling back to the shipped
+wording. An empty save is accepted here, though an empty BODY is still refused
+on both screens — an email with no message is a bug, an email with no sign-off
+is a decision.
+
+**What the request did not anticipate: the migrated wording already signs off.**
+Six of the fifteen stored overrides came out of the old Gravity Forms
+notifications ending with their own "Best, / London Arbitration Week", so
+appending the new sign-off gave them two, one under the other. Fixed once in the
+data rather than guessed at per send:
+`functions/events/migration/repair-signoff.php` is a dry-run panel on
+LAW → Migration that strips the closing lines out of the stored bodies. A
+render-time "does this already have a sign-off?" check was considered and
+rejected — it would have to keep being right about every wording anyone writes
+in future, and would silently eat a different closing line somebody wanted on
+one email. The stripper only takes a short (≤ 60 character) trailing line that
+is nothing but a valediction or the organisation's name, at most four of them,
+and only when a valediction is among them, so the worst case is a sign-off left
+in place rather than a message truncated. It reads a body written as markup
+(trailing `<p>` blocks) as well as one written as plain lines.
+
+`EmailsDashboardTest` had to isolate the new option in `setUp()` — a filter
+rather than `isolate_option()`, which overlays an array and would destroy the
+unset/empty distinction — because three existing tests count paragraphs and
+line breaks in rendered output and the sign-off adds one of each. Ten new tests
+pin the behaviour, including the four bodies the stripper must leave alone.
+
+Touched: `functions/events/notifications.php`,
+`functions/events/admin/emails-screen.php`,
+`functions/events/emails-dashboard.php`,
+`functions/events/migration/repair-signoff.php` (new),
+`functions/events/migration/page.php`, `functions/events/_load.php`,
+`parts/events/emails-signoff.php` (new),
+`templates/account-dashboard-emails.php`, `assets/css/calendar.css`,
+`tests/EmailsDashboardTest.php`.
+
+## The Venue needed question comes off the form (17 September 2026)
+
+**The request.** "On event creation form and event edit form we have radio
+boxes for picking Venue 'Yes..' or 'No...'. We actually don't need those radio
+boxes anymore. Let's hide those, but still write in data as user picks 'No' all
+the time and as a result we display bottom inputs related to venue all the time:
+Venue name, Capacity and Places available. All those 3 fields should be
+required" (Denis, 17 September 2026).
+
+So the premise of the 9 September rule is withdrawn. LAW no longer finds rooms
+for hosts, and the two-choice radio that asked whether they needed one (field
+103, Venue needed, on form 2 — Event > submit an event) has nothing left to
+decide. Everything that keyed on it collapses to the branch that said "No, we
+already have a venue planned".
+
+**Hidden, not removed, and the answer is still recorded.** Denis asked for the
+answer to keep being written, so `law_events_form_save()` writes
+`law_events_venue_needed_choices()['no']` into `_law_venue_needed` on **every**
+save, rather than reading a posted value. Nothing renders a control for it, so
+there is nothing to forge and nothing to lock: `venue_needed` came out of
+`law_events_locked_fields()`' host list and out of `law_events_form_values()`,
+because a lock exists to disable a control and a form value exists to seed one.
+Writing it on every save rather than only on a new event also quietly repairs
+the events migrated or submitted before today — an event whose stored answer was
+"Yes" stops describing its host to the committee as having asked LAW for a
+venue the next time anyone saves it.
+
+**The two predicates survive as constants.** `law_events_venue_details_visible()`
+and `law_events_venue_details_required()` now take no arguments and return
+`true`. They were not inlined, for the same reason they existed in the first
+place: the form template, the validator and the saver must agree about what was
+asked, because an absent field must never be read as a cleared one, and one
+predicate is how that agreement is kept. `law_events_venue_needed_value()`, the
+"which answer are we judging" helper, had no callers left and is gone.
+`law_events_venue_needed_label()` and `law_events_venue_needed_choices()` stay:
+the stored answer is still printed on the committee's event panel and still
+settable on the wp-admin Event facts box, and legacy rows still arrive holding
+the bare "Yes"/"No" choice values.
+
+**What changes for each audience.**
+
+- **A host** now sees Venue (name and/or address), Venue capacity and Places
+  available on every form, create and manage alike, all three starred. The
+  locks are untouched, so on an event under review the places are still
+  disabled (locked from submission, 14 September) and after approval the band
+  is too — and a locked field is still never re-validated, so neither can block
+  an edit.
+- **The committee** is now held to the same three fields. This is the one
+  behavioural loss worth naming: until today they could save an event that had
+  no venue yet, because on "Yes" the three were theirs to fill in later. That
+  exemption was a consequence of the question, so it goes with it. If a
+  committee member needs to save an event before its venue is known, "TBC" is
+  still a capacity band and the places may be anything inside it.
+- **A host post-approval can now change the venue name on an event LAW placed.**
+  Before today the field was off their form on that answer and a crafted post
+  was ignored; now it is on their form, and the venue name has always been
+  host-editable at every status (the band and the places are not). Worth
+  knowing rather than worth guarding: the venue is what an attendee turns up
+  to, and every change is in the activity log.
+
+**Markup and script.** The radios, the `#law-venue-details` wrapper and the
+committee-only hint that explained the other answer all come out of
+`parts/events/event-form-fields.php`; the three fields sit directly in the
+fieldset's three-column grid. The wrapper was the only user of
+`data-law-toggles-keep` in `assets/js/event-form.js` — the opt-out that stopped
+a hidden block's values being cleared — so that branch went too. The generic
+`data-law-toggles` mechanism stays; the sector "please specify" inputs and the
+"Other" accessibility and dietary boxes still use it.
+
+**Left alone, deliberately.** The committee's event panel still prints a "Venue
+needed?" row and the wp-admin Event facts box still offers the select. Both
+read `_law_venue_needed`, which is now the same answer on every event that has
+been saved since today, so the row is on its way to being noise — but removing
+a committee-facing display is a separate decision from taking a question off a
+form, and legacy events still carry a meaningful answer.
+
+**Tests.** `tests/VenueDetailsTest.php` keeps its 40 tests: the visibility
+predicate, the required-ness rule and the crafted-post cases were rewritten
+around the new rule rather than deleted, including one that pins the committee
+being held to the three fields and one that pins the old exemption being gone
+on an event whose stored answer still says LAW placed it. The `valid_input()`
+helpers in `SubmissionFormLockTest`, `EventFlagsTest`, `FlagshipTest`,
+`SessionsTest` and `SpeakerNamesTest` gained the three venue fields, since a
+form save without them is now refused.
+
+Touched: `functions/events/submission-form.php`,
+`parts/events/event-form-fields.php`, `assets/js/event-form.js`,
+`functions/events/committee.php`, `templates/account-dashboard.php` (stale
+comments only), `tests/VenueDetailsTest.php`, `tests/SubmissionFormLockTest.php`,
+`tests/EventFlagsTest.php`, `tests/FlagshipTest.php`, `tests/SessionsTest.php`,
+`tests/SpeakerNamesTest.php`.
+
+## The flagship acknowledgement splits at the price cutover (17 September 2026)
+
+The flagship is sold at two prices, one either side of a cutover the committee
+sets on the Flagship screen (`_law_flagship_price_switch`, 17 October by
+default). Until today the registration acknowledgement did not know that: one
+template answered everybody. Denis asked for a template per side, so that LAW
+can write to late registrants differently, and for the Emails screen to say
+which is which.
+
+**Two templates became four.** `user_flagship_applied` and
+`user_flagship_applied_free` keep their slugs and now name the early side;
+`user_flagship_applied_late` and `user_flagship_applied_free_late` join them for
+the late one. Keeping the existing slugs rather than renaming the pair matters:
+overrides are stored in `law_events_email_overrides` keyed by slug, so any
+wording the committee has already saved for the acknowledgement still applies,
+to the early template. The two new rows ship with the registry defaults and have
+to be edited to say anything different.
+
+**The names carry the date, and derive it.** Each name ends "before 17 October"
+or "from 17 October", built from `law_flagship_price_switch_day()`
+(`flagship.php`) rather than typed into the registry, so moving the cutover
+relabels all four rows instead of leaving last year's date in front of the
+committee. It is "from", not "after", because the switch is at 00:00: a
+registration made on the 17th itself is already at the later price.
+`law_events_flagship_switch_day()` in `notifications.php` is the guarded wrapper
+the registry calls, since `notifications.php` loads before `flagship.php`.
+
+**The side is read from the registration, not from the clock.**
+`law_flagship_applied_email()` (`flagship-bookings.php`) takes the early-side
+slug and returns its `_late` twin when `law_flagship_price_is_late()` says the
+booking's own creation time is on or after the cutover;
+`law_flagship_mark_ready()` now sends through it, so both call sites (the saved
+card and the fully discounted registration) are covered by one rule. Keying off
+`post_date_gmt` rather than "now" is deliberate: that is the moment
+`law_booking_quote()` priced the place, so the email and the price agree by
+construction even when the card setup returns from Stripe after midnight, or a
+free registration is marked ready by a later path. It falls back to the early
+slug when no `_late` twin is registered, so an unpaired caller still sends
+something.
+
+**The free pair ships with identical bodies**, which is a knowing exception to
+the "one template, not a family of near-duplicates" rule stated for the booking
+emails above. The only sentence the cutover changes is about the price, and a
+registration a code covered in full has none, so the second row exists purely so
+that late registrants can be told something different without telling everybody.
+If that never happens, folding the two back into one is a two-line change.
+
+**Not touched.** Per-event email overrides do not reach the flagship at all
+(`law_event_override_slug_map()` refuses it), so nothing there needed a new
+entry. The approval, decline, payment-failure and withdrawal emails are still
+one template each: the cutover is about what was charged, and by approval time
+the amount is in the booking's own snapshot.
+
+**Tests.** Three in `tests/FlagshipPaymentsTest.php`, alongside the existing
+cutover tests: the choice on both sides for both pairs, a registration made
+before the cutover still acknowledged at the early rate long after it has
+passed, and the names carrying whatever day the screen is set to.
+
+Touched: `functions/events/notifications.php`, `functions/events/flagship.php`,
+`functions/events/flagship-bookings.php`, `tests/FlagshipPaymentsTest.php`,
+`FLAGSHIP_PAYMENTS.md`.
 
 ---
 

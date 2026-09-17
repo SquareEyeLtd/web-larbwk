@@ -410,7 +410,12 @@ class SpeakerNamesTest extends LAW_Test_Case {
 			'host_organisations'  => 'Test Org LLP',
 			'preferred_slots'     => $slot_labels ? array( $slot_labels[0] ) : array( 'Any slot' ),
 			'sectors'             => array(),
-			'venue_needed'        => 'Yes, please share our details with venue hosts',
+			// The venue, its capacity band and the places available are required of
+			// every submitter since 17 September 2026, so a valid input carries all
+			// three. Places sit inside the band, which the pair check enforces.
+			'venue'               => '1 Test Venue, London',
+			'venue_capacity'      => '51-100',
+			'tickets_available'   => '75',
 			'fee_tier'            => 'uk',
 			'invoice_name'        => 'Test Contact',
 			'invoice_email'       => 'half-invoice@example.test',

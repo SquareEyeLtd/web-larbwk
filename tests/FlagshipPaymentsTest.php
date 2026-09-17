@@ -151,6 +151,71 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 		$this->assertSame( 60000, law_flagship_price_pence( $utc_2300, $event_id ) );
 	}
 
+	/**
+	 * The acknowledgement follows the cutover too: LAW writes to the two
+	 * groups of delegates differently (Denis, 17 September 2026), and which
+	 * group somebody is in is decided by when they registered.
+	 */
+	public function test_the_acknowledgement_is_chosen_by_the_price_cutover(): void {
+		$event_id = $this->make_flagship();
+
+		$booking = fn( string $local ) => $this->make_flagship_booking( $event_id, $local );
+
+		$this->assertSame( 'user_flagship_applied', law_flagship_applied_email( $booking( '2026-10-16 23:59' ) ) );
+		$this->assertSame( 'user_flagship_applied_late', law_flagship_applied_email( $booking( '2026-10-17 00:00' ) ) );
+
+		// The free pair switches on the same date, from its own base slug.
+		$this->assertSame(
+			'user_flagship_applied_free',
+			law_flagship_applied_email( $booking( '2026-10-16 12:00' ), 'user_flagship_applied_free' )
+		);
+		$this->assertSame(
+			'user_flagship_applied_free_late',
+			law_flagship_applied_email( $booking( '2026-10-20 12:00' ), 'user_flagship_applied_free' )
+		);
+	}
+
+	/**
+	 * The side is read from the registration, not from the clock when the
+	 * email is composed: a card setup that returns from Stripe after midnight
+	 * must not acknowledge a delegate at a rate they were never quoted.
+	 */
+	public function test_a_registration_made_before_the_cutover_keeps_its_acknowledgement_afterwards(): void {
+		$event_id = $this->make_flagship( array( '_law_flagship_price_switch' => '2020-10-17 00:00' ) );
+		$booking  = $this->make_flagship_booking( $event_id, '2020-10-16 23:50' );
+
+		$this->assertTrue( law_flagship_price_is_late( 0, $event_id ), 'Precondition: the cutover is long past.' );
+		$this->assertSame( 'user_flagship_applied', law_flagship_applied_email( $booking ) );
+	}
+
+	/** Both names carry the cutover day the Flagship screen is set to. */
+	public function test_the_acknowledgement_names_the_cutover_day_it_is_set_to(): void {
+		$event_id = $this->make_flagship( array( '_law_flagship_price_switch' => '2026-10-20 00:00' ) );
+		$registry = law_events_email_registry();
+
+		$this->assertSame( '20 October', law_flagship_price_switch_day( $event_id ) );
+		$this->assertStringContainsString( 'before 20 October', $registry['user_flagship_applied']['name'] );
+		$this->assertStringContainsString( 'from 20 October', $registry['user_flagship_applied_late']['name'] );
+	}
+
+	/** A registration posted at a given site-local moment. */
+	private function make_flagship_booking( int $event_id, string $local ): int {
+		$when    = new DateTimeImmutable( $local, wp_timezone() );
+		$post_id = wp_insert_post(
+			array(
+				'post_type'     => LAW_BOOKING_CPT,
+				'post_status'   => 'law-applied',
+				'post_title'    => 'Test registration',
+				'post_parent'   => $event_id,
+				'post_date'     => $when->format( 'Y-m-d H:i:s' ),
+				'post_date_gmt' => $when->setTimezone( new DateTimeZone( 'UTC' ) )->format( 'Y-m-d H:i:s' ),
+			)
+		);
+		$this->posts[] = $post_id;
+
+		return (int) $post_id;
+	}
+
 	/** VAT is added on top, and the two figures can never disagree. */
 	public function test_vat_is_added_to_the_net_price(): void {
 		$this->assertSame( 66000, law_events_gross_pence( 55000 ) );

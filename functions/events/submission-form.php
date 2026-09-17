@@ -67,16 +67,20 @@ function law_events_locked_fields( $post, $user_id = 0 ) {
 	if ( $is_committee ) {
 		return array( 'fee_tier', 'invoice' );
 	}
-	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'venue_needed', 'tickets_available' );
+	return array( 'title', 'type', 'preferred_slots', 'fee_tier', 'invoice', 'sectors', 'host_organisations', 'venue_capacity', 'tickets_available' );
 }
 
 
 /**
- * The two "Venue needed" answers, in the order the form asks them.
+ * The two "Venue needed" answers, in the order form 2 (Event > submit an
+ * event) asked them.
  *
  * These strings ARE the stored values: the meta holds the answer as prose, not
- * a key, because it is shown verbatim on the committee's event panel and read
- * back by law_events_venue_details_visible() as a "No," prefix test.
+ * a key, because it is shown verbatim on the committee's event panel. Nobody
+ * is asked the question any more -- the radios came off both forms on
+ * 17 September 2026 and every save records the 'no' answer -- so the 'yes'
+ * label now only ever renders against events submitted or migrated before
+ * that date.
  *
  * @return string[] 'yes' and 'no' => the canonical label of each answer.
  */
@@ -126,76 +130,49 @@ function law_events_venue_needed_label( $value ) {
 
 /**
  * Whether the Venue detail fields (venue name/address, capacity band, places
- * available) are on this submitter's form.
+ * available) are on this submitter's form. They always are.
  *
- * A deliberate divergence from form 2 (Event > submit an event), where only
- * field 21 (Venue) was conditional on field 103 (Venue needed) and field 55
- * (Venue capacity) / field 54 (Tickets available) carried no conditional logic
- * at all: a host who has just asked LAW to find them a venue cannot answer any
- * of the three, and any number they give is a guess, so they are asked none of
- * them (Denis, 9 September 2026). The committee always sees the block, because
- * setting the venue and its capacity band once the event has been placed is
- * their job. Keyed on the capability rather than on the template's 'context'
- * arg, which is copy/voice only, so a committee member submitting their own
- * event through the host form gets the same block.
+ * The question that used to gate them, field 103 (Venue needed) on form 2
+ * (Event > submit an event), is no longer asked: the radios are off both the
+ * host and the committee form and every save records the "No, we already have
+ * a venue planned" answer on the submitter's behalf (Denis, 17 September
+ * 2026). A host is expected to bring their own room, so the branch that once
+ * took all three fields off the form of a host who had asked LAW to find them
+ * one has nothing left to key on.
  *
- * @param string $venue_needed The Venue needed answer to judge (stored value
- *                             when the field is locked, else the posted one).
- * @param int    $user_id      Defaults to the current user.
+ * Kept as a predicate rather than inlined so the rule has one home if the
+ * question ever comes back, and because the form template, the validator and
+ * the saver must agree about what was asked: an absent field must never be
+ * read as a cleared one.
  */
-function law_events_venue_details_visible( $venue_needed, $user_id = 0 ) {
-	$user_id = $user_id ? (int) $user_id : get_current_user_id();
-	if ( law_user_is_committee( $user_id ) ) {
-		return true;
-	}
-	return law_events_venue_needed_choices()['no'] === law_events_venue_needed_label( $venue_needed );
+function law_events_venue_details_visible() {
+	return true;
 }
 
 
 /**
- * Whether the three Venue detail fields must be filled in on this save.
+ * Whether the three Venue detail fields must be filled in on this save. They
+ * always must.
  *
- * A submitter who says they already have a venue is asked for all three --
- * the venue itself, its capacity band and the places available (Denis,
- * 11 September 2026). The venue name was already required on that answer; the
- * band and the places joined it because a host with their own room knows both,
- * and a blank band silently removes the ticket ceiling while blank places
- * leave the booking capacity unlimited. On the other answer nothing is
- * required: the fields are off a host's form entirely, and the committee sees
- * them so they can fill them in once the event is placed, which is not
- * something a save of any other field should be blocked on.
+ * All three were already required of a submitter who said they had a venue
+ * (Denis, 11 September 2026): a host with their own room knows all three, a
+ * blank band silently removes the ticket ceiling, and blank places leave the
+ * booking capacity unlimited. Now that every submitter is recorded as having
+ * one (see law_events_venue_details_visible()), that is the only rule left,
+ * and it applies to the committee's edit form too, exactly as it did when they
+ * opened an event whose host had answered "No".
+ *
+ * A locked field is still never re-validated: a disabled control posts
+ * nothing, and what is stored behind it is the committee's to fix, not the
+ * host's. The validator, not this predicate, is where that exemption lives.
  *
  * "TBC" is a capacity band, so a submitter who genuinely does not know the
  * numbers yet still has an answer to give.
- *
- * @param string $venue_needed The Venue needed answer to judge (stored value
- *                             when the field is locked, else the posted one).
- * @param int    $user_id      Defaults to the current user.
  */
-function law_events_venue_details_required( $venue_needed, $user_id = 0 ) {
-	return law_events_venue_details_visible( $venue_needed, $user_id )
-		&& law_events_venue_needed_choices()['no'] === law_events_venue_needed_label( $venue_needed );
+function law_events_venue_details_required() {
+	return true;
 }
 
-
-/**
- * The Venue needed answer to judge visibility by.
- *
- * The field is in the host lock list, and a disabled radio posts nothing, so
- * post-approval a host's posted value is always ''. Reading the stored value
- * in that case is what keeps the venue name editable for a host whose event
- * has a venue -- the same fallback the ticket/band check uses.
- *
- * @param WP_Post|null $post   Event being saved (null on a new submission).
- * @param array        $locked law_events_locked_fields() for this save.
- * @param array        $input  Unslashed POST data.
- */
-function law_events_venue_needed_value( $post, array $locked, array $input ) {
-	if ( in_array( 'venue_needed', $locked, true ) && $post ) {
-		return law_events_venue_needed_label( law_event_meta( $post->ID, '_law_venue_needed' ) );
-	}
-	return law_events_venue_needed_label( $input['venue_needed'] ?? '' );
-}
 
 /**
  * Whether the Session agenda section is available on this event's form.
@@ -342,16 +319,15 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 				$errors->add( 'sector_other', 'Please specify the other sector.' );
 			}
 		}
-		if ( ! in_array( 'venue_needed', $locked, true ) && '' === (string) ( $input['venue_needed'] ?? '' ) ) {
-			$errors->add( 'venue_needed', 'Please tell us whether you need a venue.' );
-		}
-		// "No, we already have a venue planned" makes all three venue details
-		// required, judged on the same answer the form rendered by so the two
-		// cannot disagree about what was asked. A locked band is never
-		// re-validated: a disabled <select> posts nothing, and the stored value
-		// is the committee's to fix, not the host's.
-		$venue_answer = law_events_venue_needed_value( $post, $locked, $input );
-		if ( law_events_venue_details_required( $venue_answer, $user_id ) ) {
+		// Venue needed is no longer asked (the radios came off both forms on
+		// 17 September 2026 and the saver records the "No, we already have a
+		// venue planned" answer itself), so there is nothing to refuse an
+		// unanswered question with. All three venue details are required of
+		// everyone instead, judged with the same predicate the form template
+		// renders by so the two cannot disagree about what was asked. A locked
+		// band is never re-validated: a disabled <select> posts nothing, and
+		// the stored value is the committee's to fix, not the host's.
+		if ( law_events_venue_details_required() ) {
 			if ( '' === trim( (string) ( $input['venue'] ?? '' ) ) ) {
 				$errors->add( 'venue', 'Please give the venue name and/or address.' );
 			}
@@ -401,7 +377,7 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		$tickets_locked  = in_array( 'tickets_available', $locked, true );
 		$capacity_locked = in_array( 'venue_capacity', $locked, true );
 		$tickets = '';
-		if ( law_events_venue_details_visible( $venue_answer, $user_id ) && ! ( $tickets_locked && $capacity_locked ) ) {
+		if ( law_events_venue_details_visible() && ! ( $tickets_locked && $capacity_locked ) ) {
 			$tickets = $tickets_locked && $post
 				? trim( (string) law_event_meta( $post->ID, '_law_tickets_available' ) )
 				: trim( (string) ( $input['tickets_available'] ?? '' ) );
@@ -604,15 +580,19 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 
 	// Plain meta.
 	$writes = array();
-	if ( ! in_array( 'venue_needed', $locked, true ) ) {
-		$writes['_law_venue_needed'] = $input['venue_needed'] ?? '';
-	}
+	// Venue needed is not on either form any more: every save records the same
+	// answer on the submitter's behalf (Denis, 17 September 2026), which is
+	// what puts the three venue details on every form. Written on every save
+	// rather than only on a new event, so an event submitted or migrated
+	// before that date stops claiming its host asked LAW to find them a venue
+	// the next time anyone touches it.
+	$writes['_law_venue_needed'] = law_events_venue_needed_choices()['no'];
 	// A hidden field posts nothing, and an absent value must never be read as a
 	// cleared one: on an event LAW has placed, the venue, its capacity band and
 	// the places available belong to the committee, so a host's save has to
 	// leave all three exactly as they are. Judged with the same predicate the
 	// form template renders by, so the two cannot disagree about what was asked.
-	if ( law_events_venue_details_visible( law_events_venue_needed_value( $post, $locked, $input ), $user_id ) ) {
+	if ( law_events_venue_details_visible() ) {
 		$writes['_law_venue'] = $input['venue'] ?? '';
 		// Both of these are skipped when locked for the same reason: a disabled
 		// control posts nothing, so writing the posted value would clear the
@@ -1388,7 +1368,6 @@ function law_events_form_values( $post, array $state ) {
 		'sectors'             => law_events_post_term_names( $post->ID, 'law_sector' ),
 		'sector_jurisdiction' => law_event_meta( $post->ID, '_law_sector_jurisdiction' ),
 		'sector_other'        => law_event_meta( $post->ID, '_law_sector_other' ),
-		'venue_needed'        => law_events_venue_needed_label( law_event_meta( $post->ID, '_law_venue_needed' ) ),
 		'venue'               => law_event_meta( $post->ID, '_law_venue' ),
 		'venue_capacity'      => law_event_meta( $post->ID, '_law_venue_capacity' ),
 		'tickets_available'   => law_event_meta( $post->ID, '_law_tickets_available' ),

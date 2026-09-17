@@ -499,12 +499,11 @@ $law_email_mode = $law_detail
 						</select></p>
 
 					<?php
-					// Venue capacity and Places available. Always on the panel,
-					// not only for an event LAW placed: the committee owns the
-					// band at every status, and a host who asked LAW to find
-					// them a venue never sees these two on their own form
-					// (law_events_venue_details_visible()), so this panel and
-					// wp-admin are the only doors to them.
+					// Venue capacity and Places available. Always on the panel:
+					// the committee owns both at every status, and they lock on
+					// the host's own form (the places from submission onwards,
+					// the band at approval), so once an event is under review
+					// this panel and wp-admin are the only doors to them.
 					//
 					// data-law-capacity / data-law-tickets are the same hooks the
 					// event form uses, so event-form.js shows its inline band

@@ -155,19 +155,18 @@
 	}
 
 	/* Conditional fields: a checkbox or radio with data-law-toggles shows/hides
-	   the element with that id (the sector "please specify" inputs, the venue
-	   details block). Hiding clears the value so an answer that no longer
-	   applies cannot be saved, EXCEPT where the toggle carries
-	   data-law-toggles-keep: the venue block holds three fields the committee
-	   may own, and a host toggling No -> Yes -> No must not lose what they
-	   typed. Its save path skips the write instead. */
+	   the element with that id (the sector "please specify" inputs, the "Other"
+	   accessibility and dietary boxes). Hiding clears the value so an answer
+	   that no longer applies cannot be saved. The venue details block used to
+	   ride on this too, behind a data-law-toggles-keep opt-out that spared its
+	   three fields from being cleared; it is unconditional markup since
+	   17 September 2026, and the opt-out went with it. */
 	document.querySelectorAll('[data-law-toggles]').forEach(function (box) {
 		var target = document.getElementById(box.getAttribute('data-law-toggles'));
 		if (!target) { return; }
-		var keep = box.hasAttribute('data-law-toggles-keep');
 		var sync = function () {
 			target.hidden = !box.checked;
-			if (target.hidden && !keep) {
+			if (target.hidden) {
 				var field = target.querySelector('input');
 				if (field) { field.value = ''; }
 			}
