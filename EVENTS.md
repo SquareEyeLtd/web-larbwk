@@ -8,14 +8,7 @@
 > When you change something listed in "Known defects", move it out of that section
 > rather than leaving both descriptions in place.
 
-Last verified against the database and codebase: 3 September 2026.
-
-> **Rebuild in progress (September 2026).** The custom replacement for this
-> whole stack is built on the `events-4.1-rebuild-custom` branch and has been
-> migrated and flipped live on the LOCAL copy (`law_events_source` = `cpt`).
-> This file still describes the Gravity Forms system, which remains accurate
-> for PRODUCTION until cutover. See EVENTS_4.1_REBUILD.md, especially its
-> section 10 implementation notes. This file gets rewritten at phase D.
+Last verified against the database and codebase: 14 September 2026.
 
 ---
 
@@ -53,18 +46,18 @@ waive the fee at the same time.
 
 ## 2. Platform components
 
-| Component | Role |
-|---|---|
-| Gravity Forms 3.1.0.2 | Submission form (form 2) and child forms |
-| Gravity Flow | The approval workflow on form 2 |
-| Gravity Flow Form Connector | "Update an Entry" steps used for status changes |
-| Gravity Flow Incoming Webhook | Park-and-release steps that wait on Make |
-| Gravity Perks Nested Forms (GPNF) | Repeatable co-owners, contacts and comments |
-| Gravity Perks Advanced Calculations (GPAC) | Conditional calculated fields |
-| GravityView (+ Advanced Filter, Inline Edit, Entry Revisions) | Host and committee dashboards |
-| Members | Per-page role access control |
-| Stripe | Invoicing and payment, via the Invoices API |
-| Make.com (region eu1) | Two scenarios bridging WordPress and Stripe |
+| Component                                                     | Role                                            |
+| ------------------------------------------------------------- | ----------------------------------------------- |
+| Gravity Forms 3.1.0.2                                         | Submission form (form 2) and child forms        |
+| Gravity Flow                                                  | The approval workflow on form 2                 |
+| Gravity Flow Form Connector                                   | "Update an Entry" steps used for status changes |
+| Gravity Flow Incoming Webhook                                 | Park-and-release steps that wait on Make        |
+| Gravity Perks Nested Forms (GPNF)                             | Repeatable co-owners, contacts and comments     |
+| Gravity Perks Advanced Calculations (GPAC)                    | Conditional calculated fields                   |
+| GravityView (+ Advanced Filter, Inline Edit, Entry Revisions) | Host and committee dashboards                   |
+| Members                                                       | Per-page role access control                    |
+| Stripe                                                        | Invoicing and payment, via the Invoices API     |
+| Make.com (region eu1)                                         | Two scenarios bridging WordPress and Stripe     |
 
 ### Core design principle
 
@@ -76,16 +69,16 @@ into Make expressions. This is the reason the build is stable and debuggable.
 
 ## 3. Forms
 
-| Form | Title | Purpose |
-|---|---|---|
-| 1 | User registration | Creates the WordPress user, assigns role |
-| 2 | Event > submit an event | The main submission form and workflow host |
-| 3 | User profile | Self-service profile and role editing |
-| 4 | Events > add host contact | GPNF child of field 94 |
-| 5 | Comments | GPNF child of field 99, the committee/host thread |
-| 6 | Events > add co-owner | GPNF child of field 106 |
-| 8 | Events > speaker | GPNF child of field 110 locally, field 112 on live |
-| 9 | Event > session | GPNF child of field 115 |
+| Form | Title                     | Purpose                                            |
+| ---- | ------------------------- | -------------------------------------------------- |
+| 1    | User registration         | Creates the WordPress user, assigns role           |
+| 2    | Event > submit an event   | The main submission form and workflow host         |
+| 3    | User profile              | Self-service profile and role editing              |
+| 4    | Events > add host contact | GPNF child of field 94                             |
+| 5    | Comments                  | GPNF child of field 99, the committee/host thread  |
+| 6    | Events > add co-owner     | GPNF child of field 106                            |
+| 8    | Events > speaker          | GPNF child of field 110 locally, field 112 on live |
+| 9    | Event > session           | GPNF child of field 115                            |
 
 Child form entries live in the same `wp_gf_entry` table and draw from the same
 global auto-increment. GPNF creates a child entry the moment the row is added in
@@ -96,47 +89,48 @@ are higher than the parent because they were created afterwards.
 
 ### Form 2 key fields
 
-| ID | Type | Label / purpose |
-|---|---|---|
-| 3 | name | Submitter name |
-| 7 | email | Submitter email |
-| 17 | text | Event title |
-| 21 | text | Venue (free text: name, address, or both). Used on the programme listing and as the Google Maps query. |
-| 48 | list | Speakers (legacy). Four columns: Name, Organisation, Job title, URL. Replaced by the Speakers nested field (110 locally, 112 on live). Kept as a fallback on the programme listing until live is migrated. |
-| 53 | product (radio) | Event fee tier: `UK office` £1200, `International` £600, `Sponsor` £0 |
-| 68 | select | Confirmed slot |
-| 70 | uid | Unique ID (LAW reference) |
-| 73 | email | Invoice contact email |
-| 74 | address | Billing address (`74.6` is the country name) |
-| 75 | name | Invoice contact name |
-| 78 | date | Approval date, written by the theme on approval |
-| 79 | text | Host VAT number |
-| 81 | number | Committee discounted / waived fee, in pounds |
-| 83 | website | Stripe invoice URL, written back by Make |
-| 84 | number (GPAC) | Calculated fee in **pence** |
-| 85 | number (GPAC) | VAT flag, 1 or 0 |
-| 87 | checkbox | Override fee, gates whether 81 is applied |
-| 88 | text | Country ISO 3166-1 alpha-2, derived from `74.6` |
-| 90 | select | Committee assignee |
-| 94 | form (GPNF → 4) | Event contacts, repeatable |
-| 95 | select | **Event status**: Proposed / Sent back / Approved / Confirmed / Rejected |
-| 96 | select | **Payment status**: Unpaid / Paid / Refunded / Free |
-| 98 | radio | Action on Proceed: `Approve this event` / `Send it back` |
-| 99 | form (GPNF → 5) | Comments thread |
-| 106 | form (GPNF → 6) | Additional event owners, repeatable |
-| 110 / 112 | form (GPNF → 8) | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6), Biography (7), Email (8). Field **110** on local, **112** on live. The migrator auto-detects. |
-| 115 | form (GPNF → 9) | Sessions, repeatable. Shown on the individual event listing when child rows exist. |
-| 67 | textarea | Reason for rejection |
+| ID        | Type                         | Label / purpose                                                                                                                                                                                                       |
+| --------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3         | name                         | Submitter name                                                                                                                                                                                                        |
+| 7         | email                        | Submitter email                                                                                                                                                                                                       |
+| 17        | text                         | Event title                                                                                                                                                                                                           |
+| 21        | text                         | Venue (free text: name, address, or both). Used on the programme listing and as the Google Maps query.                                                                                                                |
+| 48        | list                         | Speakers (legacy). Four columns: Name, Organisation, Job title, URL. Replaced by the Speakers nested field (110 locally, 112 on live). Kept as a fallback on the programme listing until live is migrated.            |
+| 53        | product (radio)              | Event fee tier: `UK office` £1200, `International` £600, `Sponsor` £0                                                                                                                                                 |
+| 68        | select                       | Confirmed slot                                                                                                                                                                                                        |
+| 70        | uid                          | Unique ID (LAW reference)                                                                                                                                                                                             |
+| 73        | email                        | Invoice contact email                                                                                                                                                                                                 |
+| 74        | address                      | Billing address (`74.6` is the country name)                                                                                                                                                                          |
+| 75        | name                         | Invoice contact name                                                                                                                                                                                                  |
+| 78        | date                         | Approval date, written by the theme on approval                                                                                                                                                                       |
+| 79        | text                         | Host VAT number                                                                                                                                                                                                       |
+| 81        | number                       | Committee discounted / waived fee, in pounds                                                                                                                                                                          |
+| 83        | website                      | Stripe invoice URL, written back by Make                                                                                                                                                                              |
+| 84        | number (GPAC)                | Calculated fee in **pence**                                                                                                                                                                                           |
+| 85        | number (GPAC)                | VAT flag, 1 or 0                                                                                                                                                                                                      |
+| 87        | checkbox                     | Override fee, gates whether 81 is applied                                                                                                                                                                             |
+| 88        | text                         | Country ISO 3166-1 alpha-2, derived from `74.6`                                                                                                                                                                       |
+| 90        | select                       | Committee assignee                                                                                                                                                                                                    |
+| 94        | form (GPNF → 4)              | Event contacts, repeatable                                                                                                                                                                                            |
+| 95        | select                       | **Event status**: Proposed / Sent back / Approved / Confirmed / Rejected                                                                                                                                              |
+| 96        | select                       | **Payment status**: Unpaid / Paid / Refunded / Free                                                                                                                                                                   |
+| 98        | radio                        | Action on Proceed: `Approve this event` / `Send it back`                                                                                                                                                              |
+| 99        | form (GPNF → 5)              | Comments thread                                                                                                                                                                                                       |
+| 106       | form (GPNF → 6)              | Additional event owners, repeatable                                                                                                                                                                                   |
+| 110 / 112 | form (GPNF → 8)              | Speakers, repeatable. Child fields: Name (1), Organisation (3), Job title (4), Website (5), Photo (6), Biography (7), Email (8). Field **110** on local, **112** on live. The migrator auto-detects.                  |
+| 115       | form (GPNF → 9)              | Sessions, repeatable. Shown on the individual event listing when child rows exist.                                                                                                                                    |
+| 116       | checkbox (Hidden visibility) | Event codes. Populated from `?ec=` on `/account/events/submit/` (e.g. `?ec=Sessions`). Must be Hidden, not Administrative — otherwise front-end conditional logic cannot see it. The theme ticks the matching choice. |
+| 67        | textarea                     | Reason for rejection                                                                                                                                                                                                  |
 
 ### Form 9 key fields (Event > session)
 
-| ID | Type | Label / purpose |
-|---|---|---|
-| 1 | time | Start time |
-| 3 | time | End time |
-| 4 | text | Session title |
-| 5 | textarea | Description |
-| 6 | multiselect (GPPA → form 8) | Speakers. Value is the form 8 child entry ID; label is the speaker name. Multiple IDs allowed. |
+| ID  | Type                        | Label / purpose                                                                                |
+| --- | --------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1   | time                        | Start time                                                                                     |
+| 3   | time                        | End time                                                                                       |
+| 4   | text                        | Session title                                                                                  |
+| 5   | textarea                    | Description                                                                                    |
+| 6   | multiselect (GPPA → form 8) | Speakers. Value is the form 8 child entry ID; label is the speaker name. Multiple IDs allowed. |
 
 Fields 84, 85, 87, 81, 88, 95, 96 and others are set to **administrative**
 visibility: they appear in the admin entry detail and in GravityView, but not on
@@ -259,15 +253,15 @@ runs.
 Marking workflow notifications inactive is therefore a readability convention on
 this build, not a functional requirement.
 
-| Notification ID | Name | Fired by |
-|---|---|---|
-| `6a00bfcc8973d` | Email to user > event submitted | form submission (active, correct) |
-| `6a2678a52b374` | Email to committee > event submitted | form submission (active, correct) |
-| `6a264ea5b159e` | Email to user > event approved, pending payment | step 21 |
-| `6a571ed65f78c` | Email to committee > event approved | step 30 (marked active, but suppressed at submission by the step) |
-| `6a0dcd4e6b7ec` | Email to user (sponsor) > event confirmed | step 12 |
-| `6a410c8771f1d` | Email to user (non-sponsor) > event confirmed | step 29 |
-| `6a400d916e3fd` | Email to committee > event updated | GravityView entry revision |
+| Notification ID | Name                                            | Fired by                                                          |
+| --------------- | ----------------------------------------------- | ----------------------------------------------------------------- |
+| `6a00bfcc8973d` | Email to user > event submitted                 | form submission (active, correct)                                 |
+| `6a2678a52b374` | Email to committee > event submitted            | form submission (active, correct)                                 |
+| `6a264ea5b159e` | Email to user > event approved, pending payment | step 21                                                           |
+| `6a571ed65f78c` | Email to committee > event approved             | step 30 (marked active, but suppressed at submission by the step) |
+| `6a0dcd4e6b7ec` | Email to user (sponsor) > event confirmed       | step 12                                                           |
+| `6a410c8771f1d` | Email to user (non-sponsor) > event confirmed   | step 29                                                           |
+| `6a400d916e3fd` | Email to committee > event updated              | GravityView entry revision                                        |
 
 Step 14 ("payment received") uses an inline workflow notification rather than a
 saved form notification.
@@ -529,7 +523,7 @@ field 9 (Role), the drop down added on 3 September 2026; an unset role reads as
 Speaker), the name linking to the profile, "job title, organisation", and a
 24-word biography excerpt with a "Read full bio" control that opens the full
 text in a dialog. Role, organisation, job title, photo and biography are all
-the speaker's values *for that event* (the appearance row), so the same person
+the speaker's values _for that event_ (the appearance row), so the same person
 can read differently on two listings. The legacy Gravity Forms render path
 does not show the role; it appears once the source is the rebuilt module.
 
@@ -540,7 +534,7 @@ the public programme, from the form 8 child entries.
 
 **Access**: the Speakers page (658 locally) is restricted by Members to
 committee, editor and administrator, pre-launch, like `/programme/`. Because
-Members only filters the page *content*, the speaker data is gated separately:
+Members only filters the page _content_, the speaker data is gated separately:
 `law_speakers_user_can_view()` checks `members_can_current_user_view_post()`
 against the Speakers page, `law_speakers()` returns nothing when it fails, and
 the archive template renders the Members permission message in the body (the
@@ -603,6 +597,7 @@ The hero banner shared by this template, the calendars and other pages lives in
 pre-escaped markup for a full-width cell below the title and is deliberately
 NOT run through `wp_kses_post()`, which would strip inline `<svg>`; the single
 event view uses it for the event details box.
+
 ---
 
 ## 9. Front-end pages and access
@@ -610,22 +605,22 @@ event view uses it for the event details box.
 Permalink structure is `/%postname%/`. Access is controlled per page by the
 Members plugin (`_members_access_role` post meta), not in code.
 
-| URL | Page ID | View / shortcode | Roles |
-|---|---|---|---|
-| `/login/` | 396 | `templates/login.php` | everyone |
-| `/register/` | 286 | `templates/register.php` + form 1 block | everyone |
-| `/account/` | 290 | `templates/account.php` landing | all logged-in |
-| `/account/profile/` | 439 | `templates/account.php` + form 3 block | all logged-in |
-| `/account/events/` | 292 | `templates/account-events.php` (GravityView 386 for editing only) | hosts and above (attendees too, and redirected on to `/account/bookings/`) |
-| `/account/bookings/` | new, created by the setup trigger / migration step 10 | `templates/account-bookings.php` (CPT module only) | all logged-in |
-| `/account/events/submit/` | 294 | `templates/account.php` + form 2 block | hosts and above |
-| `/account/events/submit/done/` | 372 | `templates/account.php` confirmation | hosts and above |
-| `/account/dashboard/` | 414 | GravityView 419 "Events (committee - all)" | committee, editor, admin |
-| `/inbox/` | 279 | `[gravityflow page="inbox" form="2"]` | committee, host, editor, admin |
-| `/programme/` | 622 | `templates/calendar.php` | **committee, editor, admin only** |
-| `/committee/programme/` | 624 | `templates/calendar-committee.php` | committee, editor, admin |
-| `/speakers/` | 658 (local) | `templates/speakers.php` | **committee, editor, admin only** (pre-launch) |
-| `/speakers/<entry ID>/` | rewrite onto 658 | `templates/speaker.php` | **committee, editor, admin only** (pre-launch) |
+| URL                            | Page ID                                               | View / shortcode                                                  | Roles                                                                      |
+| ------------------------------ | ----------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `/login/`                      | 396                                                   | `templates/login.php`                                             | everyone                                                                   |
+| `/register/`                   | 286                                                   | `templates/register.php` + form 1 block                           | everyone                                                                   |
+| `/account/`                    | 290                                                   | `templates/account.php` landing                                   | all logged-in                                                              |
+| `/account/profile/`            | 439                                                   | `templates/account.php` + form 3 block                            | all logged-in                                                              |
+| `/account/events/`             | 292                                                   | `templates/account-events.php` (GravityView 386 for editing only) | hosts and above (attendees too, and redirected on to `/account/bookings/`) |
+| `/account/bookings/`           | new, created by the setup trigger / migration step 10 | `templates/account-bookings.php` (CPT module only)                | all logged-in                                                              |
+| `/account/events/submit/`      | 294                                                   | `templates/account.php` + form 2 block                            | hosts and above                                                            |
+| `/account/events/submit/done/` | 372                                                   | `templates/account.php` confirmation                              | hosts and above                                                            |
+| `/account/dashboard/`          | 414                                                   | GravityView 419 "Events (committee - all)"                        | committee, editor, admin                                                   |
+| `/inbox/`                      | 279                                                   | `[gravityflow page="inbox" form="2"]`                             | committee, host, editor, admin                                             |
+| `/programme/`                  | 622                                                   | `templates/calendar.php`                                          | **committee, editor, admin only**                                          |
+| `/committee/programme/`        | 624                                                   | `templates/calendar-committee.php`                                | committee, editor, admin                                                   |
+| `/speakers/`                   | 658 (local)                                           | `templates/speakers.php`                                          | **committee, editor, admin only** (pre-launch)                             |
+| `/speakers/<entry ID>/`        | rewrite onto 658                                      | `templates/speaker.php`                                           | **committee, editor, admin only** (pre-launch)                             |
 
 "My bookings" (`/account/bookings/`) was split off page 292 (My events) on
 10 September 2026: page 292 is the host side (their events, the committee
@@ -707,13 +702,13 @@ two templates).
 
 ### GravityView views
 
-| ID | Title | Filter |
-|---|---|---|
-| 386 | Events (hosts) | field 89 = `{user:ID}` **OR** `created_by` = current user. Since the dashboard rework it powers **editing only**; the listing is theme code |
-| 419 | Events (committee - all) | none, shows every entry, inline edit on |
-| 443 | Events (committee - proposed) | field 95 = Proposed. **Embedded nowhere, orphaned** |
-| 626 | Programme | field 95 = Confirmed. **Orphaned** since the calendar filter rework (section 8), deletable |
-| 627 | Programme (committee) | all statuses. **Orphaned**, deletable |
+| ID  | Title                         | Filter                                                                                                                                      |
+| --- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 386 | Events (hosts)                | field 89 = `{user:ID}` **OR** `created_by` = current user. Since the dashboard rework it powers **editing only**; the listing is theme code |
+| 419 | Events (committee - all)      | none, shows every entry, inline edit on                                                                                                     |
+| 443 | Events (committee - proposed) | field 95 = Proposed. **Embedded nowhere, orphaned**                                                                                         |
+| 626 | Programme                     | field 95 = Confirmed. **Orphaned** since the calendar filter rework (section 8), deletable                                                  |
+| 627 | Programme (committee)         | all statuses. **Orphaned**, deletable                                                                                                       |
 
 View 386's first filter condition references field 89, which no longer exists on
 form 2. In practice only the `created_by` branch matches, so a host sees only the
@@ -737,7 +732,7 @@ draws it. Signed out: Sign in and Create an account. Signed in: one "Logged in
 as [name]" dropdown holding, in order, Manage Events (committee, editors,
 administrators), My events (host-like users) or My bookings (everyone else),
 Submit an event (`law_events_user_can_submit()`), My profile and Sign out.
-Access is additive, so committee members get the dashboard *and* their own
+Access is additive, so committee members get the dashboard _and_ their own
 events. No role names appear in that file; it asks the capability helpers.
 Every control is the outlined white button; on a phone it is one small button
 beside the burger showing the first name only, and signed out it shows Sign
@@ -814,14 +809,14 @@ Proceed.
 
 ## 11. Site mu-plugins
 
-| File | Status |
-|---|---|
-| `law-gf-country-iso.php` | **In use.** Country name → ISO for field 88 |
-| `law-user-profile-update.php` | **In use.** Syncs form 1 and 3 checkboxes to ACF user fields |
-| `law-secondary-host-users.php` | **Dead code.** See "Known defects", item 2 |
-| `block-emails.php` | Environment guard |
-| `sqe-admin-dashboard-styling.php` | Admin cosmetics |
-| `wp-migrate-db-pro-compatibility.php` | Migration helper |
+| File                                  | Status                                                       |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `law-gf-country-iso.php`              | **In use.** Country name → ISO for field 88                  |
+| `law-user-profile-update.php`         | **In use.** Syncs form 1 and 3 checkboxes to ACF user fields |
+| `law-secondary-host-users.php`        | **Dead code.** See "Known defects", item 2                   |
+| `block-emails.php`                    | Environment guard                                            |
+| `sqe-admin-dashboard-styling.php`     | Admin cosmetics                                              |
+| `wp-migrate-db-pro-compatibility.php` | Migration helper                                             |
 
 ---
 
@@ -986,14 +981,14 @@ reinstating organisation selection at registration is a separate LAW decision.
 
 ### Where things live in wp-admin
 
-| What | URL |
-|---|---|
-| Form 2 entries | `admin.php?page=gf_entries&id=2` |
-| One entry | `admin.php?page=gf_entries&view=entry&id=2&lid=<id>` |
-| Form editor | `admin.php?page=gf_edit_forms&id=2` |
-| Workflow steps | `admin.php?page=gf_edit_forms&view=settings&subview=gravityflow&id=2` |
-| One step | add `&fid=<step id>` |
-| Notifications | `admin.php?page=gf_edit_forms&view=settings&subview=notification&id=2` |
+| What           | URL                                                                    |
+| -------------- | ---------------------------------------------------------------------- |
+| Form 2 entries | `admin.php?page=gf_entries&id=2`                                       |
+| One entry      | `admin.php?page=gf_entries&view=entry&id=2&lid=<id>`                   |
+| Form editor    | `admin.php?page=gf_edit_forms&id=2`                                    |
+| Workflow steps | `admin.php?page=gf_edit_forms&view=settings&subview=gravityflow&id=2`  |
+| One step       | add `&fid=<step id>`                                                   |
+| Notifications  | `admin.php?page=gf_edit_forms&view=settings&subview=notification&id=2` |
 
 Entries can be filtered by tier, for example:
 `admin.php?page=gf_entries&id=2&field_id=53&operator=contains&s=International`
