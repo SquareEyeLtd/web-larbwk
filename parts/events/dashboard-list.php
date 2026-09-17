@@ -113,12 +113,46 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 				// 12rem column is five lines of two words (Denis, same day).
 				$law_row_snippet = law_calendar_search_snippet( $law_row->post_content, $law_hl, 260 );
 				$law_row_class   = ( ++$law_row_index % 2 ? '' : 'is-alt' );
+
+				// A RECEPTION is edited on Manage receptions, not reviewed on
+				// the event detail view (Denis, 16 September 2026): it has no
+				// workflow to review -- no host submitted it, nobody approves
+				// it and no invoice is raised -- and every field it does have
+				// (date, times, venue, places, price, the included and
+				// invitation switches) lives on that screen, behind the one
+				// saver law_reception_save(). Sending the committee through a
+				// read-only detail view to reach an Edit button was a hop with
+				// nothing on it, so the row says what it does: Edit.
+				//
+				// Resolved HERE, at the top of the row, because the TITLE is a
+				// link to the same place as the button. It was not until
+				// 17 September 2026: the name went to ?event=<id> on every row,
+				// so clicking a reception's name landed on the generic detail
+				// view, which is the one screen a reception is never edited on.
+				// One URL per row, used by both, so the two can no longer
+				// disagree about where a row goes.
+				// The FLAGSHIP is the same case for the same reason, and reaches
+				// this list through the timeline's unscheduled section, which asks
+				// for it explicitly: law_committee_requested_event() refuses
+				// ?event=<flagship id> outright, so that row linked to a refusal.
+				// Both go through law_committee_event_url(), which owns the
+				// routing; the filters carried by $law_link_base go with them,
+				// which they have to, since neither screen reads them.
+				$law_row_reception  = function_exists( 'law_reception_is' ) && law_reception_is( $law_row->ID );
+				$law_row_own_screen = $law_row_reception
+					|| ( function_exists( 'law_flagship_is' ) && law_flagship_is( $law_row->ID ) );
+				$law_row_review_url = $law_row_own_screen && function_exists( 'law_committee_event_url' )
+					? law_committee_event_url( $law_row->ID )
+					: '';
+				if ( '' === $law_row_review_url ) {
+					$law_row_review_url = add_query_arg( 'event', $law_row->ID, $law_link_base );
+				}
 				?>
 				<tr class="<?php echo esc_attr( trim( $law_row_class . ( '' !== $law_row_snippet ? ' has-snippet' : '' ) ) ); ?>">
 					<?php // law_calendar_highlight() returns escaped HTML with only its <mark> tags
 					// raw, and falls back to plain esc_html() whenever there is no keyword or
 					// no hit in this field. ?>
-					<td><strong><a href="<?php echo esc_url( add_query_arg( 'event', $law_row->ID, $law_link_base ) ); ?>"><?php echo law_calendar_highlight( $law_row->post_title, $law_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></a></strong>
+					<td><strong><a href="<?php echo esc_url( $law_row_review_url ); ?>"><?php echo law_calendar_highlight( $law_row->post_title, $law_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></a></strong>
 						<?php law_event_external_badge( $law_row->ID ); ?><br>
 						<code><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_reference' ) ); ?></code>
 						<?php $law_row_agenda = law_event_agenda_summary( $law_row->ID ); ?>
@@ -188,19 +222,6 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 						&& ( 'publish' === $law_row->post_status
 							|| ( law_event_is_publicly_listed( $law_row ) && $law_row_sold > 0 ) );
 
-					// A RECEPTION is edited on Manage receptions, not reviewed on
-					// the event detail view (Denis, 16 September 2026): it has no
-					// workflow to review -- no host submitted it, nobody approves
-					// it and no invoice is raised -- and every field it does have
-					// (date, times, venue, places, price, the included and
-					// invitation switches) lives on that screen, behind the one
-					// saver law_reception_save(). Sending the committee through a
-					// read-only detail view to reach an Edit button was a hop with
-					// nothing on it, so the row says what it does: Edit.
-					$law_row_reception = function_exists( 'law_reception_is' ) && law_reception_is( $law_row->ID );
-					$law_row_review_url = $law_row_reception && function_exists( 'law_receptions_dashboard_url' )
-						? law_receptions_dashboard_url( $law_row->ID )
-						: add_query_arg( 'event', $law_row->ID, $law_link_base );
 					?>
 					<td>
 						<?php if ( ! $law_row_bookable ) : ?>

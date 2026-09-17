@@ -183,6 +183,12 @@ $law_email_mode = $law_detail
 			<div class="law-form-notice <?php echo esc_attr( $law_eo_notices[ $law_notice ][0] ); ?>" role="status">
 				<?php echo esc_html( $law_eo_notices[ $law_notice ][1] ); ?>
 			</div>
+		<?php elseif ( 'fee-reissued' === $law_notice ) : ?>
+			<div class="law-form-notice" role="status">Host fee changed to <?php echo esc_html( law_events_format_pence( $law_fee ) ); ?>.
+				The previous invoice has been voided and a new one emailed to the host to pay.</div>
+		<?php elseif ( 'fee-waived' === $law_notice ) : ?>
+			<div class="law-form-notice" role="status">Host fee waived. The previous invoice has been voided and no new one was raised;
+				this event is now marked Free<?php echo 'publish' === $law_detail->post_status ? ' and confirmed' : ''; ?>.</div>
 		<?php elseif ( 'invoice-sent' === $law_notice ) : ?>
 			<div class="law-form-notice" role="status">Invoice created and sent.</div>
 		<?php elseif ( 'invoice-failed' === $law_notice ) : ?>
@@ -644,15 +650,18 @@ $law_email_mode = $law_detail
 
 					<?php
 					$law_fee_override = (bool) law_event_meta( $law_id, '_law_fee_override' );
-					$law_fee_locked   = law_event_fee_override_locked( $law_id );
+					$law_fee_mode     = law_event_fee_edit_mode( $law_id );
 
-					// Read-only from approval onwards: law_event_snapshot_fee() froze the
-					// fee and the invoice was raised from that snapshot, and nothing
-					// recalculates it, so an editable control here would take a change,
-					// report success and leave the invoice untouched. A genuine
-					// post-approval fee change is a wp-admin job (the link below), where
-					// the snapshot is re-taken. The handler refuses the write too.
-					if ( $law_fee_locked ) :
+					// Read-only only once the fee is HISTORY: paid, refunded, or on an
+					// event that is no longer live. Between approval and payment the
+					// override stays editable, because saving a different figure now
+					// does the whole job (law_event_apply_fee_change()): it voids the
+					// invoice raised from the old snapshot, re-freezes the snapshot and
+					// emails the host a replacement invoice. The warning box in the
+					// 'reissue' branch below says that before they save, which is the
+					// committee's condition for keeping the control here (Denis,
+					// 17 September 2026).
+					if ( 'locked' === $law_fee_mode ) :
 						?>
 					<div class="law-form-field">
 						<strong>Host fee override</strong><br>
@@ -668,9 +677,34 @@ $law_email_mode = $law_detail
 							);
 						}
 						?>
-						<br><small>The fee was snapshotted when this event was approved and the invoice raised from it, so it cannot be changed here any more. To change it, use "Full editing in wp-admin" below, then void the open invoice in Stripe and raise a new one.</small>
+						<br><small><?php echo esc_html( law_event_fee_settled( $law_id )
+							? 'This fee has been settled, so it is a bookkeeping record now and cannot be changed. Raise a credit note or a refund in Stripe instead, then set the payment status to match.'
+							: 'This event is no longer live, so its fee is a record of what was charged and cannot be changed.' ); ?></small>
 					</div>
 					<?php else : ?>
+					<?php
+					if ( 'reissue' === $law_fee_mode ) :
+						// Shown BEFORE the control, not under it: it changes what the
+						// control does, so it has to be read first. Which warning
+						// depends on whether there is an invoice to void — an event
+						// whose fee was waived, or whose invoice never got raised,
+						// has nothing to cancel, and telling them otherwise would be
+						// a warning about something that is not going to happen.
+						$law_fee_now     = (int) law_event_meta( $law_id, '_law_fee_pence' );
+						$law_has_invoice = '' !== (string) law_event_meta( $law_id, '_law_stripe_invoice_id' )
+							|| '' !== trim( (string) law_event_meta( $law_id, '_law_stripe_invoice_url' ) );
+						?>
+					<div class="law-form-notice is-warning" role="status">
+						<?php if ( $law_has_invoice ) : ?>
+							<strong>Changing this fee voids the invoice already raised.</strong>
+							Saving a different figure cancels the open Stripe invoice (<?php echo esc_html( law_events_format_pence( $law_fee_now ) ); ?>) so it can no longer be paid, then emails the host a new one for the new amount.
+							Setting it to 0 cancels the invoice and marks the event Free<?php echo 'law-approved' === $law_detail->post_status ? ', confirming it straight away' : ''; ?>.
+						<?php else : ?>
+							<strong>Saving a fee here raises an invoice.</strong>
+							Nothing is outstanding on this event, so any fee above 0 is invoiced and emailed to the host as soon as you save.
+						<?php endif; ?>
+					</div>
+					<?php endif; ?>
 					<div class="law-form-field">
 						<div class="law-choices">
 							<label><input type="checkbox" id="law-dash-override" name="law_fee_override" value="1" <?php checked( $law_fee_override ); ?>> Override the host fee</label>

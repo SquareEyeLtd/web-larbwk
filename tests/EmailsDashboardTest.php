@@ -710,4 +710,85 @@ class EmailsDashboardTest extends LAW_Test_Case {
 		$this->assertSame( '', $override['subject'] );
 		$this->assertSame( '', $override['body'] );
 	}
+
+	/**
+	 * A post-approval host fee change reuses the "payment due" email and fills
+	 * {fee_change_note} with the invoice it has just cancelled. A stored body
+	 * beats the registry default, so on every environment whose Emails screen
+	 * carries one (migration step 9 imported the Gravity Forms notifications as
+	 * overrides) the host would otherwise get a second "payment due" email with
+	 * no hint that the first invoice is dead.
+	 */
+	public function test_a_stored_payment_due_body_gains_the_fee_change_note(): void {
+		$this->option_overlay[ LAW_EVENTS_EMAIL_OVERRIDES_OPTION ] = array(
+			'user_payment_due' => array( 'body' => "Dear {host_name},\n\nThe fee of {fee} is due: {invoice_url}" ),
+		);
+
+		$this->assertSame( 'updated', law_setup_add_fee_change_note_to_payment_due() );
+		$body = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION )['user_payment_due']['body'];
+		$this->assertStringContainsString( '{fee_change_note}', $body );
+		$this->assertStringContainsString( 'The fee of {fee} is due', $body, 'The committee\'s own wording is kept.' );
+
+		// Idempotent: the provisioning routes run it on every deploy.
+		$this->assertSame( 'ok', law_setup_add_fee_change_note_to_payment_due() );
+		$this->assertSame( $body, get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION )['user_payment_due']['body'] );
+	}
+
+	/** No stored body means the registry default is in play, which already has it. */
+	public function test_no_stored_payment_due_body_is_left_alone(): void {
+		$this->option_overlay[ LAW_EVENTS_EMAIL_OVERRIDES_OPTION ] = array();
+		$this->assertSame( 'ok', law_setup_add_fee_change_note_to_payment_due() );
+		$this->assertSame( array(), get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION ) );
+		$this->assertStringContainsString( '{fee_change_note}', law_events_email( 'user_payment_due' )['body'] );
+	}
+
+	/**
+	 * The {event_summary} block used to name the fee TIER and nothing else.
+	 * The tier label carries a price in its own words ("UK hosts: £1200 +
+	 * VAT"), so on an event with a committee override it stated a figure that
+	 * was simply wrong: the "payment received" email told the committee "£1200
+	 * + VAT" about an event whose fee had been changed to £600 and which had
+	 * just paid £720. Found by the fee-change end-to-end test, 17 September
+	 * 2026.
+	 */
+	public function test_the_email_summary_names_the_fee_snapshot_not_just_the_tier(): void {
+		$event = $this->make_event(
+			array(
+				'_law_fee_tier'            => 'uk',
+				'_law_fee_override'        => 1,
+				'_law_fee_override_amount' => 600,
+				'_law_payment_status'      => 'paid',
+			),
+			'publish'
+		);
+		law_event_snapshot_fee( $event );
+
+		$summary = law_events_email_placeholders( $event )['{event_summary}'];
+		$this->assertStringContainsString( 'Fee: £600.00 + VAT', $summary, 'The amount actually charged is stated.' );
+		$this->assertStringContainsString( 'Fee tier: UK hosts', $summary, 'The tier is still there: it is a separate fact.' );
+	}
+
+	/**
+	 * Before approval there is no snapshot, and every event reads £0.00. "Fee:
+	 * £0.00" on a submission acknowledgement would be a promise nobody made,
+	 * so the row is omitted until the fee has actually been frozen.
+	 */
+	public function test_the_email_summary_omits_the_fee_before_approval(): void {
+		$event   = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed' );
+		$summary = law_events_email_placeholders( $event )['{event_summary}'];
+		$this->assertStringNotContainsString( 'Fee: ', $summary );
+		$this->assertStringContainsString( 'Fee tier: UK hosts', $summary );
+	}
+
+	/** A waived fee is a real answer, and the committee should read it. */
+	public function test_a_waived_fee_is_stated_as_zero(): void {
+		$event = $this->make_event(
+			array( '_law_fee_tier' => 'uk', '_law_fee_override' => 1, '_law_fee_override_amount' => 0 ),
+			'law-approved'
+		);
+		law_event_snapshot_fee( $event );
+		$summary = law_events_email_placeholders( $event )['{event_summary}'];
+		$this->assertStringContainsString( 'Fee: £0.00', $summary );
+		$this->assertStringNotContainsString( 'Fee: £0.00 + VAT', $summary, 'No VAT on a zero fee.' );
+	}
 }

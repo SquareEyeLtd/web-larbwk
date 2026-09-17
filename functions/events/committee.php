@@ -637,6 +637,7 @@ function law_committee_action_handler() {
 	// The host fee override is checked BEFORE any write, so a refusal leaves the
 	// event exactly as it was: the other field writes below and the workflow
 	// action further down never run.
+	$fee_notice = null;
 	if ( isset( $_POST['law_fee_override_amount'] ) ) {
 		$override_on = ! empty( $_POST['law_fee_override'] );
 		$amount_raw  = trim( (string) wp_unslash( $_POST['law_fee_override_amount'] ) );
@@ -653,26 +654,65 @@ function law_committee_action_handler() {
 			);
 		}
 
+		// The CHANGE is judged, not the event: re-posting the stored values with
+		// the rest of the panel must never void an invoice, and on a locked
+		// event it must not be refused either, because the committee was saving
+		// the venue and the fee control simply came along with the form.
+		$fee_input_changed = (int) $override_on !== $before_override
+			|| abs( (float) $amount_raw - $before_amount ) >= 0.005;
+		$fee_mode          = law_event_fee_edit_mode( $event_id );
+
 		// Only reachable from a hand-made request: the control renders read-only
-		// once the fee is snapshotted. Logged, as the module logs every refusal.
-		if ( law_event_fee_override_locked( $event_id ) ) {
+		// when the fee is settled. Logged, as the module logs every refusal.
+		if ( $fee_input_changed && 'locked' === $fee_mode ) {
 			law_event_log(
 				$event_id,
-				'Refused a host fee override change: the fee was snapshotted at approval, so the change would reach neither the snapshot nor the invoice.',
+				'Refused a host fee override change: the fee is settled or the event is no longer live, so the change would reach neither the snapshot nor an invoice.',
 				array( 'action' => 'refused', 'attempted' => 'fee_override', 'source' => 'ui' ),
 				array( 'user_id' => $actor )
 			);
 			law_committee_refuse(
 				$event_id,
 				$is_ajax,
-				'The host fee was snapshotted when this event was approved, so it can no longer be changed here. Use "Full editing in wp-admin" for a post-approval fee change.',
+				'This event\'s host fee can no longer be changed: it is either already paid or refunded, or the event is no longer live. Settle the difference in Stripe (a credit note or a refund) and set the payment status to match.',
 				403
+			);
+		}
+
+		// A post-approval fee change voids an invoice and raises another, so it
+		// must not ride along with a workflow action in the same submit: the
+		// two actions an approved event still offers are Mark paid & confirm
+		// (which would settle the invoice this is about to void) and Cancel
+		// (which voids it anyway). Refused before any write, so neither half
+		// of the submit half-happens.
+		if ( $fee_input_changed && 'reissue' === $fee_mode && '' !== sanitize_key( (string) ( $_POST['law_action'] ?? '' ) ) ) {
+			law_committee_refuse(
+				$event_id,
+				$is_ajax,
+				'Save the fee change on its own first: it voids the open invoice and raises a new one, so it cannot be combined with another action in the same save.'
 			);
 		}
 
 		law_event_update_meta( $event_id, '_law_fee_override', $override_on );
 		law_event_update_meta( $event_id, '_law_fee_override_amount', $amount_raw );
 		law_event_log_fee_change( $event_id, $before_override, $before_amount, $actor );
+
+		// Past approval the fee is not a field: the snapshot is re-frozen, the
+		// invoice raised from the old one is voided and a replacement is sent
+		// to the host. The warning box on the panel says so before they save.
+		if ( $fee_input_changed && 'reissue' === $fee_mode ) {
+			$applied = law_event_apply_fee_change( $event_id, $actor, 'ui' );
+			if ( is_wp_error( $applied ) ) {
+				// The red banner on the detail view, which the template prefers
+				// over any notice: a voided invoice with no replacement is not
+				// something to report as "Changes saved".
+				set_transient( 'law_dashboard_error_' . $actor, $applied->get_error_message(), 60 );
+			} elseif ( 'waived' === $applied['outcome'] ) {
+				$fee_notice = 'fee-waived';
+			} elseif ( 'reissued' === $applied['outcome'] ) {
+				$fee_notice = 'fee-reissued';
+			}
+		}
 	}
 	if ( isset( $_POST['law_assignee'] ) ) {
 		law_event_update_meta( $event_id, '_law_assignee', law_events_sanitize_assignee( wp_unslash( $_POST['law_assignee'] ) ) );
@@ -795,7 +835,9 @@ function law_committee_action_handler() {
 		law_event_log( $event_id, $private_note, array( 'action' => 'note', 'source' => 'ui' ), array( 'manual' => true, 'user_id' => $actor ) );
 	}
 
-	$notice = $agenda_notice ?? 'saved';
+	// The fee first: voiding an invoice and emailing a replacement is the
+	// biggest thing this save can have done, so it is what the page reports.
+	$notice = $fee_notice ?? $agenda_notice ?? 'saved';
 	$action = sanitize_key( $_POST['law_action'] ?? '' );
 
 	// The AJAX caller is always a modal action, so an empty action means the

@@ -471,6 +471,73 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 								<button type="submit" class="law-linkish" data-law-modal-busy="<?php esc_attr_e( 'Sending…', 'law' ); ?>"><?php esc_html_e( 'Resend request', 'law' ); ?></button>
 							</form>
 						<?php endif; ?>
+
+						<?php if ( $law_fbl_row['cancellable'] ) : ?>
+							<?php
+							// Releasing a confirmed place. The dialog carries the
+							// whole warning, because this is the one action here
+							// that deliberately leaves something undone: the money
+							// stays where it is and the delegate hears nothing, so
+							// the committee has to know both before it presses
+							// (Denis, 17 September 2026).
+							$law_fbl_cancel_id = 'law-fb-cancel-' . $law_fbl_row['id'];
+							$law_fbl_paid      = 'paid' === $law_fbl_row['payment'] && $law_fbl_row['gross_pence'] > 0;
+							$law_fbl_cancel    = array(
+								sprintf(
+									/* translators: %s: the delegate. */
+									__( 'This will cancel the confirmed place for %s and free it up for somebody else.', 'law' ),
+									$law_fbl_row['name']
+								),
+								$law_fbl_paid
+									? sprintf(
+										/* translators: 1: the delegate, 2: what they paid. */
+										__( '%1$s has paid %2$s. Nothing is refunded here and nothing is emailed to them: the refund is yours to make in Stripe (the invoice is linked in the Payment column) and the conversation is yours to have.', 'law' ),
+										$law_fbl_row['name'],
+										law_events_format_pence( $law_fbl_row['gross_pence'] )
+									)
+									: sprintf(
+										/* translators: %s: the delegate. */
+										__( 'There is nothing to refund on this place, and %s is not emailed about it, so please tell them yourself.', 'law' ),
+										$law_fbl_row['name']
+									),
+							);
+							if ( function_exists( 'law_reception_revoke_included' ) ) {
+								$law_fbl_cancel[] = __( 'Any drinks reception places included with the ticket are taken back with it, and those the delegate is told about.', 'law' );
+							}
+							?>
+							<form class="law-booking-form law-flagship-bookings__inline" method="post"
+								action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+								<input type="hidden" name="action" value="law_flagship_cancel">
+								<input type="hidden" name="booking_id" value="<?php echo esc_attr( (string) $law_fbl_row['id'] ); ?>">
+								<?php wp_nonce_field( 'law_flagship_cancel' ); ?>
+								<?php law_events_honeypot_field(); ?>
+								<button type="submit" class="law-linkish law-linkish--decline"
+									data-law-modal-open="<?php echo esc_attr( $law_fbl_cancel_id ); ?>">
+									<?php esc_html_e( 'Cancel', 'law' ); ?>
+								</button>
+								<?php
+								get_template_part(
+									'parts/layout/modal',
+									null,
+									array(
+										'id'      => $law_fbl_cancel_id,
+										/* translators: %s: the delegate. */
+										'title'   => sprintf( __( 'Cancel the ticket for %s?', 'law' ), $law_fbl_row['name'] ),
+										'copy'    => $law_fbl_cancel,
+										'confirm' => array(
+											'label' => __( 'Cancel the ticket', 'law' ),
+											'class' => 'button alert',
+											'busy'  => __( 'Cancelling…', 'law' ),
+										),
+										// Never "Cancel" on the way out of a dialog
+										// about cancelling: the two would mean
+										// opposite things a centimetre apart.
+										'close'   => __( 'Keep the ticket', 'law' ),
+									)
+								);
+								?>
+							</form>
+						<?php endif; ?>
 					</td>
 				</tr>
 			<?php endforeach; ?>

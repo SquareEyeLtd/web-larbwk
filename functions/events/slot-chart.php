@@ -231,7 +231,17 @@ function law_slotchart_item( $post ) {
 		// Carries the view and the filters into the detail page, so the back
 		// link there can return to the chart the bar was clicked on rather than
 		// dropping the committee onto the table with their filters cleared.
-		'url'          => add_query_arg( 'event', $id, law_slotchart_url() ),
+		//
+		// Except where ?event=<id> is not the screen that edits this event at
+		// all: a RECEPTION lives on Manage receptions and the FLAGSHIP on its
+		// own dashboard, and law_committee_requested_event() refuses the
+		// flagship outright, so both bars landed on the wrong page
+		// (17 September 2026). law_committee_event_url() owns that routing for
+		// every caller; the filters are dropped with it, which they have to be,
+		// since neither of those screens reads them.
+		'url'          => ( 'reception' === $kind || 'flagship' === $kind ) && function_exists( 'law_committee_event_url' )
+			? law_committee_event_url( $id )
+			: add_query_arg( 'event', $id, law_slotchart_url() ),
 		'date'         => $date,
 		'start'        => $start_min,
 		'end'          => $end_min,

@@ -548,6 +548,74 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 		$this->assertSame( 'publish', get_post_status( $booking ) );
 	}
 
+	/**
+	 * The other end of the same decision (Denis, 17 September 2026): a paid
+	 * place the delegate drops out of. The committee releases it here, and the
+	 * money and the conversation stay with them.
+	 */
+	public function test_the_committee_can_cancel_a_paid_ticket_without_touching_the_money(): void {
+		$event_id = $this->make_flagship();
+		$result   = $this->apply_as( $this->make_delegate() );
+		$booking  = (int) $result['booking'];
+		$this->give_card( $booking );
+		$this->queue_successful_charge( 66000 );
+		law_flagship_approve( $booking, 0 );
+
+		$this->assertSame( 1, (int) law_event_meta( $event_id, '_law_tickets_sold' ) );
+
+		$GLOBALS['law_test_stripe_calls'] = array();
+		$mail   = array();
+		$filter = static function ( $atts ) use ( &$mail ) {
+			$mail[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $filter );
+
+		$cancelled = law_flagship_cancel_confirmed( $booking, $this->make_committee_user() );
+
+		remove_filter( 'wp_mail', $filter );
+
+		$this->assertTrue( $cancelled );
+		$this->assertSame( 'law-cancelled', get_post_status( $booking ) );
+		$this->assertSame( 0, (int) law_event_meta( $event_id, '_law_tickets_sold' ), 'The place must go back.' );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'], 'No refund, no void, no Stripe call at all.' );
+		$this->assertSame( 'paid', (string) law_event_meta( $booking, '_law_payment_status' ), 'The payment record is untouched: the money really was taken.' );
+		$this->assertSame( array(), $mail, 'The delegate is not emailed; the committee tells them itself.' );
+	}
+
+	/** Idempotent, so a double submit cannot double-count anything. */
+	public function test_cancelling_a_cancelled_ticket_is_a_no_op(): void {
+		$this->make_flagship();
+		$result  = $this->apply_as( $this->make_delegate() );
+		$booking = (int) $result['booking'];
+		$this->give_card( $booking );
+		$this->queue_successful_charge( 66000 );
+		law_flagship_approve( $booking, 0 );
+
+		$committee = $this->make_committee_user();
+		$this->assertTrue( law_flagship_cancel_confirmed( $booking, $committee ) );
+		$this->assertTrue( law_flagship_cancel_confirmed( $booking, $committee ) );
+		$this->assertSame( 'law-cancelled', get_post_status( $booking ) );
+	}
+
+	/**
+	 * Cancel is for confirmed places only. An application still under review
+	 * has a saved payment method and a live invoice, and only Decline clears
+	 * both, so this path refuses it rather than leaving them behind.
+	 */
+	public function test_an_unconfirmed_registration_is_declined_not_cancelled(): void {
+		$this->make_flagship();
+		$result  = $this->apply_as( $this->make_delegate() );
+		$booking = (int) $result['booking'];
+		$this->give_card( $booking );
+
+		$this->assertWPError(
+			law_flagship_cancel_confirmed( $booking, $this->make_committee_user() ),
+			'law_flagship_not_confirmed'
+		);
+		$this->assertSame( 'law-applied', get_post_status( $booking ) );
+	}
+
 	public function test_withdrawing_removes_the_card(): void {
 		$this->make_flagship();
 		$user_id = $this->make_delegate();

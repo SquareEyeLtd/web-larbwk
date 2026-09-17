@@ -163,6 +163,11 @@ function law_flagship_bookings_rows( array $filters ) {
 			'decidable'     => in_array( $post->post_status, array( 'law-applied', 'law-payment-failed' ), true )
 				&& ! in_array( $state, array( 'pending_setup', 'processing' ), true ),
 			'retryable'     => 'law-payment-failed' === $post->post_status,
+			// The other end of the flow: a place that IS confirmed, which the
+			// committee can release when the delegate drops out. Never offered
+			// alongside Decline, because the two are the same decision taken
+			// before and after the money moved.
+			'cancellable'   => 'publish' === $post->post_status,
 		);
 	}
 
