@@ -240,13 +240,30 @@ function law_reception_manage_handler() {
 		);
 	}
 
+	// Back to the reception that was just saved, not to the list (Denis, 17
+	// September 2026): a save is rarely the last thing the committee does to a
+	// reception, and bouncing to the table meant pressing back into the editor
+	// to carry on. The success notice is printed by the editor branch of
+	// templates/account-dashboard-receptions.php, above the form. Saving a NEW
+	// reception lands on its own editor too, which is why the ID comes from
+	// $result rather than from the posted input.
+	$saved_url = add_query_arg( 'law_notice', 'reception-saved', law_receptions_dashboard_url( (int) $result ) );
+
+	// The no-JS path redirects to that same address rather than through
+	// law_events_respond()'s redirect-back, which would return a newly created
+	// reception to the empty "Add a reception" form.
+	if ( ! $is_ajax ) {
+		wp_safe_redirect( $saved_url );
+		exit;
+	}
+
 	law_events_respond(
 		$is_ajax,
 		true,
 		array(
 			'title'    => 'Reception saved',
 			'message'  => sprintf( '%s has been saved.', get_the_title( (int) $result ) ),
-			'redirect' => add_query_arg( 'law_notice', 'reception-saved', law_receptions_dashboard_url() ),
+			'redirect' => $saved_url,
 		),
 		'reception-saved'
 	);

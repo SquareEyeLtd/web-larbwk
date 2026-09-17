@@ -84,7 +84,17 @@ repair-references, backfill-session-agenda).
   `law_events_setting()`, `law_events_update_settings()`: one option,
   `law_events_settings`, holds the fee tiers, the programme year, the date/time
   slots, the committee recipient emails, the Stripe `tax_rate_id` and
-  `rendering_template_id`, and the reserved `host_edit_review` mode.
+  `rendering_template_id`, the `speakers_archive_public` switch and the
+  reserved `host_edit_review` mode.
+- `speakers_archive_public` (Denis, 17 September 2026): whether `/speakers/` is
+  a public page. **Off by default.** The archive is assembled from Confirmed
+  events as soon as they exist, which is long before LAW wants the line-up
+  announced, so the index is held back behind a checkbox on Events → Settings
+  ("Speakers archive"). While it is off, `law_speakers_archive_gate()` redirects
+  the archive to the home page and `templates/speaker.php` drops its "Back to
+  speakers" link. It hides the **index**, not the people: a single profile stays
+  reachable throughout, because every event page links straight to one. See
+  `speakers.php` below for the gate itself.
 - `law_events_slots()`: the canonical slot list (label → date/start/end),
   retired slots excluded unless asked for. **Retired** means "no longer offered
   to hosts": the slot keeps its row in the settings textarea (fifth column, the
@@ -1575,6 +1585,28 @@ then follows the link that appears and writes that event's confirmation.
 
 ### `speakers.php`: speaker records and the archive (CPT mode)
 
+- **The archive switch** (Denis, 17 September 2026).
+  `law_speakers_archive_is_public()` reads the `speakers_archive_public`
+  setting (default off, see `settings.php` above);
+  `law_speakers_archive_should_redirect()` is the decision and
+  `law_speakers_archive_gate()`, on `template_redirect` at priority 5, acts on
+  it. The two are separate so the rule can be asserted without a
+  redirect-and-exit (`tests/SpeakersArchiveVisibilityTest.php`). Three things
+  are deliberate. The gate is scoped to the **archive view** of the Speakers
+  page — a single profile lands on the same page with `law_speaker` set, and in
+  CPT mode on its own permalink, and must keep resolving, since the event pages
+  link to it. **Committee-level users are let through** so they can check the
+  archive before announcing it, and `templates/speakers.php` prints a one-line
+  notice (`.law-speakers__hidden`, styled in `assets/css/speakers.css` for the
+  light page rather than borrowed from the dark-surface `.law-form-notice`) so
+  the preview does not read as live. And the redirect is a **302, never a
+  301**: this is a setting that gets turned on, and a permanent redirect would
+  outlive it in visitors' browser caches.
+- `law_speakers_archive_url()`: the archive URL, resolved from the page holding
+  `templates/speakers.php` (falling back to `/speakers/`). Shared by the
+  settings screen's description and the profile's back link, which had the
+  resolution inline.
+
 - `law_speaker_find_existing()`, `law_speaker_normalise_name()`: dedupe by email
   first, then normalised name (the full name, i.e. the post title).
 - **The name is stored in two parts** (Denis, 9 September 2026). Every form that
@@ -2620,6 +2652,14 @@ spreadsheet of people actually goes.
 - A checkbox sentinel rides with the first fields: PHP truncates a long POST
   from the END, and a truncated save must not read as "untick everything" and
   take a reception off the programme.
+- **A save returns to the reception it saved** (Denis, 17 September 2026), at
+  `?law_reception=<id>` with `law_notice=reception-saved` above the form,
+  rather than bouncing to the list. A save is rarely the last thing done to a
+  reception, and the list meant pressing back into the editor to carry on. A
+  NEW reception lands on its own editor, so the ID comes from the saver's
+  return value; the no-JS path redirects explicitly rather than through
+  `law_events_respond()`'s redirect-back, which would send a new reception back
+  to the empty "Add a reception" form.
 - The places column is three figures, not one — confirmed, awaiting payment,
   left — because on a priced event a hold counts towards the total sold.
 - Its stylesheets are the ones every account screen needs, and the page has to
