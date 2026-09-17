@@ -1,9 +1,9 @@
 <?php
-
-if (! defined('ABSPATH')) {
-    exit;
+	
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
 }
-
+	
 /**
  * Gravity Perks // Populate Anything // Add a Static Choice
  * https://gravitywiz.com/documentation/gravity-forms-populate-anything/
@@ -11,38 +11,37 @@ if (! defined('ABSPATH')) {
  * Instruction Video: https://www.loom.com/share/e425398f584148f58fdfea3d6b6f969b
  *
  */
+ 
+add_filter( 'gppa_input_choices_1_7', function( $choices, $field, $objects ) {
 
-add_filter('gppa_input_choices_1_7', function ($choices, $field, $objects) {
+	array_unshift( $choices, array(
+		'text'       => 'My organisation is not listed',
+		'value'      => 'other',
+		'isSelected' => false,
+	) );
 
-    array_unshift($choices, [
-        'text'       => 'My organisation is not listed',
-        'value'      => 'other',
-        'isSelected' => false,
-    ]);
-
-    return $choices;
-}, 10, 3);
+	return $choices;
+}, 10, 3 );
 
 
 
 /* User registration > create & attach organisation ________________________________________________________ */
 
 
-add_action('gform_after_submission_1', 'law_set_organisation_user_meta', 10, 2);
+add_action( 'gform_after_submission_1', 'law_set_organisation_user_meta', 10, 2 );
 
-function law_set_organisation_user_meta($entry, $form)
-{
-    $user_id         = rgar($entry, 'created_by');
-    $org_field_value = rgar($entry, '7');
+function law_set_organisation_user_meta( $entry, $form ) {
+    $user_id         = rgar( $entry, 'created_by' );
+    $org_field_value = rgar( $entry, '7' );
 
-    if ($org_field_value === 'other') {
-        $created_posts = gform_get_meta($entry['id'], 'gravityformsadvancedpostcreation_post_id');
-        if (! empty($created_posts)) {
+    if ( $org_field_value === 'other' ) {
+        $created_posts = gform_get_meta( $entry['id'], 'gravityformsadvancedpostcreation_post_id' );
+        if ( ! empty( $created_posts ) ) {
             $post_id = $created_posts[0]['post_id'];
-            update_field('organisation', [ $post_id ], 'user_' . $user_id);
+            update_field( 'organisation', [ $post_id ], 'user_' . $user_id );
         }
     } else {
-        update_field('organisation', [ absint($org_field_value) ], 'user_' . $user_id);
+        update_field( 'organisation', [ absint( $org_field_value ) ], 'user_' . $user_id );
     }
 }
 
@@ -51,125 +50,19 @@ function law_set_organisation_user_meta($entry, $form)
 /* Populate current user organisation ________________________________________________________ */
 
 
-add_filter('gform_field_value_orgid', 'law_prepopulate_orgid');
-function law_prepopulate_orgid($value)
-{
+add_filter( 'gform_field_value_orgid', 'law_prepopulate_orgid' );
+function law_prepopulate_orgid( $value ) {
     $user_id = get_current_user_id();
-    if (! $user_id) {
-        return '';
-    }
-
-    $orgs = get_field('organisation', 'user_' . $user_id);
-
-    if (! empty($orgs)) {
-        $org_value = is_object($orgs[0]) ? $orgs[0]->ID : (int) $orgs[0];
+    if ( ! $user_id ) return '';
+    
+    $orgs = get_field( 'organisation', 'user_' . $user_id );
+    
+    if ( ! empty( $orgs ) ) {
+        $org_value = is_object( $orgs[0] ) ? $orgs[0]->ID : (int) $orgs[0];
         return (string) $org_value;
     }
-
+    
     return '';
-}
-
-
-/* Populate field 116 from ?ec= ________________________________________________________ */
-
-/**
- * Field 116 (parameter `ec`) takes the `ec` query string, e.g.
- * /account/events/submit/?ec=Sessions
- *
- * Visibility must be Hidden (not Administrative). Administrative checkboxes
- * render as type=hidden inputs, which front-end conditional logic cannot see.
- * Hidden visibility still outputs real checkboxes (CSS-hidden), so GF JS
- * can tick Sessions and show the dependent fields.
- *
- * AJAX submits drop the original query string, so the value is written into
- * the field / $_POST on render.
- */
-add_filter('gform_field_value_ec', 'law_prepopulate_ec');
-add_filter('gform_pre_render', 'law_populate_ec_field');
-add_filter('gform_pre_validation', 'law_populate_ec_field');
-add_filter('gform_pre_submission_filter', 'law_populate_ec_field');
-
-function law_request_ec()
-{
-    $ec = function_exists('rgget') ? rgget('ec') : (isset($_GET['ec']) ? wp_unslash($_GET['ec']) : '');
-    return sanitize_text_field((string) $ec);
-}
-
-function law_prepopulate_ec($value)
-{
-    $ec = law_request_ec();
-    return '' !== $ec ? $ec : $value;
-}
-
-function law_populate_ec_field($form)
-{
-    $ec = law_request_ec();
-    if ('' === $ec) {
-        return $form;
-    }
-
-    foreach ($form['fields'] as $field) {
-        if ((int) $field->id !== 116) {
-            continue;
-        }
-        $field->allowsPrepopulate = true;
-        $field->inputName         = 'ec';
-        law_select_ec_field_value($field, $ec);
-        break;
-    }
-
-    return $form;
-}
-
-/**
- * Tick the matching checkbox choice, or set a single-input field's value.
- *
- * @param GF_Field $field Form 2 field 116.
- * @param string   $ec    Sanitised query string.
- */
-function law_select_ec_field_value($field, $ec)
-{
-    $choices = $field->choices;
-    if (! is_array($choices) || empty($choices)) {
-        $field->defaultValue = $ec;
-        if (empty($_POST[ 'input_' . $field->id ])) {
-            $_POST[ 'input_' . $field->id ] = $ec;
-        }
-        return;
-    }
-
-    $inputs = $field->inputs;
-    foreach ($choices as $i => $choice) {
-        $value = (string) ($choice['value'] ?? '');
-        $text  = (string) ($choice['text'] ?? '');
-        if (strcasecmp($value, $ec) !== 0 && strcasecmp($text, $ec) !== 0) {
-            continue;
-        }
-        if ('' === $value) {
-            $value = $ec;
-        }
-        $choices[ $i ]['isSelected'] = true;
-        $field->choices              = $choices;
-
-        $input_id = '';
-        if (is_array($inputs) && isset($inputs[ $i ]['id'])) {
-            $input_id = (string) $inputs[ $i ]['id'];
-        } else {
-            $choice_number = $i + 1;
-            if (0 === $choice_number % 10) {
-                ++$choice_number;
-            }
-            $input_id = $field->id . '.' . $choice_number;
-        }
-
-        $post_key = 'input_' . $input_id;
-        if (empty($_POST[ $post_key ])) {
-            $_POST[ $post_key ] = $value;
-        }
-        return;
-    }
-
-    $field->defaultValue = $ec;
 }
 
 
@@ -194,14 +87,12 @@ function law_select_ec_field_value($field, $ec)
  */
 const LAW_GF_PREFERRED_SLOTS_FIELD_ID = 77;
 
-const LAW_GF_RETIRED_PREFERRED_SLOTS = [
-    'Tue 1st Dec: 08:30-10:00',
-    'Tue 1st Dec: 10:30-12:00',
-    'Tue 1st Dec: 16:30-18:00',
-    'Tue 1st Dec: 18:30 onwards',
-    'Thu 3rd Dec: 10:30-12:00',
-    'Thu 3rd Dec: 18:30 onwards',
-];
+const LAW_GF_RETIRED_PREFERRED_SLOTS = array(
+	'Tue 1st Dec: 08:30-10:00',
+	'Tue 1st Dec: 16:30-18:00',
+	'Tue 1st Dec: 18:30 onwards',
+	'Thu 3rd Dec: 18:30 onwards',
+);
 
 /**
  * Whether a choice text/value is in the retired list.
@@ -210,17 +101,16 @@ const LAW_GF_RETIRED_PREFERRED_SLOTS = [
  * @param string $value Choice value.
  * @return bool
  */
-function law_gf_is_retired_preferred_slot($text, $value = '')
-{
-    $retired = LAW_GF_RETIRED_PREFERRED_SLOTS;
-    if (empty($retired)) {
-        return false;
-    }
+function law_gf_is_retired_preferred_slot( $text, $value = '' ) {
+	$retired = LAW_GF_RETIRED_PREFERRED_SLOTS;
+	if ( empty( $retired ) ) {
+		return false;
+	}
 
-    $text  = (string) $text;
-    $value = (string) $value;
+	$text  = (string) $text;
+	$value = (string) $value;
 
-    return in_array($text, $retired, true) || ('' !== $value && in_array($value, $retired, true));
+	return in_array( $text, $retired, true ) || ( '' !== $value && in_array( $value, $retired, true ) );
 }
 
 /**
@@ -229,42 +119,41 @@ function law_gf_is_retired_preferred_slot($text, $value = '')
  * @param int $form_id Form ID.
  * @return array|null Entry array or null for a new submission.
  */
-function law_gf_get_current_edit_entry($form_id)
-{
-    $form_id = (int) $form_id;
+function law_gf_get_current_edit_entry( $form_id ) {
+	$form_id = (int) $form_id;
 
-    if (function_exists('gravityview') && gravityview()->request) {
-        $gv_entry = gravityview()->request->is_edit_entry($form_id);
-        if ($gv_entry && is_object($gv_entry) && method_exists($gv_entry, 'as_entry')) {
-            $entry = $gv_entry->as_entry();
-            if (is_array($entry) && (int) rgar($entry, 'form_id') === $form_id) {
-                return $entry;
-            }
-        }
-    }
+	if ( function_exists( 'gravityview' ) && gravityview()->request ) {
+		$gv_entry = gravityview()->request->is_edit_entry( $form_id );
+		if ( $gv_entry && is_object( $gv_entry ) && method_exists( $gv_entry, 'as_entry' ) ) {
+			$entry = $gv_entry->as_entry();
+			if ( is_array( $entry ) && (int) rgar( $entry, 'form_id' ) === $form_id ) {
+				return $entry;
+			}
+		}
+	}
 
-    $lid = absint(rgget('lid'));
-    if (! $lid) {
-        $lid = absint(rgpost('lid'));
-    }
+	$lid = absint( rgget( 'lid' ) );
+	if ( ! $lid ) {
+		$lid = absint( rgpost( 'lid' ) );
+	}
 
-    if (! $lid && class_exists('GFFormsModel')) {
-        $lead = GFFormsModel::get_current_lead();
-        if (is_array($lead) && ! empty($lead['id'])) {
-            $lid = absint($lead['id']);
-        }
-    }
+	if ( ! $lid && class_exists( 'GFFormsModel' ) ) {
+		$lead = GFFormsModel::get_current_lead();
+		if ( is_array( $lead ) && ! empty( $lead['id'] ) ) {
+			$lid = absint( $lead['id'] );
+		}
+	}
 
-    if (! $lid) {
-        return null;
-    }
+	if ( ! $lid ) {
+		return null;
+	}
 
-    $entry = GFAPI::get_entry($lid);
-    if (is_wp_error($entry) || (int) rgar($entry, 'form_id') !== $form_id) {
-        return null;
-    }
+	$entry = GFAPI::get_entry( $lid );
+	if ( is_wp_error( $entry ) || (int) rgar( $entry, 'form_id' ) !== $form_id ) {
+		return null;
+	}
 
-    return $entry;
+	return $entry;
 }
 
 /**
@@ -274,28 +163,27 @@ function law_gf_get_current_edit_entry($form_id)
  * @param GF_Field|null $field Field 77.
  * @return string[]
  */
-function law_gf_preferred_slot_values_from_entry($entry, $field)
-{
-    $raw = rgar($entry, (string) LAW_GF_PREFERRED_SLOTS_FIELD_ID);
-    if ($field && method_exists($field, 'to_array')) {
-        return $field->to_array($raw);
-    }
+function law_gf_preferred_slot_values_from_entry( $entry, $field ) {
+	$raw = rgar( $entry, (string) LAW_GF_PREFERRED_SLOTS_FIELD_ID );
+	if ( $field && method_exists( $field, 'to_array' ) ) {
+		return $field->to_array( $raw );
+	}
 
-    if (is_array($raw)) {
-        return $raw;
-    }
+	if ( is_array( $raw ) ) {
+		return $raw;
+	}
 
-    $raw = (string) $raw;
-    if ('' === $raw) {
-        return [];
-    }
+	$raw = (string) $raw;
+	if ( '' === $raw ) {
+		return array();
+	}
 
-    if ('[' === $raw[0]) {
-        $decoded = json_decode($raw, true);
-        return is_array($decoded) ? $decoded : [];
-    }
+	if ( '[' === $raw[0] ) {
+		$decoded = json_decode( $raw, true );
+		return is_array( $decoded ) ? $decoded : array();
+	}
 
-    return array_map('trim', explode(',', $raw));
+	return array_map( 'trim', explode( ',', $raw ) );
 }
 
 /**
@@ -307,62 +195,61 @@ function law_gf_preferred_slot_values_from_entry($entry, $field)
  * @param array $form Form object.
  * @return array
  */
-function law_gf_hide_retired_preferred_slots($form)
-{
-    if (empty(LAW_GF_RETIRED_PREFERRED_SLOTS) || (int) rgar($form, 'id') !== 2) {
-        return $form;
-    }
+function law_gf_hide_retired_preferred_slots( $form ) {
+	if ( empty( LAW_GF_RETIRED_PREFERRED_SLOTS ) || (int) rgar( $form, 'id' ) !== 2 ) {
+		return $form;
+	}
 
-    // Never alter choices in the form editor — saving the form would persist the reduced list.
-    if (class_exists('GFCommon') && method_exists('GFCommon', 'is_form_editor') && GFCommon::is_form_editor()) {
-        return $form;
-    }
+	// Never alter choices in the form editor — saving the form would persist the reduced list.
+	if ( class_exists( 'GFCommon' ) && method_exists( 'GFCommon', 'is_form_editor' ) && GFCommon::is_form_editor() ) {
+		return $form;
+	}
 
-    $entry     = law_gf_get_current_edit_entry(2);
-    $selected  = [];
-    $slot_field = null;
+	$entry     = law_gf_get_current_edit_entry( 2 );
+	$selected  = array();
+	$slot_field = null;
 
-    foreach ($form['fields'] as $field) {
-        if ((int) $field->id === LAW_GF_PREFERRED_SLOTS_FIELD_ID) {
-            $slot_field = $field;
-            break;
-        }
-    }
+	foreach ( $form['fields'] as $field ) {
+		if ( (int) $field->id === LAW_GF_PREFERRED_SLOTS_FIELD_ID ) {
+			$slot_field = $field;
+			break;
+		}
+	}
 
-    if ($entry && $slot_field) {
-        $selected = law_gf_preferred_slot_values_from_entry($entry, $slot_field);
-    }
+	if ( $entry && $slot_field ) {
+		$selected = law_gf_preferred_slot_values_from_entry( $entry, $slot_field );
+	}
 
-    foreach ($form['fields'] as &$field) {
-        if ((int) $field->id !== LAW_GF_PREFERRED_SLOTS_FIELD_ID || empty($field->choices) || ! is_array($field->choices)) {
-            continue;
-        }
+	foreach ( $form['fields'] as &$field ) {
+		if ( (int) $field->id !== LAW_GF_PREFERRED_SLOTS_FIELD_ID || empty( $field->choices ) || ! is_array( $field->choices ) ) {
+			continue;
+		}
 
-        $kept = [];
-        foreach ($field->choices as $choice) {
-            $text  = (string) rgar($choice, 'text');
-            $value = $field->get_choice_option_value($choice);
+		$kept = array();
+		foreach ( $field->choices as $choice ) {
+			$text  = (string) rgar( $choice, 'text' );
+			$value = $field->get_choice_option_value( $choice );
 
-            if (! law_gf_is_retired_preferred_slot($text, $value)) {
-                $kept[] = $choice;
-                continue;
-            }
+			if ( ! law_gf_is_retired_preferred_slot( $text, $value ) ) {
+				$kept[] = $choice;
+				continue;
+			}
 
-            // Already on this entry: keep so the value is still a valid choice on save.
-            if (in_array($value, $selected, true) || in_array($text, $selected, true)) {
-                $choice['text'] = $text . ' (fully booked)';
-                $kept[]         = $choice;
-            }
-        }
+			// Already on this entry: keep so the value is still a valid choice on save.
+			if ( in_array( $value, $selected, true ) || in_array( $text, $selected, true ) ) {
+				$choice['text'] = $text . ' (fully booked)';
+				$kept[]         = $choice;
+			}
+		}
 
-        $field->choices = array_values($kept);
-    }
+		$field->choices = array_values( $kept );
+	}
 
-    return $form;
+	return $form;
 }
 
-add_filter('gform_pre_render_2', 'law_gf_hide_retired_preferred_slots');
-add_filter('gform_pre_validation_2', 'law_gf_hide_retired_preferred_slots');
+add_filter( 'gform_pre_render_2', 'law_gf_hide_retired_preferred_slots' );
+add_filter( 'gform_pre_validation_2', 'law_gf_hide_retired_preferred_slots' );
 
 /**
  * Strip retired slots from brand-new submissions (tampered POST).
@@ -370,32 +257,32 @@ add_filter('gform_pre_validation_2', 'law_gf_hide_retired_preferred_slots');
  *
  * @param array $form Form object.
  */
-add_action('gform_pre_submission_2', function ($form) {
-    if (empty(LAW_GF_RETIRED_PREFERRED_SLOTS) || law_gf_get_current_edit_entry(2)) {
-        return;
-    }
+add_action( 'gform_pre_submission_2', function ( $form ) {
+	if ( empty( LAW_GF_RETIRED_PREFERRED_SLOTS ) || law_gf_get_current_edit_entry( 2 ) ) {
+		return;
+	}
 
-    $input = 'input_' . LAW_GF_PREFERRED_SLOTS_FIELD_ID;
-    if (empty($_POST[ $input ]) || ! is_array($_POST[ $input ])) {
-        return;
-    }
+	$input = 'input_' . LAW_GF_PREFERRED_SLOTS_FIELD_ID;
+	if ( empty( $_POST[ $input ] ) || ! is_array( $_POST[ $input ] ) ) {
+		return;
+	}
 
-    $_POST[ $input ] = array_values(
-        array_filter(
-            $_POST[ $input ],
-            function ($value) {
-                return ! law_gf_is_retired_preferred_slot($value, $value);
-            },
-        ),
-    );
-});
+	$_POST[ $input ] = array_values(
+		array_filter(
+			$_POST[ $input ],
+			function ( $value ) {
+				return ! law_gf_is_retired_preferred_slot( $value, $value );
+			}
+		)
+	);
+} );
 
 
 /* Allow drag and drop on Advanced Select fields  ________________________________________________________ */
 
-add_action('gform_enqueue_scripts', function () {
-    wp_enqueue_script('jquery-ui-sortable');
-});
+add_action( 'gform_enqueue_scripts', function() {
+	wp_enqueue_script( 'jquery-ui-sortable' );
+} );
 
 
 /* Auto-attach Nested Forms child entries when editing via Gravity Flow ____________________________________ */
@@ -409,12 +296,12 @@ add_action('gform_enqueue_scripts', function () {
  *
  * @see https://gravitywiz.com/snippet-library/gpnf-gflow-auto-attach-child-entries/
  */
-add_filter('gpnf_set_parent_entry_id', function ($parent_entry_id) {
-    if (! $parent_entry_id && is_callable('gravity_flow') && gravity_flow()->is_workflow_detail_page()) {
-        $parent_entry_id = rgget('lid') ? rgget('lid') : $parent_entry_id;
-    }
-    return $parent_entry_id;
-});
+add_filter( 'gpnf_set_parent_entry_id', function ( $parent_entry_id ) {
+	if ( ! $parent_entry_id && is_callable( 'gravity_flow' ) && gravity_flow()->is_workflow_detail_page() ) {
+		$parent_entry_id = rgget( 'lid' ) ? rgget( 'lid' ) : $parent_entry_id;
+	}
+	return $parent_entry_id;
+} );
 
 
 /* Keep GPNF modal submissions AJAX on Gravity Flow inbox pages ____________________________________________ */
@@ -430,14 +317,14 @@ add_filter('gpnf_set_parent_entry_id', function ($parent_entry_id) {
  * This re-asserts the iframe submission method for forms inside a GPNF modal, at a later filter
  * priority than Gravity Flow's. Remove once Gravity Flow fixes the indexOf comparison upstream.
  */
-add_action('wp_footer', function () {
-    // Can't use gravity_flow()->is_workflow_detail_page() here: the entry editor unsets
-    // $_GET['page'] and $_GET['view'] while rendering, so it returns false by footer time.
-    // The buggy filter lives in the gravityflow_inbox script, so key off that instead.
-    if (! wp_script_is('gravityflow_inbox', 'enqueued')) {
-        return;
-    }
-    ?>
+add_action( 'wp_footer', function () {
+	// Can't use gravity_flow()->is_workflow_detail_page() here: the entry editor unsets
+	// $_GET['page'] and $_GET['view'] while rendering, so it returns false by footer time.
+	// The buggy filter lives in the gravityflow_inbox script, so key off that instead.
+	if ( ! wp_script_is( 'gravityflow_inbox', 'enqueued' ) ) {
+		return;
+	}
+	?>
 	<script>
 	document.addEventListener( 'gform/post_render', function () {
 		if ( window.lawGpnfSubmissionFixAdded || ! window.gform || ! gform.utils || ! gform.utils.addAsyncFilter ) {
@@ -456,34 +343,34 @@ add_action('wp_footer', function () {
 	} );
 	</script>
 	<?php
-}, 20);
+}, 20 );
 
 
 /* Insert latest comment field data into notifications ________________________________________________________ */
 
-add_filter('gform_replace_merge_tags', function ($text, $form, $entry) {
-    if (false === strpos((string) $text, '{latest_comment}') || ! function_exists('gp_nested_forms')) {
-        return $text;
-    }
+add_filter( 'gform_replace_merge_tags', function ( $text, $form, $entry ) {
+	if ( false === strpos( (string) $text, '{latest_comment}' ) || ! function_exists( 'gp_nested_forms' ) ) {
+		return $text;
+	}
 
-    $parent_field_id = 99;   // Comments
-    $comment_field   = 1;    // "Your comment" child field
-    // Name is a composite field: 3.3 first, 3.6 last
+	$parent_field_id = 99;   // Comments
+	$comment_field   = 1;    // "Your comment" child field
+	// Name is a composite field: 3.3 first, 3.6 last
 
-    $children = gp_nested_forms()->get_entries(rgar($entry, $parent_field_id));
-    if (empty($children)) {
-        return str_replace('{latest_comment}', '', $text);
-    }
+	$children = gp_nested_forms()->get_entries( rgar( $entry, $parent_field_id ) );
+	if ( empty( $children ) ) {
+		return str_replace( '{latest_comment}', '', $text );
+	}
 
-    // Child entries come oldest-first; take the last as the latest.
-    $latest  = end($children);
-    $name    = trim(rgar($latest, '3.3') . ' ' . rgar($latest, '3.6'));
-    $comment = rgar($latest, $comment_field);
+	// Child entries come oldest-first; take the last as the latest.
+	$latest  = end( $children );
+	$name    = trim( rgar( $latest, '3.3' ) . ' ' . rgar( $latest, '3.6' ) );
+	$comment = rgar( $latest, $comment_field );
 
-    $out = '<strong>' . esc_html($name) . '</strong>: ' . $comment;
+	$out = '<strong>' . esc_html( $name ) . '</strong>: ' . $comment;
 
-    return str_replace('{latest_comment}', $out, $text);
-}, 10, 3);
+	return str_replace( '{latest_comment}', $out, $text );
+}, 10, 3 );
 
 
 /* Notify committee assignee when field 90 changes on entry edit ____________________________________________ */
@@ -503,26 +390,25 @@ const LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID = 90;
  * @param mixed $value Raw field value.
  * @return string Email address, or empty string if not resolvable.
  */
-function law_get_committee_assignee_email_from_field($value)
-{
-    $value = trim((string) $value);
+function law_get_committee_assignee_email_from_field( $value ) {
+	$value = trim( (string) $value );
 
-    if ('' === $value) {
-        return '';
-    }
+	if ( '' === $value ) {
+		return '';
+	}
 
-    if (is_email($value)) {
-        return $value;
-    }
+	if ( is_email( $value ) ) {
+		return $value;
+	}
 
-    if (ctype_digit($value)) {
-        $user = get_user_by('id', absint($value));
-        if ($user && is_email($user->user_email)) {
-            return $user->user_email;
-        }
-    }
+	if ( ctype_digit( $value ) ) {
+		$user = get_user_by( 'id', absint( $value ) );
+		if ( $user && is_email( $user->user_email ) ) {
+			return $user->user_email;
+		}
+	}
 
-    return '';
+	return '';
 }
 
 /**
@@ -531,83 +417,82 @@ function law_get_committee_assignee_email_from_field($value)
  * @param array $entry          Updated entry.
  * @param array $original_entry Entry before the update.
  */
-function law_maybe_notify_committee_assignee($entry, $original_entry)
-{
-    static $sent = [];
+function law_maybe_notify_committee_assignee( $entry, $original_entry ) {
+	static $sent = array();
 
-    $entry_id = absint(rgar($entry, 'id'));
-    if (! $entry_id) {
-        return;
-    }
+	$entry_id = absint( rgar( $entry, 'id' ) );
+	if ( ! $entry_id ) {
+		return;
+	}
 
-    $old = law_get_committee_assignee_email_from_field(rgar($original_entry, LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID));
-    $new = law_get_committee_assignee_email_from_field(rgar($entry, LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID));
+	$old = law_get_committee_assignee_email_from_field( rgar( $original_entry, LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID ) );
+	$new = law_get_committee_assignee_email_from_field( rgar( $entry, LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID ) );
 
-    if ($old === $new || ! is_email($new)) {
-        return;
-    }
+	if ( $old === $new || ! is_email( $new ) ) {
+		return;
+	}
 
-    $dedupe_key = $entry_id . '|' . $new;
-    if (isset($sent[ $dedupe_key ])) {
-        return;
-    }
-    $sent[ $dedupe_key ] = true;
+	$dedupe_key = $entry_id . '|' . $new;
+	if ( isset( $sent[ $dedupe_key ] ) ) {
+		return;
+	}
+	$sent[ $dedupe_key ] = true;
 
-    $title = rgar($entry, '17'); // Event title
-    $ref   = rgar($entry, '70'); // LAW reference
-    // home_url(), not the live domain hardcoded. This fires on
-    // gform_post_update_entry_2, so it is live on any environment still reading
-    // Gravity Forms — including a staging site carrying a copy of production's
-    // data, where it would otherwise email a real committee member a link to
-    // production (noticed 15 September 2026, preparing the production → staging
-    // database pull).
-    $link  = home_url('/account/dashboard/');
+	$title = rgar( $entry, '17' ); // Event title
+	$ref   = rgar( $entry, '70' ); // LAW reference
+	// home_url(), not the live domain hardcoded. This fires on
+	// gform_post_update_entry_2, so it is live on any environment still reading
+	// Gravity Forms — including a staging site carrying a copy of production's
+	// data, where it would otherwise email a real committee member a link to
+	// production (noticed 15 September 2026, preparing the production → staging
+	// database pull).
+	$link  = home_url( '/account/dashboard/' );
 
-    $subject = sprintf('You have been assigned an event: %s (%s)', $title, $ref);
-    $body    = '<p>You have been assigned as the committee contact for '
-        . '<strong>' . esc_html($title) . '</strong> (' . esc_html($ref) . ').</p>'
-        . '<p><a href="' . esc_url($link) . '">View it in the committee dashboard</a></p>';
+	$subject = sprintf( 'You have been assigned an event: %s (%s)', $title, $ref );
+	$body    = '<p>You have been assigned as the committee contact for '
+		. '<strong>' . esc_html( $title ) . '</strong> (' . esc_html( $ref ) . ').</p>'
+		. '<p><a href="' . esc_url( $link ) . '">View it in the committee dashboard</a></p>';
 
-    wp_mail($new, $subject, $body, [ 'Content-Type: text/html; charset=UTF-8' ]);
+	wp_mail( $new, $subject, $body, array( 'Content-Type: text/html; charset=UTF-8' ) );
 }
 
 /**
  * GFAPI::update_entry() — some programmatic updates.
  */
-add_action('gform_post_update_entry_2', function ($entry, $original_entry) {
-    law_maybe_notify_committee_assignee($entry, $original_entry);
-}, 10, 2);
+add_action( 'gform_post_update_entry_2', function ( $entry, $original_entry ) {
+	law_maybe_notify_committee_assignee( $entry, $original_entry );
+}, 10, 2 );
 
 /**
  * GravityView Edit Entry and wp-admin entry detail — uses save_lead(), not GFAPI::update_entry().
  */
-add_action('gform_after_update_entry_2', function ($form, $entry_id, $original_entry) {
-    $entry = GFAPI::get_entry($entry_id);
-    if (is_wp_error($entry)) {
-        return;
-    }
+add_action( 'gform_after_update_entry_2', function ( $form, $entry_id, $original_entry ) {
+	$entry = GFAPI::get_entry( $entry_id );
+	if ( is_wp_error( $entry ) ) {
+		return;
+	}
 
-    law_maybe_notify_committee_assignee($entry, $original_entry);
-}, 10, 3);
+	law_maybe_notify_committee_assignee( $entry, $original_entry );
+}, 10, 3 );
 
 /**
  * GravityEdit inline edit — standard GF update hooks are removed by the plugin.
  *
  * @see https://www.gravitykit.com/docs/gravityedit/inline-edit-filters/
  */
-add_filter('gravityview-inline-edit/entry-updated', function ($update_result, $entry, $form_id, $gf_field, $original_entry) {
-    if (2 !== (int) $form_id || empty($update_result) || is_wp_error($update_result)) {
-        return $update_result;
-    }
+add_filter( 'gravityview-inline-edit/entry-updated', function ( $update_result, $entry, $form_id, $gf_field, $original_entry ) {
+	if ( 2 !== (int) $form_id || empty( $update_result ) || is_wp_error( $update_result ) ) {
+		return $update_result;
+	}
 
-    if ($gf_field && (int) $gf_field->id !== LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID) {
-        return $update_result;
-    }
+	if ( $gf_field && (int) $gf_field->id !== LAW_GF_COMMITTEE_ASSIGNEE_FIELD_ID ) {
+		return $update_result;
+	}
 
-    law_maybe_notify_committee_assignee($entry, $original_entry);
+	law_maybe_notify_committee_assignee( $entry, $original_entry );
 
-    return $update_result;
-}, 10, 5);
+	return $update_result;
+}, 10, 5 );
 
 
 /* Only notify committee of entry edits when an event host made the change ________________________________ */
@@ -615,29 +500,28 @@ add_filter('gravityview-inline-edit/entry-updated', function ($update_result, $e
 /**
  * True when the current user is committee/admin (not an event host editing their own entry).
  */
-function law_gf_editor_is_staff_reviewer()
-{
-    return current_user_can('gravityview_edit_others_entries');
+function law_gf_editor_is_staff_reviewer() {
+	return current_user_can( 'gravityview_edit_others_entries' );
 }
 
 /**
  * Only send the "event edited" committee notification when the editor
  * is NOT committee/admin — i.e. a host edited their own event.
  */
-add_filter('gform_disable_notification_2', function ($is_disabled, $notification, $form, $entry) {
+add_filter( 'gform_disable_notification_2', function ( $is_disabled, $notification, $form, $entry ) {
 
-    // Target only the edit-alert notification.
-    if (rgar($notification, 'id') !== LAW_GF_EVENT_EDITED_NOTIFICATION_ID) {
-        return $is_disabled;
-    }
+	// Target only the edit-alert notification.
+	if ( rgar( $notification, 'id' ) !== LAW_GF_EVENT_EDITED_NOTIFICATION_ID ) {
+		return $is_disabled;
+	}
 
-    // If the editor can edit others' entries, they're committee/admin — suppress.
-    if (law_gf_editor_is_staff_reviewer()) {
-        return true;
-    }
+	// If the editor can edit others' entries, they're committee/admin — suppress.
+	if ( law_gf_editor_is_staff_reviewer() ) {
+		return true;
+	}
 
-    return $is_disabled;
-}, 10, 4);
+	return $is_disabled;
+}, 10, 4 );
 
 /**
  * Same host-only rule for GravityRevisions "entry updated, revision is saved" emails.
@@ -645,11 +529,12 @@ add_filter('gform_disable_notification_2', function ($is_disabled, $notification
  *
  * @see https://www.gravitykit.com/docs/gravityrevisions/entry-revisions-hooks/
  */
-add_filter('gravityview/entry-revisions/send-notifications', function ($send_notification, $revision_to_add, $current_entry, $changed_fields) {
+add_filter( 'gravityview/entry-revisions/send-notifications', function ( $send_notification, $revision_to_add, $current_entry, $changed_fields ) {
 
-    if (law_gf_editor_is_staff_reviewer()) {
-        return false;
-    }
+	if ( law_gf_editor_is_staff_reviewer() ) {
+		return false;
+	}
 
-    return $send_notification;
-}, 10, 4);
+	return $send_notification;
+}, 10, 4 );
+
