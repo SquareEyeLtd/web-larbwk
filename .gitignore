@@ -37,3 +37,8 @@ EVENTS_4.1_FUNC.md
 
 # PHP CS Fixer cache (local, per-machine)
 .php-cs-fixer.cache
+
+# Claude Code working files: agent definitions, agent memory, local settings.
+# Tracked until 17 September 2026; untracked because the agent-memory notes are
+# session scratch and had recorded live test-account passwords in the clear.
+.claude/
