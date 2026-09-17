@@ -28,14 +28,20 @@ get_header();
 		<div class="law-speaker">
 
 			<?php
-			get_template_part(
-				'parts/layout/back-link',
-				null,
-				array(
-					'url'   => law_speakers_page_id() ? get_permalink( law_speakers_page_id() ) : home_url( '/speakers/' ),
-					'label' => __( 'Back to speakers', 'law' ),
-				)
-			);
+			// Only while the Speakers archive is public: with it switched off
+			// (Events -> Settings) /speakers/ redirects to the home page, so a
+			// "Back to speakers" link would be a link to nowhere. A profile
+			// itself stays reachable either way, linked from its event pages.
+			if ( law_speakers_archive_is_public() ) {
+				get_template_part(
+					'parts/layout/back-link',
+					null,
+					array(
+						'url'   => law_speakers_archive_url(),
+						'label' => __( 'Back to speakers', 'law' ),
+					)
+				);
+			}
 			?>
 
 			<div class="grid-x grid-padding-x grid-padding-y">

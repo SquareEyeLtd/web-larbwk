@@ -1,3 +1,0 @@
-- [Checkout status vs payment_status](checkout-status-vs-payment-status.md) — session `status==complete` != money landed for async methods; must check `payment_status`
-- [Invoice rendering template on Checkout](invoice-rendering-template-on-checkout.md) — `invoice_creation.invoice_data.rendering_options.template` is real since 2025-07-30.basil, takes an `inrtem_...` id
-- [Receptions Stripe review 2026-09-14](receptions-stripe-review-2026-09-14.md) — ranked findings from reviewing RECEPTIONS.md's Checkout-payment-mode + paid-waitlist Stripe work

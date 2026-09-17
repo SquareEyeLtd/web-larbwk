@@ -1,7 +1,8 @@
 <?php
 /**
  * Events settings: programme year/week, slot choices, committee recipients,
- * fee tiers, Stripe tax rate / rendering template IDs, host-edit review mode.
+ * fee tiers, Stripe tax rate / rendering template IDs, host-edit review mode,
+ * whether the Speakers archive is public.
  *
  * Stripe KEYS are wp-config constants (LAW_STRIPE_PUBLISHABLE_KEY,
  * LAW_STRIPE_SECRET_KEY, LAW_STRIPE_WEBHOOK_SECRET), never options.
@@ -15,30 +16,36 @@ const LAW_EVENTS_SETTINGS_OPTION = 'law_events_settings';
 
 function law_events_settings_defaults() {
 	return array(
-		'year'                  => 2026,
-		'week_start'            => '2026-11-30',
-		'week_end'              => '2026-12-04',
+		'year'                    => 2026,
+		'week_start'              => '2026-11-30',
+		'week_end'                => '2026-12-04',
 		// Each slot: label (as shown to hosts/committee), date (Y-m-d),
 		// start/end (HH:MM, end '' = onwards), retired (bool).
-		'slots'                 => array(),
-		'committee_emails'      => array(),
+		'slots'                   => array(),
+		'committee_emails'        => array(),
 		// Tier key => [label, amount] in POUNDS. Mirrors form 2 field 53 (Event fee).
-		'fee_tiers'             => array(
+		'fee_tiers'               => array(
 			'uk'            => array( 'label' => 'UK hosts: £1200 + VAT', 'amount' => 1200 ),
 			'international' => array( 'label' => 'International hosts (no UK office): £600 + VAT', 'amount' => 600 ),
 			'sponsor'       => array( 'label' => 'Platinum, Gold, Silver Sponsors: free', 'amount' => 0 ),
 		),
-		'tax_rate_id'           => '',
-		'rendering_template_id' => '',
-		'host_edit_review'      => 'immediate', // or 'review' (4.2 §4.2 toggle).
+		'tax_rate_id'             => '',
+		'rendering_template_id'   => '',
+		'host_edit_review'        => 'immediate', // or 'review' (4.2 §4.2 toggle).
+		// Whether /speakers/ is a public page. Off until the committee is happy
+		// the line-up can be announced: the archive redirects to the home page
+		// and the "Back to speakers" link on a profile is not rendered. Single
+		// profiles stay reachable throughout, because the event pages link
+		// straight to them (Denis, 17 September 2026).
+		'speakers_archive_public' => false,
 		// Host terms page. Empty = resolve the page by its path (see
 		// law_events_terms_url()); set to a page ID or an absolute URL to override.
-		'terms_page'            => '',
+		'terms_page'              => '',
 		// ATTENDEE registration terms, a different document from the host
 		// ones above: someone applying for a place at the conference is not
 		// agreeing to arrange a venue or pay a host fee. Empty = fall back to
 		// the Policies index, deliberately NEVER to the host terms.
-		'attendee_terms_page'   => '',
+		'attendee_terms_page'     => '',
 	);
 }
 
@@ -600,6 +607,9 @@ function law_events_settings_page() {
 					<?php if ( ! law_events_attendee_terms_configured() ) : ?>
 						<strong>Not set: the flagship registration form currently links to the Policies index.</strong> It deliberately does NOT fall back to the host terms, which are about arranging a venue and paying a host fee and do not apply to an attendee.
 					<?php endif; ?></p></td></tr>
+				<tr><th scope="row">Speakers archive</th>
+					<td><label><input type="checkbox" name="speakers_archive_public" value="1" <?php checked( ! empty( $s['speakers_archive_public'] ) ); ?>> Make the Speakers archive public</label>
+					<p class="description">Off: <code><?php echo esc_html( law_speakers_archive_url() ); ?></code> redirects visitors to the home page and the &ldquo;Back to speakers&rdquo; link is hidden on a speaker profile. Individual speaker profiles stay reachable either way, because the event pages link straight to them.</p></td></tr>
 				<tr><th scope="row">Host edits to published events</th>
 					<td><label><input type="radio" name="host_edit_review" value="immediate" <?php checked( $s['host_edit_review'], 'immediate' ); ?>> Publish immediately</label><br>
 					<label><input type="radio" name="host_edit_review" value="review" disabled> Route to LAW for review <em>(arrives with phase 4.2; 4.1 publishes immediately and emails the committee)</em></label></td></tr>
@@ -612,13 +622,14 @@ function law_events_settings_page() {
 
 function law_events_settings_save() {
 	$changes = array(
-		'year'                  => absint( $_POST['year'] ?? 2026 ),
-		'week_start'            => sanitize_text_field( wp_unslash( $_POST['week_start'] ?? '' ) ),
-		'week_end'              => sanitize_text_field( wp_unslash( $_POST['week_end'] ?? '' ) ),
-		'tax_rate_id'           => sanitize_text_field( wp_unslash( $_POST['tax_rate_id'] ?? '' ) ),
-		'rendering_template_id' => sanitize_text_field( wp_unslash( $_POST['rendering_template_id'] ?? '' ) ),
-		'attendee_terms_page'   => sanitize_text_field( wp_unslash( $_POST['attendee_terms_page'] ?? '' ) ),
-		'host_edit_review'      => ( 'review' === ( $_POST['host_edit_review'] ?? '' ) ) ? 'review' : 'immediate',
+		'year'                    => absint( $_POST['year'] ?? 2026 ),
+		'week_start'              => sanitize_text_field( wp_unslash( $_POST['week_start'] ?? '' ) ),
+		'week_end'                => sanitize_text_field( wp_unslash( $_POST['week_end'] ?? '' ) ),
+		'tax_rate_id'             => sanitize_text_field( wp_unslash( $_POST['tax_rate_id'] ?? '' ) ),
+		'rendering_template_id'   => sanitize_text_field( wp_unslash( $_POST['rendering_template_id'] ?? '' ) ),
+		'attendee_terms_page'     => sanitize_text_field( wp_unslash( $_POST['attendee_terms_page'] ?? '' ) ),
+		'host_edit_review'        => ( 'review' === ( $_POST['host_edit_review'] ?? '' ) ) ? 'review' : 'immediate',
+		'speakers_archive_public' => ! empty( $_POST['speakers_archive_public'] ),
 	);
 
 	$slots = array();
