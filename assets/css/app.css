@@ -2992,3 +2992,25 @@ mark.law-hit {
         color: MarkText;
     }
 }
+
+/* Notification bar (Ninja Notibar plugin). The bar is the plugin's; these
+   three tweaks are ours: a tighter vertical pad, underlined links, and a
+   hover that actually reads on the black fill. Global a:hover is white-on-
+   white here, which is why the colour has to be restated. #ffcc02 is the
+   same yellow the main menu uses on navy. */
+.njt-nofi-notification-bar {
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.njt-nofi-text a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 0.12em;
+}
+
+.njt-nofi-text a:hover,
+.njt-nofi-text a:focus {
+    color: #ffcc02;
+    text-decoration: underline;
+}
