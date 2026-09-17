@@ -174,7 +174,10 @@
    something on this day worth the click", and the words are what tell them
    apart -- a second colour would be a third meaning nobody has a key to. */
 .law-cal-daynav__flag {
+  display: inline-flex;
+  align-items: center;
   align-self: flex-start;
+  justify-content: center;
   padding: 2px 8px;
   border: 1px solid #ef7d05;
   border-radius: 10px;
@@ -185,6 +188,7 @@
   letter-spacing: 0.06em;
   text-indent: 0.06em;
   text-transform: uppercase;
+  text-box: trim-both cap alphabetic;
 }
 
 /* On a phone the row is wider than the screen, so say so: a thin scrollbar
@@ -622,15 +626,18 @@
    Two details keep the words centred inside the pill. Uppercase text with
    letter-spacing leaves the trailing gap after the last letter inside the line
    box, which drags the word visibly to the left, so the same value is added
-   back as a text-indent to push it off the left edge by as much. And the line
-   height is pinned to 1 rather than left to the font's own leading, which for
-   all-caps sits the letters low in the box (Denis, 15 September 2026). */
+   back as a text-indent to push it off the left edge by as much. Vertically:
+   inline-flex centres the line in the padding box, and text-box trims the
+   unused cap/descender space so all-caps do not sit high in the em square
+   (Denis, 15 September 2026; revisited 17 September 2026). */
 .law-event-card__flagship-badge,
 .law-event-card__reception-badge,
 .law-strip__badge,
 .law-flagship-strip__badge,
 .law-flagship-card__badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 4px 10px;
   border: 1px solid #ef7d05;
   border-radius: 11px;
@@ -641,6 +648,7 @@
   letter-spacing: 0.04em;
   text-indent: 0.04em;
   text-transform: uppercase;
+  text-box: trim-both cap alphabetic;
 }
 
 .law-event-card__flagship-badge,
