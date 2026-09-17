@@ -62,18 +62,18 @@ function law_speakers_archive_url() {
 }
 
 /**
- * Whether the Speakers archive is announced to the public.
+ * Whether the Speakers archive is published to the public.
  *
  * Off by default. The line-up is assembled from Confirmed events long before
- * LAW wants it announced, so the committee switches it on from Events →
- * Settings when the programme is ready (Denis, 17 September 2026).
+ * LAW wants it announced, so the committee turns the archive on from Events →
+ * Settings when the programme is ready (Denis, 17 September 2026). While it is
+ * off, law_speakers_archive_gate() answers the archive with a 404, the page
+ * leaves the XML sitemap, and templates/speaker.php drops its "Back to
+ * speakers" link.
  *
- * What it controls is the "Back to speakers" link on a speaker profile, and
- * only that. The archive page itself stays reachable either way: it is not
- * redirected or hidden (Denis, 17 September 2026 — an earlier build of this
- * sent /speakers/ to the home page and that was dropped). So is every single
- * profile, which every event page links straight to. The switch decides
- * whether a profile INVITES the visitor into the index, not who may reach it.
+ * Deliberately NOT a gate on the speaker data itself: single profiles are
+ * linked from every event page and stay reachable either way. This setting is
+ * about the index page, not about who may see a speaker.
  */
 function law_speakers_archive_is_public() {
 	if ( ! function_exists( 'law_events_setting' ) ) {
@@ -81,6 +81,99 @@ function law_speakers_archive_is_public() {
 	}
 	return (bool) law_events_setting( 'speakers_archive_public', false );
 }
+
+/**
+ * 404 the Speakers archive while it is not public.
+ *
+ * **A 404, not a redirect to the home page** (Denis, 17 September 2026). The
+ * archive is coming back, so the response has to be one that costs nothing when
+ * it does. A redirect to an unrelated page is the worst of the options: Google
+ * treats a redirect to an irrelevant destination as a soft 404 anyway, so it
+ * buys none of the protection a redirect normally would, and it teleports a
+ * person who followed a real link somewhere they did not ask to go. A 404 says
+ * the plain truth — there is nothing here yet — to crawlers and people alike,
+ * and the page is re-indexed from the sitemap when the switch goes on. A 410
+ * would be wrong for the opposite reason: it means gone for good.
+ *
+ * `nocache_headers()` matters as much as the status. This is a setting someone
+ * flips, and a 404 cached in a visitor's browser or an edge cache would outlive
+ * the flip.
+ *
+ * Scoped to the ARCHIVE view of the Speakers page: a single profile lands on
+ * the same page with the law_speaker query var set (and, in CPT mode, on its
+ * own permalink), and must keep working — every event page links straight to
+ * one.
+ *
+ * Committee members, editors and administrators are let through so they can
+ * read the archive before it is announced. law_user_is_committee() is the right
+ * test for all three: it asks for edit_others_law_events, which committee,
+ * editor and administrator hold and no other role does.
+ *
+ * See law_speakers_archive_sitemap_exclusion() for the other half of this — a
+ * 404 that the XML sitemap still advertises is a Search Console error rather
+ * than a clean signal.
+ */
+function law_speakers_archive_gate() {
+	if ( ! law_speakers_archive_is_hidden() ) {
+		return;
+	}
+	global $wp_query;
+	$wp_query->set_404();
+	status_header( 404 );
+	nocache_headers();
+}
+add_action( 'template_redirect', 'law_speakers_archive_gate', 5 );
+
+/**
+ * The decision law_speakers_archive_gate() acts on, kept separate so it can be
+ * asserted without running the 404 itself.
+ */
+function law_speakers_archive_is_hidden() {
+	if ( law_speakers_archive_is_public() ) {
+		return false;
+	}
+	if ( ! is_page_template( 'templates/speakers.php' ) || law_speakers_is_single() ) {
+		return false;
+	}
+	if ( function_exists( 'law_user_is_committee' ) && law_user_is_committee() ) {
+		return false;
+	}
+	return true;
+}
+
+/**
+ * Drop the Speakers page from the XML sitemap while the archive is not public.
+ *
+ * The other half of the 404 above, and the half that actually decides how this
+ * reads to Google. SEOPress lists every published page, so without this the
+ * sitemap advertises a URL that answers 404 — which Search Console reports as
+ * "Submitted URL not found (404)", an error against the property, rather than
+ * as a page that simply is not ready. Removing it from the sitemap turns the
+ * same situation into a non-event, and the page reappears in the sitemap by
+ * itself the moment the switch goes on.
+ *
+ * The filter passes get_posts() arguments and the post type being rendered, so
+ * this only touches the pages sitemap.
+ *
+ * @param array  $args get_posts() arguments.
+ * @param string $path The post type this sitemap file covers.
+ * @return array
+ */
+function law_speakers_archive_sitemap_exclusion( $args, $path = '' ) {
+	if ( 'page' !== $path || law_speakers_archive_is_public() ) {
+		return $args;
+	}
+	$page_id = law_speakers_page_id();
+	if ( ! $page_id ) {
+		return $args;
+	}
+	$args['post__not_in'] = array_merge(
+		isset( $args['post__not_in'] ) ? (array) $args['post__not_in'] : array(),
+		array( $page_id )
+	);
+	return $args;
+}
+add_filter( 'seopress_sitemaps_single_query', 'law_speakers_archive_sitemap_exclusion', 10, 2 );
 
 /**
  * Whether the current visitor may see speaker data at all.
