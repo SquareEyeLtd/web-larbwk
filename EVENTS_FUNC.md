@@ -8245,7 +8245,7 @@ so the two share one set of declarations -- brand navy `#292459` fill, orange
 left edge, white title and meta, the inverted button pair, the white repaint of
 the committee's status badge. Splitting them would have produced two copies of
 the same twelve rules. What tells a reader which is which is the identity pill
-(`.law-event-card__reception-badge`, "Drinks reception", added to the shared
+(`.law-event-card__reception-badge`, "Reception", added to the shared
 five-selector pill shape rather than copied) and, on the programme, the fact
 that the conference is a photo block rather than a row at all. The block is
 declared **after** `.law-event-card--sponsored`, which is the whole mechanism by
