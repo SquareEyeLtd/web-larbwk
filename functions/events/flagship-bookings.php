@@ -635,6 +635,9 @@ function law_flagship_on_card_saved( $booking_id ) {
  *                               standard one says their payment details are
  *                               saved and will be charged if approved, which
  *                               is false when a code covers the whole price.
+ *                               Name the early-side slug; the price cutover's
+ *                               twin is chosen from it by
+ *                               law_flagship_applied_email().
  * @return bool Whether this call was the one that latched.
  */
 function law_flagship_mark_ready( $booking_id, $delegate_email = 'user_flagship_applied' ) {
@@ -658,10 +661,48 @@ function law_flagship_mark_ready( $booking_id, $delegate_email = 'user_flagship_
 	);
 
 	$extra = law_flagship_email_extra( $booking_id );
-	law_events_send( (string) $delegate_email, $event_id, $extra );
+	law_events_send( law_flagship_applied_email( $booking, (string) $delegate_email ), $event_id, $extra );
 	law_events_send( 'committee_flagship_application', $event_id, array( 'placeholders' => $extra['placeholders'] ) );
 
 	return true;
+}
+
+/**
+ * Which of an acknowledgement's two templates this registration gets: the one
+ * for its side of the price cutover (Denis, 17 September 2026).
+ *
+ * The side is decided by WHEN THE DELEGATE REGISTERED, not by when this runs.
+ * They are usually the same minute, but not always: a card setup that returns
+ * from Stripe after midnight, or a free registration marked ready by a later
+ * path, would otherwise be acknowledged at a rate the delegate was never
+ * quoted. The booking's own creation time is the moment law_booking_quote()
+ * priced it, so keying off it makes the email and the price agree by
+ * construction.
+ *
+ * Falls back to the early template whenever the late twin is not in the
+ * registry, so a caller passing an unpaired slug still sends something.
+ *
+ * @param int|WP_Post $booking The registration.
+ * @param string      $base    The early-side slug.
+ * @return string An email registry slug.
+ */
+function law_flagship_applied_email( $booking, $base = 'user_flagship_applied' ) {
+	$booking = get_post( $booking );
+	$base    = (string) $base;
+	if ( ! $booking ) {
+		return $base;
+	}
+
+	$at = (int) get_post_time( 'U', true, $booking );
+	if ( $at < 1 ) {
+		$at = (int) current_time( 'timestamp', true );
+	}
+	if ( ! law_flagship_price_is_late( $at, (int) $booking->post_parent ) ) {
+		return $base;
+	}
+
+	$late = $base . '_late';
+	return law_events_email( $late ) ? $late : $base;
 }
 
 /** The card could not be saved; say so rather than leaving it silent. */

@@ -160,39 +160,18 @@ get_template_part(
 ?>
 
 <?php
-// Which Venue needed answer this form is rendering. The field is in the host
-// lock list and a disabled radio posts nothing, so on an error re-render of a
-// post-approval host edit law_events_form_values() hands back an empty answer;
-// reading the stored value in that case keeps both the radios checked and the
-// venue details on screen.
-// law_events_venue_needed_label() maps an answer stored in either vocabulary
-// onto the label the radios carry, so an event migrated with the Gravity Forms
-// choice value ("Yes"/"No") renders with its answer already picked.
-$law_venue_choices = law_events_venue_needed_choices();
-$law_venue_needed  = law_events_venue_needed_label(
-	in_array( 'venue_needed', $law_locked, true ) && $law_post
-		? law_event_meta( $law_post->ID, '_law_venue_needed' )
-		: $law_value( 'venue_needed' )
-);
-// The venue name, capacity band and places available are only asked of a host
-// who already has a venue; the committee always sees them, because on an event
-// LAW places they are the ones who know. See
-// law_events_venue_details_visible().
-$law_show_venue = law_events_venue_details_visible( $law_venue_needed );
-// "No, we already have a venue planned" makes all three required (a host only
-// ever sees the block on that answer; the committee sees it either way, and on
-// "Yes" they are filling it in for a host who cannot). See
-// law_events_venue_details_required().
-// The host's block is on screen only on that answer, so its stars are
-// unconditional -- the answer is not settled yet on a blank new form, and a
-// star that appeared only after the radio was clicked would need scripting to
-// stay honest. The committee sees the block either way, so theirs follow the
-// answer, like the hint below.
-$law_venue_star = ( ! law_user_is_committee() || law_events_venue_details_required( $law_venue_needed ) ) ? ' *' : '';
-$law_venue_toggle = law_user_is_committee() ? '' : ' data-law-toggles="law-venue-details" data-law-toggles-keep="1"';
+// The "Venue needed?" radios are gone (Denis, 17 September 2026). Every
+// submitter is now recorded as already having a venue -- the saver writes that
+// answer itself, see law_events_form_save() -- so the three venue details are
+// on every form, host and committee alike, and all three are required. The
+// predicates are still called rather than the block being unconditional
+// markup, so the template, the validator and the saver keep agreeing about
+// what was asked from one place.
+$law_venue_star = law_events_venue_details_required() ? ' *' : '';
 // A disabled control posts nothing, so on an error re-render
 // law_events_form_values() hands back an empty value for every locked field.
-// The stored one stands in, the same fallback $law_venue_needed uses above.
+// The stored one stands in, so a locked band or places count still renders
+// the number the committee set rather than an empty box.
 $law_locked_value = function ( $field, $meta_key ) use ( $law_locked, $law_post, $law_value ) {
 	return in_array( $field, $law_locked, true ) && $law_post
 		? (string) law_event_meta( $law_post->ID, $meta_key )
@@ -205,18 +184,6 @@ $law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_ava
 ?>
 <fieldset id="law-section-venue">
 	<legend>Venue</legend>
-	<div class="law-form-field <?php echo in_array( 'venue_needed', $law_locked, true ) ? 'is-locked' : ''; ?>">
-		<span class="law-form-label">Venue needed? *</span>
-		<label><input type="radio" name="venue_needed" value="<?php echo esc_attr( $law_venue_choices['yes'] ); ?>" <?php checked( $law_venue_needed, $law_venue_choices['yes'] ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> <?php echo esc_html( $law_venue_choices['yes'] ); ?></label>
-		<label><input type="radio" name="venue_needed" value="<?php echo esc_attr( $law_venue_choices['no'] ); ?>"<?php echo $law_venue_toggle; ?> <?php checked( $law_venue_needed, $law_venue_choices['no'] ); ?> <?php disabled( in_array( 'venue_needed', $law_locked, true ) ); ?>> <?php echo esc_html( $law_venue_choices['no'] ); ?></label>
-		<?php $law_error_message( 'venue_needed' ); ?>
-	</div>
-	<!-- A plain wrapper, not the grid itself: .law-row-grid's display:grid is
-	authored after Foundation's [hidden] { display: none } and would win. -->
-	<div id="law-venue-details" <?php echo $law_show_venue ? '' : 'hidden'; ?>>
-	<?php if ( 'committee' === $law_context && $law_venue_choices['no'] !== $law_venue_needed ) : ?>
-		<p class="law-form-hint">The host asked LAW to find a venue, so these three are not on their form. Set them here once the event has been placed.</p>
-	<?php endif; ?>
 	<div class="law-row-grid law-row-grid--three">
 		<p class="law-form-field"><label for="law-venue">Venue (name and/or address)<?php echo esc_html( $law_venue_star ); ?></label>
 			<input type="text" id="law-venue" name="venue" value="<?php echo esc_attr( $law_value( 'venue' ) ); ?>">
@@ -252,7 +219,6 @@ $law_tickets_value   = $law_locked_value( 'tickets_available', '_law_tickets_ava
 			<?php if ( $law_tickets_locked ) : ?><span class="law-locked-note">Set by the committee once your event is submitted. Reply to any email from us if the number needs to change.</span><?php endif; ?>
 			<?php $law_error_message( 'tickets_available' ); ?>
 		</p>
-	</div>
 	</div>
 </fieldset>
 

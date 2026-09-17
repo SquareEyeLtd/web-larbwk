@@ -28,6 +28,11 @@ function law_events_emails_page() {
 		law_events_emails_handle_test_mode_post();
 	}
 
+	if ( isset( $_POST['law_signoff_nonce'] ) ) {
+		check_admin_referer( 'law_events_email_signoff', 'law_signoff_nonce' );
+		law_events_emails_handle_signoff_post();
+	}
+
 	if ( isset( $_POST['law_email_nonce'] ) ) {
 		check_admin_referer( 'law_email_edit', 'law_email_nonce' );
 		law_events_emails_handle_post( $slug );
@@ -63,7 +68,9 @@ function law_events_emails_list_screen() {
 			$merged['active'] ? '<span style="color:#00a32a">Active</span>' : '<span style="color:#757575">Inactive</span>'
 		);
 	}
-	echo '</tbody></table></div>';
+	echo '</tbody></table>';
+	law_events_emails_signoff_card();
+	echo '</div>';
 }
 
 function law_events_emails_edit_screen( $slug ) {
@@ -180,6 +187,72 @@ function law_events_emails_handle_post( $slug ) {
 
 	law_events_email_save_override( $slug, $override );
 	echo '<div class="notice notice-success"><p>Email saved.</p></div>';
+}
+
+/* The shared sign-off ______________________________________________________ */
+
+/**
+ * Notice for the sign-off form, held between the POST handler and the render
+ * so it prints inside the page wrap rather than above the heading. The same
+ * device the test-mode card uses, and for the same reason.
+ *
+ * @param array|null $set Message to store (['type' => ..., 'text' => ...]).
+ * @return array|null
+ */
+function law_events_emails_signoff_notice( $set = null ) {
+	static $notice = null;
+	if ( null !== $set ) {
+		$notice = $set;
+	}
+	return $notice;
+}
+
+/**
+ * The sign-off panel at the foot of the emails list.
+ *
+ * It sits under the table rather than on each email's edit screen because it
+ * is not one email's wording: it is the last thing all of them say. Editing it
+ * here changes every notification at once, which is the point.
+ */
+function law_events_emails_signoff_card() {
+	$signoff = law_events_email_signoff();
+	$notice  = law_events_emails_signoff_notice();
+	?>
+	<h2>Sign-off</h2>
+	<p>The closing lines added to the end of <strong>every</strong> notification above, including any you have reworded and any an event sets for its own booking confirmation. It is stored here rather than typed into each message, so it only ever has to be changed once.</p>
+	<?php if ( $notice ) : ?>
+		<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> inline"><p><?php echo esc_html( $notice['text'] ); ?></p></div>
+	<?php endif; ?>
+	<form method="post" style="max-width:760px">
+		<?php wp_nonce_field( 'law_events_email_signoff', 'law_signoff_nonce' ); ?>
+		<p>
+			<label for="law-email-signoff" class="screen-reader-text">Sign-off</label>
+			<textarea id="law-email-signoff" name="signoff" rows="4" class="large-text code"><?php echo esc_textarea( $signoff ); ?></textarea>
+		</p>
+		<p class="description">
+			Added after a blank line, so it reads as its own paragraph. Tags such as <code>{site_name}</code> work here exactly as they do in a message body. Leave it empty to send no sign-off at all.
+		</p>
+		<p><?php submit_button( 'Save sign-off', 'secondary', 'save_signoff', false ); ?></p>
+	</form>
+	<?php
+}
+
+/** Save the sign-off. Both screens write through law_events_email_signoff_save(). */
+function law_events_emails_handle_signoff_post() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	$stored = law_events_email_signoff_save( wp_unslash( $_POST['signoff'] ?? '' ) );
+
+	law_events_emails_signoff_notice(
+		array(
+			'type' => 'success',
+			'text' => '' === $stored
+				? 'Sign-off cleared. Notifications will now end with whatever their own wording ends with.'
+				: 'Sign-off saved. It applies from the next email sent onwards.',
+		)
+	);
 }
 
 /* Test mode ________________________________________________________________ */

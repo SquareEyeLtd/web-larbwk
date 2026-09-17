@@ -5,6 +5,9 @@
  * imported by the migration) are stored per email in one option and take
  * precedence. Bodies are content only: the site-wide Email Templates plugin
  * wrapper provides the branding, exactly as it does for every other email.
+ * The one thing bodies do NOT carry is the sign-off: that is stored once and
+ * appended by the renderer, so every email ends the same way whether its
+ * wording is the shipped default, a site-wide override or a per-event one.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -12,6 +15,21 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const LAW_EVENTS_EMAIL_OVERRIDES_OPTION = 'law_events_email_overrides';
+
+/** Where the shared sign-off every email ends with is stored. */
+const LAW_EVENTS_EMAIL_SIGNOFF_OPTION = 'law_events_email_signoff';
+
+/**
+ * The flagship price cutover as a day, for the two pairs of registration
+ * acknowledgements that are named after it.
+ *
+ * Guarded because this file loads before flagship.php (functions/events/
+ * _load.php) and the registry can be asked for at any point after that, so
+ * the label has to survive being wanted a few lines too early.
+ */
+function law_events_flagship_switch_day() {
+	return function_exists( 'law_flagship_price_switch_day' ) ? law_flagship_price_switch_day() : '17 October';
+}
 
 /**
  * The email registry: slug => definition.
@@ -438,22 +456,56 @@ function law_events_email_registry() {
 		 * House rule, doubly binding here: never interpolate anything the
 		 * delegate typed into a SUBJECT. Subjects are not escaped, and these
 		 * carry {event_title} only. */
+		/* The acknowledgement comes in a pair, one either side of the price
+		 * cutover (Denis, 17 September 2026), because the two periods are sold
+		 * at different rates and LAW wants to say something different to each
+		 * group. law_flagship_mark_ready() picks by the moment the delegate
+		 * registered, never by the moment the email is composed, so a
+		 * registration quoted the early price is acknowledged at the early
+		 * price even if its card setup finishes after midnight.
+		 *
+		 * Both names carry the cutover day, derived from the Flagship screen's
+		 * own setting rather than typed here, so moving the date relabels the
+		 * rows rather than leaving the committee reading a stale one. */
 		'user_flagship_applied' => array(
-			'name'    => 'Email to delegate > flagship registration received',
-			'trigger' => 'Payment details saved on a flagship registration',
+			'name'    => 'Email to delegate > flagship registration received, before ' . law_events_flagship_switch_day(),
+			'trigger' => 'Payment details saved on a registration made before the price switch',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'We have your registration for {event_title}',
-			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT). {discount_note}\n\nYour payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your registration is approved, and it is removed if it is not.\n\nYou can see your registration, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT), at the early registration rate. {discount_note}\n\nYour payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your registration is approved, and it is removed if it is not.\n\nYou can see your registration, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
+		),
+		'user_flagship_applied_late' => array(
+			'name'    => 'Email to delegate > flagship registration received, from ' . law_events_flagship_switch_day(),
+			'trigger' => 'Payment details saved on a registration made on or after the price switch',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'We have your registration for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\nThe price is {price_total} ({price} plus {price_vat} VAT), at the standard registration rate. {discount_note}\n\nYour payment method ({payment_method}) is saved securely with our payment provider and has NOT been charged. It will only be charged if your registration is approved, and it is removed if it is not.\n\nYou can see your registration, change how you pay, or withdraw at any time before it is charged, under My bookings: {bookings_link}",
 		),
 		/* The same acknowledgement for a registration a discount code covered
 		 * in full. It needs its own template rather than a placeholder in the
 		 * one above, because every sentence about a saved payment method is
 		 * false here: none was asked for, and none exists to charge or
-		 * remove. */
+		 * remove.
+		 *
+		 * It is a pair on the same cutover as the paying one. The two bodies
+		 * ship identical, because the only sentence the cutover changes is
+		 * about the price and this registration has none: the pair exists so
+		 * that LAW can say something different to late registrants without
+		 * having to say it to everybody. Fold them back into one if that never
+		 * happens. */
 		'user_flagship_applied_free' => array(
-			'name'    => 'Email to delegate > flagship registration received, nothing to pay',
-			'trigger' => 'A registration whose discount code covers the whole price',
+			'name'    => 'Email to delegate > flagship registration received, nothing to pay, before ' . law_events_flagship_switch_day(),
+			'trigger' => 'A registration before the price switch whose discount code covers the whole price',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'We have your registration for {event_title}',
+			'body'    => "Dear {attendee_name},\n\nThank you for registering to attend {event_title} (registration #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nPlaces are allocated by the LAW committee, so your registration now goes to them for review. We will email you as soon as they have decided.\n\n{discount_note} That covers the whole price, so there is nothing to pay and we have not asked you for any payment details.\n\nYou can see your registration, or withdraw it, at any time under My bookings: {bookings_link}",
+		),
+		'user_flagship_applied_free_late' => array(
+			'name'    => 'Email to delegate > flagship registration received, nothing to pay, from ' . law_events_flagship_switch_day(),
+			'trigger' => 'A registration on or after the price switch whose discount code covers the whole price',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'We have your registration for {event_title}',
@@ -920,6 +972,86 @@ function law_events_email_body_sanitize( $value ) {
 	return law_rich_text_sanitize( $value );
 }
 
+/* The shared sign-off ______________________________________________________ */
+
+/*
+ * Every module email ends with the same two lines, and they are stored ONCE
+ * rather than written into each of the registry's bodies (Denis, 17 September
+ * 2026). The reason is the awkward half of the request: "even if it is
+ * customly modified". A sign-off pasted into 78 code defaults would reach
+ * neither the bodies already reworded on the Emails screen nor the per-event
+ * booking confirmations in post meta, and the next person to edit any body
+ * could delete it without noticing. Appending it in the renderer instead means
+ * it lands on the shipped wording, a site-wide override and a per-event
+ * override alike, and it can never be half-applied.
+ *
+ * It is appended BEFORE the placeholders are substituted, so a sign-off may
+ * carry {site_name} or any other tag exactly as a body does.
+ */
+
+/** The wording a site that has never edited the sign-off sends. */
+function law_events_email_signoff_default() {
+	return "Best regards,\nLondon Arbitration Week";
+}
+
+/**
+ * The stored sign-off, or the shipped default where nothing has been saved.
+ *
+ * The distinction between "never edited" and "deliberately emptied" is the
+ * whole reason for the null default on get_option(): clearing the field is how
+ * an administrator switches the sign-off off, and falling back to the default
+ * on an empty string would quietly refuse to let them.
+ */
+function law_events_email_signoff() {
+	$stored = get_option( LAW_EVENTS_EMAIL_SIGNOFF_OPTION, null );
+
+	return null === $stored ? law_events_email_signoff_default() : (string) $stored;
+}
+
+/**
+ * Store the sign-off. Both screens write through here, as they do for bodies.
+ *
+ * Sanitised on the bodies' allowlist rather than flattened, so a sign-off can
+ * carry a link to the LAW site or bold a line; the field is a plain textarea
+ * on both screens, so most sites will only ever store two lines of text.
+ *
+ * @param mixed $value Raw submitted sign-off.
+ * @return string What was stored ('' when the field was cleared).
+ */
+function law_events_email_signoff_save( $value ) {
+	$signoff = law_events_email_body_sanitize( $value );
+	update_option( LAW_EVENTS_EMAIL_SIGNOFF_OPTION, $signoff, false );
+
+	return $signoff;
+}
+
+/** Whether the sign-off has been edited away from the shipped wording. */
+function law_events_email_signoff_is_customised() {
+	return null !== get_option( LAW_EVENTS_EMAIL_SIGNOFF_OPTION, null );
+}
+
+/**
+ * One body with the sign-off on the end, separated by a blank line so it reads
+ * as its own paragraph rather than running on from the last sentence.
+ *
+ * Both halves have to have words in them: an empty sign-off adds nothing, and
+ * an empty body is refused by the screens long before it reaches here, so
+ * appending to one would only turn a bug into a message that looks deliberate.
+ *
+ * @param string $body A stored body, plain text or allowlisted HTML.
+ * @return string
+ */
+function law_events_email_with_signoff( $body ) {
+	$body    = (string) $body;
+	$signoff = trim( law_events_email_signoff() );
+
+	if ( '' === $signoff || '' === trim( $body ) ) {
+		return $body;
+	}
+
+	return rtrim( $body ) . "\n\n" . $signoff;
+}
+
 /**
  * Render one stored body into the HTML that is actually sent.
  *
@@ -946,7 +1078,12 @@ function law_events_email_body_sanitize( $value ) {
  * @return string Safe HTML for wp_mail().
  */
 function law_events_email_render_body( $body, array $placeholders ) {
-	$body = strtr( (string) $body, array_map( 'esc_html', $placeholders ) );
+	// The sign-off goes on first, so it is substituted, autop'd and made
+	// clickable with the rest of the message. This is the one place it is
+	// added, which is why a customised body and a per-event override carry it
+	// without either screen having to remember to.
+	$body = law_events_email_with_signoff( $body );
+	$body = strtr( $body, array_map( 'esc_html', $placeholders ) );
 
 	// law_rich_text_render() is wpautop + the allowlist again: it turns a
 	// plain-text body's blank lines into paragraphs exactly as before, leaves
