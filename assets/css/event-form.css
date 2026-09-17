@@ -599,6 +599,9 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    them carry the sizing the single <p> used to. */
 .law-dashboard__person-bio p, .law-dashboard__person-bio li { margin-bottom: .3rem; font-size: .9rem; }
 .law-dashboard__person-bio > :last-child, .law-dashboard__session-body > :last-child { margin-bottom: 0; }
+/* Same backstop as .law-cal-detail__body in calendar.css: host prose reaches
+   these panels too, so an unbreakable run wraps rather than widening the card. */
+.law-dashboard__person-bio, .law-dashboard__session-body, .law-dashboard__description { overflow-wrap: break-word; }
 .law-dashboard__session-body { margin: .2rem 0 0; }
 .law-dashboard__session-body p, .law-dashboard__session-body li { margin-bottom: .3rem; }
 .law-dashboard__person-role { font-size: .85rem; color: #666; }
