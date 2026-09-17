@@ -240,6 +240,50 @@ class ReceptionInclusionTest extends LAW_Test_Case {
 		$this->assertSame( 0, law_event_attendee_total( $reception ) );
 	}
 
+	/**
+	 * The same promise from the other direction: the committee cancelling a
+	 * paid ticket (FLAGSHIP_PAYMENTS.md §4.6). The receptions were free only
+	 * for as long as the ticket stood, so they go back with it and the
+	 * reception's own seat is genuinely released.
+	 */
+	public function test_cancelling_a_paid_ticket_takes_the_included_places_back(): void {
+		$this->make_flagship();
+		$reception = $this->make_reception();
+		$user_id   = $this->make_delegate();
+		$ticket    = $this->make_ticket( $user_id );
+
+		$granted       = law_reception_grant_included( $reception, $user_id, $ticket, 0, 'test' );
+		$this->posts[] = $granted;
+		$this->assertSame( 1, law_event_attendee_total( $reception ) );
+
+		$this->assertTrue( law_flagship_cancel_confirmed( $ticket, $this->make_committee_user() ) );
+
+		$this->assertSame( 'law-cancelled', get_post_status( $ticket ) );
+		$this->assertSame( 'law-cancelled', get_post_status( $granted ), 'The included place goes with the ticket.' );
+		$this->assertSame( 0, law_event_attendee_total( $reception ), 'And the reception seat is released.' );
+	}
+
+	/** A reception place the delegate PAID for is theirs, and is not swept up. */
+	public function test_cancelling_a_ticket_leaves_a_separately_bought_reception_place_alone(): void {
+		$this->make_flagship();
+		$reception = $this->make_reception();
+		$user_id   = $this->make_delegate();
+		$ticket    = $this->make_ticket( $user_id );
+
+		$bought = law_booking_insert(
+			$reception,
+			$user_id,
+			'publish',
+			array( 'user_id' => $user_id, 'name' => 'Jane Smith', 'email' => 'jane-' . $user_id . '@example.test' ),
+			array( '_law_price_pence' => 4500, '_law_vat' => 1, '_law_payment_status' => 'paid' )
+		);
+		$this->posts[] = $bought;
+
+		$this->assertTrue( law_flagship_cancel_confirmed( $ticket, $this->make_committee_user() ) );
+
+		$this->assertSame( 'publish', get_post_status( $bought ), 'They bought it, so it is theirs whatever happens to the ticket.' );
+	}
+
 	public function test_the_add_included_handler_never_trusts_a_posted_booking_id(): void {
 		// The handler resolves the flagship booking FROM THE CURRENT USER, so
 		// there is no posted id to forge. Pinned on the source, because the
