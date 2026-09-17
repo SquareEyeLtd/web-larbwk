@@ -1270,29 +1270,164 @@ class ContentTransferTest extends LAW_Test_Case {
 		$this->assertSame( 'Still here', (string) law_event_meta( $event_id, '_law_venue' ) );
 	}
 
-	public function test_an_events_money_never_travels(): void {
-		// The fee SNAPSHOT the invoice was raised from, the payment state and
-		// every Stripe object belong to the site that billed it. The fee tier,
-		// which is the committee's decision about the event, does travel.
+	public function test_descriptive_data_only_nothing_about_money_or_the_workflow(): void {
+		// Denis, 17 September 2026: by the time a bundle is imported, production's
+		// events have been approved, invoiced, paid and confirmed for real, and a
+		// file made where the same events were test data may not touch any of it.
+		// What an event IS travels; what it has BEEN THROUGH does not.
 		$event_id = $this->make_event(
 			array(
-				'_law_gf_entry_id'        => 90219,
-				'_law_fee_pence'          => 95000,
-				'_law_payment_status'     => 'paid',
-				'_law_stripe_invoice_id'  => 'in_staging_only',
-				'_law_stripe_customer_id' => 'cus_staging_only',
-				'_law_fee_tier'           => 'uk',
+				'_law_gf_entry_id'         => 90219,
+				'_law_fee_pence'           => 95000,
+				'_law_payment_status'      => 'paid',
+				'_law_stripe_invoice_id'   => 'in_staging_only',
+				'_law_stripe_customer_id'  => 'cus_staging_only',
+				'_law_fee_tier'            => 'uk',
+				'_law_fee_override'        => 1,
+				'_law_fee_override_amount' => 12.50,
+				'_law_approved_at'         => '2026-08-01',
+				'_law_invoice_name'        => 'Billing Ltd',
+				'_law_vat_number'          => 'GB111111111',
 			)
 		);
 
 		$row = $this->row_by( law_content_transfer_events(), 'gf_entry_id', '90219' );
 
-		$this->assertArrayHasKey( '_law_fee_tier', $row['meta'] );
-		foreach ( array( '_law_fee_pence', '_law_vat', '_law_payment_status', '_law_stripe_invoice_id', '_law_stripe_customer_id', '_law_tickets_sold', '_law_co_owner_ids' ) as $key ) {
-			$this->assertArrayNotHasKey( $key, $row['meta'], $key . ' belongs to the site that raised the invoice.' );
+		foreach (
+			array(
+				// Payment and Stripe.
+				'_law_fee_pence', '_law_vat', '_law_payment_status',
+				'_law_stripe_invoice_id', '_law_stripe_customer_id', '_law_stripe_invoice_url',
+				// The fee DECISION as well as the snapshot: nothing recalculates
+				// the snapshot after approval, so an imported tier would move the
+				// admin Fee column and the exports while the invoice kept the old
+				// figure.
+				'_law_fee_tier', '_law_fee_override', '_law_fee_override_amount',
+				// Who was billed.
+				'_law_invoice_name', '_law_invoice_email', '_law_invoice_address',
+				'_law_country_iso', '_law_vat_number',
+				// Decisions that happened on a particular site.
+				'_law_approved_at', '_law_rejection_reason', '_law_cancellation_reason',
+				'_law_terms_consent',
+				// Recounts and derived links.
+				'_law_tickets_sold', '_law_co_owner_ids',
+			) as $key
+		) {
+			$this->assertArrayNotHasKey( $key, $row['meta'], $key . ' must not cross a site boundary.' );
+		}
+
+		// And what an event IS still does.
+		foreach ( array( '_law_start', '_law_venue', '_law_venue_capacity', '_law_booking_override', '_law_host_organisations' ) as $key ) {
+			$this->assertArrayHasKey( $key, $row['meta'], $key . ' is descriptive and must travel.' );
 		}
 
 		$this->assertGreaterThan( 0, $event_id );
+	}
+
+	public function test_a_paid_and_confirmed_event_keeps_its_money_and_its_status(): void {
+		// The whole of Denis's concern, in one assertion set.
+		$event_id = $this->make_event(
+			array(
+				'_law_gf_entry_id'        => 90250,
+				'_law_payment_status'     => 'paid',
+				'_law_fee_pence'          => 95000,
+				'_law_fee_tier'           => 'uk',
+				'_law_stripe_invoice_id'  => 'in_production_real',
+				'_law_approved_at'        => '2026-08-01',
+				'_law_invoice_name'       => 'Production Billing Ltd',
+			),
+			'publish'
+		);
+
+		law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row(
+							array(
+								'gf_entry_id' => 90250,
+								'status'      => 'law-proposed',
+								'title'       => 'Retitled on staging',
+								'meta'        => array(
+									'_law_venue' => 'Staging venue',
+									// Every one of these is off the allow list, so a
+									// hand-edited bundle naming them reaches nothing.
+									'_law_payment_status'     => 'unpaid',
+									'_law_fee_pence'          => 1,
+									'_law_fee_tier'           => 'sponsor',
+									'_law_fee_override'       => 1,
+									'_law_fee_override_amount' => 1.00,
+									'_law_stripe_invoice_id'  => 'in_staging_fake',
+									'_law_approved_at'        => '2026-01-01',
+									'_law_invoice_name'       => 'Staging Test Co',
+								),
+							)
+						),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( 'publish', get_post_status( $event_id ), 'Confirmed stays confirmed.' );
+		$this->assertSame( 'paid', (string) law_event_meta( $event_id, '_law_payment_status' ) );
+		$this->assertSame( 95000, (int) law_event_meta( $event_id, '_law_fee_pence' ) );
+		$this->assertSame( 'uk', (string) law_event_meta( $event_id, '_law_fee_tier' ) );
+		$this->assertSame( '', (string) law_event_meta( $event_id, '_law_fee_override' ) );
+		$this->assertSame( 'in_production_real', (string) law_event_meta( $event_id, '_law_stripe_invoice_id' ) );
+		$this->assertSame( '2026-08-01', (string) law_event_meta( $event_id, '_law_approved_at' ) );
+		$this->assertSame( 'Production Billing Ltd', (string) law_event_meta( $event_id, '_law_invoice_name' ) );
+
+		// The descriptive half did travel, or the run would have been a no-op.
+		$this->assertSame( 'Retitled on staging', (string) get_post_field( 'post_title', $event_id ) );
+		$this->assertSame( 'Staging venue', (string) law_event_meta( $event_id, '_law_venue' ) );
+	}
+
+	public function test_places_available_are_not_lowered_under_people_who_have_booked(): void {
+		// Capacity is a booking decision once anybody is seated: lowering it
+		// oversubscribes the event against its own record, and raising it should
+		// offer the new seats to the waitlist, which an import cannot do.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90251, '_law_tickets_available' => 60 ), 'publish' );
+		$booking  = law_booking_insert( $event_id, $this->make_user(), 'publish', array( 'name' => 'Seated', 'email' => 'seated-ct@example.test' ) );
+		$this->posts[] = $booking;
+		law_event_recount_attendees( $event_id );
+		$this->assertSame( 1, law_event_attendee_total( $event_id ), 'The fixture really seats somebody.' );
+
+		$rows = law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90251, 'meta' => array( '_law_tickets_available' => 5 ) ) ),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( 60, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
+		$this->assertNotEmpty( preg_grep( '/Places available left at 60/', $rows[0]['changes'] ) );
+	}
+
+	public function test_places_available_travel_on_an_event_nobody_has_booked(): void {
+		// The other half: before bookings open the number is ordinary event data,
+		// which is what the client is editing on staging.
+		$event_id = $this->make_event( array( '_law_gf_entry_id' => 90252, '_law_tickets_available' => 60 ) );
+
+		law_content_transfer_run(
+			$this->bundle(
+				array(
+					'events' => array(
+						$this->event_row( array( 'gf_entry_id' => 90252, 'meta' => array( '_law_tickets_available' => 120 ) ) ),
+					),
+				)
+			),
+			false,
+			0
+		);
+
+		$this->assertSame( 120, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
 	}
 
 	public function test_a_speaker_and_an_agenda_cross_with_the_event(): void {
