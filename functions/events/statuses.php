@@ -297,9 +297,42 @@ function law_event_is_publicly_listed( $event ) {
 	if ( ! $post || LAW_EVENT_CPT !== $post->post_type ) {
 		return false;
 	}
+	// The committee's off switch outranks the status, which is the whole point
+	// of it: a disabled event is hidden "no matter what" (Denis, 17 September
+	// 2026). Answered HERE rather than at each surface so that everything
+	// already keyed on this predicate -- the programme card's link, the .ics
+	// feed, the {event_link} tag, the forced-open booking answer -- is covered
+	// by the one tick.
+	if ( law_event_is_disabled( $post ) ) {
+		return false;
+	}
 	$statuses = law_event_statuses();
 	return 'publish' === $post->post_status
 		|| ! empty( $statuses[ $post->post_status ]['public'] );
+}
+
+/**
+ * Has the committee switched this event off altogether?
+ *
+ * The one checkbox at the top of the Committee controls panel (Denis,
+ * 17 September 2026). It is not a status and not a booking answer: the event
+ * keeps the status it had, keeps its invoice, its bookings and its rows in the
+ * committee's own lists, and unticking the box puts it back exactly where it
+ * was. What it does is take the event off every PUBLIC surface -- the
+ * programme, its own page, the .ics feed -- and hold booking shut, whatever
+ * the status, the slot or Override booking availability say.
+ *
+ * Cancelled remains the status for an event that is not happening; this is for
+ * one that must not be seen yet, or at all, while the record stays intact.
+ *
+ * @param int|WP_Post $event Event ID or post.
+ */
+function law_event_is_disabled( $event ) {
+	$post = get_post( $event );
+	if ( ! $post || LAW_EVENT_CPT !== $post->post_type ) {
+		return false;
+	}
+	return (bool) law_event_meta( $post->ID, '_law_disabled' );
 }
 
 /**
