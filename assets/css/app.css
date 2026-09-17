@@ -724,14 +724,14 @@ nav#new-nav .menu {
     padding: 0;
     text-align: center;
     line-height: unset;
-    margin-left: 10px;
+    margin-left: 1rem;
 
 }
 
 .nav div.main_list ul li a{
     text-decoration: none;
     color: white;
-    font-size: .9rem;
+    font-size: 1rem;
     font-family: poppins, sans-serif;
     font-weight: 600;
     font-style: normal;
@@ -833,8 +833,20 @@ nav.affix .logo {
     text-underline-offset: 4px;
 }
 
+/* The caret follows the white labels over a photo or a transparent bar.
+   Once .affix paints the navy bar, cyan is the colour that still reads
+   against #292459 (homepage after scroll, and every other page the same). */
 .dropdown.menu>li.is-dropdown-submenu-parent>a::after {
+    border-color: currentColor transparent transparent;
+}
+
+.nav.affix .dropdown.menu>li.is-dropdown-submenu-parent>a::after {
     border-color: #0eaedd transparent transparent;
+}
+
+.nav.affix .dropdown.menu>li.is-dropdown-submenu-parent>a:hover::after,
+.nav.affix .dropdown.menu>li.is-dropdown-submenu-parent>a:focus::after {
+    border-color: currentColor transparent transparent;
 }
 
 .nav div.main_list ul li a img {
@@ -875,11 +887,11 @@ nav.affix .logo {
     }
 
     .nav div.main_list ul li {
-        margin-left: 0;
+        margin-left: 0.55rem;
     }
 
     .nav div.main_list ul li a {
-        font-size: .8rem;
+        font-size: .9rem;
        
     }
 }
