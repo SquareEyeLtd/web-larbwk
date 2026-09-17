@@ -74,6 +74,9 @@ function law_rich_text_sanitize( $value ) {
 	if ( ! is_scalar( $value ) ) {
 		return '';
 	}
+	// Non-breaking spaces become ordinary ones before anything else looks at
+	// the value. See law_rich_text_normalise_spaces() for why.
+	$value = law_rich_text_normalise_spaces( (string) $value );
 	// Script and style BLOCKS, not just their tags: wp_kses() removes the tag
 	// and leaves the code behind as visible text, so "<script>alert(1)</script>"
 	// would print as "alert(1)" in the middle of a description.
@@ -86,6 +89,49 @@ function law_rich_text_sanitize( $value ) {
 		return '';
 	}
 	return trim( $value );
+}
+
+/**
+ * Turn every non-breaking space into an ordinary one.
+ *
+ * A host who pastes from Word, Google Docs or a PDF brings the source's spaces
+ * with them, and those applications emit U+00A0 where a reader sees a space.
+ * A browser will not break a line at one, so a sentence whose spaces are all
+ * non-breaking is a single unbreakable word: it runs straight out of the
+ * reading column instead of wrapping. That is exactly what happened to the
+ * event "Hot Topics in Energy and Mining Arbitration" (Denis, 17 September
+ * 2026), whose second paragraph arrived with twenty-one of them and printed
+ * off the right-hand edge of the page.
+ *
+ * Every one of them goes, not just the runs. The deliberate use -- holding
+ * "10 am" or an initial to its surname across a line break -- is real
+ * typography, but no LAW description has ever wanted it, nothing in the host
+ * form or the committee's editors offers a way to type one on purpose, and
+ * distinguishing intent from paste damage is guesswork. Losing a soft join is
+ * a smaller harm than text leaving the page.
+ *
+ * Both spellings are covered: the raw UTF-8 bytes, which is what a paste
+ * carries, and the entity, which is what TinyMCE writes back. Deliberately not
+ * in unicode mode -- the byte pair is matched as bytes, so a value that is not
+ * valid UTF-8 is still processed rather than silently returned untouched.
+ *
+ * Called from law_rich_text_sanitize(), the single write path for every rich
+ * text field, so it covers event descriptions, session descriptions, speaker
+ * biographies and the per-event email bodies alike. Content stored before this
+ * existed is swept by the panel in migration/repair-nbsp.php.
+ *
+ * @param mixed $value Raw value.
+ * @return string Value with U+00A0 replaced by a plain space.
+ */
+function law_rich_text_normalise_spaces( $value ) {
+	if ( ! is_scalar( $value ) ) {
+		return '';
+	}
+	return (string) preg_replace(
+		'/\xc2\xa0|&nbsp;|&#0*160;|&#[xX]0*a0;/i',
+		' ',
+		(string) $value
+	);
 }
 
 /**

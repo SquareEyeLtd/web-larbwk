@@ -56,6 +56,29 @@ class RichTextTest extends LAW_Test_Case {
 		$this->assertFalse( law_rich_text_is_empty( '<p>Something.</p>' ) );
 	}
 
+	public function test_a_paste_from_word_cannot_store_non_breaking_spaces(): void {
+		// The bug this guards: the event "Hot Topics in Energy and Mining
+		// Arbitration" was submitted with a paragraph whose every space was
+		// U+00A0. A browser will not break a line at one, so the sentence was a
+		// single unbreakable word and printed off the right edge of the page.
+		$pasted = "Expert\xc2\xa0speakers\xc2\xa0will\xc2\xa0deliver\xc2\xa0presentations.";
+		$this->assertSame( 'Expert speakers will deliver presentations.', law_rich_text_sanitize( $pasted ) );
+
+		// Both spellings: the raw bytes a paste carries, and the entities
+		// TinyMCE writes back, in decimal and in hexadecimal.
+		$this->assertSame( 'A B', law_rich_text_sanitize( 'A&nbsp;B' ) );
+		$this->assertSame( 'A B', law_rich_text_sanitize( 'A&#160;B' ) );
+		$this->assertSame( 'A B', law_rich_text_sanitize( 'A&#xA0;B' ) );
+		$this->assertSame( 'A B', law_rich_text_sanitize( "A\xc2\xa0B" ) );
+
+		// Only the spaces change. Markup survives, and an entity that is not a
+		// non-breaking space is left exactly as it was.
+		$this->assertSame(
+			'<p>Fees <strong>&amp;</strong> charges</p>',
+			law_rich_text_sanitize( "<p>Fees\xc2\xa0<strong>&amp;</strong>\xc2\xa0charges</p>" )
+		);
+	}
+
 	public function test_plain_text_keeps_the_breaks_the_markup_carried(): void {
 		// The bug this guards: wp_strip_all_tags() alone runs a list together
 		// into one word, and the excerpt, the .ics feed and the notification

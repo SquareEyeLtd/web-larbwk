@@ -1989,8 +1989,15 @@
   color: #292459;
 }
 
+/* overflow-wrap is the backstop, not the fix. Rich text is normalised on save
+   (law_rich_text_normalise_spaces()) so a paste from Word cannot store a
+   sentence whose spaces are all non-breaking, which a browser treats as one
+   unbreakable word and pushes straight out of this column. Anything that slips
+   past that -- a pre-normalisation value, a pasted URL with no spaces in it --
+   breaks inside the measure here rather than off the edge of the page. */
 .law-cal-detail__body {
   max-width: 65ch;
+  overflow-wrap: break-word;
   font-size: 1rem;
   line-height: 1.5;
   color: #292459;
@@ -3101,4 +3108,33 @@
 .law-emails-form .law-rich-text .wp-editor-container iframe,
 .law-emails-form .law-rich-text .mce-tinymce iframe {
   min-height: 18rem;
+}
+
+/* The shared sign-off, under the notifications table
+   (parts/events/emails-signoff.php). Separated from the table by a rule rather
+   than by space alone: it is a different kind of control from the rows above
+   it — one setting that changes all of them — and a gap on its own reads as
+   more table. */
+.law-emails__signoff {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid rgba(26, 26, 61, 0.18);
+}
+
+.law-emails__signoff h2 {
+  margin-bottom: 0.5rem;
+}
+
+.law-emails__signoff-intro {
+  max-width: 48rem;
+  color: #4a4a6a;
+}
+
+/* Two or three lines, not the theme default's three-line minimum stretched to
+   a body field's height: this is a sign-off, and a tall box invites a letter. */
+.law-emails-signoff-form textarea {
+  max-width: 34rem;
+  min-height: 6rem;
+  font-family: inherit;
+  line-height: 1.5;
 }
