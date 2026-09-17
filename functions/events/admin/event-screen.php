@@ -196,11 +196,25 @@ function law_event_box_fee( $post ) {
 			. esc_html( $error['message'] ) . '<br><em>' . esc_html( $error['at'] ?? '' ) . '</em></p></div>';
 	}
 	if ( 'law-approved' === $post->post_status && $fee > 0 ) {
-		$retry = wp_nonce_url(
-			admin_url( 'admin-post.php?action=law_event_retry_invoice&event_id=' . (int) $post->ID ),
-			'law_event_retry_invoice'
-		);
-		echo '<p><a class="button" href="' . esc_url( $retry ) . '">' . ( $invoice_id ? 'Re-send / retry invoice' : 'Create invoice' ) . '</a></p>';
+		// A migrated event holds the hosted URL of an invoice raised before the
+		// rebuild but not its ID, so neither this screen nor the service can
+		// tell that a live invoice already exists. The button would read
+		// "Create invoice" and would raise a second one against a host who is
+		// already holding the first, so it is disabled and says why rather than
+		// hidden (the service refuses the same case, in case anyone reaches it
+		// another way).
+		if ( ! $invoice_id && $invoice_url ) {
+			echo '<p><button type="button" class="button" disabled>Create invoice</button></p>';
+			echo '<p class="description">This event was invoiced before the rebuild and only the invoice\'s web address was recorded, not its ID, '
+				. 'so a new invoice here would be the host\'s second. Run <strong>Repair: legacy Stripe invoices with no invoice ID</strong> on '
+				. '<a href="' . esc_url( admin_url( 'admin.php?page=law-migration' ) ) . '">LAW → Migration</a> first.</p>';
+		} else {
+			$retry = wp_nonce_url(
+				admin_url( 'admin-post.php?action=law_event_retry_invoice&event_id=' . (int) $post->ID ),
+				'law_event_retry_invoice'
+			);
+			echo '<p><a class="button" href="' . esc_url( $retry ) . '">' . ( $invoice_id ? 'Re-send / retry invoice' : 'Create invoice' ) . '</a></p>';
+		}
 	}
 }
 
