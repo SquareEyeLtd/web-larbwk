@@ -22,15 +22,6 @@ $law_speakers         = $law_speakers_blocked ? array() : law_speakers();
 			<div class="large-12 cell">
 				<div class="law-speakers" data-speaker-search>
 
-					<?php
-					// Committee preview: everyone else was redirected to the
-					// home page by law_speakers_archive_gate(), so say why this
-					// page is still reachable rather than let it look live.
-					if ( ! law_speakers_archive_is_public() ) :
-						?>
-						<p class="law-speakers__hidden" role="status"><?php esc_html_e( 'This archive is not public yet. Visitors are redirected to the home page until it is switched on in Events → Settings.', 'law' ); ?></p>
-					<?php endif; ?>
-
 					<?php if ( $law_speakers_blocked ) : ?>
 
 						<?php echo wp_kses_post( members_get_post_error_message( get_queried_object_id() ) ); ?>

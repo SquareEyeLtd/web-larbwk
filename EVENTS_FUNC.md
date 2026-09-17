@@ -86,15 +86,15 @@ repair-references, backfill-session-agenda).
   slots, the committee recipient emails, the Stripe `tax_rate_id` and
   `rendering_template_id`, the `speakers_archive_public` switch and the
   reserved `host_edit_review` mode.
-- `speakers_archive_public` (Denis, 17 September 2026): whether `/speakers/` is
-  a public page. **Off by default.** The archive is assembled from Confirmed
-  events as soon as they exist, which is long before LAW wants the line-up
-  announced, so the index is held back behind a checkbox on Events → Settings
-  ("Speakers archive"). While it is off, `law_speakers_archive_gate()` redirects
-  the archive to the home page and `templates/speaker.php` drops its "Back to
-  speakers" link. It hides the **index**, not the people: a single profile stays
-  reachable throughout, because every event page links straight to one. See
-  `speakers.php` below for the gate itself.
+- `speakers_archive_public` (Denis, 17 September 2026): whether the Speakers
+  archive has been announced. **Off by default.** The archive is assembled from
+  Confirmed events as soon as they exist, which is long before LAW wants the
+  line-up announced, so the checkbox on Events → Settings ("Speakers archive")
+  decides whether a speaker profile carries its "Back to speakers" link. That is
+  all it does. **Nothing is hidden or redirected**: the archive page and every
+  single profile stay reachable whichever way it is set. The first build of this
+  also sent `/speakers/` to the home page; Denis dropped that the same day, so
+  the setting is about the link only. See `speakers.php` below.
 - `law_events_slots()`: the canonical slot list (label → date/start/end),
   retired slots excluded unless asked for. **Retired** means "no longer offered
   to hosts": the slot keeps its row in the settings textarea (fifth column, the
@@ -1587,21 +1587,16 @@ then follows the link that appears and writes that event's confirmation.
 
 - **The archive switch** (Denis, 17 September 2026).
   `law_speakers_archive_is_public()` reads the `speakers_archive_public`
-  setting (default off, see `settings.php` above);
-  `law_speakers_archive_should_redirect()` is the decision and
-  `law_speakers_archive_gate()`, on `template_redirect` at priority 5, acts on
-  it. The two are separate so the rule can be asserted without a
-  redirect-and-exit (`tests/SpeakersArchiveVisibilityTest.php`). Three things
-  are deliberate. The gate is scoped to the **archive view** of the Speakers
-  page — a single profile lands on the same page with `law_speaker` set, and in
-  CPT mode on its own permalink, and must keep resolving, since the event pages
-  link to it. **Committee-level users are let through** so they can check the
-  archive before announcing it, and `templates/speakers.php` prints a one-line
-  notice (`.law-speakers__hidden`, styled in `assets/css/speakers.css` for the
-  light page rather than borrowed from the dark-surface `.law-form-notice`) so
-  the preview does not read as live. And the redirect is a **302, never a
-  301**: this is a setting that gets turned on, and a permanent redirect would
-  outlive it in visitors' browser caches.
+  setting (default off, see `settings.php` above) and
+  `templates/speaker.php` renders its "Back to speakers" link only when it is
+  true. There is **no gate and no redirect**: the Speakers page serves normally
+  whatever the setting says, and so does every single profile, which is right
+  because every event page links straight to one. A first build did redirect the
+  archive to the home page for everyone but the committee; Denis removed that
+  within the day, and `tests/SpeakersArchiveVisibilityTest.php` asserts the
+  redirect has not crept back (no `law_speakers_archive_gate()`, no
+  `wp_safe_redirect` anywhere in `speakers.php`) rather than leaving that to
+  memory.
 - `law_speakers_archive_url()`: the archive URL, resolved from the page holding
   `templates/speakers.php` (falling back to `/speakers/`). Shared by the
   settings screen's description and the profile's back link, which had the
