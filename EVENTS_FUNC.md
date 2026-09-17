@@ -626,24 +626,51 @@ accepted.
 - `law_event_snapshot_fee()`: freezes `_law_fee_pence` and `_law_vat` onto the
   event at approval (the number the invoice is raised for; never host-writable
   afterwards).
-- `law_event_fee_override_locked()` (9 September 2026): true once
-  `_law_approved_at` is set, i.e. once the fee has been snapshotted and the
-  invoice raised from that snapshot. Nothing recalculated the fee afterwards,
-  so the committee dashboard's override control used to accept a
-  post-approval change, report success and leave the snapshot, the invoice and
-  the `{fee}` emails on the old figure. The control now renders read-only from
-  approval onwards (with the current override stated) and
-  `law_committee_action_handler()` refuses and logs the write, so wp-admin is
-  the single post-approval fee route.
-- `law_event_resnapshot_fee()` (9 September 2026): re-freezes the snapshot
-  after a wp-admin fee edit on an approved event, logged as
-  `fee_resnapshot`, so that route actually works. It returns a `WP_Error`
-  (`law_fee_settled`) when the payment status is already `paid` or `refunded`:
-  a settled fee is a bookkeeping record, and rewriting the snapshot under it
-  would only make the webhook's `invoice.paid` reconciliation lie. Stripe is
-  never touched automatically; the screen tells the admin to void the open
-  invoice and raise a new one.
+- `law_event_fee_settled()`: true once the payment status is `paid` or
+  `refunded`. The money has moved, so the snapshot is a bookkeeping record and
+  the webhook's `invoice.paid` reconciliation is argued from it.
+- `law_event_fee_edit_mode()` (17 September 2026, replacing
+  `law_event_fee_override_locked()`): the ONE answer to "what does the host fee
+  override do on this event right now", read by the committee dashboard panel,
+  the wp-admin fee box and both save handlers, so a control and the handler
+  behind it can never disagree. Three answers:
+  - `open` — before approval. Nothing is snapshotted and no invoice exists, so
+    the override is an ordinary field.
+  - `reissue` — `law-approved` or `publish`, and not settled. The fee WAS
+    snapshotted at approval and an invoice raised from it, so a change goes
+    through `law_event_apply_fee_change()` rather than being a field write.
+  - `locked` — settled (`paid` / `refunded`), or the event is no longer live
+    (cancelled, rejected). Nothing to reissue and nothing to change.
+
+  It reads the STATUS, not the `_law_approved_at` timestamp its predecessor
+  read: field 78 (Approval date) on form 2 (Event > submit an event) is empty
+  on every production entry, so the lock was off across the whole migrated
+  programme (audit, 16 September 2026).
+- `law_event_resnapshot_fee()` (9 September 2026): re-freezes the snapshot on
+  an approved event, logged as `fee_resnapshot`. It returns a `WP_Error`
+  (`law_fee_settled`) when the payment status is already `paid` or `refunded`.
+  It re-freezes the NUMBER and nothing else; voiding and reissuing are
+  `law_event_apply_fee_change()`'s job, and that is now its only caller on a
+  live event.
 - `law_events_format_pence()`: "£1,200.00" formatting.
+
+`law_event_apply_fee_change()` (`stripe/service.php`, 17 September 2026) is
+the post-approval fee change itself, shared by the committee dashboard panel
+and the wp-admin fee box so the two screens do the same thing. It voids the
+invoice raised from the old snapshot, re-freezes the snapshot, and raises and
+sends a replacement invoice, then emails the host `user_payment_due` with
+`{fee_change_note}` naming the invoice that was cancelled. **Void first, create
+second**: the other order leaves the host holding two payable invoices for the
+same event, permanently if the second call fails, whereas voiding first can
+only ever leave them holding none — a visible state (Unpaid, no invoice URL)
+that the existing "Retry invoice" button recovers. It refuses, writing nothing,
+when the mode is not `reissue`, when the event holds a pre-rebuild invoice
+recorded as a web address only (no ID to void it by; LAW → Migration has the
+repair), and when the void itself fails. A fee changed to **zero** raises
+nothing: the event goes Free, and an Approved event is confirmed in the same
+breath, exactly as approving it at zero would have done. A fee put back onto a
+Free event takes the payment status out of Free, or the dashboard and the
+exports would read Free against a live invoice.
 
 **The override is the HOST fee**, what a host firm pays LAW to hold an event,
 never an attendee price: attendee places are free and un-ticketed
@@ -2330,6 +2357,19 @@ resolve-or-create, the log, the email registry and the `.ics` generator.
   is still settling (`law_flagship_payment_in_flight`), since voiding an
   invoice under a live payment would leave money moving with nothing to book
   it against.
+- `law_flagship_cancel_confirmed()` is the other end of the same decision
+  (17 September 2026, FLAGSHIP_PAYMENTS.md §4.6): the committee releasing a
+  place that IS confirmed, for a delegate who has paid and then dropped out.
+  Deliberately narrow and deliberately silent (Denis, 17 September 2026): it
+  moves the booking to `law-cancelled` under the event lock, releases the
+  discount claim by the usual rule, recounts, takes back any included reception
+  places and logs what was paid. **No Stripe call and no email to the delegate**
+  — the refund and the conversation are the committee's by hand, which the
+  confirm dialog on the row says before it is pressed. It refuses anything that
+  is not `publish` (`law_flagship_not_confirmed`) and points at Decline, which is
+  the path that clears the saved card and voids the invoice. Without it a paid
+  delegate who pulled out held a place nobody could release, and a Stripe refund
+  does not free one: `law_flagship_mark_refunded()` says so in the log.
 - `law_flagship_add_complimentary()` is the committee's "add without payment"
   for speakers, press, sponsors and VIPs: straight to `publish`, no payment
   method, no invoice, marked `_law_is_complimentary` so counts and exports can
@@ -2355,8 +2395,9 @@ resolve-or-create, the log, the email registry and the `.ics` generator.
 - Handlers, all on `law_events_guard_post()`: `law_flagship_apply`,
   `law_flagship_update_card`, `law_flagship_withdraw` (the delegate's own),
   and `law_flagship_review`, `law_flagship_retry_charge`,
-  `law_flagship_resend_payment`, `law_flagship_add_attendee` (committee only,
-  on their own `flagship_review` rate surface). The return from Stripe is a
+  `law_flagship_resend_payment`, `law_flagship_add_attendee`,
+  `law_flagship_cancel` (committee only, on their own `flagship_review` rate
+  surface). The return from Stripe is a
   `template_redirect`, not an admin-post: Stripe composes that GET itself and
   carries no nonce of ours, which is safe because the session is looked up in
   Stripe and refused unless its metadata names that booking.
@@ -2382,9 +2423,12 @@ and two sets of actions that do not apply to each other.
   the Stripe invoice link (spec §7.5). Filters: keyword, status, payment
   state, attendee type (complimentary places) and, since 15 September 2026,
   ticket type. There is no country filter: it was removed outright rather than
-  left reachable by URL only. Per-row Approve and Decline, the two failed-payment
-  actions, select-all bulk decisions, and the "add without payment" dialog,
-  opened from the actions row above the table.
+  left reachable by URL only. Per-row Approve and Decline, per-row Cancel on a
+  confirmed place (`law_flagship_cancel_confirmed()`, above), the two
+  failed-payment actions, select-all bulk decisions, and the "add without
+  payment" dialog, opened from the actions row above the table. Cancel has no
+  bulk form on purpose: every one of them is a refund and a conversation the
+  committee then has to have with a named person.
 - **Ticket type** (Denis, 15 September 2026, from the client: "Back end use
   only — Delegate, Sponsor, Speaker, Exhibitor, Committee"). A column whose
   cell is one inline control: "Add type" with a pencil until somebody
@@ -3208,7 +3252,22 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   home for the four cases so every "Edit" affordance the committee sees lands
   on a front-end screen rather than `post.php`; `law_calendar_edit_link()` on
   the programme and the `{edit_link}` email placeholder both go through it
-  (Denis, 15 September 2026).
+  (Denis, 15 September 2026). **Every affordance on a row means every
+  affordance**, which took a second pass on 17 September 2026: the event
+  table's Edit button routed a reception to Manage receptions while the row's
+  TITLE still linked to `?event=<id>`, so clicking a reception's name landed on
+  the generic detail view — the one screen a reception is never edited on. The
+  table now resolves ONE url per row (`$law_row_review_url`, computed at the
+  top of the loop in `parts/events/dashboard-list.php`) and the title and the
+  button both print it, and `law_slotchart_item()` routes its bar the same way.
+  The flagship was fixed with it: it reaches both surfaces through the
+  timeline's unscheduled section, which asks for it explicitly, and
+  `law_committee_requested_event()` refuses `?event=<flagship id>`, so that row
+  and that bar were linking to a refusal. Both cases drop the filters
+  `$law_link_base` / `law_slotchart_url()` carry, which they have to: neither
+  Manage receptions nor the flagship dashboard reads them.
+  `ReceptionsDashboardTest::test_the_event_list_sends_a_receptions_name_and_button_to_the_same_screen()`
+  pins the pair together.
 - `law_committee_maybe_render_partial()` (on `template_redirect`): the
   dashboard URL with `&law_partial=1` returns just the event-list markup
   (`parts/events/dashboard-list.php`) so the filter bar can swap it in place
@@ -3223,11 +3282,19 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   switches (`law_flags_present`), linked
   organisations and private notes. **The host fee override is validated before
   any write** (9 September 2026): a ticked box with an empty amount is refused
-  rather than read as £0.00, and a change is refused outright once
-  `law_event_fee_override_locked()` is true (only reachable from a hand-made
-  request, since the control renders read-only then) and logged as a refusal.
-  Because the check runs first, a refusal leaves the event untouched and the
-  workflow action further down never runs.
+  rather than read as £0.00. The CHANGE is judged, not the event, so re-posting
+  the stored values with the rest of the panel is never a fee change. A changed
+  fee is refused outright when `law_event_fee_edit_mode()` is `locked` (only
+  reachable from a hand-made request, since the control renders read-only then)
+  and logged as a refusal; when it is `reissue` the write is followed by
+  `law_event_apply_fee_change()`, which voids the open invoice and raises a
+  replacement, and the page reports `fee-reissued` or `fee-waived`. A changed
+  fee in `reissue` mode is also refused when a workflow ACTION was submitted in
+  the same POST (17 September 2026): the two actions an approved event still
+  offers are Mark paid & confirm, which would settle the invoice the change is
+  about to void, and Cancel, which voids it anyway. Because every check runs
+  first, a refusal leaves the event untouched and the workflow action further
+  down never runs.
   `law_committee_refuse()` is the shared refusal tail all three of the
   handler's dead ends use: JSON for the modal callers, transient +
   `law_committee_take_error()` for a plain submit.
@@ -3775,18 +3842,25 @@ they stay the same length.
   reused" and "adopted" outcomes are written to the activity log.
 - `law_stripe_maybe_attach_vat_number()`, `law_stripe_record_failure()`, and
   `law_event_handle_retry_invoice()` (a committee "retry invoice" admin-post,
-  refused unless the event is Approved and still unpaid — which also keeps a
-  cancelled event out of the invoice path).
-- `law_stripe_void_invoice( $event_id, $actor )`: called by the cancel side
-  effects to stop a live invoice — a `draft` is deleted (the same rule the
-  resume path applies), an `open`/`uncollectible` invoice is voided (with an
-  idempotency key), a `paid` one is left strictly alone (refunds are a manual
-  committee decision; the cancel side effects send the alert), and `void`
-  logs "already void". **Never fatal**: every failure is logged
-  (`invoice_void_failed`) and alerted to admins + committee via
-  `admin_stripe_error` with a "void it manually" message, and the
-  cancellation completes regardless. The invoice ID/URL meta is kept for the
-  audit trail.
+  refused unless the event is Approved **or Confirmed** and still unpaid —
+  which also keeps a cancelled event out of the invoice path). Confirmed joined
+  Approved on 17 September 2026: the `unpaid` test is what stops a settled
+  event getting a fresh "payment due" email, and a post-approval fee change can
+  leave a Confirmed event unpaid with its old invoice voided and the
+  replacement not raised, which is exactly the state this button recovers.
+- `law_stripe_void_invoice( $event_id, $actor, $context )`: stops a live
+  invoice — a `draft` is deleted (the same rule the resume path applies), an
+  `open`/`uncollectible` invoice is voided (with an idempotency key), a `paid`
+  one is left strictly alone (refunds are a manual committee decision; the
+  cancel side effects send the alert), and `void` logs "already void".
+  **Never fatal**: every failure is logged (`invoice_void_failed`) and alerted
+  to admins + committee via `admin_stripe_error` with a "void it manually"
+  message, and the caller completes regardless. The invoice ID/URL meta is kept
+  for the audit trail. Two callers: the cancel side effects
+  (`$context = 'cancellation'`) and `law_event_apply_fee_change()`
+  (`'fee_change'`). The context changes the WORDING only — a log line reading
+  "voided after cancellation" on an event that was never cancelled is worse
+  than no log line, because somebody will believe it.
 - **`attendees.php`** (10 September 2026) — attendee payments, as opposed to
   the host fees the two files above bill. Three things are shaped differently
   here: the customer belongs to a **user** rather than to an event, the card
@@ -3929,12 +4003,25 @@ they stay the same length.
   The fee override flag and its amount are written **as a pair, and only when
   the fee box was on the form** (9 September 2026): the blank-means-£0.00 trap
   is refused with a notice, and a fee box hidden by Screen Options can no
-  longer clear the override flag by omission. When the fee inputs change on an
-  already-approved event the save calls `law_event_resnapshot_fee()` and
-  reports the new snapshot plus the void-and-reissue step, so this screen is a
-  working post-approval fee route rather than a form whose values nothing
-  reads. `law_event_admin_notice()` queues these one-shot notices instead of
+  longer clear the override flag by omission. When the fee inputs change the
+  save asks `law_event_fee_edit_mode()`: on `reissue` it calls
+  `law_event_apply_fee_change()`, the same orchestrator the committee dashboard
+  calls, so this screen voids and reissues rather than telling the admin to
+  finish the job by hand in Stripe (17 September 2026); on `locked` it puts the
+  tier, the flag and the amount back as they were, logs the refusal and says
+  why, because the inputs are left enabled (`law_field_checkbox()` takes no
+  attributes, and a disabled input posts nothing, which this handler would read
+  as "not on the form" rather than as "unticked").
+  `law_event_admin_notice()` queues these one-shot notices instead of
   overwriting, since one Update can have two things to say.
+  A **pre-existing bug** was found here while making that change and fixed:
+  `$before_override` held the fee override and was then overwritten by
+  `law_event_booking_override()` four lines later, so both readers of the fee
+  value ran on the booking override's string. Compared strictly against an int,
+  "have the fee inputs changed?" answered yes on every single Update and
+  `law_event_log_fee_change()` wrote a spurious "override enabled" line each
+  time. Cosmetic until that reader started voiding Stripe invoices. The booking
+  one is now `$before_booking_override`.
   `law_events_rows_from_post()` reads the repeater rows, sanitising per key
   rather than mapping one function over the row: a speaker's `bio` takes
   `sanitize_textarea_field()`, since `sanitize_text_field()` would collapse its
@@ -8679,6 +8766,167 @@ passed, and the names carrying whatever day the screen is set to.
 Touched: `functions/events/notifications.php`, `functions/events/flagship.php`,
 `functions/events/flagship-bookings.php`, `tests/FlagshipPaymentsTest.php`,
 `FLAGSHIP_PAYMENTS.md`.
+
+### The host fee can change after approval, and the invoice follows it (17 September 2026)
+
+The committee asked to keep the host fee override after an event is approved,
+with a warning box saying the previous invoice will be voided (Denis,
+17 September 2026). Until now the control went read-only at approval and the
+panel told them to finish the job by hand: use wp-admin, then void the open
+invoice in Stripe and raise a new one there.
+
+The read-only lock was the right answer to the wrong question. It was added on
+9 September 2026 because a post-approval change reached neither the snapshot
+nor the invoice, so the control reported a success that changed nothing that
+mattered. Hiding the control fixed the lie but left the committee with a
+three-step manual job across two systems for something as ordinary as agreeing
+a discount. The answer is to make the change land everywhere the old figure
+went.
+
+**What a changed fee now does**, in `law_event_apply_fee_change()`
+(`stripe/service.php`), shared by the committee dashboard panel and the
+wp-admin fee box so the two screens cannot behave differently:
+
+1. Void the Stripe invoice raised from the old snapshot, so it can no longer be
+   paid.
+2. Re-freeze the snapshot (`law_event_resnapshot_fee()`), which is what the
+   exports, the admin Fee column and the `{fee}` merge tag read.
+3. Raise and send a new invoice for the new amount, and email the host
+   `user_payment_due`.
+
+**Void first, create second.** The other order leaves the host holding two
+payable invoices for the same event for as long as the second call takes, and
+permanently if it fails. Voiding first can only ever leave them holding none,
+which is a state the committee can see (Unpaid, no invoice URL) and fix with
+the "Retry invoice" button that already exists.
+
+**Zero is not a payment step.** A fee changed to zero raises nothing: the event
+goes Free, and an Approved event is confirmed in the same breath, exactly as
+approving it at zero would have done. Putting a fee back onto a Free event
+takes the payment status out of Free, or the dashboard and the exports would
+read Free against a live invoice.
+
+**Where it refuses, writing nothing.** When the fee is settled (`paid` /
+`refunded`) or the event is no longer live — settle the difference in Stripe
+with a credit note or a refund instead. When the event holds a pre-rebuild
+invoice recorded as a web address only, with no ID to void it by (LAW →
+Migration has the repair, and the same guard already stops a second invoice
+being created there). When the void itself fails, because the old invoice is
+then still payable and a second one must not join it. And, on the committee
+dashboard only, when a workflow ACTION was submitted in the same POST: the two
+actions an approved event still offers are Mark paid & confirm, which would
+settle the invoice the change is about to void, and Cancel, which voids it
+anyway.
+
+**The three answers replaced the boolean lock.** `law_event_fee_edit_mode()`
+returns `open` / `reissue` / `locked` and is read by the panel, the wp-admin
+fee box and both save handlers, so the control somebody sees and the write the
+handler accepts can never disagree. `law_event_fee_override_locked()` is gone.
+
+**The warning box** is `.law-form-notice.is-warning` on the committee panel,
+rendered ABOVE the control rather than under it, because it changes what the
+control does and so has to be read first. It names the amount of the invoice
+that will be voided, and says what setting the fee to 0 does instead. wp-admin
+carries the same two sentences as a `notice notice-warning inline` above the
+fee fields.
+
+**One email, not two.** The host gets the existing `user_payment_due`, with a
+new `{fee_change_note}` placeholder filled in with "This replaces the earlier
+invoice for £1,200.00, which has been cancelled and can no longer be paid." It
+is empty on an ordinary approval. A body EDITED on the Emails screen beats the
+registry default, and migration step 9 imported the Gravity Forms notifications
+as stored overrides, so `law_setup_add_fee_change_note_to_payment_due()`
+appends the tag to a stored body that lacks it, from both the
+`?setup-account-pages` trigger and migration step 10 — a git push alone has to
+be enough.
+
+**A pre-existing bug fixed on the way.** In `law_event_admin_save()`,
+`$before_override` held the fee override and was then overwritten by
+`law_event_booking_override()` four lines later, so both readers of the fee
+value ran on the booking override's string. Compared strictly against an int,
+"have the fee inputs changed?" answered yes on every single Update, and
+`law_event_log_fee_change()` wrote a spurious "override enabled" line each
+time. Cosmetic until that same reader started voiding Stripe invoices. The
+booking one is now `$before_booking_override`.
+
+**Also widened**: `law_event_handle_retry_invoice()` accepted only Approved and
+unpaid. A fee change can leave a **Confirmed** event unpaid with its old
+invoice voided and the replacement not raised, which is precisely what the
+retry button is for, and the `unpaid` test is what keeps a settled event from
+getting a fresh "payment due" email. Confirmed now qualifies too.
+
+**Two defects the live end-to-end run found, both fixed.**
+
+1. *The host was never told the new amount.* The note first read only "This
+   replaces the earlier invoice for £1,200.00, which has been cancelled". That
+   is enough against the registry default, which quotes `{fee}` — but the body
+   actually stored on the Emails screen **names no amount at all**, linking
+   only to the Stripe invoice. So on the real site the host would have learned
+   that an invoice had died and nothing about what replaced it. The note now
+   leads with the new figure: "Important: the fee for this event has changed to
+   £600.00. This replaces the earlier invoice for £1,200.00, which has been
+   cancelled and can no longer be paid." It also cannot rely on its position,
+   because the provisioning helper appends the tag to the END of a stored body
+   rather than guessing a place inside somebody else's wording, so it has to
+   read as a warning wherever it lands. **The committee may want to move
+   `{fee_change_note}` higher up that body on the Emails screen**; it currently
+   sits below their sign-off.
+2. *The committee's "payment received" email quoted the wrong fee.* The
+   `{event_summary}` block named the fee TIER and nothing else, and a tier
+   label carries a price in its own words ("UK hosts: £1200 + VAT"). On the run
+   above, an event whose fee had been changed to £600 and which had just paid
+   £720 told the committee "Fee tier: UK hosts: £1200 + VAT" and no other
+   figure. The summary now carries a `Fee:` row with the snapshot beside the
+   tier row, added rather than replacing it because which tier an event sits in
+   is a separate fact the committee reads for. The row is omitted before
+   approval, where the snapshot is 0 for everyone and "Fee: £0.00" on a
+   submission acknowledgement would be a promise nobody made. This affects
+   **every** email carrying `{event_summary}`, not only the fee-change path.
+
+**Verified live** (17 September 2026), not only in the unit suite: real Stripe
+test-mode objects, the real webhook over `stripe listen` forwarding to
+`/wp-json/law/v1/stripe-webhook`, and real mail into Mailpit. Two runs, 33/33
+and 21/21 assertions after the two fixes above:
+
+- *Paid path.* Approve → invoice #1 open at Stripe for £1,440.00 → fee changed
+  to £600 → #1 `void` with a `voided_at` and #2 open for £720.00 → host gets
+  one "payment due" email naming both figures and linking to #2 → pay #2 →
+  `invoice.paid` webhook → Paid, Confirmed, published, fee override `locked`,
+  **no amount mismatch** (the £720 reconciles against the re-frozen £600 + VAT
+  snapshot, which is the whole reason step 2 re-freezes it) → host gets the
+  paid confirmation, committee gets "payment received" → a further fee change
+  is refused.
+- *Waiver path.* Approve at the international tier → invoice open for £600 →
+  fee waived to 0 → invoice `void`, **no replacement raised, no "payment due"
+  email**, event Free and Confirmed in the same breath, host gets the *no fee*
+  confirmation template and the committee gets no "payment received".
+- Five webhook deliveries, all `200`. `invoice.voided` only logs, so the now
+  routine fee-change void leaves the payment status and the event status
+  alone — checked explicitly, since before this change a void only ever
+  followed a cancellation.
+
+One thing the run pinned that is worth knowing: **Stripe leaves
+`amount_remaining` at the full original amount on a voided invoice** (144000 on
+the £1,440 invoice). `status` and `status_transitions.voided_at` are what make
+it unpayable, so never assert a void by reading the amount fields.
+
+**Tests.** Seven in `tests/ServiceTest.php` (void-then-reissue with the order
+asserted, the waiver confirming a Free event, a failed void abandoning the
+change with the snapshot untouched, a settled fee refused with Stripe never
+called, an unchanged figure touching nothing, the legacy-invoice refusal, and a
+Free event given a fee again), the edit-mode matrix rewritten in
+`tests/FeesTest.php`, and five in `tests/EmailsDashboardTest.php` (two for the
+stored-override repair, three for the `Fee:` row appearing after approval,
+being omitted before it, and stating a waiver as £0.00 with no VAT). 1046 tests
+in the suite.
+
+Touched: `functions/events/fees.php`, `functions/events/stripe/service.php`,
+`functions/events/committee.php`, `functions/events/admin/event-screen.php`,
+`functions/events/notifications.php`, `functions/events/statuses.php`,
+`functions/setup-account-pages.php`, `functions/events/migration/runner.php`,
+`templates/account-dashboard.php`, `tests/ServiceTest.php`,
+`tests/FeesTest.php`, `tests/WorkflowTest.php`,
+`tests/EmailsDashboardTest.php`.
 
 ---
 

@@ -1,7 +1,7 @@
 # Memory index
 
 - [Environment URL](environment_url.md) — law.localhost is stale (dir index only); real local site is at http://localhost/law/
-- [Test accounts](test-accounts.md) — claude-test-admin/host/committee creds incl. genuine events_committee account; wp-cli phar path and gotchas
+- [Test accounts](test-accounts.md) — claude-test-* accounts gone as of 2026-09-17, replaced by law-e2e-committee/host + admin; wp-cli phar path and gotchas
 - [KNOWN ISSUE (FIXED): admin-post.php blocked non-admins](known-issue-admin-post-blocks-non-admins.md) — was: every custom form silently failed for event_host/events_committee; confirmed fixed 2026-09-04
 - [KNOWN ISSUE: /programme/ and /speakers/ are Members-gated](known-issue-public-pages-members-gated.md) — not public despite site map; check response body not just status code
 - [UX persona pass 2026-09-04](ux-persona-pass-2026-09-04.md) — 3-persona walkthrough results: 1 BLOCKER (committee has no findable route to review queue), several FRICTION items, test artifacts left in place
@@ -24,3 +24,4 @@
 - [Receptions E2E pass 2026-09-14](receptions-e2e-pass-2026-09-14.md) — 4 real bugs: wp-admin Update wipes a reception's start/end (severe, still open), 100%-off code sends no confirmation email (still open), discount-code error message invisible in modal (still open), white-on-white receptions dashboard (fixed live mid-session by concurrent commits)
 - [External events E2E pass 2026-09-15](external-events-e2e-pass-2026-09-15.md) — 4 real bugs: client-side validation gates server-side one (partial errors only), no success notice on save/publish, disabled "opening soon" card button is wrong colour, Preview is a dead link for a draft external event; rest passes
 - [Inline validation contrast pass 2026-09-15](inline-validation-contrast-pass-2026-09-15.md) — `.law-form-error` fix confirmed working on every surface tested; found related NOT-fixed gap: `.law-form-notice.is-error` lacks a `.law-modal` light override (still white-on-white bare in a modal, code-verified)
+- [Email override reception E2E pass 2026-09-17](email-override-reception-e2e-pass-2026-09-17.md) — all 9 steps of the per-event confirmation override brief passed (free branch proved live via Mailpit), no bugs found; test accounts rotated, see updated test-accounts.md

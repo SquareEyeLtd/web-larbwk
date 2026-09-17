@@ -77,6 +77,20 @@ class EmailOverrideTest extends LAW_Test_Case {
 		}
 	}
 
+	/** A published, priced reception: the kind with two confirmation bodies. */
+	private function make_bookable_reception( array $meta = array() ): int {
+		return $this->make_bookable_event(
+			array_merge(
+				array(
+					'_law_is_reception'         => 1,
+					'_law_attendee_price_pence' => 4500,
+					'_law_registration_state'   => 'open',
+				),
+				$meta
+			)
+		);
+	}
+
 	private function mail_to( string $email ): array {
 		return array_values( array_filter( $this->mail, fn( $m ) => in_array( $email, (array) $m['to'], true ) ) );
 	}
@@ -271,5 +285,113 @@ class EmailOverrideTest extends LAW_Test_Case {
 			$this->assertNotEmpty( $sent[0]['attachments'], 'The .ics invite still rides the confirmation.' );
 			$this->assertDoesNotMatchRegularExpression( '/\{[a-z_]+\}/', $sent[0]['message'] );
 		}
+	}
+
+	/**
+	 * A reception's PAID confirmation, sent for real.
+	 *
+	 * The resolution tests above pin law_events_email(); this one goes through
+	 * law_reception_maybe_send_confirmation(), which is the only thing that
+	 * actually posts a reception place's confirmation, so a send site that
+	 * forgot to pass the event would fail here and nowhere else.
+	 */
+	public function test_a_paid_reception_place_reads_the_custom_wording(): void {
+		$event = $this->make_bookable_reception();
+		$this->write_override(
+			$event,
+			'Drinks on the terrace',
+			'<p>Dear {attendee_name}, the terrace is on the fourth floor.</p>',
+			array( 'Drinks on the terrace, with our compliments', '<p>Nothing to pay, {attendee_name}. See you on the fourth floor.</p>' )
+		);
+
+		$user          = $this->make_user();
+		$email         = get_userdata( $user )->user_email;
+		$booking_id    = law_booking_insert(
+			$event,
+			$user,
+			'law-pending-payment',
+			array( 'name' => 'Jane Smith', 'email' => $email ),
+			array( '_law_price_pence' => 4500, '_law_vat' => 1 )
+		);
+		$this->posts[] = $booking_id;
+
+		$this->assertTrue(
+			law_reception_mark_paid(
+				$booking_id,
+				array(
+					'id'                 => 'in_test',
+					'object'             => 'invoice',
+					'amount_paid'        => 5400,
+					'hosted_invoice_url' => 'https://invoice.stripe.test/in_test',
+				)
+			)
+		);
+
+		$sent = $this->mail_to( $email );
+		$this->assertNotEmpty( $sent, 'The paid place was confirmed, so the delegate was written to.' );
+		$this->assertSame( 'Drinks on the terrace', $sent[0]['subject'] );
+		$this->assertStringContainsString( 'the terrace is on the fourth floor', $sent[0]['message'] );
+		$this->assertStringNotContainsString( 'with our compliments', $sent[0]['message'], 'The paid place must not read the nothing-to-pay body.' );
+		$this->assertNotEmpty( $sent[0]['attachments'], 'The .ics invite still rides the confirmation.' );
+		$this->assertDoesNotMatchRegularExpression( '/\{[a-z_]+\}/', $sent[0]['message'] );
+	}
+
+	/**
+	 * And the nothing-to-pay one reads the SECOND body.
+	 *
+	 * This is the half the split exists for: flattening the two is what put
+	 * "You paid £0.00" above an empty invoice link (16 September 2026).
+	 */
+	public function test_a_free_reception_place_reads_the_second_body(): void {
+		$event = $this->make_bookable_reception( array( '_law_attendee_price_pence' => 0, '_law_registration_state' => 'free' ) );
+		$this->write_override(
+			$event,
+			'Drinks on the terrace',
+			'<p>Dear {attendee_name}, the terrace is on the fourth floor.</p>',
+			array( 'Drinks on the terrace, with our compliments', '<p>Nothing to pay, {attendee_name}. See you on the fourth floor.</p>' )
+		);
+
+		$user          = $this->make_user();
+		$email         = get_userdata( $user )->user_email;
+		$booking_id    = law_booking_insert(
+			$event,
+			$user,
+			'law-pending-payment',
+			array( 'name' => 'Jane Smith', 'email' => $email ),
+			array( '_law_price_pence' => 0 )
+		);
+		$this->posts[] = $booking_id;
+
+		$this->assertTrue( law_reception_mark_paid( $booking_id, array() ) );
+
+		$sent = $this->mail_to( $email );
+		$this->assertNotEmpty( $sent, 'A free place is confirmed straight away, so the delegate was written to.' );
+		$this->assertSame( 'Drinks on the terrace, with our compliments', $sent[0]['subject'] );
+		$this->assertStringContainsString( 'Nothing to pay, Jane Smith', wp_strip_all_tags( $sent[0]['message'] ) );
+		$this->assertStringNotContainsString( 'fourth floor.</p>\n<p>', $sent[0]['message'] );
+		$this->assertDoesNotMatchRegularExpression( '/\{[a-z_]+\}/', $sent[0]['message'] );
+	}
+
+	/**
+	 * A reception that has NOT ticked the box is untouched by another one that
+	 * has, which is the promise the committee is making when they tick it.
+	 */
+	public function test_one_reception_overriding_leaves_the_others_alone(): void {
+		$overridden = $this->make_bookable_reception();
+		$standard   = $this->make_bookable_reception();
+		$this->write_override(
+			$overridden,
+			'Drinks on the terrace',
+			'<p>Custom.</p>',
+			array( 'Drinks on the terrace, with our compliments', '<p>Custom free.</p>' )
+		);
+
+		$shipped = law_events_email( 'user_reception_confirmed' );
+		$this->assertSame( $shipped['subject'], law_events_email( 'user_reception_confirmed', $standard )['subject'] );
+		$this->assertSame(
+			$shipped['subject'],
+			law_events_email( 'user_reception_confirmed', 0 )['subject'],
+			'And every editing screen still sees the site-wide wording.'
+		);
 	}
 }

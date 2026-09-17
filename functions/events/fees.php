@@ -81,47 +81,77 @@ function law_event_snapshot_fee( $event_id ) {
 }
 
 /**
- * Whether the host-fee override is settled and must no longer be edited on the
- * committee dashboard.
- *
- * The fee is calculated once, at approval: law_event_snapshot_fee() freezes
- * _law_fee_pence and law_stripe_create_and_send_invoice() raises the invoice
- * from that snapshot in the same breath. Nothing recalculates it afterwards,
- * so a later change to the override box would move the exports and the admin
- * Fee column while the snapshot, the invoice and the {fee} emails all kept the
- * old figure: a save that reports success and changes nothing that matters.
- * The dashboard control therefore goes read-only from approval onwards.
- * "From approval onwards" is law_event_has_been_approved(), which reads the
- * STATUS: the `_law_approved_at` timestamp this used to test is absent on
- * every migrated event, because the legacy form never filled field 78
- * (Approval date) in, and the lock was therefore off across the whole migrated
- * programme (audit, 16 September 2026).
- * wp-admin stays the deliberate escape hatch for a post-approval fee change
- * (the settled decision recorded in EVENTS_FUNC.md), because that screen can
- * re-freeze the snapshot through law_event_resnapshot_fee().
+ * Whether the fee is a bookkeeping record rather than a live figure: the money
+ * has moved. A paid or refunded fee is never rewritten, because the snapshot is
+ * what the Stripe webhook's invoice.paid reconciliation is argued from.
  *
  * @param int $event_id law_event post ID.
  * @return bool
  */
-function law_event_fee_override_locked( $event_id ) {
-	return law_event_has_been_approved( $event_id );
+function law_event_fee_settled( $event_id ) {
+	return in_array( (string) law_event_meta( $event_id, '_law_payment_status' ), array( 'paid', 'refunded' ), true );
 }
 
 /**
- * Re-freeze the fee after a wp-admin fee edit on an already-approved event,
- * so wp-admin remains a working route rather than a form that saves values
- * nothing reads. Logged, because the snapshot is the number the invoice and
- * the reconciliation are argued from.
+ * How the host fee override behaves on this event right now. One answer, read
+ * by the committee dashboard, the wp-admin fee box and both save handlers, so
+ * the control the committee sees and the write the handler accepts can never
+ * disagree.
+ *
+ * - `open`    — before approval. Nothing is snapshotted and no invoice exists,
+ *               so the override is an ordinary field.
+ * - `reissue` — approved or Confirmed, and nothing settled yet. The fee WAS
+ *               snapshotted at approval and an invoice raised from it, so a
+ *               change here is not a field write: law_event_apply_fee_change()
+ *               voids that invoice, re-freezes the snapshot and raises a new
+ *               invoice for the host to pay (Denis, 17 September 2026 — the
+ *               committee keeps the post-approval override, with a warning
+ *               saying the previous invoice will be voided).
+ * - `locked`  — the fee is history. Either the money has moved (paid /
+ *               refunded) or the event is no longer live (cancelled, rejected),
+ *               and in neither case is there an invoice worth reissuing.
+ *
+ * "Approved" is law_event_has_been_approved(), which reads the STATUS: the
+ * `_law_approved_at` timestamp this used to test is absent on every migrated
+ * event, because the legacy form never filled field 78 (Approval date) in, and
+ * the lock was therefore off across the whole migrated programme (audit,
+ * 16 September 2026).
+ *
+ * @param int $event_id law_event post ID.
+ * @return string open | reissue | locked
+ */
+function law_event_fee_edit_mode( $event_id ) {
+	if ( ! law_event_has_been_approved( $event_id ) ) {
+		return 'open';
+	}
+	if ( law_event_fee_settled( $event_id ) ) {
+		return 'locked';
+	}
+	// A cancelled or rejected event holds no live invoice (cancel voids it) and
+	// is not going to be paid, so there is nothing for a fee change to reach.
+	return in_array( get_post_status( $event_id ), array( 'law-approved', 'publish' ), true ) ? 'reissue' : 'locked';
+}
+
+/**
+ * Re-freeze the fee on an already-approved event. Logged, because the snapshot
+ * is the number the invoice and the reconciliation are argued from.
  *
  * Refused once money has moved: a paid or refunded fee is a bookkeeping
  * record, and rewriting the snapshot under it would only make the
  * invoice.paid reconciliation in the Stripe webhook lie.
  *
- * @param int $event_id law_event post ID.
- * @param int $actor    Actor user ID.
+ * It re-freezes the number and nothing else. Voiding the invoice that was
+ * raised from the old snapshot and raising a replacement is
+ * law_event_apply_fee_change()'s job, and that is the only caller on a live
+ * event, so this log line says what changed rather than what the caller is
+ * about to do about it.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param int    $actor    Actor user ID.
+ * @param string $source   Where the edit came from, for the log context.
  * @return array{fee_pence:int,vat:int,was:int}|WP_Error
  */
-function law_event_resnapshot_fee( $event_id, $actor = 0 ) {
+function law_event_resnapshot_fee( $event_id, $actor = 0, $source = 'admin_edit' ) {
 	$status = (string) law_event_meta( $event_id, '_law_payment_status' );
 	if ( in_array( $status, array( 'paid', 'refunded' ), true ) ) {
 		return new WP_Error(
@@ -139,12 +169,12 @@ function law_event_resnapshot_fee( $event_id, $actor = 0 ) {
 		law_event_log(
 			$event_id,
 			sprintf(
-				'Fee snapshot re-taken after a wp-admin host fee edit: %s → %s, VAT %s. The Stripe invoice is not reissued automatically.',
+				'Fee snapshot re-taken after a host fee change: %s → %s, VAT %s.',
 				law_events_format_pence( $was ),
 				law_events_format_pence( $snapshot['fee_pence'] ),
 				$snapshot['vat'] ? 'applies' : 'not applied'
 			),
-			array( 'action' => 'fee_resnapshot', 'old' => $was, 'new' => $snapshot['fee_pence'], 'vat' => $snapshot['vat'], 'source' => 'admin_edit' ),
+			array( 'action' => 'fee_resnapshot', 'old' => $was, 'new' => $snapshot['fee_pence'], 'vat' => $snapshot['vat'], 'source' => (string) $source ),
 			array( 'user_id' => (int) $actor )
 		);
 	}

@@ -743,6 +743,7 @@ plain POST fallback.
 | `law_flagship_withdraw` | author; status not `publish` | `booking_edit` |
 | `law_flagship_review` (approve / decline, single and bulk) | `law_user_is_committee()` | `flagship_review` 60/600, 300 per IP |
 | `law_flagship_retry_charge`, `law_flagship_resend_payment` | `law_user_is_committee()` | `flagship_review` |
+| `law_flagship_cancel` | `law_user_is_committee()`; status `publish` | `flagship_review` |
 | `law_flagship_add_attendee` | `law_user_is_committee()` | `flagship_review` |
 | `law_flagship_export` (GET, `csv|xlsx|json`) | `law_user_is_committee()` | none, read-only |
 | `law_discount_save`, `law_discount_disable` | `law_user_is_committee()` | `discount_manage` 60/600 |
@@ -750,6 +751,47 @@ plain POST fallback.
 IDOR rules as everywhere: load the booking, verify `post_type ===
 LAW_BOOKING_CPT`, derive the event from `post_parent`, never from POST, and only
 then check the actor relationship.
+
+### 4.6 Cancelling a confirmed ticket (17 September 2026)
+
+Decline covers the end of the flow where nobody has been charged. Nothing
+covered the other end, where the delegate has paid and then drops out: both
+`law_flagship_decline()` and `law_flagship_withdraw()` refuse a `publish`
+booking, and a Stripe refund deliberately leaves the place standing
+(`law_flagship_mark_refunded()` logs "the place is NOT cancelled
+automatically"). So a paid delegate who pulled out held a place nobody could
+release, and the headcount the caterers and the badging run off stayed wrong.
+
+`law_flagship_cancel_confirmed( $booking_id, $actor_id )` closes that, and does
+only that. Denis settled the scope on 17 September 2026: **no refund and no
+email**. It sets the booking to `law-cancelled` under the event lock, releases
+the discount claim by the usual rule (a paid place keeps its use; a
+complimentary or code-covered one gives it back), recounts the event, takes
+back any included reception places, and logs the decision with what was paid.
+It makes no Stripe call at all, and it does not write to
+`_law_payment_status`, because the money really was taken and the record should
+say so.
+
+- **Gate**: `publish` only. Anything earlier returns `law_flagship_not_confirmed`
+  and points at Decline, which is the path that also detaches the saved payment
+  method and voids the invoice. A second call on an already-cancelled booking
+  returns `true`, so a double submit cannot double-count anything.
+- **The dialog carries the warning**, since this is the one action on the page
+  that deliberately leaves something undone: it names the amount paid, says the
+  refund is the committee's to make in Stripe and the conversation theirs to
+  have, and says the delegate is not emailed. Its close button reads "Keep the
+  ticket", never "Cancel".
+- **The one email that does go out** is `user_reception_included_revoked`, from
+  `law_reception_revoke_included()`, when the ticket carried reception places.
+  That is its own long-standing rule and the dialog says so: a place vanishing
+  from somebody's bookings with no explanation is worse than the news.
+- **A late `invoice.paid`** cannot resurrect it: `law_flagship_mark_paid()`
+  already refuses a terminal application and raises `committee_flagship_paid`.
+- Code: `law_flagship_cancel_confirmed()` and `law_flagship_cancel_handler()` in
+  `functions/events/flagship-bookings.php`, the `cancellable` row flag in
+  `functions/events/flagship-bookings-dashboard.php`, the control in
+  `parts/events/flagship-bookings-list.php`. Tests in
+  `tests/FlagshipPaymentsTest.php`.
 
 ---
 
@@ -797,7 +839,8 @@ Provisioned through `law_migration_page_map()`, `law_setup_account_pages()` and
   filter markup driven by `calendar-filters.js` over `&law_partial=1`; selects
   only, since that script reads a field's value regardless of its checked state.
 - **Actions**: per-row Approve and Decline behind confirm modals (decline
-  carries a reason field), the two failed-payment actions from §4.4, and
+  carries a reason field), per-row **Cancel** on a confirmed place (§4.6), the
+  two failed-payment actions from §4.4, and
   select-all checkboxes. **Bulk approve**, **Bulk decline** and **Add an
   attendee without payment** render as inline text links in one row **above
   the table**, because the list can run to hundreds of rows and an action bar
@@ -1003,7 +1046,8 @@ Cases worth naming, each with a comment saying which bug it guards:
   catalogue (§13) were both generic, as intended, and the receptions reuse
   them unchanged.
 - **Refunds**: no automated flow (spec §2). The invoice link on the booking is
-  the deliverable.
+  the deliverable. Cancelling a confirmed ticket (§4.6) does not change that:
+  it frees the place and leaves the money alone.
 - **HubSpot**: deferred for 4.2.
 - **Salutation** is a new profile field the application writes, but there is
   no control for it on the profile screen yet, so only an application can set

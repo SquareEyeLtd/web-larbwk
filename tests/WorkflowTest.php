@@ -115,8 +115,9 @@ class WorkflowTest extends LAW_Test_Case {
 		// way 'paid' and 'refunded' are, because no invoice was ever raised.
 		$this->assertNotInstanceOf( WP_Error::class, law_event_resnapshot_fee( $event ) );
 
-		// And the committee's post-approval lock is on, from the status.
-		$this->assertTrue( law_event_fee_override_locked( $event ) );
+		// And a fee change now reissues rather than being refused: Free means
+		// no money has moved, so the committee can still put a fee back on.
+		$this->assertSame( 'reissue', law_event_fee_edit_mode( $event ) );
 	}
 
 	/** What the migration derives for a Confirmed zero-fee event survives the write. */

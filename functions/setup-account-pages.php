@@ -178,6 +178,14 @@ function law_setup_account_pages() {
 			. 'Emails: per-booking host/committee notifications inactive';
 	}
 
+	// The "payment due" email carries a line naming the invoice a post-approval
+	// fee change has just cancelled. A stored body beats the registry default,
+	// so it needs the placeholder appending per environment.
+	if ( function_exists( 'law_setup_add_fee_change_note_to_payment_due' ) ) {
+		$report[] = str_pad( strtoupper( law_setup_add_fee_change_note_to_payment_due() ), 9 )
+			. 'Emails: payment-due body carries {fee_change_note}';
+	}
+
 	// The flagship started accepting discount codes on 15 September 2026, and
 	// an unscoped code means "anywhere there is a price", so every code the
 	// committee wrote for a £45 reception became valid against a £550
@@ -609,6 +617,44 @@ function law_setup_retire_booking_received_emails() {
 	if ( ! $changed ) {
 		return 'ok';
 	}
+	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
+	return 'updated';
+}
+
+/**
+ * Give a stored "payment due" body the {fee_change_note} slot the registry
+ * default gained on 17 September 2026.
+ *
+ * The committee can now change a host fee after approval: the open invoice is
+ * voided and a replacement raised, and the host is sent the same
+ * `user_payment_due` email with a line saying which invoice was cancelled.
+ * That line is a placeholder in the body, and a body EDITED on the Emails
+ * screen (or imported by migration step 9) beats the registry default, so on
+ * those environments the host would get a second "payment due" email with no
+ * hint that the first invoice is dead. Appending the tag is the other half of
+ * the change, which is why both provisioning routes call it.
+ *
+ * Deliberately narrow and idempotent: only the one slug, only when a stored
+ * body exists and does not already carry the tag, and the tag goes on the END
+ * of the body rather than into the middle of a sentence somebody has written
+ * themselves. It renders as empty on every ordinary approval.
+ *
+ * @return string ok | updated.
+ */
+function law_setup_add_fee_change_note_to_payment_due() {
+	if ( ! defined( 'LAW_EVENTS_EMAIL_OVERRIDES_OPTION' ) ) {
+		return 'ok'; // The events module is not loaded on this environment.
+	}
+	$overrides = get_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, array() );
+	if ( ! is_array( $overrides ) ) {
+		return 'ok';
+	}
+	$body = $overrides['user_payment_due']['body'] ?? '';
+	if ( ! is_string( $body ) || '' === trim( $body ) || false !== strpos( $body, '{fee_change_note}' ) ) {
+		return 'ok';
+	}
+
+	$overrides['user_payment_due']['body'] = rtrim( $body ) . "\n\n{fee_change_note}";
 	update_option( LAW_EVENTS_EMAIL_OVERRIDES_OPTION, $overrides, false );
 	return 'updated';
 }

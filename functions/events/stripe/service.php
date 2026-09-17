@@ -459,14 +459,27 @@ function law_stripe_record_failure( $event_id, WP_Error $error ) {
  * law-cancelled (the retry guard requires Approved, and approve's from-list
  * excludes cancelled).
  *
- * @param int $event_id law_event post ID.
- * @param int $actor    Acting user ID (0 = system), for the log lines.
+ * Also the first half of a post-approval host fee change
+ * (law_event_apply_fee_change()): the invoice raised from the old snapshot has
+ * to stop being payable before its replacement goes out, or the host holds two
+ * live invoices for the same event. $context only changes the WORDING — a log
+ * line reading "voided after cancellation" on an event that was never
+ * cancelled is worse than no log line, because somebody will believe it.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param int    $actor    Acting user ID (0 = system), for the log lines.
+ * @param string $context  'cancellation' | 'fee_change'.
  * @return string 'none' | 'deleted' | 'voided' | 'already_void' | 'left_paid' | 'failed'
  */
-function law_stripe_void_invoice( $event_id, $actor = 0 ) {
+function law_stripe_void_invoice( $event_id, $actor = 0, $context = 'cancellation' ) {
 	$event_id   = (int) $event_id;
 	$invoice_id = (string) law_event_meta( $event_id, '_law_stripe_invoice_id' );
 	$log_extra  = array( 'user_id' => (int) $actor );
+
+	// One wording per reason to void, so every sentence below reads as the
+	// thing that actually happened.
+	$fee_change = 'fee_change' === $context;
+	$because    = $fee_change ? 'after the host fee was changed' : 'after cancellation';
 
 	if ( '' === $invoice_id ) {
 		// A migrated event may hold a LIVE invoice with only its web address on
@@ -480,7 +493,8 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 			law_event_log(
 				$event_id,
 				sprintf(
-					'Cancelled while holding a pre-rebuild Stripe invoice whose ID was never recorded (%s). It could NOT be voided automatically and may still be payable: void it by hand in Stripe, or run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration and cancel again.',
+					'%s while holding a pre-rebuild Stripe invoice whose ID was never recorded (%s). It could NOT be voided automatically and may still be payable: void it by hand in Stripe, or run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration and try again.',
+					$fee_change ? 'The host fee was changed' : 'Cancelled',
 					$legacy_url
 				),
 				array( 'action' => 'invoice_void_unknown', 'invoice_url' => $legacy_url, 'source' => 'stripe' ),
@@ -489,8 +503,9 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 			$alert = array(
 				'placeholders' => array(
 					'stripe_error' => sprintf(
-						'Event #%d was cancelled holding a pre-rebuild invoice with no ID on record (%s). It was not voided automatically; void it by hand in Stripe.',
+						'Event #%d %s while holding a pre-rebuild invoice with no ID on record (%s). It was not voided automatically; void it by hand in Stripe.',
 						$event_id,
+						$fee_change ? 'had its host fee changed' : 'was cancelled',
 						$legacy_url
 					),
 				),
@@ -502,23 +517,35 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 
 		law_event_log(
 			$event_id,
-			sprintf( 'Cancelled with no Stripe invoice on record (payment status: %s).', (string) law_event_meta( $event_id, '_law_payment_status' ) ?: '(none)' ),
+			sprintf(
+				'%s with no Stripe invoice on record (payment status: %s).',
+				$fee_change ? 'Host fee changed' : 'Cancelled',
+				(string) law_event_meta( $event_id, '_law_payment_status' ) ?: '(none)'
+			),
 			array( 'action' => 'invoice_void_skipped', 'source' => 'stripe' ),
 			$log_extra
 		);
 		return 'none';
 	}
 
-	$fail = function ( $step, WP_Error $error ) use ( $event_id, $invoice_id, $log_extra ) {
+	$fail = function ( $step, WP_Error $error ) use ( $event_id, $invoice_id, $log_extra, $because, $fee_change ) {
 		law_event_log(
 			$event_id,
-			sprintf( 'Stripe invoice %s could not be %s after cancellation: %s. Void it manually in Stripe.', $invoice_id, $step, $error->get_error_message() ),
+			sprintf( 'Stripe invoice %s could not be %s %s: %s. Void it manually in Stripe.', $invoice_id, $step, $because, $error->get_error_message() ),
 			array( 'action' => 'invoice_void_failed', 'invoice_id' => $invoice_id, 'error' => $error->get_error_message(), 'source' => 'stripe' ),
 			$log_extra
 		);
 		$alert = array(
 			'placeholders' => array(
-				'stripe_error' => sprintf( 'Voiding invoice %s after cancellation failed: %s. The event is cancelled; void the invoice manually in Stripe.', $invoice_id, $error->get_error_message() ),
+				'stripe_error' => sprintf(
+					'Voiding invoice %s %s failed: %s. %s',
+					$invoice_id,
+					$because,
+					$error->get_error_message(),
+					$fee_change
+						? 'The fee has NOT been changed and no replacement invoice was raised, so the original invoice is still the one to pay.'
+						: 'The event is cancelled; void the invoice manually in Stripe.'
+				),
 			),
 		);
 		law_events_send( 'admin_stripe_error', $event_id, $alert );
@@ -540,7 +567,7 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 			}
 			law_event_log(
 				$event_id,
-				sprintf( 'Draft Stripe invoice %s deleted after cancellation.', $invoice_id ),
+				sprintf( 'Draft Stripe invoice %s deleted %s.', $invoice_id, $because ),
 				array( 'action' => 'invoice_deleted', 'invoice_id' => $invoice_id, 'source' => 'stripe' ),
 				$log_extra
 			);
@@ -559,7 +586,13 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 			}
 			law_event_log(
 				$event_id,
-				sprintf( 'Stripe invoice %s (%s) voided after cancellation; no payment is due.', $invoice_id, $status ),
+				sprintf(
+					'Stripe invoice %s (%s) voided %s; %s',
+					$invoice_id,
+					$status,
+					$because,
+					$fee_change ? 'it can no longer be paid.' : 'no payment is due.'
+				),
 				array( 'action' => 'invoice_voided', 'invoice_id' => $invoice_id, 'old_status' => $status, 'source' => 'stripe' ),
 				$log_extra
 			);
@@ -578,12 +611,216 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 		default:
 			law_event_log(
 				$event_id,
-				sprintf( 'Stripe invoice %s is %s and was left untouched. Refunds are a manual committee decision.', $invoice_id, $status ?: 'in an unknown state' ),
+				sprintf(
+					'Stripe invoice %s is %s and was left untouched. %s',
+					$invoice_id,
+					$status ?: 'in an unknown state',
+					$fee_change
+						? 'The host fee was therefore NOT changed: settle the difference in Stripe (a credit note or a refund) instead.'
+						: 'Refunds are a manual committee decision.'
+				),
 				array( 'action' => 'invoice_left_paid', 'invoice_id' => $invoice_id, 'status' => $status, 'source' => 'stripe' ),
 				$log_extra
 			);
 			return 'left_paid';
 	}
+}
+
+/* Post-approval fee change: void, re-snapshot, reissue ______________________ */
+
+/**
+ * Apply a host fee change to an event whose fee was already snapshotted and
+ * invoiced: void the invoice raised from the old snapshot, re-freeze the
+ * snapshot, and raise a fresh invoice for the host to pay.
+ *
+ * The committee kept the post-approval override on the dashboard (Denis,
+ * 17 September 2026). Before that the control went read-only at approval,
+ * because a change reached neither the snapshot nor the invoice and so
+ * reported a success that changed nothing that mattered. The answer is not to
+ * hide the control but to make the change land everywhere the old figure went,
+ * which is the three steps below plus the "payment due" email that tells the
+ * host which invoice to pay.
+ *
+ * ORDER MATTERS, and the order is void first. The alternative — raise the new
+ * invoice, then void the old — leaves the host holding two payable invoices
+ * for the same event for as long as the second call takes, and if that call
+ * fails, permanently. Voiding first can only ever leave them holding none,
+ * which is a state the committee can see (Unpaid, no invoice URL) and fix with
+ * the existing invoice retry button.
+ *
+ * Refused, with nothing written, when:
+ * - the fee is settled or the event is not live (law_event_fee_edit_mode());
+ * - the event holds a pre-rebuild invoice recorded as a web address only, so
+ *   there is no ID to void it by (LAW → Migration has the repair);
+ * - the void itself failed, because the old invoice is then still payable and
+ *   a second one must not join it.
+ *
+ * A fee changed to zero raises nothing: the event becomes Free, and an
+ * Approved event is confirmed in the same breath, exactly as approving it at
+ * zero would have done. Never route anyone through a payment step for £0.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param int    $actor    Acting user ID.
+ * @param string $source   Where the change came from ('ui' / 'admin_edit'), for the log.
+ * @return array{outcome:string,was:int,fee_pence:int,vat:int,void:string}|WP_Error
+ *         outcome: unchanged | reissued | waived
+ */
+function law_event_apply_fee_change( $event_id, $actor = 0, $source = 'ui' ) {
+	$event_id = (int) $event_id;
+	$mode     = law_event_fee_edit_mode( $event_id );
+	if ( 'reissue' !== $mode ) {
+		return new WP_Error(
+			'law_fee_not_reissuable',
+			'locked' === $mode
+				? 'This event\'s fee can no longer be changed: it is either already paid or refunded, or the event is no longer live. Settle the difference in Stripe (a credit note or a refund) and set the payment status to match.'
+				: 'This event has not been approved yet, so there is no snapshot or invoice to reissue; the fee is simply saved.'
+		);
+	}
+
+	$was = (int) law_event_meta( $event_id, '_law_fee_pence' );
+	$now = law_event_calculate_fee_pence( $event_id );
+	if ( $was === $now ) {
+		// The override flag moved but the money did not (ticking "override" at
+		// exactly the tier price, say). Nothing is voided for a figure that has
+		// not moved: the host would get a new invoice for the same amount and
+		// wonder which one to pay.
+		return array(
+			'outcome'   => 'unchanged',
+			'was'       => $was,
+			'fee_pence' => $now,
+			'vat'       => (int) law_event_meta( $event_id, '_law_vat' ),
+			'void'      => 'none',
+		);
+	}
+
+	// A pre-rebuild invoice with no ID beside it cannot be voided, and raising
+	// a second one would bill the host twice. Same refusal, and the same
+	// repair, as law_stripe_create_and_send_invoice()'s own legacy guard.
+	$invoice_id = (string) law_event_meta( $event_id, '_law_stripe_invoice_id' );
+	if ( '' === $invoice_id && '' !== trim( (string) law_event_meta( $event_id, '_law_stripe_invoice_url' ) ) ) {
+		law_event_log(
+			$event_id,
+			'Host fee change NOT applied: this event holds an invoice from before the rebuild, recorded as a web address only, with no ID to void it by. Run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration, then try again.',
+			array( 'action' => 'fee_change_refused', 'reason' => 'legacy_invoice', 'source' => $source ),
+			array( 'user_id' => (int) $actor )
+		);
+		return new WP_Error(
+			'law_legacy_invoice',
+			'This event holds an invoice raised before the rebuild, and only its web address was recorded, not its ID, so it cannot be voided automatically. Run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration first, then change the fee.'
+		);
+	}
+
+	law_event_log(
+		$event_id,
+		sprintf(
+			'Host fee change requested: %s → %s. Voiding the open invoice and raising a replacement.',
+			law_events_format_pence( $was ),
+			law_events_format_pence( $now )
+		),
+		array( 'action' => 'fee_change', 'old' => $was, 'new' => $now, 'source' => $source ),
+		array( 'user_id' => (int) $actor )
+	);
+
+	// 1. Stop the old invoice. law_stripe_void_invoice() logs and alerts on
+	//    every outcome itself, so only the decision is taken here.
+	$void = '' !== $invoice_id ? law_stripe_void_invoice( $event_id, $actor, 'fee_change' ) : 'none';
+	if ( 'failed' === $void ) {
+		return new WP_Error(
+			'law_void_failed',
+			'The fee was NOT changed: the open Stripe invoice could not be voided, and raising a second one would leave the host holding two. Void it by hand in Stripe, then change the fee again. The activity log has the error.'
+		);
+	}
+	if ( 'left_paid' === $void ) {
+		// Paid between law_event_fee_edit_mode() above and this call, or the
+		// local payment status is behind Stripe. Either way the money has moved.
+		return new WP_Error(
+			'law_fee_settled',
+			'The fee was NOT changed: Stripe reports this invoice as already settled. Settle the difference in Stripe (a credit note or a refund) and set the payment status here to match.'
+		);
+	}
+
+	// 2. Re-freeze the snapshot the new invoice, the exports and the {fee}
+	//    merge tag are all read from.
+	$snapshot = law_event_resnapshot_fee( $event_id, $actor, $source );
+	if ( is_wp_error( $snapshot ) ) {
+		return $snapshot;
+	}
+
+	// 3a. A waived fee raises nothing at all.
+	if ( $snapshot['fee_pence'] < 1 ) {
+		law_event_set_payment_status( $event_id, 'free', $source, $actor );
+		law_event_log(
+			$event_id,
+			'Host fee waived after approval: the previous invoice is void and no new one was raised.',
+			array( 'action' => 'fee_waived', 'old' => $was, 'source' => $source ),
+			array( 'user_id' => (int) $actor )
+		);
+		// An Approved event waiting on a payment that is no longer coming would
+		// wait for ever, so it is confirmed now, the way approving it at zero
+		// would have confirmed it. A Confirmed event is already there.
+		if ( 'law-approved' === get_post_status( $event_id ) ) {
+			law_event_workflow_transition( $event_id, 'confirm', array( 'source' => 'system', 'actor_id' => (int) $actor ) );
+		}
+		return array(
+			'outcome'   => 'waived',
+			'was'       => $was,
+			'fee_pence' => 0,
+			'vat'       => 0,
+			'void'      => $void,
+		);
+	}
+
+	// 3b. A fee where there was none (a waiver reversed, or a Free event that
+	//     now costs): the payment status has to go back to Unpaid, or the
+	//     dashboard, the exports and the webhook reconciliation would all still
+	//     read Free against a live invoice.
+	if ( 'unpaid' !== (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
+		law_event_set_payment_status( $event_id, 'unpaid', $source, $actor );
+	}
+
+	$invoice = law_stripe_create_and_send_invoice( $event_id );
+	if ( is_wp_error( $invoice ) ) {
+		// The old invoice is already void, so the event is now Unpaid with
+		// nothing to pay. Said plainly, because the fix is the existing retry
+		// button rather than another fee edit.
+		return new WP_Error(
+			'law_reissue_failed',
+			sprintf(
+				'The fee is now %s and the previous invoice has been voided, but the replacement invoice could not be raised: %s. Use "Retry invoice" to raise it.',
+				law_events_format_pence( $snapshot['fee_pence'] ),
+				$invoice->get_error_message()
+			)
+		);
+	}
+
+	// Both figures, and led by "Important:". The body this lands in is whatever
+	// the Emails screen holds, and the LAW body stored there names no amount at
+	// all — it only links to the Stripe invoice — so a note saying only which
+	// invoice died would leave the host with no idea what the new fee is. It
+	// also cannot rely on its position: the provisioning helper appends the tag
+	// to the end of a stored body rather than guessing a place inside somebody
+	// else's wording, so it has to read as a warning wherever it lands.
+	law_events_send(
+		'user_payment_due',
+		$event_id,
+		array(
+			'placeholders' => array(
+				'fee_change_note' => sprintf(
+					'Important: the fee for this event has changed to %s. This replaces the earlier invoice for %s, which has been cancelled and can no longer be paid.',
+					law_events_format_pence( $snapshot['fee_pence'] ),
+					law_events_format_pence( $was )
+				),
+			),
+		)
+	);
+
+	return array(
+		'outcome'   => 'reissued',
+		'was'       => $was,
+		'fee_pence' => $snapshot['fee_pence'],
+		'vat'       => $snapshot['vat'],
+		'void'      => $void,
+	);
 }
 
 /* Retry (committee detail view + admin event screen) ________________________ */
@@ -597,10 +834,15 @@ function law_event_handle_retry_invoice() {
 
 	$event_id = absint( $_REQUEST['event_id'] ?? 0 );
 
-	// Only an Approved, still-unpaid event has an invoice worth retrying; a
-	// paid or confirmed event must not get a fresh "payment due" email.
+	// Only a live, still-UNPAID event has an invoice worth retrying: the unpaid
+	// test is what stops a settled event getting a fresh "payment due" email,
+	// and it does that on its own. Confirmed joined Approved on 17 September
+	// 2026, because a post-approval fee change can leave a Confirmed event
+	// unpaid with its old invoice voided and the replacement not raised (the
+	// Stripe call failed), and that is precisely the state this button exists
+	// to recover. A Confirmed event that is unpaid genuinely owes the money.
 	$post = get_post( $event_id );
-	if ( ! $post || 'law-approved' !== $post->post_status
+	if ( ! $post || ! in_array( $post->post_status, array( 'law-approved', 'publish' ), true )
 		|| 'unpaid' !== (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
 		law_events_redirect_back( array( 'law_notice' => 'invoice-not-retryable' ) );
 	}
