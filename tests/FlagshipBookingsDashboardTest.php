@@ -276,6 +276,44 @@ class FlagshipBookingsDashboardTest extends LAW_Test_Case {
 		$this->assertStringNotContainsString( 'Warning', $html, 'No PHP notice leaked into the markup.' );
 	}
 
+	/**
+	 * Cancel is the confirmed row's action and only the confirmed row's: on an
+	 * application still under review the answer is Decline, which also clears
+	 * the card and voids the invoice.
+	 */
+	public function test_cancel_is_offered_on_a_confirmed_place_and_nowhere_else(): void {
+		$this->make_flagship();
+		$this->make_application( 'publish', 'paid' );
+
+		ob_start();
+		get_template_part( 'parts/events/flagship-bookings-list' );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'law_flagship_cancel', $html, 'The row posts the cancel action.' );
+		$this->assertStringContainsString( 'Cancel the ticket', $html, 'The dialog confirms it.' );
+		$this->assertStringContainsString( 'Keep the ticket', $html, 'And never offers "Cancel" as the way out of it.' );
+		$this->assertStringContainsString(
+			'the refund is yours to make in Stripe',
+			$html,
+			'The whole point of the dialog: the money and the conversation stay with the committee.'
+		);
+		$this->assertStringNotContainsString( 'Warning', $html, 'No PHP notice leaked into the markup.' );
+
+	}
+
+	/** The other half of the same rule, on a table with nothing confirmed on it. */
+	public function test_a_registration_under_review_is_offered_decline_not_cancel(): void {
+		$this->make_flagship();
+		$this->make_application( 'law-applied', 'ready' );
+
+		ob_start();
+		get_template_part( 'parts/events/flagship-bookings-list' );
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'Decline', $html, 'That row gets Decline.' );
+		$this->assertStringNotContainsString( 'law_flagship_cancel', $html, 'And not Cancel, which would leave the card and the invoice live.' );
+	}
+
 	/* The split from Manage bookings ________________________________________ */
 
 	/**

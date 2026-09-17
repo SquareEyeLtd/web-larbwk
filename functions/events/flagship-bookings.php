@@ -1267,6 +1267,94 @@ function law_flagship_withdraw( $booking_id, $actor_id ) {
 	return true;
 }
 
+/**
+ * The committee cancelling a place that is already confirmed and paid for.
+ *
+ * Deliberately narrow, and deliberately silent (Denis, 17 September 2026).
+ * Decline handles the end of the flow where nobody has been charged; this
+ * handles the other end, where the money has already moved and the delegate
+ * has to drop out anyway. It frees the place and stops there: no refund is
+ * attempted, no Stripe call is made, and the delegate is NOT emailed. The
+ * refund and the conversation are the committee's to have by hand, which is
+ * what the confirm dialog on the Flagship bookings row says before it is
+ * pressed. That is the whole point of the control: without it a delegate who
+ * has paid and pulled out holds a place nobody can release, and the headcount
+ * the caterers and badges run off stays wrong.
+ *
+ * The one thing it does beyond the status change is take back the reception
+ * places the ticket paid for, because those were free only for as long as the
+ * ticket stood. law_reception_revoke_included() emails about THOSE, on its own
+ * long-standing rule that a place vanishing from somebody's bookings with no
+ * explanation is worse than the news.
+ *
+ * A late invoice.paid for a booking cancelled here cannot resurrect it:
+ * law_flagship_mark_paid() refuses a terminal application and raises the
+ * committee_flagship_paid alert instead.
+ *
+ * @return true|WP_Error
+ */
+function law_flagship_cancel_confirmed( $booking_id, $actor_id ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
+		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship registration.' );
+	}
+	$booking_id = (int) $booking->ID;
+	$event_id   = (int) $booking->post_parent;
+
+	if ( 'law-cancelled' === $booking->post_status ) {
+		return true;
+	}
+	// Confirmed places only. An application still under review is DECLINED,
+	// not cancelled: that path detaches the saved payment method and voids the
+	// invoice, and routing it through here would leave both live, so the
+	// delegate could still pay from the hosted invoice link in their inbox and
+	// reverse the decision.
+	if ( 'publish' !== $booking->post_status ) {
+		return new WP_Error(
+			'law_flagship_not_confirmed',
+			'That place is not confirmed, so there is nothing to cancel. Decline the registration instead, which also clears the payment details they saved.'
+		);
+	}
+
+	// Read before the status moves, so the discount rule is decided on the
+	// same facts as everything else here.
+	$payment = (string) law_event_meta( $booking_id, '_law_payment_status' );
+
+	$locked = law_booking_lock( $event_id );
+	law_booking_set_status( $booking_id, 'law-cancelled' );
+	// A paid place KEEPS its code use — the code really was spent — and a
+	// complimentary or code-covered one gives it back. law_booking_release_discount()
+	// owns that rule; this call is the same one decline and withdrawal make.
+	law_booking_release_discount( $booking_id, $payment );
+	law_event_recount_attendees( $event_id, 'flagship' );
+	if ( $locked ) {
+		law_booking_unlock( $event_id );
+	}
+
+	// Outside the lock, as the decline path does: another delegate's booking
+	// must not wait on this one's reception places being unpicked.
+	if ( function_exists( 'law_reception_revoke_included' ) ) {
+		law_reception_revoke_included( $booking_id, (int) $actor_id );
+	}
+
+	$price = law_booking_price( $booking_id );
+	law_event_log(
+		$event_id,
+		sprintf(
+			/* translators: 1: booking number, 2: what they paid. */
+			'Flagship ticket #%1$d cancelled by the committee. %2$s The delegate has NOT been emailed and nothing has been refunded: both are for the committee to handle by hand.',
+			law_event_meta( $booking_id, '_law_booking_number' ),
+			'paid' === $payment && (int) $price['gross'] > 0
+				? sprintf( 'They paid %s, so a refund may be owed.', law_events_format_pence( (int) $price['gross'] ) )
+				: 'There was nothing to refund.'
+		),
+		array( 'source' => 'flagship', 'action' => 'flagship_cancelled', 'booking' => $booking_id ),
+		array( 'user_id' => (int) $actor_id )
+	);
+
+	return true;
+}
+
 /* Payment exceptions _________________________________________________________ */
 
 /**
@@ -2042,6 +2130,41 @@ function law_flagship_resume_review( $booking_ids, $decision, $actor_id, $reason
 		(int) $actor_id,
 		(string) $reason,
 		(bool) $confirm_overbook
+	);
+}
+
+add_action( 'admin_post_law_flagship_cancel', 'law_flagship_cancel_handler' );
+add_action( 'admin_post_nopriv_law_flagship_cancel', 'law_events_nopriv_json' );
+
+/**
+ * Cancel one confirmed ticket from the Flagship bookings row.
+ *
+ * One booking at a time on purpose: there is no bulk form for it, because
+ * every one of these is a conversation and a possible refund the committee
+ * then has to have with a named person.
+ */
+function law_flagship_cancel_handler() {
+	$is_ajax = law_events_guard_post(
+		'law_flagship_cancel',
+		array( 'rate' => array( 'flagship_review', 60, 600, 300 ), 'honeypot_json' => array( 'message' => 'Done.' ) )
+	);
+
+	$booking = law_flagship_require_committee_booking( $is_ajax );
+	$result  = law_flagship_cancel_confirmed( (int) $booking->ID, get_current_user_id() );
+
+	if ( is_wp_error( $result ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => $result->get_error_message(), 'status' => 400 ), 'flagship-failed' );
+	}
+
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => 'Ticket cancelled',
+			'message'  => 'The place has been released. Nothing has been refunded and the delegate has not been emailed. Reloading the page…',
+			'redirect' => law_flagship_bookings_url(),
+		),
+		'flagship-cancelled'
 	);
 }
 

@@ -109,7 +109,7 @@ function law_events_email_registry() {
 			'to'      => 'host',
 			'active'  => true,
 			'subject' => 'Your event is approved, payment due: {event_title}',
-			'body'    => "Dear {host_name},\n\nGood news: {event_title} ({law_reference}) has been approved by the committee and is now listed in the London Arbitration Week programme, showing \"Open soon\".\n\nThe event fee of {fee} is now due. Please pay within 5 days using the secure Stripe invoice:\n{invoice_url}\n\nRegistration opens once payment is received.",
+			'body'    => "Dear {host_name},\n\nGood news: {event_title} ({law_reference}) has been approved by the committee and is now listed in the London Arbitration Week programme, showing \"Open soon\".\n\nThe event fee of {fee} is now due. {fee_change_note} Please pay within 5 days using the secure Stripe invoice:\n{invoice_url}\n\nRegistration opens once payment is received.",
 		),
 		'committee_payment_received' => array(
 			'name'    => 'Email to committee > payment received',
@@ -1327,6 +1327,21 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 			'Slot'         => (string) law_event_meta( $event_id, '_law_slot_label' ),
 			'Venue'        => (string) law_event_meta( $event_id, '_law_venue' ),
 			'Fee tier'     => law_event_tier_label( (string) law_event_meta( $event_id, '_law_fee_tier' ) ),
+			// The tier LABEL is not the fee. It carries a price in its own words
+			// ("UK hosts: £1200 + VAT"), and on an event with a committee
+			// override that figure is simply wrong — the "payment received"
+			// email told the committee "£1200 + VAT" about an event whose fee had
+			// been changed to £600 and which had just paid £720 (found by the
+			// fee-change end-to-end test, 17 September 2026). The snapshot is
+			// added beside it rather than replacing it, because which tier an
+			// event sits in is a separate fact the committee reads for. Only
+			// once there IS a snapshot: before approval this is 0 for everyone,
+			// and "Fee: £0.00" on a submission acknowledgement would be a
+			// promise nobody made.
+			'Fee'          => law_event_has_been_approved( $event_id )
+				? law_events_format_pence( (int) law_event_meta( $event_id, '_law_fee_pence' ) )
+					. ( law_event_meta( $event_id, '_law_vat' ) ? ' + VAT' : '' )
+				: '',
 			'Status'       => law_event_status_label( $post ),
 		);
 		foreach ( $summary_rows as $summary_label => $summary_value ) {
@@ -1364,6 +1379,12 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{committee_link}'   => $committee,
 		'{site_name}'        => get_bloginfo( 'name' ),
 		'{stripe_error}'     => '',
+		// Empty on the approval that first raises an invoice, filled by
+		// law_event_apply_fee_change() when the committee changes the fee
+		// afterwards: the same "payment due" email then also says which
+		// invoice has been cancelled, rather than a near-duplicate template
+		// existing for the second case.
+		'{fee_change_note}'  => '',
 		'{latest_comment}'   => '',
 		'{forgot_link}'      => law_auth_login_url( array( 'action' => 'forgot' ) ),
 		// User-registration emails (filled via the send call's placeholders).

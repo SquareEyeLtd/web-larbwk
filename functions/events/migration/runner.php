@@ -2376,6 +2376,12 @@ function law_migration_run_pages( $dry ) {
 	if ( ! $dry && function_exists( 'law_setup_retire_booking_received_emails' ) ) {
 		law_migration_log( 'notifications', 'created', 'host_booking_received / committee_booking_received', 'Retired: stored active override cleared (' . law_setup_retire_booking_received_emails() . ').' );
 	}
+	// A post-approval host fee change reuses the "payment due" email and fills
+	// {fee_change_note} with the invoice it has just cancelled. An imported or
+	// hand-edited body beats the registry default, so the tag is appended here.
+	if ( ! $dry && function_exists( 'law_setup_add_fee_change_note_to_payment_due' ) ) {
+		law_migration_log( 'notifications', 'created', 'user_payment_due', '{fee_change_note} slot: ' . law_setup_add_fee_change_note_to_payment_due() . '.' );
+	}
 	// Events migrated before 16 September 2026 hold the choice VALUE of field
 	// 103 (Venue needed), "Yes" or "No", where the custom form's radios carry
 	// the full sentences, so the answer reads as unset. Shared helper with the

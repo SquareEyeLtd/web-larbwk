@@ -163,15 +163,29 @@ function law_event_box_fee( $post ) {
 	echo '<p>Snapshot at approval: <strong>' . esc_html( law_events_format_pence( $fee ) ) . '</strong>'
 		. ( law_event_meta( $post->ID, '_law_vat' ) ? ' + VAT' : '' ) . '</p>';
 
-	// This screen is the only route left for a post-approval fee change: the
-	// committee dashboard's control goes read-only at approval, because nothing
-	// there re-freezes the snapshot. Saving a changed fee here does re-freeze it
-	// (law_event_resnapshot_fee()), but Stripe is never touched automatically,
-	// so say what the second half of the job is.
-	if ( law_event_fee_override_locked( $post->ID ) ) {
-		echo '<div class="notice notice-warning inline"><p>This event is approved, so its fee is already snapshotted and invoiced. '
-			. 'Changing the tier or the override here re-takes the snapshot and logs it, but the Stripe invoice is <strong>not</strong> reissued: '
-			. 'void the open invoice in Stripe, then raise a new one with the invoice button below (offered while the event is Approved and unpaid).</p></div>';
+	// Past approval a fee change is not a field write, so this screen says what
+	// saving one will actually do. Same helper, same handler and the same three
+	// answers as the committee dashboard's panel, so the two screens cannot
+	// describe the same event differently.
+	$fee_mode = law_event_fee_edit_mode( $post->ID );
+	if ( 'reissue' === $fee_mode ) {
+		// Which warning depends on whether there is an invoice to void: a waived
+		// fee, or one whose invoice never got raised, has nothing to cancel.
+		$has_invoice = '' !== (string) law_event_meta( $post->ID, '_law_stripe_invoice_id' )
+			|| '' !== trim( (string) law_event_meta( $post->ID, '_law_stripe_invoice_url' ) );
+		echo '<div class="notice notice-warning inline"><p>' . ( $has_invoice
+			? '<strong>Changing this fee voids the invoice already raised.</strong> '
+				. 'Saving a different tier or override re-takes the fee snapshot, voids the open Stripe invoice so it can no longer be paid, '
+				. 'and emails the host a new invoice for the new amount. Saving 0 voids the invoice and marks the event Free instead.'
+			: '<strong>Saving a fee here raises an invoice.</strong> '
+				. 'Nothing is outstanding on this event, so any fee above 0 is invoiced and emailed to the host as soon as you update.'
+		) . '</p></div>';
+	} elseif ( 'locked' === $fee_mode ) {
+		echo '<div class="notice notice-warning inline"><p>This event\'s fee can no longer be changed: '
+			. ( law_event_fee_settled( $post->ID )
+				? 'it has been settled, so the snapshot is a bookkeeping record. Raise a credit note or a refund in Stripe, then set the payment status below to match.'
+				: 'the event is no longer live, so the snapshot is a record of what was charged.' )
+			. ' A change saved here is put back.</p></div>';
 	}
 
 	law_field_select(
@@ -413,7 +427,15 @@ function law_event_admin_save( $post_id, $post ) {
 		'_law_is_external'   => (int) law_event_meta( $post_id, '_law_is_external' ),
 		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
 	);
-	$before_override = law_event_booking_override( $post_id );
+	// NOT $before_override: that name already holds the FEE override read four
+	// lines up, and this assignment used to overwrite it. Both readers of the
+	// fee value ran on the booking override's string instead — a strict
+	// comparison against an int, so "have the fee inputs changed?" answered yes
+	// on every single Update, and law_event_log_fee_change() wrote a spurious
+	// "override enabled" line each time (found 17 September 2026, while making
+	// a changed fee reissue the invoice: that reader now voids a Stripe
+	// invoice, so an always-true answer stopped being cosmetic).
+	$before_booking_override = law_event_booking_override( $post_id );
 
 	// LAW's OWN events hold no programme slot, so this screen must not write
 	// the slot keys for them: the slot select posts nothing, and
@@ -524,7 +546,7 @@ function law_event_admin_save( $post_id, $post ) {
 	// edit and bulk edit reach this handler with neither.
 	if ( isset( $_POST['law_booking_override'] ) ) {
 		law_event_update_meta( $post_id, '_law_booking_override', wp_unslash( $_POST['law_booking_override'] ) );
-		law_event_log_booking_override_change( $post_id, $before_override, $actor );
+		law_event_log_booking_override_change( $post_id, $before_booking_override, $actor );
 	}
 	law_event_update_meta( $post_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
@@ -568,25 +590,65 @@ function law_event_admin_save( $post_id, $post ) {
 	law_event_log_fee_change( $post_id, $before_override, $before_amount, $actor );
 
 	// An approved event's fee was frozen by law_event_snapshot_fee() and
-	// invoiced from that snapshot, and nothing else recalculates it: re-freeze
-	// it here so this screen stays a working route for a post-approval fee
-	// change (the dashboard control is read-only from approval onwards).
+	// invoiced from that snapshot, and nothing else recalculates it. A change
+	// to either input past approval therefore goes through
+	// law_event_apply_fee_change(), which re-freezes the snapshot, voids that
+	// invoice and raises the replacement — the same route the committee
+	// dashboard's panel takes, so the two screens do the same thing.
 	$fee_inputs_changed = $before_tier !== (string) law_event_meta( $post_id, '_law_fee_tier' )
 		|| $before_override !== (int) law_event_meta( $post_id, '_law_fee_override' )
 		|| abs( $before_amount - (float) law_event_meta( $post_id, '_law_fee_override_amount' ) ) >= 0.005;
-	if ( $fee_inputs_changed && law_event_fee_override_locked( $post_id ) ) {
-		$resnapshot = law_event_resnapshot_fee( $post_id, $actor );
-		if ( is_wp_error( $resnapshot ) ) {
-			law_event_admin_notice( $actor, $resnapshot->get_error_message() );
-		} elseif ( $resnapshot['fee_pence'] !== $resnapshot['was'] ) {
+	if ( $fee_inputs_changed ) {
+		$fee_mode = law_event_fee_edit_mode( $post_id );
+
+		if ( 'locked' === $fee_mode ) {
+			// The writes above have already landed, and leaving them would put a
+			// tier and an override on the screen, in the Fee column and in the
+			// export that the snapshot, the paid invoice and the {fee} merge tag
+			// all contradict. All three inputs go back, so what the screen shows
+			// is what was charged. (The inputs are left enabled rather than
+			// disabled: law_field_checkbox() takes no attributes, and a disabled
+			// input posts nothing, which this handler reads as "not on the form"
+			// rather than as "unticked".)
+			law_event_update_meta( $post_id, '_law_fee_tier', $before_tier );
+			law_event_update_meta( $post_id, '_law_fee_override', (bool) $before_override );
+			law_event_update_meta( $post_id, '_law_fee_override_amount', $before_amount );
+			law_event_log(
+				$post_id,
+				'Refused a host fee change from wp-admin: the fee is settled or the event is no longer live. The override has been put back as it was.',
+				array( 'action' => 'refused', 'attempted' => 'fee_override', 'source' => 'admin_edit' ),
+				array( 'user_id' => $actor )
+			);
 			law_event_admin_notice(
 				$actor,
-				sprintf(
-					'Fee snapshot updated from %s to %s. The Stripe invoice is NOT reissued automatically: void the open invoice in Stripe, then raise a new one with the invoice button on this screen (offered while the event is Approved and unpaid).',
-					law_events_format_pence( $resnapshot['was'] ),
-					law_events_format_pence( $resnapshot['fee_pence'] )
-				)
+				'Host fee NOT changed: this event is either already paid or refunded, or no longer live, so its fee is a bookkeeping record. Raise a credit note or a refund in Stripe and set the payment status to match.'
 			);
+		} elseif ( 'reissue' === $fee_mode ) {
+			// The same orchestrator the committee dashboard calls: re-freeze the
+			// snapshot, void the invoice raised from the old one, raise and send
+			// the replacement. This screen used to do only the first of the
+			// three and tell the admin to do the rest by hand in Stripe.
+			$applied = law_event_apply_fee_change( $post_id, $actor, 'admin_edit' );
+			if ( is_wp_error( $applied ) ) {
+				law_event_admin_notice( $actor, $applied->get_error_message() );
+			} elseif ( 'waived' === $applied['outcome'] ) {
+				law_event_admin_notice(
+					$actor,
+					sprintf(
+						'Host fee waived (was %s). The open Stripe invoice has been voided and no new one raised; this event is now Free.',
+						law_events_format_pence( $applied['was'] )
+					)
+				);
+			} elseif ( 'reissued' === $applied['outcome'] ) {
+				law_event_admin_notice(
+					$actor,
+					sprintf(
+						'Host fee changed from %s to %s. The previous Stripe invoice has been voided and a new one raised and emailed to the host.',
+						law_events_format_pence( $applied['was'] ),
+						law_events_format_pence( $applied['fee_pence'] )
+					)
+				);
+			}
 		}
 	}
 

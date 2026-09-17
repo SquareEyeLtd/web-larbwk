@@ -37,6 +37,7 @@ $law_fb_url    = get_permalink();
 		$law_fb_notices = array(
 			'flagship-approved'    => array( 'is-success', __( 'The registrations have been approved and the payments taken.', 'law' ) ),
 			'flagship-declined'    => array( 'is-success', __( 'The registrations have been declined and the delegates emailed. Their saved payment details have been removed.', 'law' ) ),
+			'flagship-cancelled'   => array( 'is-success', __( 'The ticket has been cancelled and the place released. Nothing has been refunded and the delegate has not been emailed.', 'law' ) ),
 			'flagship-partly-done' => array( 'is-error', __( 'Some registrations could not be decided. Check the rows below for the reason.', 'law' ) ),
 			'flagship-full'        => array( 'is-error', __( 'The conference is full. Approving anyway over-books it, so please confirm.', 'law' ) ),
 			'flagship-retried'     => array( 'is-success', __( 'The payment was attempted again.', 'law' ) ),

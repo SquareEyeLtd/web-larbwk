@@ -221,7 +221,7 @@ function law_event_status_label( $status ) {
  * submit an event) field 78 (Approval date) is empty on all 500 production
  * entries, so the key is absent on all 90 approved and Confirmed events the
  * migration created, and anything gated on it silently came unlocked. That is
- * how the post-approval fee-override lock (law_event_fee_override_locked())
+ * how the post-approval fee-override lock (now law_event_fee_edit_mode())
  * was off across the whole migrated programme (audit, 16 September 2026).
  *
  * `law-approved` and `publish` say it themselves. `law-cancelled` is the one

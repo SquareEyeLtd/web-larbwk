@@ -316,4 +316,41 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 		law_reception_save( $input, $actor );
 		$this->assertSame( $after_first, count( law_event_log_entries( $event_id ) ), 'A save that changed nothing writes nothing.' );
 	}
+
+	/**
+	 * A reception's row on the committee's event list goes to Manage receptions
+	 * by its NAME as well as by its button.
+	 *
+	 * The button was routed on 16 September 2026 and the title was not, so the
+	 * name went on linking to ?event=<id> -- the generic detail view, which is
+	 * the one screen a reception is never edited on. The two are one URL now,
+	 * so they cannot disagree again.
+	 */
+	public function test_the_event_list_sends_a_receptions_name_and_button_to_the_same_screen(): void {
+		$reception = $this->make_reception( array(), 'publish' );
+		$hosted    = $this->make_event( array(), 'publish' );
+		wp_set_current_user( $this->make_committee_user() );
+
+		ob_start();
+		get_template_part( 'parts/events/dashboard-list' );
+		$html = (string) ob_get_clean();
+
+		$row = function ( $id ) use ( $html ) {
+			return preg_match( '/<code>' . law_event_meta( $id, '_law_reference' ) . '<\/code>(.*?)<\/tr>/s', $html, $m )
+				? $m[1]
+				: '';
+		};
+		// The title sits BEFORE the reference in the cell, so the row slice
+		// above starts after it. The title's own anchor is matched separately.
+		$title_href = function ( $id ) use ( $html ) {
+			$title = preg_quote( get_post_field( 'post_title', $id ), '/' );
+			return preg_match( '/<a href="([^"]+)">' . $title . '<\/a>/', $html, $m ) ? html_entity_decode( $m[1] ) : '';
+		};
+
+		$manage = law_receptions_dashboard_url( $reception );
+		$this->assertSame( $manage, $title_href( $reception ), "A reception's name must open Manage receptions." );
+		$this->assertStringContainsString( esc_url( $manage ), $row( $reception ), 'And so must its Edit button.' );
+
+		$this->assertStringContainsString( 'event=' . $hosted, $title_href( $hosted ), 'Guard: a hosted event still opens the detail view.' );
+	}
 }

@@ -55,29 +55,71 @@ class FeesTest extends LAW_Test_Case {
 		$this->assertSame( 0, law_event_calculate_vat( 0 ) );
 	}
 
-	public function test_override_lock_follows_approval(): void {
+	public function test_fee_edit_mode_before_approval_is_open(): void {
 		foreach ( array( 'law-draft', 'law-proposed', 'law-sent-back' ) as $status ) {
 			$pending = $this->make_event( array( '_law_fee_tier' => 'uk' ), $status );
-			$this->assertFalse( law_event_fee_override_locked( $pending ), $status . ' is before approval.' );
-		}
-
-		foreach ( array( 'law-approved', 'publish' ) as $status ) {
-			$approved = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09' ), $status );
-			$this->assertTrue( law_event_fee_override_locked( $approved ), $status . ' is past approval.' );
+			$this->assertSame( 'open', law_event_fee_edit_mode( $pending ), $status . ' is before approval.' );
 		}
 	}
 
 	/**
-	 * The lock reads the STATUS, not the _law_approved_at timestamp it used
+	 * Past approval the override stays editable, because a change there now
+	 * does the whole job: law_event_apply_fee_change() voids the invoice
+	 * raised from the old snapshot and raises a replacement (Denis,
+	 * 17 September 2026). It is only read-only once the fee is history.
+	 */
+	public function test_fee_edit_mode_past_approval_reissues(): void {
+		foreach ( array( 'law-approved', 'publish' ) as $status ) {
+			$approved = $this->make_event(
+				array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09', '_law_payment_status' => 'unpaid' ),
+				$status
+			);
+			$this->assertSame( 'reissue', law_event_fee_edit_mode( $approved ), $status . ', unpaid.' );
+		}
+
+		// Free is not settled: no money moved and no invoice was ever raised,
+		// so a waiver the committee wants to undo is still theirs to undo.
+		$free = $this->make_event(
+			array( '_law_fee_tier' => 'uk', '_law_payment_status' => 'free' ),
+			'publish'
+		);
+		$this->assertSame( 'reissue', law_event_fee_edit_mode( $free ) );
+	}
+
+	public function test_fee_edit_mode_locks_once_the_money_has_moved(): void {
+		foreach ( array( 'paid', 'refunded' ) as $payment ) {
+			$settled = $this->make_event(
+				array( '_law_fee_tier' => 'uk', '_law_payment_status' => $payment ),
+				'publish'
+			);
+			$this->assertTrue( law_event_fee_settled( $settled ), $payment . ' is settled.' );
+			$this->assertSame( 'locked', law_event_fee_edit_mode( $settled ), $payment . ' is a bookkeeping record.' );
+		}
+	}
+
+	/**
+	 * An event that is no longer live holds no invoice worth reissuing: cancel
+	 * voided it, and a rejected event never had one.
+	 */
+	public function test_fee_edit_mode_locks_an_event_that_is_not_live(): void {
+		$cancelled = $this->make_event(
+			array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09', '_law_payment_status' => 'unpaid' ),
+			'law-cancelled'
+		);
+		$this->assertSame( 'locked', law_event_fee_edit_mode( $cancelled ), 'Cancelled after approval.' );
+	}
+
+	/**
+	 * The mode reads the STATUS, not the _law_approved_at timestamp it used
 	 * to read. Form 2 (Event > submit an event) field 78 (Approval date) is
 	 * empty on every production entry, so no migrated event has that key and
 	 * the lock was off across the whole migrated programme.
 	 */
-	public function test_override_lock_holds_without_an_approval_date(): void {
+	public function test_fee_edit_mode_holds_without_an_approval_date(): void {
 		foreach ( array( 'law-approved', 'publish' ) as $status ) {
-			$migrated = $this->make_event( array( '_law_fee_tier' => 'uk' ), $status );
+			$migrated = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_payment_status' => 'unpaid' ), $status );
 			$this->assertSame( '', (string) law_event_meta( $migrated, '_law_approved_at' ) );
-			$this->assertTrue( law_event_fee_override_locked( $migrated ), $status . ' with no approval date.' );
+			$this->assertSame( 'reissue', law_event_fee_edit_mode( $migrated ), $status . ' with no approval date.' );
 		}
 	}
 
@@ -87,12 +129,9 @@ class FeesTest extends LAW_Test_Case {
 	 * is what separates them, and it is reliable there because a cancellation
 	 * can only have happened on this site.
 	 */
-	public function test_a_cancelled_event_is_judged_by_its_approval_date(): void {
+	public function test_a_withdrawn_event_was_never_approved(): void {
 		$withdrawn = $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-cancelled' );
-		$this->assertFalse( law_event_fee_override_locked( $withdrawn ), 'Withdrawn before it was ever approved.' );
-
-		$cancelled = $this->make_event( array( '_law_fee_tier' => 'uk', '_law_approved_at' => '2026-09-09' ), 'law-cancelled' );
-		$this->assertTrue( law_event_fee_override_locked( $cancelled ), 'Cancelled after approval.' );
+		$this->assertSame( 'open', law_event_fee_edit_mode( $withdrawn ), 'Withdrawn before it was ever approved.' );
 	}
 
 	public function test_resnapshot_refreezes_an_unpaid_approved_fee(): void {
