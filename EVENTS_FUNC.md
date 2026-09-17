@@ -87,14 +87,15 @@ repair-references, backfill-session-agenda).
   `rendering_template_id`, the `speakers_archive_public` switch and the
   reserved `host_edit_review` mode.
 - `speakers_archive_public` (Denis, 17 September 2026): whether the Speakers
-  archive has been announced. **Off by default.** The archive is assembled from
-  Confirmed events as soon as they exist, which is long before LAW wants the
-  line-up announced, so the checkbox on Events → Settings ("Speakers archive")
-  decides whether a speaker profile carries its "Back to speakers" link. That is
-  all it does. **Nothing is hidden or redirected**: the archive page and every
-  single profile stay reachable whichever way it is set. The first build of this
-  also sent `/speakers/` to the home page; Denis dropped that the same day, so
-  the setting is about the link only. See `speakers.php` below.
+  archive is public. **Off by default.** The archive is assembled from Confirmed
+  events as soon as they exist, which is long before LAW wants the line-up
+  announced, so the checkbox on Events → Settings ("Speakers archive") holds it
+  back. While it is off, three things hold together: `/speakers/` answers
+  **404** to the public, the page is dropped from the **XML sitemap**, and
+  `templates/speaker.php` omits its "Back to speakers" link. Committee members,
+  editors and administrators read the archive normally throughout, and so does
+  everyone for a **single profile**, which every event page links straight to.
+  Switching it on restores all three at once. See `speakers.php` below.
 - `law_events_slots()`: the canonical slot list (label → date/start/end),
   retired slots excluded unless asked for. **Retired** means "no longer offered
   to hosts": the slot keeps its row in the settings textarea (fifth column, the
@@ -1587,16 +1588,39 @@ then follows the link that appears and writes that event's confirmation.
 
 - **The archive switch** (Denis, 17 September 2026).
   `law_speakers_archive_is_public()` reads the `speakers_archive_public`
-  setting (default off, see `settings.php` above) and
-  `templates/speaker.php` renders its "Back to speakers" link only when it is
-  true. There is **no gate and no redirect**: the Speakers page serves normally
-  whatever the setting says, and so does every single profile, which is right
-  because every event page links straight to one. A first build did redirect the
-  archive to the home page for everyone but the committee; Denis removed that
-  within the day, and `tests/SpeakersArchiveVisibilityTest.php` asserts the
-  redirect has not crept back (no `law_speakers_archive_gate()`, no
-  `wp_safe_redirect` anywhere in `speakers.php`) rather than leaving that to
-  memory.
+  setting (default off, see `settings.php` above);
+  `law_speakers_archive_is_hidden()` is the decision and
+  `law_speakers_archive_gate()`, on `template_redirect` at priority 5, acts on
+  it. The two are separate so the rule can be asserted without running the 404
+  (`tests/SpeakersArchiveVisibilityTest.php`).
+- **Why a 404 and not a redirect.** The first build sent `/speakers/` to the
+  home page with a 302. Denis replaced it with a 404 the same day, on SEO
+  grounds, and he was right: Google treats a redirect to an **irrelevant**
+  destination as a soft 404 anyway, so the redirect bought none of the
+  protection a redirect usually does, while also dumping a person who followed a
+  real link somewhere they never asked to go. A 404 states the plain fact — not
+  here yet — and the page is re-indexed from the sitemap when the switch goes
+  on. A **410** would be wrong in the other direction: it means gone for good,
+  and this page is coming back. `nocache_headers()` goes with the status,
+  because a 404 cached in a browser or at an edge would outlive the flip.
+- **The sitemap is the other half, and the half that decides how this reads to
+  Google.** `law_speakers_archive_sitemap_exclusion()`, on SEOPress's
+  `seopress_sitemaps_single_query`, drops the Speakers page from the pages
+  sitemap while the archive is hidden. Without it the sitemap advertises a URL
+  that answers 404, which Search Console reports as "Submitted URL not found
+  (404)" — an **error against the property**, materially worse than the status
+  code choice on its own. The page returns to the sitemap by itself when the
+  switch goes on; nothing has to be remembered.
+- **The gate is scoped to the archive VIEW.** A single profile lands on the same
+  page with `law_speaker` set, and in CPT mode on its own permalink, and must
+  keep resolving for everyone, since the event pages link to it.
+  `law_user_is_committee()` is the bypass test, and it is the right one for all
+  three privileged roles: it asks for `edit_others_law_events`, which committee,
+  editor and administrator hold and no other role does.
+  `templates/speakers.php` prints a one-line notice for them
+  (`.law-speakers__hidden`, styled in `assets/css/speakers.css` for the light
+  page rather than borrowed from the dark-surface `.law-form-notice`) so the
+  preview does not read as live.
 - `law_speakers_archive_url()`: the archive URL, resolved from the page holding
   `templates/speakers.php` (falling back to `/speakers/`). Shared by the
   settings screen's description and the profile's back link, which had the
