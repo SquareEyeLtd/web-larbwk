@@ -62,62 +62,24 @@ function law_speakers_archive_url() {
 }
 
 /**
- * Whether the Speakers archive is published to the public.
+ * Whether the Speakers archive is announced to the public.
  *
  * Off by default. The line-up is assembled from Confirmed events long before
- * LAW wants it announced, so the committee turns the archive on from Events →
- * Settings when the programme is ready (Denis, 17 September 2026). While it is
- * off, law_speakers_archive_gate() redirects the archive to the home page and
- * templates/speaker.php drops its "Back to speakers" link.
+ * LAW wants it announced, so the committee switches it on from Events →
+ * Settings when the programme is ready (Denis, 17 September 2026).
  *
- * Deliberately NOT a gate on the speaker data itself: single profiles are
- * linked from every event page and stay reachable either way. This setting is
- * about the index page, not about who may see a speaker.
+ * What it controls is the "Back to speakers" link on a speaker profile, and
+ * only that. The archive page itself stays reachable either way: it is not
+ * redirected or hidden (Denis, 17 September 2026 — an earlier build of this
+ * sent /speakers/ to the home page and that was dropped). So is every single
+ * profile, which every event page links straight to. The switch decides
+ * whether a profile INVITES the visitor into the index, not who may reach it.
  */
 function law_speakers_archive_is_public() {
 	if ( ! function_exists( 'law_events_setting' ) ) {
 		return true;
 	}
 	return (bool) law_events_setting( 'speakers_archive_public', false );
-}
-
-/**
- * Redirect the Speakers archive to the home page while it is not public.
- *
- * Scoped to the ARCHIVE view of the Speakers page: a single profile lands on
- * the same page with the law_speaker query var set (and, in CPT mode, on its
- * own permalink), and must keep working.
- *
- * Committee-level users are let through so they can check the archive before
- * announcing it; everyone else, logged in or not, goes home.
- *
- * 302, never 301: this is a setting that gets turned on, and a permanent
- * redirect would stay in visitors' browser caches after it was.
- */
-function law_speakers_archive_gate() {
-	if ( ! law_speakers_archive_should_redirect() ) {
-		return;
-	}
-	wp_safe_redirect( home_url( '/' ), 302 );
-	exit;
-}
-add_action( 'template_redirect', 'law_speakers_archive_gate', 5 );
-
-/**
- * The decision law_speakers_archive_gate() acts on, kept separate so it can be
- * asserted without a redirect-and-exit.
- */
-function law_speakers_archive_should_redirect() {
-	if ( law_speakers_archive_is_public() ) {
-		return false;
-	}
-	if ( ! is_page_template( 'templates/speakers.php' ) || law_speakers_is_single() ) {
-		return false;
-	}
-	if ( function_exists( 'law_user_is_committee' ) && law_user_is_committee() ) {
-		return false;
-	}
-	return true;
 }
 
 /**
