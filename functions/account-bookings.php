@@ -526,6 +526,14 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 		$held = true;
 	}
 
+	// The whole event switched off (Denis, 17 September 2026). Recorded the same
+	// way and in the same place, so it reaches the external branch below too:
+	// that one returns before the holds are read, and a disabled external event
+	// must not keep offering a live link out to the organiser.
+	if ( function_exists( 'law_event_is_disabled' ) && law_event_is_disabled( $event_id ) ) {
+		$held = true;
+	}
+
 	// Invitation only outranks everything but the flagship and the hold above:
 	// LAW invites people itself, and nothing about the viewer changes that. It
 	// is not a refusal the viewer's own booking should be able to hide, because

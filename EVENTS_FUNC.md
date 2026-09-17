@@ -8859,11 +8859,22 @@ fee box and both save handlers, so the control somebody sees and the write the
 handler accepts can never disagree. `law_event_fee_override_locked()` is gone.
 
 **The warning box** is `.law-form-notice.is-warning` on the committee panel,
-rendered ABOVE the control rather than under it, because it changes what the
-control does and so has to be read first. It names the amount of the invoice
-that will be voided, and says what setting the fee to 0 does instead. wp-admin
-carries the same two sentences as a `notice notice-warning inline` above the
-fee fields.
+sitting between the "Override the host fee" tick box and the "New host fee (£)"
+field, so it is read on the way to typing the figure it is about. It names the
+amount of the invoice that will be voided, and says what setting the fee to 0
+does instead.
+
+It is hidden until the tick box is ticked (17 September 2026), carrying the
+same `data-law-toggle-for="law-dash-override"` wiring as the amount field: with
+the box unticked nothing on the panel can change the fee, because the fee tier
+lives in wp-admin and not here, so the warning would otherwise be shouting
+about an action the form is not offering. The one exception is an event whose
+override is ALREADY applied: there the box starts ticked and the warning is
+rendered without the toggle, because unticking it reverts the fee to the tier
+price and reissues too, and a plain toggle would hide the warning at exactly
+the moment it applies. wp-admin carries the same two sentences as a `notice
+notice-warning inline`, always visible and below the fee fields, because that
+screen also holds the fee tier select and so has a second way to change the fee.
 
 **One email, not two.** The host gets the existing `user_payment_due`, with a
 new `{fee_change_note}` placeholder filled in with "This replaces the earlier
@@ -8962,6 +8973,99 @@ Touched: `functions/events/fees.php`, `functions/events/stripe/service.php`,
 `templates/account-dashboard.php`, `tests/ServiceTest.php`,
 `tests/FeesTest.php`, `tests/WorkflowTest.php`,
 `tests/EmailsDashboardTest.php`.
+
+## An event can be switched off altogether (17 September 2026)
+
+**The request.** "In committee controls we need a checkbox at the top (should be
+just small checkbox without any long description) that will disable the event at
+all, so it's hidden from programme no matter what. On events archive list
+dashboard such event should be tagged as a disabled with badge" (Denis,
+17 September 2026).
+
+**Not a status, and not Cancelled.** The event keeps the status it had, keeps its
+fee snapshot, its Stripe invoice, its bookings and its rows in every committee
+list; unticking the box puts it back exactly where it was. Cancelled stays the
+status for an event that is not happening — it voids the invoice, emails the
+host and cancels every attendee booking, none of which this does. This is for an
+event that must not be *seen*, now or at all, while the record behind it stays
+intact. It is stored as `_law_disabled`, a plain flag in the meta schema.
+
+**"No matter what" is one predicate, not a list of surfaces.**
+`law_event_is_disabled()` is read by `law_event_is_publicly_listed()` and
+answers `false` before the status is even looked at. That predicate already
+decides whether an event has a public page, whether its card links to the
+permalink or to the committee's `?event=` view, whether it is in the `.ics`
+feed, what `{event_link}` resolves to in an email, and whether Enable booking
+may force booking open — so all of them were covered by the one tick, and there
+is no second list of surfaces to keep in step with the first.
+
+Three places needed their own limb:
+
+- **The programme.** `law_events_map_post()` drops a disabled event whenever the
+  caller asked for the public status set. One place rather than at each day
+  grouping, slot bar and per-day count, all of which derive from that map. The
+  committee's own programme (`$allowed = array()`) and the host dashboard
+  (`array( '*' )`) still see it, because a switch that makes an event vanish
+  from the screen you flipped it on is a switch nobody can find again.
+- **Its own page.** Hiding it from the programme is not enough: the permalink is
+  a published URL that anyone holding it, or arriving from a search engine, can
+  open. `law_events_gate_disabled_event_page()` (a `template_redirect` at
+  priority 3, its own hook and not the Members gate at 4, because the two
+  refusals are unrelated and this one applies whether or not that plugin is
+  installed) 404s it for everyone except the people who can act on it —
+  `law_user_can_manage_event()`, so the host, the co-owners and the committee
+  keep the preview.
+- **Booking.** `law_event_booking_hold_reason()` answers `'event_disabled'`
+  first, ahead of Disable booking, so it cannot be lifted by Enable booking and
+  it reaches an **external** event too — `law_booking_resolve_state()` returns
+  early on those, so the flag is recorded as a hold before that branch and the
+  link out to the organiser goes dead with everything else.
+
+**What the committee sees.** A single checkbox, "Disable this event (hide it from
+the programme)", at the very top of the Committee controls panel above Override
+booking availability, with a rule under it and no help text — one short label is
+the whole of it, as asked. It posts under the existing `law_flags_present`
+sentinel, so an unticked box still switches the flag off. The wp-admin Event
+flags box carries the same control, first in the box for the same reason, so
+"Full editing in wp-admin" is not a dead end. On the dashboard events table the
+row carries a **Disabled** badge beside the reference — the one filled red pill
+in the set, deliberately not the outline treatment `--external` uses, because
+that one is an identity tag and this is the thing about a row that must not be
+skimmed past when the status beside it still reads Confirmed. The same badge
+sits beside the status pill on committee event cards. The booking line under the
+select reads "This event is disabled, so it is off the programme and takes no
+bookings", and the change is logged in plain words by
+`law_event_log_flag_change()` ("Event disabled: it is hidden from the programme
+and its own page, and takes no bookings" / "Event enabled again: …"). The
+committee export gained a **Disabled** column, Yes/blank, next to Event status,
+because a Confirmed row that is on none of the public surfaces would otherwise
+export as an ordinary Confirmed row.
+
+**Not carried by the content transfer bundle.** `_law_disabled` is deliberately
+absent from `law_content_transfer_event_meta_keys()`. That list is a whitelist,
+and the writer only touches the keys on it, so an import can neither switch an
+event off nor switch one back on: this is a local committee decision about the
+live site, like the status itself.
+
+**Tests.** `tests/EventDisabledTest.php`, 15 cases: the flag defaults to off and
+ignores non-events; a Confirmed, slotted, venued, bookable event drops off the
+public programme while the committee and host maps keep it; it stops being
+publicly listed and its link falls back to the committee view; the page 404s for
+a visitor, renders for the host and the committee, and comes back on untick;
+booking closes, Enable booking does not lift it, and an external event's link
+out closes too; the panel note, the badge, the export column, the set/clear
+round trip through the flags sentinel and the two log sentences. One further
+case greps both handlers and the panel for the field, so the simulated write the
+other cases use cannot drift from the real ones. 1068 tests in the suite.
+
+Touched: `functions/events/meta.php`, `functions/events/statuses.php`,
+`functions/events/source.php`, `functions/events/bookings.php`,
+`functions/events/committee.php`, `functions/events/workflow.php`,
+`functions/events/export.php`, `functions/events/admin/event-screen.php`,
+`functions/account-bookings.php`, `functions/calendar.php`,
+`templates/account-dashboard.php`, `parts/events/dashboard-list.php`,
+`parts/loop/event.php`, `assets/css/calendar.css`, `assets/css/event-form.css`,
+`tests/EventDisabledTest.php`.
 
 ---
 

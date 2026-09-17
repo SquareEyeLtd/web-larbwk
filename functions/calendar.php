@@ -122,6 +122,24 @@ function law_event_external_badge( $event_id ) {
 }
 
 /**
+ * The "Disabled" tag for an event the committee has switched off, for
+ * committee views (Denis, 17 September 2026).
+ *
+ * A FILLED red pill, not an outline one: --external is the outline badge
+ * because it is an identity tag, and this is the opposite — the one thing
+ * about a row the committee must not miss, since a disabled event is off the
+ * programme however Confirmed its status badge beside it reads.
+ *
+ * @param int $event_id law_event post ID.
+ */
+function law_event_disabled_badge( $event_id ) {
+	if ( ! function_exists( 'law_event_is_disabled' ) || ! law_event_is_disabled( $event_id ) ) {
+		return;
+	}
+	echo '<span class="law-cal-card__badge law-cal-card__badge--disabled">Disabled<span class="show-for-sr">: hidden from the programme</span></span>';
+}
+
+/**
  * "Session agenda: 3 sessions" / "on, none added yet", or '' when it is off.
  *
  * Text rather than a pill, and with the count, because a flag switched on with

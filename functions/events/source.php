@@ -82,6 +82,17 @@ function law_events_map_post( $post, $allowed = null ) {
 		return null;
 	}
 
+	// The committee's off switch (Denis, 17 September 2026). Dropped from every
+	// PUBLIC list here, which is one place rather than at each of the day
+	// groupings, slot bars and per-day counts the programme derives from this
+	// map. The committee's own programme ($allowed = array()) and the host
+	// dashboard ($allowed = array( '*' )) still see it, because a switch whose
+	// effect is to make an event vanish from the screen you flipped it on is a
+	// switch nobody can find again.
+	if ( ! $all && law_event_is_disabled( $post ) ) {
+		return null;
+	}
+
 	$title = trim( $post->post_title );
 	if ( '' === $title ) {
 		return null;
@@ -628,6 +639,36 @@ add_action( 'template_redirect', function () {
 		}
 	}
 }, 5 );
+
+/**
+ * A disabled event has no public page: 404 it for everyone but the people who
+ * can act on it (Denis, 17 September 2026).
+ *
+ * Hiding it from the programme is not enough on its own -- the permalink is
+ * still a published URL that anyone who has it, or who found it in a search
+ * engine, can open, and "hidden no matter what" has to mean the page too. The
+ * host, its co-owners and the committee keep the page, the same exemption the
+ * Members gate below carries, so the one screen where the switch is flipped
+ * still has something to preview.
+ *
+ * Its own hook at priority 3, before that gate: it applies whether or not the
+ * Members plugin is installed, and the two refusals are unrelated.
+ */
+function law_events_gate_disabled_event_page() {
+	if ( 'cpt' !== law_events_source() || ! is_singular( LAW_EVENT_CPT ) ) {
+		return;
+	}
+	$event_id = get_queried_object_id();
+	if ( ! law_event_is_disabled( $event_id )
+		|| law_user_can_manage_event( get_current_user_id(), $event_id ) ) {
+		return;
+	}
+	global $wp_query;
+	$wp_query->set_404();
+	status_header( 404 );
+	nocache_headers();
+}
+add_action( 'template_redirect', 'law_events_gate_disabled_event_page', 3 );
 
 /**
  * Gate single event/speaker pages by the same Members restriction as the

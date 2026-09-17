@@ -1770,6 +1770,16 @@
   border: 1px solid #c9c5d6;
 }
 
+/* The committee switched this event off: it is on none of the public surfaces,
+   whatever the status badge beside it says. Filled, and the one red in the set,
+   because it is the one thing about a row that must not be skimmed past — the
+   outline treatment belongs to --external, which is an identity tag rather
+   than a warning. */
+.law-cal-card__badge--disabled {
+  background: #a12622;
+  color: #fff;
+}
+
 /* Identity, not status: a third party runs this event and books it on its own
    website. Deliberately the only OUTLINE badge in the set — a filled navy pill
    would be pixel-identical to --confirmed, and an identity tag that looks like

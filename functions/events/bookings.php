@@ -126,12 +126,19 @@ function law_event_booking_override_choices() {
  * Disable booking closes one, and it is checked before that branch.
  *
  * @param int $event_id law_event post ID.
- * @return string '' | 'disabled' | 'places' | 'venue'
+ * @return string '' | 'event_disabled' | 'disabled' | 'places' | 'venue'
  */
 function law_event_booking_hold_reason( $event_id ) {
 	$event_id = (int) $event_id;
 	$override = law_event_booking_override( $event_id );
 
+	// The whole event switched off (Denis, 17 September 2026). First, ahead of
+	// Disable booking and ahead of the external short-circuit in the note
+	// below: an event that is not on the programme at all cannot be taking
+	// bookings, and Enable booking must not lift it.
+	if ( law_event_is_disabled( $event_id ) ) {
+		return 'event_disabled';
+	}
 	if ( 'disable' === $override ) {
 		return 'disabled';
 	}
@@ -190,6 +197,7 @@ function law_event_venue_gates_booking( $event_id ) {
  */
 function law_event_booking_hold_label( $reason ) {
 	$labels = array(
+		'event_disabled' => __( 'This event is disabled, so it is off the programme and takes no bookings.', 'law' ),
 		'disabled' => __( 'Booking is closed on this event because it is set to Disable booking.', 'law' ),
 		'places'   => __( 'Booking is closed because no places have been released.', 'law' ),
 		'venue'    => __( 'Booking is closed because no venue is recorded.', 'law' ),
@@ -213,6 +221,13 @@ function law_event_booking_hold_label( $reason ) {
 function law_event_booking_hold_note( $event_id ) {
 	$event_id = (int) $event_id;
 	$reason   = law_event_booking_hold_reason( $event_id );
+
+	// The event switched off altogether, reported before anything else and on
+	// every kind of event, external included: nothing else about the booking
+	// switch matters while the event is not on the programme at all.
+	if ( 'event_disabled' === $reason ) {
+		return array( 'text' => law_event_booking_hold_label( $reason ), 'error' => false );
+	}
 
 	// Enable booking with no capacity is the one combination the committee can
 	// ask for and not get, so it is an error rather than a statement: they have

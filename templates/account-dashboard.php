@@ -450,6 +450,25 @@ $law_email_mode = $law_detail
 					<h2>Committee controls</h2>
 
 					<?php
+					// The off switch, at the very top because it outranks every
+					// control under it (Denis, 17 September 2026): a disabled event
+					// is off the programme, off its own page and takes no bookings
+					// whatever its status, its slot or the booking answer below say.
+					// One short label and no help text, which is what was asked for
+					// -- the word "disabled" and the tick are the whole of it.
+					//
+					// It posts under the law_flags_present sentinel rendered further
+					// down this same form, so an unticked box still switches the flag
+					// off. The two are always rendered together: nothing hides either
+					// half of the panel.
+					?>
+					<div class="law-form-field law-dashboard__disable">
+						<div class="law-choices">
+							<label><input type="checkbox" name="law_disabled" value="1" <?php checked( (bool) law_event_meta( $law_id, '_law_disabled' ) ); ?>> Disable this event (hide it from the programme)</label>
+						</div>
+					</div>
+
+					<?php
 					// Override booking availability: the committee's hand on the
 					// booking switch, first control on the panel because it
 					// overrides every other one (client, 16 September 2026).
@@ -682,19 +701,35 @@ $law_email_mode = $law_detail
 							: 'This event is no longer live, so its fee is a record of what was charged and cannot be changed.' ); ?></small>
 					</div>
 					<?php else : ?>
+					<div class="law-form-field">
+						<div class="law-choices">
+							<label><input type="checkbox" id="law-dash-override" name="law_fee_override" value="1" <?php checked( $law_fee_override ); ?>> Override the host fee</label>
+						</div>
+					</div>
+
 					<?php
 					if ( 'reissue' === $law_fee_mode ) :
-						// Shown BEFORE the control, not under it: it changes what the
-						// control does, so it has to be read first. Which warning
-						// depends on whether there is an invoice to void — an event
-						// whose fee was waived, or whose invoice never got raised,
-						// has nothing to cancel, and telling them otherwise would be
-						// a warning about something that is not going to happen.
+						// Sits between the tick box and the amount, so it is read on the
+						// way to typing the figure it is about. With the box unticked
+						// nothing on this form can change the fee (the tier lives in
+						// wp-admin, not here), so the warning would be about an action
+						// that is not on offer: it is hidden until the box is ticked,
+						// by the same data-law-toggle-for wiring as the amount field
+						// below (Denis, 17 September 2026). An event whose override is
+						// ALREADY applied keeps it on screen unconditionally, because
+						// unticking the box changes the fee back to the tier price and
+						// that reissues too — the one case where hiding it on untick
+						// would hide the warning exactly when it applies.
+						//
+						// Which warning depends on whether there is an invoice to void —
+						// an event whose fee was waived, or whose invoice never got
+						// raised, has nothing to cancel, and telling them otherwise
+						// would be a warning about something that is not going to happen.
 						$law_fee_now     = (int) law_event_meta( $law_id, '_law_fee_pence' );
 						$law_has_invoice = '' !== (string) law_event_meta( $law_id, '_law_stripe_invoice_id' )
 							|| '' !== trim( (string) law_event_meta( $law_id, '_law_stripe_invoice_url' ) );
 						?>
-					<div class="law-form-notice is-warning" role="status">
+					<div class="law-form-notice is-warning" role="status"<?php echo $law_fee_override ? '' : ' data-law-toggle-for="law-dash-override" hidden'; ?>>
 						<?php if ( $law_has_invoice ) : ?>
 							<strong>Changing this fee voids the invoice already raised.</strong>
 							Saving a different figure cancels the open Stripe invoice (<?php echo esc_html( law_events_format_pence( $law_fee_now ) ); ?>) so it can no longer be paid, then emails the host a new one for the new amount.
@@ -705,11 +740,6 @@ $law_email_mode = $law_detail
 						<?php endif; ?>
 					</div>
 					<?php endif; ?>
-					<div class="law-form-field">
-						<div class="law-choices">
-							<label><input type="checkbox" id="law-dash-override" name="law_fee_override" value="1" <?php checked( $law_fee_override ); ?>> Override the host fee</label>
-						</div>
-					</div>
 
 					<?php
 					// Legacy parity: field 81 (Discounted fee) on form 2 (Event > submit an

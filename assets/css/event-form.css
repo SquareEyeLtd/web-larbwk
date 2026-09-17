@@ -570,6 +570,11 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    client's note on the screenshot was that the sections drifted too far apart. */
 .law-dashboard__controls h2 { font-size: 1.1rem; text-transform: uppercase; margin: 0 0 .7rem; }
 .law-dashboard__controls .law-form-field { margin-bottom: .55rem; }
+/* The off switch at the top of the panel. A rule under it, not a heading or a
+   line of help text: it is one short label, and the border is there so the
+   control that overrides every other one is not read as the first item of the
+   booking group below it. */
+.law-dashboard__controls .law-dashboard__disable { margin-bottom: .8rem; padding-bottom: .7rem; border-bottom: 1px solid #e3e3ec; }
 /* Direct child only, so the bold weight lands on the field label and the group
    heading but never on the option labels inside a .law-choices group, which
    keep the normal weight the shared choice rules give them. */

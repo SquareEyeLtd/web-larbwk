@@ -23,6 +23,10 @@ function law_committee_export_columns() {
 		'Preferred date & time slots',
 		'Confirmed slot',
 		'Event status',
+		// Beside the status because it qualifies it: a Confirmed event with this
+		// column set to Yes is on none of the public surfaces (Denis,
+		// 17 September 2026).
+		'Disabled',
 		'Payment status',
 		'Submitted',
 		'Sector',
@@ -70,6 +74,8 @@ function law_committee_export_row( WP_Post $post ) {
 		implode( '; ', law_event_meta( $id, '_law_preferred_slots' ) ),
 		(string) law_event_meta( $id, '_law_slot_label' ),
 		law_event_status_label( $post ),
+		// Yes/blank, matching Sponsored and External below rather than Yes/No.
+		law_event_is_disabled( $post ) ? 'Yes' : '',
 		ucfirst( (string) law_event_meta( $id, '_law_payment_status' ) ),
 		mysql2date( 'Y-m-d H:i', $post->post_date ),
 		law_event_sector_summary( $id ),
