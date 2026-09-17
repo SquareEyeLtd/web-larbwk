@@ -3987,7 +3987,7 @@ they stay the same length.
   live in `notifications.php` and are shared with the committee's front-end
   Manage emails screen (`emails-dashboard.php`).
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/content-transfer.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/content-transfer.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -4261,6 +4261,48 @@ they stay the same length.
   Stripe object whatever its reference, because the local site's references were
   reassigned on 14 September 2026 before the Stripe patch existed and the table
   above then offers no row to fix them from. The patch is idempotent.
+- **`repair-stripe-invoice-ids.php`** (17 September 2026) — the panel that
+  backfills `_law_stripe_invoice_id` on the events the retired Make scenario
+  invoiced. Step 19 (Log invoice URL) wrote only `hosted_invoice_url` into
+  field 83 (Stripe invoice URL) on form 2 (Event > submit an event), and there
+  was no field anywhere holding the invoice's own `in_...` ID, so
+  `law_migration_populate_event()` fills `_law_stripe_invoice_url` and leaves
+  the ID empty. On the production copy scanned on 17 September 2026 that is
+  every invoiced event: 33 Approved and 21 Confirmed, none with an ID.
+  **The payment path was never affected** — a Make invoice carries
+  `metadata[gf_entry_id]` and `law_stripe_resolve_event_id()` resolves an
+  incoming `invoice.paid` through it, so a host paying a legacy invoice after
+  cutover is confirmed and published normally. What the missing ID breaks is
+  everything that has to *act on* the invoice: the resume-before-create guard
+  in `law_stripe_invoice_steps()` cannot see it, so the wp-admin "Create
+  invoice" button would raise a host's second invoice;
+  `law_stripe_void_invoice()` cancels nothing, so a cancelled event leaves a
+  payable invoice behind an email saying nothing is due; and the Stripe
+  re-stamp above only visits events that already hold an object ID.
+  `law_events_invoice_id_lookup()` asks Stripe twice over: the invoice search
+  (`metadata["gf_entry_id"]:"<entry>"`, the key Make stamped), then, if that
+  yields no usable match, the customer behind field 73 (Invoice contact email)
+  and their invoice list, which is also the fallback when search is
+  unavailable or eventually-consistent. A candidate is accepted only when its
+  `hosted_invoice_url` is exactly the URL the event holds
+  (`law_events_invoice_id_match()` reports that as the stronger signal and
+  prefers it) or its `gf_entry_id` is exactly this event's entry; several
+  matches, no match, or an invoice `law_events_invoice_id_claimed_by()` finds
+  on another event are all reported and left alone rather than guessed at.
+  The lookup is its own button (a handful of API calls per event has no
+  business running on every page load), every call in it is a GET, and
+  `law_events_invoice_id_apply()` re-runs the lookup rather than trusting the
+  rendered page. The customer ID is taken from the matched invoice at the same
+  time, since the legacy workflow never recorded that either, but never over
+  one the module has since written.
+  Two stopgaps protect the same events until the panel has run:
+  `law_stripe_create_and_send_invoice()` refuses outright while a URL is
+  present with no ID (logged on the event, but deliberately **not** recorded
+  as a Stripe failure, because nothing failed and the alert email would say
+  otherwise), and `law_stripe_void_invoice()` returns `failed` with an
+  admin-and-committee alert naming the URL instead of the silent "no invoice
+  on record" line. The admin event screen renders the button disabled with the
+  reason rather than hiding it. Covered by `tests/LegacyInvoiceIdRepairTest.php`.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.

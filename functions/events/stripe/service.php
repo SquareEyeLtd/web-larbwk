@@ -29,6 +29,31 @@ function law_stripe_create_and_send_invoice( $event_id ) {
 		return new WP_Error( 'law_no_fee', 'This event has no fee; nothing to invoice.' );
 	}
 
+	// A legacy invoice with no ID beside it: the events migrated from form 2
+	// (Event > submit an event) carry the hosted URL that the retired Make
+	// scenario logged into field 83 (Stripe invoice URL) and nothing else, so
+	// the resume-before-create guard below cannot see the invoice the host is
+	// already holding. Creating a second one would bill them twice, so this
+	// refuses until LAW > Migration's "legacy Stripe invoices with no invoice
+	// ID" panel has recorded it. Deliberately NOT recorded as a Stripe failure:
+	// nothing failed, the request was refused, and an alert email would say
+	// otherwise.
+	if ( '' === (string) law_event_meta( $event_id, '_law_stripe_invoice_id' )
+		&& '' !== trim( (string) law_event_meta( $event_id, '_law_stripe_invoice_url' ) ) ) {
+		// Logged as well as returned: the approve transition discards this
+		// error (it only acts on success), and a refusal nobody can see is how
+		// an event ends up looking approved with no invoice and no explanation.
+		law_event_log(
+			$event_id,
+			'Invoice NOT raised: this event already holds an invoice from before the rebuild, recorded as a web address only, with no ID to check it by. Run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration, then try again.',
+			array( 'action' => 'invoice_refused_legacy', 'source' => 'stripe' )
+		);
+		return new WP_Error(
+			'law_legacy_invoice',
+			'This event already has an invoice raised before the rebuild, and only its web address was recorded, not its ID. Run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration first, so this invoice can be reused instead of a second one being raised.'
+		);
+	}
+
 	// Configuration guards: a VAT-liable invoice without the tax rate ID
 	// would silently bill net-only, so it fails loudly instead. A missing
 	// rendering template only costs branding: warn and continue.
@@ -444,6 +469,37 @@ function law_stripe_void_invoice( $event_id, $actor = 0 ) {
 	$log_extra  = array( 'user_id' => (int) $actor );
 
 	if ( '' === $invoice_id ) {
+		// A migrated event may hold a LIVE invoice with only its web address on
+		// record (field 83 (Stripe invoice URL) on form 2 (Event > submit an
+		// event) was all the retired Make scenario logged). Saying nothing here
+		// would leave that invoice open and payable behind a cancellation email
+		// telling the host no payment is due, so it is called out and alerted
+		// exactly like a failed void.
+		$legacy_url = trim( (string) law_event_meta( $event_id, '_law_stripe_invoice_url' ) );
+		if ( '' !== $legacy_url && 'paid' !== (string) law_event_meta( $event_id, '_law_payment_status' ) ) {
+			law_event_log(
+				$event_id,
+				sprintf(
+					'Cancelled while holding a pre-rebuild Stripe invoice whose ID was never recorded (%s). It could NOT be voided automatically and may still be payable: void it by hand in Stripe, or run "Repair: legacy Stripe invoices with no invoice ID" on LAW → Migration and cancel again.',
+					$legacy_url
+				),
+				array( 'action' => 'invoice_void_unknown', 'invoice_url' => $legacy_url, 'source' => 'stripe' ),
+				$log_extra
+			);
+			$alert = array(
+				'placeholders' => array(
+					'stripe_error' => sprintf(
+						'Event #%d was cancelled holding a pre-rebuild invoice with no ID on record (%s). It was not voided automatically; void it by hand in Stripe.',
+						$event_id,
+						$legacy_url
+					),
+				),
+			);
+			law_events_send( 'admin_stripe_error', $event_id, $alert );
+			law_events_send( 'admin_stripe_error', $event_id, $alert + array( 'to' => law_events_committee_emails() ) );
+			return 'failed';
+		}
+
 		law_event_log(
 			$event_id,
 			sprintf( 'Cancelled with no Stripe invoice on record (payment status: %s).', (string) law_event_meta( $event_id, '_law_payment_status' ) ?: '(none)' ),

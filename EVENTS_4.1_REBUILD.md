@@ -1192,8 +1192,20 @@ The migrator never relies on ID ordering, only on `gpnf_entry_parent`.)
 Entries mid-workflow at migration time need explicit handling, all covered by
 the status derivation in step 3: Proposed/Sent back events simply appear in the
 new committee dashboard for action; Approved-unpaid events keep their live
-Stripe invoice (the URL and ID migrate; the webhook map covers payment arriving
+Stripe invoice (the URL migrates and the webhook map covers payment arriving
 after cutover). Nothing needs to be re-invoiced.
+
+**Correction (17 September 2026): only the URL migrates, not the invoice ID.**
+Field 83 (Stripe invoice URL) on form 2 (Event > submit an event) held the
+hosted URL and nothing held the `in_...` ID, so every migrated event's
+`_law_stripe_invoice_id` is empty (33 Approved and 21 Confirmed on the
+production copy). Payment is unaffected, because the webhook resolves an
+invoice through its `gf_entry_id` metadata, but the ID is what the
+double-billing guard and the cancellation void read, so
+`migration/repair-stripe-invoice-ids.php` backfills it from Stripe and should
+be run straight after the migration on each environment. Until it has run,
+invoice creation refuses on those events and a cancellation alerts instead of
+voiding silently.
 
 ### 5.6 Client-visible continuity guarantees
 
