@@ -475,10 +475,33 @@ host's formatting.
   the event page.
 - `law_rich_text_sanitize()`: the single write path, used by the front-end
   form saver, the meta schema's `speaker_rows` sanitiser, the speakers
-  dashboard and the wp-admin repeater. It drops `<script>`/`<style>` blocks
-  **contents and all** first — `wp_kses()` removes only the tags and would
-  leave the code behind as visible text — and returns `''` for an emptied
-  editor, which posts `<p>&nbsp;</p>` rather than an empty string.
+  dashboard and the wp-admin repeater. It normalises non-breaking spaces
+  first (below), then drops `<script>`/`<style>` blocks **contents and all**
+  — `wp_kses()` removes only the tags and would leave the code behind as
+  visible text — and returns `''` for an emptied editor, which posts
+  `<p>&nbsp;</p>` rather than an empty string.
+- `law_rich_text_normalise_spaces()` (17 September 2026): every non-breaking
+  space becomes an ordinary one. A host pasting from Word, Google Docs or a
+  PDF brings the source's spaces with them, and those applications emit U+00A0
+  where a reader sees a space; a browser never breaks a line at one, so a
+  sentence whose spaces are all non-breaking is a single unbreakable word and
+  runs out of its column instead of wrapping. That is what happened to the
+  event "Hot Topics in Energy and Mining Arbitration" (Denis, 17 September
+  2026), whose second paragraph arrived with twenty-one of them and printed
+  off the right-hand edge of the page. **All of them go, not just the runs**:
+  the deliberate use (holding "10 am" together across a line break) is real
+  typography, but no LAW description has wanted it, neither editor offers a
+  way to type one on purpose, and telling intent from paste damage is
+  guesswork — losing a soft join is the smaller harm. Both spellings are
+  covered, the raw bytes a paste carries and the entity TinyMCE writes back
+  (decimal and hexadecimal), and the match runs in byte mode so a value that
+  is not valid UTF-8 is still processed. Because it sits in the single write
+  path it covers event descriptions, session descriptions, speaker biographies
+  and the per-event email bodies alike. Values stored before it existed are
+  swept by `migration/repair-nbsp.php`. `.law-cal-detail__body` (and the
+  dashboard's prose panels) also carry `overflow-wrap: break-word` as a
+  backstop, so anything that ever slips past wraps inside the reading measure
+  rather than off the page. Covered by `tests/RichTextTest.php`.
 - `law_rich_text_is_empty()`, `law_rich_text_plain()`, `law_rich_text_render()`:
   the read side. `law_rich_text_plain()` is what the places that cannot take
   markup use (the calendar excerpt and keyword index, the `.ics` description,
@@ -3987,7 +4010,7 @@ they stay the same length.
   live in `notifications.php` and are shared with the committee's front-end
   Manage emails screen (`emails-dashboard.php`).
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/content-transfer.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/content-transfer.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -4303,6 +4326,23 @@ they stay the same length.
   admin-and-committee alert naming the URL instead of the silent "no invoice
   on record" line. The admin event screen renders the button disabled with the
   reason rather than hiding it. Covered by `tests/LegacyInvoiceIdRepairTest.php`.
+- **`repair-nbsp.php`** (17 September 2026) — the one-off sweep for rich text
+  stored before `law_rich_text_normalise_spaces()` existed. It reads all four
+  places rich text is kept: `post_content` on `law_event`, on `law_session`
+  and on `law_speaker` (the fallback biography), and the per-appearance
+  biographies in an event's `_law_speakers` rows. Every affected value is
+  listed with the offending text shown in context, each row can be unticked,
+  and a change to an event or one of its sessions lands in that event's
+  activity log. **Rows are pre-ticked only where the damage is visible** —
+  two or more non-breaking spaces in a row, which is three words joined and
+  enough to widen a column; a lone stray one is listed unticked, because on
+  its own it breaks nothing and may even have been meant. The apply re-runs
+  the scan rather than trusting the rendered page, so a description re-saved
+  while the panel sat open is never written back over. Only spaces change, no
+  words and no markup, and re-running it is harmless. On the copy scanned on
+  17 September 2026: 47 values held one, three of them in runs — the worst
+  being the 21 in "Hot Topics in Energy and Mining Arbitration" that started
+  this.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
