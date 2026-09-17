@@ -608,8 +608,8 @@ function law_events_settings_page() {
 						<strong>Not set: the flagship registration form currently links to the Policies index.</strong> It deliberately does NOT fall back to the host terms, which are about arranging a venue and paying a host fee and do not apply to an attendee.
 					<?php endif; ?></p></td></tr>
 				<tr><th scope="row">Speakers archive</th>
-					<td><label><input type="checkbox" name="speakers_archive_public" value="1" <?php checked( ! empty( $s['speakers_archive_public'] ) ); ?>> Make the Speakers archive public</label>
-					<p class="description">Off: <code><?php echo esc_html( law_speakers_archive_url() ); ?></code> redirects visitors to the home page and the &ldquo;Back to speakers&rdquo; link is hidden on a speaker profile. Individual speaker profiles stay reachable either way, because the event pages link straight to them.</p></td></tr>
+					<td><label><input type="checkbox" name="speakers_archive_public" value="1" <?php checked( ! empty( $s['speakers_archive_public'] ) ); ?>> The Speakers archive is public</label>
+					<p class="description">Off: the &ldquo;Back to speakers&rdquo; link is hidden on a speaker profile. Nothing else changes &mdash; the archive at <code><?php echo esc_html( law_speakers_archive_url() ); ?></code> and every individual profile stay reachable either way.</p></td></tr>
 				<tr><th scope="row">Host edits to published events</th>
 					<td><label><input type="radio" name="host_edit_review" value="immediate" <?php checked( $s['host_edit_review'], 'immediate' ); ?>> Publish immediately</label><br>
 					<label><input type="radio" name="host_edit_review" value="review" disabled> Route to LAW for review <em>(arrives with phase 4.2; 4.1 publishes immediately and emails the committee)</em></label></td></tr>
