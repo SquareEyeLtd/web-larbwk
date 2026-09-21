@@ -23,6 +23,59 @@ add_action( 'rest_api_init', function () {
 	);
 } );
 
+/**
+ * The webhook's own address on this site.
+ *
+ * One expression of it, so the health check in webhook-health.php and any
+ * instruction printed for a human cannot drift from what is actually
+ * registered above.
+ *
+ * @return string
+ */
+function law_stripe_webhook_url() {
+	return rest_url( 'law/v1/stripe-webhook' );
+}
+
+/**
+ * Every Stripe event type this endpoint acts on.
+ *
+ * The canonical list, and the reason it exists: an endpoint subscribed to the
+ * wrong set fails SILENTLY. Stripe delivers nothing, the site logs nothing,
+ * and the first anybody knows is a host asking why their paid event still
+ * says "Open soon" -- which is exactly what happened to the 33 events the
+ * retired Make scenario left parked (EVENTS_FUNC.md, "Payment reconciliation").
+ *
+ * law_stripe_webhook_health() compares this against what Stripe says the
+ * endpoint is subscribed to, and the same list is printed as the `stripe
+ * listen --events` argument for local forwarding, so adding a case to
+ * law_stripe_webhook_dispatch() or law_stripe_webhook_booking_outcome()
+ * means adding it HERE and nowhere else.
+ *
+ * @return string[] Sorted, so two lists compare cleanly.
+ */
+function law_stripe_webhook_event_types() {
+	$types = array(
+		// Host fee on an event (4.1).
+		'invoice.paid',
+		'invoice.payment_failed',
+		'invoice.voided',
+		'invoice.marked_uncollectible',
+		'charge.refunded',
+		// Attendee places: flagship applications and reception checkouts
+		// (FLAGSHIP_PAYMENTS.md §4.4, RECEPTIONS.md §3.2).
+		'checkout.session.completed',
+		'checkout.session.async_payment_succeeded',
+		'checkout.session.async_payment_failed',
+		'checkout.session.expired',
+		'setup_intent.succeeded',
+		'setup_intent.setup_failed',
+		'invoice.payment_action_required',
+		'payment_intent.payment_failed',
+	);
+	sort( $types );
+	return $types;
+}
+
 function law_stripe_webhook_handler( WP_REST_Request $request ) {
 	$payload = $request->get_body();
 	$header  = (string) $request->get_header( 'stripe-signature' );

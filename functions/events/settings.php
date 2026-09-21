@@ -616,6 +616,8 @@ function law_events_settings_page() {
 			</table>
 			<?php submit_button( 'Save settings' ); ?>
 		</form>
+
+		<?php law_events_payment_health_panel(); ?>
 	</div>
 	<?php
 }
