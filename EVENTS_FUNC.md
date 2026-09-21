@@ -9487,6 +9487,18 @@ invoice ID panel rather than reporting `no_invoice` as a dead end.
 choice, a chosen invoice recorded in one fetch, one belonging to nobody, one
 another event already holds); 14 there, 1157 in the suite.
 
+**The panel could not advance (21 September 2026).** Denis found it looping:
+check ten, settle, and the same ten came back. A settled event leaves the scan
+because its payment status changes, but a row that comes back `agreed` -- an
+open invoice against an unpaid event, which is most of them and is the correct
+answer -- stays in the scan for ever, and the batch always took the first ten.
+The invoice ID panel has no such problem because a repaired event drops out.
+`law_events_reconcile_scan()` now stamps `_law_reconcile_checked_at` on every
+event it reads and orders never-checked first then oldest first, so each press
+takes the next ten and pressing repeatedly walks the whole list. The list shows
+the last-checked time, and the button's description says that events agreeing
+with Stripe stay listed because there is nothing to do about them.
+
 **Scope deliberately not widened.** Attendee bookings (flagship applications,
 reception places) hold their own `_law_stripe_invoice_id` and would reconcile
 the same way, but their payment states are a longer vocabulary with their own
