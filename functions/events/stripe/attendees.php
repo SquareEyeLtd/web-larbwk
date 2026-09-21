@@ -135,6 +135,22 @@ function law_stripe_create_setup_session( $booking_id, $reason = 'apply' ) {
 	$booking_id = (int) $booking->ID;
 	$reason     = in_array( $reason, array( 'apply', 'replace', 'retry', 'waitlist' ), true ) ? $reason : 'apply';
 
+	// A booking whose delegate was substituted after it was paid for must never
+	// reach this, because the line below OVERWRITES _law_stripe_customer_id
+	// with the current author's customer — destroying the record of who
+	// actually paid, and pointing a future charge at somebody who never
+	// consented to one. Nothing routes here today (the card form is hidden on a
+	// confirmed place and law_flagship_retry_charge() needs a failed payment),
+	// but that is an accident of two status checks rather than a stated rule,
+	// so this states it (21 September 2026).
+	$substituted = (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	if ( $substituted && 'paid' === (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
+		return new WP_Error(
+			'law_booking_substituted_paid',
+			'This place has already been paid for and has since been transferred to a different delegate, so no new payment details can be attached to it.'
+		);
+	}
+
 	$customer_id = law_stripe_user_customer_id( (int) $booking->post_author );
 	if ( is_wp_error( $customer_id ) ) {
 		return $customer_id;

@@ -58,10 +58,10 @@ $law_page_url = get_permalink();
 			?>
 		<?php else : ?>
 
-			<h1 class="law-dashboard__title"><?php esc_html_e( 'Discount codes', 'law' ); ?></h1>
-
 			<?php
-			// Where a code actually bites, said once and here, because it is
+			// No heading here: the page banner already says "Discount codes",
+			// and saying it twice in a row reads as a mistake. Straight to
+			// where a code actually bites, said once and here, because it is
 			// the first question anybody creating one has.
 			?>
 			<p class="law-form-notice" role="status">

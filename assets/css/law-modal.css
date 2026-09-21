@@ -50,6 +50,36 @@
 /* Right margin on the title keeps it clear of the close button. */
 .law-modal__title { font-size: 1.25rem; margin: 0 2rem .6rem 0; }
 .law-modal__copy { margin: 0 0 1rem; }
+/* The bulleted list a dialog can carry under its copy: the event form's failed
+   save lists every field that still needs fixing, each line a button that
+   closes the dialog and jumps to its control. Colours are stated rather than
+   inherited for the same reason as everything else here — the host form's dark
+   hero paints its text white. */
+.law-modal__list { list-style: disc; margin: 0 0 1rem 1.25rem; padding: 0; color: #1a1a3d; }
+.law-modal__list li { margin: 0 0 .4rem; color: #1a1a3d; line-height: 1.4; }
+.law-modal__list li:last-child { margin-bottom: 0; }
+/* A link in everything but the element: a bare <button> so it needs the whole
+   reset, since there is no URL here, only a control further down this page.
+
+   display: block, not the button's own inline-block, and this is the whole
+   reason the rule exists: an inline-block's baseline is the baseline of its
+   LAST line box, so a message that wrapped onto two lines dragged the list
+   marker down beside the second one. A block child puts the marker back
+   against the first line, where it belongs. width: fit-content keeps the box
+   (and so the focus ring) around the text rather than across the dialog; it
+   still wraps at the dialog's width, because fit-content never exceeds the
+   space available. */
+.law-modal__goto {
+	display: block; width: fit-content;
+	background: none; border: 0; padding: 0; margin: 0; font: inherit; text-align: left;
+	color: #292459; text-decoration: underline; cursor: pointer;
+}
+.law-modal__goto:hover { color: #ef7d05; }
+.law-modal__goto:focus-visible { outline: 2px solid #ef7d05; outline-offset: 2px; }
+/* law-modal.js disables a line whose control is not on the page (a speaker row
+   the host has since removed, say), so it reads as the plain sentence it is
+   rather than a link that goes nowhere. */
+.law-modal__goto[disabled] { color: inherit; text-decoration: none; cursor: default; opacity: 1; }
 .law-modal .law-form-field { margin-bottom: 1rem; }
 .law-modal .law-form-field label { display: block; font-weight: 600; font-size: .875rem; margin-bottom: .25rem; }
 /* The help text under a label is its own line, not an inline tail, so it takes

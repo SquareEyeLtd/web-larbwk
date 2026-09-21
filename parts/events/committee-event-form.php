@@ -54,6 +54,12 @@ $law_sections = law_events_form_sections( $law_post );
 	<div class="law-form-notice is-error" role="alert">Please fix the highlighted fields below.</div>
 <?php endif; ?>
 <?php
+// The same failure again as a dialog, opened on load (law-modal.js), because
+// the notice above is off screen when the save was fired from the Finish
+// section at the foot of a long form.
+law_events_form_error_modal( $law_errors );
+?>
+<?php
 // Edit locking (functions/events/edit-lock.php): warn when someone else is in
 // this event, otherwise take the lock and hand it to the browser, which
 // refreshes it on the heartbeat and releases it on unload. The read-only

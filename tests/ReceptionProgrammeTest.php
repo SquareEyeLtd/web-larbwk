@@ -85,7 +85,7 @@ class ReceptionProgrammeTest extends LAW_Test_Case {
 
 		$this->assertStringContainsString( 'law-event-card--reception', $html );
 		$this->assertStringContainsString( 'law-event-card__reception-badge', $html );
-		$this->assertStringContainsString( 'Reception', $html );
+		$this->assertStringContainsString( '>Reception</span>', $html );
 		$this->assertStringNotContainsString( 'Drinks reception', $html );
 		// The fill is never the only thing saying what this is: the pill carries
 		// the words, exactly as the conference's does.

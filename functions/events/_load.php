@@ -71,6 +71,11 @@ require_once __DIR__ . '/stripe/client.php';
 require_once __DIR__ . '/stripe/service.php';
 require_once __DIR__ . '/stripe/attendees.php';
 require_once __DIR__ . '/stripe/webhook.php';
+// After webhook.php: both read law_stripe_webhook_event_types() and the
+// endpoint URL from it, so the health check and the sweep can never describe
+// an endpoint the dispatcher does not actually serve.
+require_once __DIR__ . '/stripe/reconcile.php';
+require_once __DIR__ . '/stripe/health.php';
 require_once __DIR__ . '/admin/fields.php';
 require_once __DIR__ . '/admin/event-screen.php';
 require_once __DIR__ . '/admin/booking-screen.php';
@@ -86,6 +91,9 @@ require_once __DIR__ . '/migration/repair-owners.php';
 require_once __DIR__ . '/migration/repair-references.php';
 require_once __DIR__ . '/migration/repair-payment-status.php';
 require_once __DIR__ . '/migration/repair-stripe-invoice-ids.php';
+// After it: the reconciliation panel falls back to its lookup for a legacy
+// event that has no invoice ID yet.
+require_once __DIR__ . '/migration/reconcile-payments.php';
 require_once __DIR__ . '/migration/repair-nbsp.php';
 require_once __DIR__ . '/migration/repair-signoff.php';
 require_once __DIR__ . '/migration/backfill-session-agenda.php';

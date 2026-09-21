@@ -179,6 +179,23 @@ function law_booking_box_facts( $post ) {
 		if ( '' !== (string) law_event_meta( $post->ID, '_law_decline_reason' ) ) {
 			$rows['Reason given'] = esc_html( (string) law_event_meta( $post->ID, '_law_decline_reason' ) );
 		}
+		// Who held this place before, and therefore who the invoice above
+		// actually belongs to. This screen is where the committee looks when a
+		// receipt query arrives, and after a substitution the attendee named at
+		// the top of it is not the person who paid (21 September 2026).
+		$law_bs_from = (int) law_event_meta( $post->ID, '_law_substituted_from' );
+		if ( $law_bs_from ) {
+			$law_bs_name  = (string) law_event_meta( $post->ID, '_law_substituted_from_name' );
+			$law_bs_email = (string) law_event_meta( $post->ID, '_law_substituted_from_email' );
+			$law_bs_when  = (string) law_event_meta( $post->ID, '_law_substituted_at' );
+			$law_bs_user  = get_user_by( 'id', $law_bs_from );
+			$rows['Substituted from'] = ( $law_bs_user
+					? '<a href="' . esc_url( get_edit_user_link( $law_bs_user->ID ) ) . '">' . esc_html( $law_bs_name ) . '</a>'
+					: esc_html( $law_bs_name ) . ' <span class="description">(account since removed)</span>' )
+				. ( '' !== $law_bs_email ? ' <span class="description">' . esc_html( $law_bs_email ) . '</span>' : '' )
+				. ( '' !== $law_bs_when ? ' <span class="description">on ' . esc_html( $law_bs_when ) . '</span>' : '' )
+				. '<br><span class="description">The payment, the invoice and the VAT receipt above stay with this person. Nothing was refunded.</span>';
+		}
 	}
 	foreach ( $rows as $label => $value ) {
 		printf( '<tr><th style="width:12em">%s</th><td>%s</td></tr>', esc_html( $label ), wp_kses_post( $value ) );

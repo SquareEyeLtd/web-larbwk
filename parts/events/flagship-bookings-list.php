@@ -354,6 +354,26 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 						<?php if ( $law_fbl_about ) : ?>
 							<span class="law-booking-table__sub"><?php echo esc_html( implode( ', ', $law_fbl_about ) ); ?></span>
 						<?php endif; ?>
+						<?php
+						// Who held this place before. In the table rather than
+						// only in the activity log, because the person on the
+						// invoice is not the person in this cell any more and
+						// anybody tracing a payment needs to see that from the
+						// list (21 September 2026).
+						?>
+						<?php if ( '' !== $law_fbl_row['substituted_from'] ) : ?>
+							<span class="law-booking-table__sub">
+								<?php
+								echo esc_html(
+									sprintf(
+										/* translators: %s: the delegate who gave the place up. */
+										__( 'Substituted for %s, who paid', 'law' ),
+										$law_fbl_row['substituted_from']
+									)
+								);
+								?>
+							</span>
+						<?php endif; ?>
 					</td>
 					<td><?php echo esc_html( $law_fbl_row['email'] ); ?></td>
 					<td>
@@ -537,6 +557,42 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 								);
 								?>
 							</form>
+						<?php endif; ?>
+
+						<?php if ( $law_fbl_row['substitutable'] ) : ?>
+							<?php
+							// Handing a confirmed place to somebody else. A
+							// plain button rather than a form: ONE dialog
+							// serves the whole table (the form carries fifteen
+							// fields, and a copy on every row of a list that
+							// runs to hundreds would be most of the page), and
+							// assets/js/flagship-substitute.js fills it in from
+							// these attributes.
+							?>
+							<button type="button" class="law-linkish law-flagship-bookings__inline"
+								data-law-sub-open
+								data-law-sub-id="<?php echo esc_attr( (string) $law_fbl_row['id'] ); ?>"
+								data-law-sub-number="<?php echo esc_attr( (string) $law_fbl_row['number'] ); ?>"
+								data-law-sub-name="<?php echo esc_attr( $law_fbl_row['name'] ); ?>"
+								data-law-sub-email="<?php echo esc_attr( $law_fbl_row['email'] ); ?>"
+								data-law-sub-press="<?php echo $law_fbl_row['press'] ? '1' : '0'; ?>"
+								data-law-modal-open="<?php echo esc_attr( law_flagship_substitute_modal_id() ); ?>"
+								data-law-modal-enhanced hidden>
+								<?php esc_html_e( 'Substitute', 'law' ); ?>
+							</button>
+							<?php
+							// Without JavaScript there is no dialog to open, and
+							// a form asking for a post ID would be dishonest —
+							// the committee knows registration numbers, not post
+							// IDs. So this links to the same page, which renders
+							// the form inline and pre-filled above the table.
+							?>
+							<noscript>
+								<a class="law-flagship-bookings__inline"
+									href="<?php echo esc_url( add_query_arg( 'law_substitute', (int) $law_fbl_row['id'], law_flagship_bookings_url() ) ); ?>">
+									<?php esc_html_e( 'Substitute', 'law' ); ?>
+								</a>
+							</noscript>
 						<?php endif; ?>
 					</td>
 				</tr>
