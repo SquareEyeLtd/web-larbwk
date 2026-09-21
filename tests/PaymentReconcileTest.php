@@ -305,6 +305,22 @@ class PaymentReconcileTest extends LAW_Test_Case {
 		$this->assertNotContains( $no_invoice, $ids, 'No invoice, nothing to reconcile against.' );
 	}
 
+	public function test_the_scan_puts_the_least_recently_checked_first(): void {
+		// The panel takes the first ten of this list, so the order IS the queue.
+		// A row that comes back `agreed` never leaves the scan, and without this
+		// ordering every press re-read the same ten and the panel looked stuck.
+		$checked_now   = $this->make_invoiced_event();
+		$checked_older = $this->make_invoiced_event();
+		$never_checked = $this->make_invoiced_event();
+		update_post_meta( $checked_now, LAW_RECONCILE_CHECKED_META, time() );
+		update_post_meta( $checked_older, LAW_RECONCILE_CHECKED_META, time() - DAY_IN_SECONDS );
+
+		$ids = wp_list_pluck( law_events_reconcile_scan(), 'event_id' );
+		$ids = array_values( array_intersect( $ids, array( $checked_now, $checked_older, $never_checked ) ) );
+
+		$this->assertSame( array( $never_checked, $checked_older, $checked_now ), $ids );
+	}
+
 	public function test_the_panel_refuses_an_event_that_has_settled_since_the_page_rendered(): void {
 		$event = $this->make_invoiced_event( 'paid', 'publish' );
 

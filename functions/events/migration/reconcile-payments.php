@@ -61,6 +61,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 const LAW_RECONCILE_PANEL_BATCH = 10;
 
 /**
+ * When this event was last read from Stripe by the panel.
+ *
+ * Without it the panel cannot advance. A settled event leaves the scan because
+ * its payment status changes, but a row that comes back `agreed` -- an open
+ * invoice against an unpaid event, which is most of them and is the CORRECT
+ * answer -- stays in the scan for ever, so pressing the button again re-read
+ * the same first ten and the panel looked stuck. Ordering by this, oldest
+ * first, walks the list instead.
+ */
+const LAW_RECONCILE_CHECKED_META = '_law_reconcile_checked_at';
+
+/**
  * Every event that holds a Stripe invoice and does not believe it was paid.
  *
  * Narrow on purpose. An event already reading paid, refunded or free is not
@@ -96,16 +108,25 @@ function law_events_reconcile_scan() {
 			continue;
 		}
 		$rows[] = array(
-			'event_id' => (int) $event->ID,
-			'title'    => $event->post_title,
-			'status'   => law_event_status_label( $event ),
-			'payment'  => $payment,
-			'entry_id' => (int) law_event_meta( $event->ID, '_law_gf_entry_id' ),
-			'fee'      => (int) law_event_meta( $event->ID, '_law_fee_pence' ),
-			'url'      => $invoice_url,
-			'has_id'   => '' !== $invoice_id,
+			'event_id'   => (int) $event->ID,
+			'title'      => $event->post_title,
+			'status'     => law_event_status_label( $event ),
+			'payment'    => $payment,
+			'entry_id'   => (int) law_event_meta( $event->ID, '_law_gf_entry_id' ),
+			'fee'        => (int) law_event_meta( $event->ID, '_law_fee_pence' ),
+			'url'        => $invoice_url,
+			'has_id'     => '' !== $invoice_id,
+			'checked_at' => (int) get_post_meta( $event->ID, LAW_RECONCILE_CHECKED_META, true ),
 		);
 	}
+
+	// Never checked first, then oldest check first, so each press of the button
+	// takes the next ten rather than the same ten. ID order breaks ties, so the
+	// walk is stable within a batch.
+	usort(
+		$rows,
+		fn( $a, $b ) => array( $a['checked_at'], $a['event_id'] ) <=> array( $b['checked_at'], $b['event_id'] )
+	);
 	return $rows;
 }
 
@@ -189,6 +210,9 @@ function law_events_reconcile_panel() {
 		} else {
 			foreach ( array_slice( law_events_reconcile_scan(), 0, LAW_RECONCILE_PANEL_BATCH ) as $row ) {
 				$proposals[] = $row + array( 'check' => law_stripe_reconcile_check( $row['event_id'] ) );
+				// Stamped whatever the verdict was, including `agreed`: the
+				// point is to move the queue on, not to record a result.
+				update_post_meta( $row['event_id'], LAW_RECONCILE_CHECKED_META, time() );
 			}
 		}
 	}
@@ -296,7 +320,7 @@ function law_events_reconcile_panel() {
 	<?php else : ?>
 		<table class="widefat striped" style="max-width:900px">
 			<thead>
-			<tr><th>Event</th><th>Status</th><th>Payment</th><th>Host fee</th><th>Invoice</th></tr>
+			<tr><th>Event</th><th>Status</th><th>Payment</th><th>Host fee</th><th>Invoice</th><th>Last checked</th></tr>
 			</thead>
 			<tbody>
 			<?php foreach ( $rows as $row ) : ?>
@@ -306,16 +330,24 @@ function law_events_reconcile_panel() {
 					<td><?php echo esc_html( $row['payment'] ? ucfirst( $row['payment'] ) : '—' ); ?></td>
 					<td><?php echo esc_html( law_events_format_pence( $row['fee'] ) ); ?></td>
 					<td><?php echo esc_html( $row['has_id'] ? 'invoice ID recorded' : 'web address only (legacy)' ); ?></td>
+					<td><?php echo $row['checked_at']
+						? esc_html( gmdate( 'j M H:i', $row['checked_at'] ) . ' UTC' )
+						: '<span class="description">never</span>'; // phpcs:ignore WordPress.Security.EscapeOutput ?></td>
 				</tr>
 			<?php endforeach; ?>
 			</tbody>
 		</table>
 		<form method="post">
 			<?php wp_nonce_field( 'law_reconcile_payments', 'law_reconcile_nonce' ); ?>
+			<?php $law_unchecked = count( array_filter( $rows, fn( $r ) => ! $r['checked_at'] ) ); ?>
 			<p><button type="submit" class="button" <?php disabled( '' === law_stripe_secret_key() ); ?>>
 				Check the next <?php echo esc_html( (string) min( LAW_RECONCILE_PANEL_BATCH, count( $rows ) ) ); ?> against Stripe
 			</button>
-			<span class="description"><?php echo esc_html( sprintf( '%d event(s) to check.', count( $rows ) ) ); ?></span></p>
+			<span class="description"><?php echo esc_html( sprintf(
+				'%d event(s) in the list, %d never checked. Each press takes the least recently checked, so pressing it repeatedly walks the whole list. Events that agree with Stripe stay listed, because there is nothing to do about them.',
+				count( $rows ),
+				$law_unchecked
+			) ); ?></span></p>
 		</form>
 	<?php endif; ?>
 	<?php
