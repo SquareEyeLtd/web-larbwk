@@ -9453,6 +9453,40 @@ production is the commonest way this breaks), and it reports "no endpoint" on a
 test key as expected rather than alarming, because `stripe listen` registers
 none.
 
+**The ambiguous case got a picker (21 September 2026).** Denis asked how to
+resolve the events where the lookup finds more than one invoice. The honest
+answer was that the panel's own advice, "pick the right one in the Stripe
+dashboard and set it by hand", was a dead end: `_law_stripe_invoice_id` is
+display-only on the wp-admin event screen, so the only route was a database
+write.
+
+Worth naming precisely when the case arises, because it is narrower than it
+looks. Two invoices cannot share a `hosted_invoice_url`, so `$by_url` can never
+hold more than one and a URL hit always wins outright. **Ambiguity is therefore
+always the metadata route: two or more invoices carrying the same
+`gf_entry_id`, none of them carrying the address stored on the event** --
+normally because Make raised the invoice twice and field 83 (Stripe invoice URL)
+holds the address of one since deleted or superseded.
+
+So `law_events_invoice_id_lookup()` now returns the candidates it refused to
+choose between (`candidates`, paid first then newest, through
+`law_events_invoice_id_candidate()`), the panel renders them as radio buttons
+with status, amount, date, contact and a link into Stripe, and
+`law_events_invoice_id_apply()` takes an `event_id => invoice_id` map.
+**Choosing resolves an ambiguity; it does not waive the evidence.**
+`law_events_invoice_id_verify_choice()` re-fetches the chosen invoice, puts it
+through the same `law_events_invoice_id_match()` test the automatic route uses,
+and refuses it if it carries neither this event's URL nor its entry ID or if
+another event already holds it. Nothing is preselected, because a default here
+would be a guess wearing a tick. The log line says "chosen by hand from
+several", so the record distinguishes a decision from a match.
+
+The reconciliation panel names the candidates in its notes and points at the
+invoice ID panel rather than reporting `no_invoice` as a dead end.
+`tests/LegacyInvoiceIdRepairTest.php` gained four cases (the refusal returning a
+choice, a chosen invoice recorded in one fetch, one belonging to nobody, one
+another event already holds); 14 there, 1157 in the suite.
+
 **Scope deliberately not widened.** Attendee bookings (flagship applications,
 reception places) hold their own `_law_stripe_invoice_id` and would reconcile
 the same way, but their payment states are a longer vocabulary with their own
@@ -9477,8 +9511,10 @@ Touched: `functions/events/stripe/reconcile.php` (new),
 `functions/events/migration/reconcile-payments.php` (new),
 `functions/events/stripe/webhook.php`, `functions/events/notifications.php`,
 `functions/events/settings.php`, `functions/events/migration/page.php`,
-`functions/events/_load.php`, `tests/PaymentReconcileTest.php` (new),
-`tests/WebhookHealthTest.php` (new).
+`functions/events/_load.php`,
+`functions/events/migration/repair-stripe-invoice-ids.php`,
+`tests/PaymentReconcileTest.php` (new), `tests/WebhookHealthTest.php` (new),
+`tests/LegacyInvoiceIdRepairTest.php`.
 
 ---
 

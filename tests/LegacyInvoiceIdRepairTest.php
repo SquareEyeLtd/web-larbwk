@@ -26,6 +26,128 @@ class LegacyInvoiceIdRepairTest extends LAW_Test_Case {
 		return implode( "\n", wp_list_pluck( law_event_log_entries( $event_id ), 'comment_content' ) );
 	}
 
+	/* The ambiguous case: two invoices, and a person chooses ___________________ */
+
+	/**
+	 * Two invoices carrying the entry ID and neither carrying the stored URL is
+	 * the only way this panel reaches "more than one matches": two invoices
+	 * cannot share a hosted_invoice_url, so a URL hit would have won outright.
+	 */
+	private function queue_two_candidates(): void {
+		$GLOBALS['law_test_stripe_queue'] = array(
+			array(
+				'object' => 'search_result',
+				'data'   => array(
+					array(
+						'id'                 => 'in_VOIDED',
+						'customer'           => 'cus_LEGACY',
+						'status'             => 'void',
+						'total'              => 144000,
+						'amount_paid'        => 0,
+						'created'            => 1757000000,
+						'hosted_invoice_url' => 'https://invoice.stripe.com/i/acct_1/live_OLD',
+						'metadata'           => array( 'gf_entry_id' => '190' ),
+					),
+					array(
+						'id'                 => 'in_PAID',
+						'customer'           => 'cus_LEGACY',
+						'status'             => 'paid',
+						'total'              => 144000,
+						'amount_paid'        => 144000,
+						'created'            => 1757600000,
+						'hosted_invoice_url' => 'https://invoice.stripe.com/i/acct_1/live_NEW',
+						'metadata'           => array( 'gf_entry_id' => '190' ),
+					),
+				),
+			),
+		);
+	}
+
+	public function test_two_matches_write_nothing_and_come_back_as_a_choice(): void {
+		$event = $this->make_legacy_event( 190 );
+		$this->queue_two_candidates();
+
+		$look = law_events_invoice_id_lookup( $event );
+
+		$this->assertSame( '', $look['invoice_id'], 'Guessing between two invoices is exactly what this repair must not do.' );
+		$this->assertCount( 2, $look['candidates'] );
+		$this->assertSame( 'in_PAID', $look['candidates'][0]['id'], 'Paid first: it is the answer in almost every real case.' );
+		$this->assertSame( 144000, $look['candidates'][0]['amount_paid'] );
+		$this->assertStringContainsString( 'Choose the right one', $look['error'] );
+	}
+
+	public function test_a_chosen_invoice_is_refetched_and_recorded(): void {
+		$event = $this->make_legacy_event( 190 );
+		$GLOBALS['law_test_stripe_queue'] = array(
+			array(
+				'id'                 => 'in_PAID',
+				'customer'           => 'cus_LEGACY',
+				'status'             => 'paid',
+				'total'              => 144000,
+				'amount_paid'        => 144000,
+				'hosted_invoice_url' => 'https://invoice.stripe.com/i/acct_1/live_NEW',
+				'metadata'           => array( 'gf_entry_id' => '190' ),
+			),
+		);
+
+		$result = law_events_invoice_id_apply( array( $event ), array( $event => 'in_PAID' ) );
+
+		$this->assertSame( 1, $result['repaired'] );
+		$this->assertSame( 'in_PAID', law_event_meta( $event, '_law_stripe_invoice_id' ) );
+		$this->assertSame( 'cus_LEGACY', law_event_meta( $event, '_law_stripe_customer_id' ) );
+		$this->assertStringContainsString( 'chosen by hand', $this->log_text( $event ) );
+		$this->assertSame(
+			array( array( 'method' => 'GET', 'path' => '/v1/invoices/in_PAID' ) ),
+			$GLOBALS['law_test_stripe_calls'],
+			'A choice is one fetch of that invoice, not a second search.'
+		);
+	}
+
+	public function test_a_chosen_invoice_belonging_to_nobody_is_refused(): void {
+		// Choosing resolves an ambiguity; it does not waive the evidence. An ID
+		// that carries neither this event's URL nor its entry ID is not written,
+		// however deliberately it was typed.
+		$event = $this->make_legacy_event( 190 );
+		$GLOBALS['law_test_stripe_queue'] = array(
+			array(
+				'id'                 => 'in_SOMEONE_ELSE',
+				'customer'           => 'cus_OTHER',
+				'status'             => 'paid',
+				'total'              => 60000,
+				'hosted_invoice_url' => 'https://invoice.stripe.com/i/acct_1/live_OTHER',
+				'metadata'           => array( 'gf_entry_id' => '999' ),
+			),
+		);
+
+		$result = law_events_invoice_id_apply( array( $event ), array( $event => 'in_SOMEONE_ELSE' ) );
+
+		$this->assertSame( 0, $result['repaired'] );
+		$this->assertStringContainsString( 'neither this event', $result['skipped'][0] );
+		$this->assertSame( '', (string) law_event_meta( $event, '_law_stripe_invoice_id' ) );
+	}
+
+	public function test_a_chosen_invoice_another_event_already_holds_is_refused(): void {
+		$event = $this->make_legacy_event( 190 );
+		$other = $this->make_legacy_event( 191, 'https://invoice.stripe.com/i/acct_1/live_OTHER' );
+		law_event_update_meta( $other, '_law_stripe_invoice_id', 'in_PAID' );
+
+		$GLOBALS['law_test_stripe_queue'] = array(
+			array(
+				'id'                 => 'in_PAID',
+				'customer'           => 'cus_LEGACY',
+				'status'             => 'paid',
+				'total'              => 144000,
+				'hosted_invoice_url' => 'https://invoice.stripe.com/i/acct_1/live_NEW',
+				'metadata'           => array( 'gf_entry_id' => '190' ),
+			),
+		);
+
+		$result = law_events_invoice_id_apply( array( $event ), array( $event => 'in_PAID' ) );
+
+		$this->assertSame( 0, $result['repaired'] );
+		$this->assertStringContainsString( 'already recorded against event', $result['skipped'][0] );
+	}
+
 	public function test_scan_lists_only_events_missing_the_invoice_id(): void {
 		$legacy   = $this->make_legacy_event();
 		$complete = $this->make_legacy_event( 191, 'https://invoice.stripe.com/i/acct_1/live_DONE' );

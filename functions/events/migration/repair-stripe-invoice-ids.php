@@ -132,14 +132,44 @@ function law_events_invoice_id_match( array $invoice, $entry_id, $url ) {
 }
 
 /**
+ * One Stripe invoice reduced to what a person needs to choose between two of
+ * them: what state it is in, what it is for, who it was sent to and when.
+ *
+ * @param array $invoice Stripe invoice object.
+ * @return array<string,mixed>
+ */
+function law_events_invoice_id_candidate( array $invoice ) {
+	$customer = is_array( $invoice['customer'] ?? null )
+		? (string) ( $invoice['customer']['id'] ?? '' )
+		: (string) ( $invoice['customer'] ?? '' );
+
+	return array(
+		'id'          => (string) ( $invoice['id'] ?? '' ),
+		'status'      => (string) ( $invoice['status'] ?? '' ),
+		'total'       => (int) ( $invoice['total'] ?? 0 ),
+		'amount_paid' => (int) ( $invoice['amount_paid'] ?? 0 ),
+		'created'     => (int) ( $invoice['created'] ?? 0 ),
+		'customer_id' => $customer,
+		'email'       => (string) ( $invoice['customer_email'] ?? '' ),
+		'hosted_url'  => (string) ( $invoice['hosted_invoice_url'] ?? '' ),
+	);
+}
+
+/**
  * Ask Stripe which invoice this event's URL belongs to.
  *
  * Read-only: every call here is a GET. Returns what it found and why, so the
  * panel can show the reasoning and the apply can refuse anything unclear.
  *
+ * When more than one invoice matches it writes nothing and returns them all in
+ * `candidates`, for the panel to offer as a choice. Guessing between them is
+ * exactly what this repair must not do, but refusing without saying WHICH
+ * invoices it could not choose between left the only route a database write.
+ *
  * @param int $event_id law_event post ID.
  * @return array{invoice_id:string,customer_id:string,status:string,total:int,
- *               matched_on:string,error:string,notes:string[],ambiguous:array[]}
+ *               matched_on:string,error:string,notes:string[],ambiguous:string[],
+ *               candidates:array[]}
  */
 function law_events_invoice_id_lookup( $event_id ) {
 	$event_id = (int) $event_id;
@@ -156,6 +186,7 @@ function law_events_invoice_id_lookup( $event_id ) {
 		'error'       => '',
 		'notes'       => array(),
 		'ambiguous'   => array(),
+		'candidates'  => array(),
 	);
 
 	if ( '' === law_stripe_secret_key() ) {
@@ -255,14 +286,22 @@ function law_events_invoice_id_lookup( $event_id ) {
 
 	if ( count( $matched ) > 1 ) {
 		foreach ( $matched as $id => $invoice ) {
-			$out['ambiguous'][] = sprintf(
+			$out['ambiguous'][]  = sprintf(
 				'%s (%s, %s)',
 				$id,
 				(string) ( $invoice['status'] ?? '?' ),
 				law_events_format_pence( (int) ( $invoice['total'] ?? 0 ) )
 			);
+			$out['candidates'][] = law_events_invoice_id_candidate( (array) $invoice );
 		}
-		$out['error'] = 'More than one invoice matches, so nothing is written: pick the right one in the Stripe dashboard and set it by hand.';
+		// Paid first, then by age: the paid one is the answer in almost every
+		// real case, and putting it at the top is the difference between a
+		// glance and a comparison.
+		usort(
+			$out['candidates'],
+			fn( $a, $b ) => array( 'paid' === $b['status'], $b['created'] ) <=> array( 'paid' === $a['status'], $a['created'] )
+		);
+		$out['error'] = 'More than one invoice carries this event\'s entry ID and none carries its stored web address, so nothing is written automatically. Choose the right one below.';
 		return $out;
 	}
 
@@ -324,15 +363,93 @@ function law_events_invoice_id_claimed_by( $invoice_id, $except = 0 ) {
 }
 
 /**
+ * Verify one invoice a person picked from the ambiguous list.
+ *
+ * Returns the same shape law_events_invoice_id_lookup() does, so the apply path
+ * does not care which route produced it. The checks are deliberately the same
+ * ones the automatic route applies, because choosing between two candidates is
+ * resolving an ambiguity, not waiving the evidence: the invoice is re-fetched
+ * (the panel may have been open a while), it must carry this event's stored URL
+ * or its entry ID, and no other event may already hold it.
+ *
+ * @param int    $event_id   law_event post ID.
+ * @param string $invoice_id The `in_…` the person chose.
+ * @return array<string,mixed>
+ */
+function law_events_invoice_id_verify_choice( $event_id, $invoice_id ) {
+	$event_id = (int) $event_id;
+	$out      = array(
+		'invoice_id'  => '',
+		'customer_id' => '',
+		'status'      => '',
+		'total'       => 0,
+		'matched_on'  => '',
+		'error'       => '',
+		'notes'       => array(),
+		'ambiguous'   => array(),
+		'candidates'  => array(),
+	);
+
+	$invoice = law_stripe_request( 'GET', '/v1/invoices/' . rawurlencode( (string) $invoice_id ), array() );
+	if ( is_wp_error( $invoice ) ) {
+		$out['error'] = sprintf( 'Stripe would not return the chosen invoice %s: %s', $invoice_id, $invoice->get_error_message() );
+		return $out;
+	}
+
+	$entry_id = (int) law_event_meta( $event_id, '_law_gf_entry_id' );
+	$url      = trim( (string) law_event_meta( $event_id, '_law_stripe_invoice_url' ) );
+	$match    = law_events_invoice_id_match( (array) $invoice, $entry_id, $url );
+	if ( '' === $match ) {
+		$out['error'] = sprintf(
+			'The chosen invoice %s carries neither this event\'s stored web address nor its entry ID (%d), so it is not written.',
+			$invoice_id,
+			$entry_id
+		);
+		return $out;
+	}
+
+	$candidate = law_events_invoice_id_candidate( (array) $invoice );
+	$claimed   = law_events_invoice_id_claimed_by( $candidate['id'], $event_id );
+	if ( $claimed ) {
+		$out['error'] = sprintf(
+			'Invoice %s is already recorded against event #%d (%s), so it is not written here.',
+			$candidate['id'],
+			$claimed,
+			get_the_title( $claimed )
+		);
+		return $out;
+	}
+
+	$out['invoice_id']  = $candidate['id'];
+	$out['customer_id'] = $candidate['customer_id'];
+	$out['status']      = $candidate['status'];
+	$out['total']       = $candidate['total'];
+	$out['matched_on']  = 'url' === $match
+		? 'hosted invoice URL, chosen by hand from several'
+		: 'gf_entry_id metadata, chosen by hand from several';
+	return $out;
+}
+
+/**
  * Write the invoice (and customer) IDs for the chosen events.
  *
  * The lookup is re-run here rather than trusting the rendered page: the panel
  * may have been open while somebody raised a new invoice or voided the old one.
  *
- * @param int[] $ids Event IDs ticked on the panel.
+ * A CHOSEN invoice (the ambiguous case, picked on the panel) takes a different
+ * route: there is nothing for the lookup to decide, so the chosen ID is
+ * verified on its own terms instead -- it is fetched from Stripe, it must still
+ * prove it is this event's by the same law_events_invoice_id_match() test the
+ * automatic route uses, and it must not already be claimed. A person choosing
+ * between two invoices is resolving an ambiguity, not overriding the evidence,
+ * so nothing here accepts an ID that fails those checks.
+ *
+ * @param int[]              $ids     Event IDs ticked on the panel.
+ * @param array<int,string>  $choices event_id => chosen invoice ID, for the
+ *                                    rows the lookup refused to choose for.
  * @return array{repaired:int,skipped:string[],lines:string[]}
  */
-function law_events_invoice_id_apply( array $ids ) {
+function law_events_invoice_id_apply( array $ids, array $choices = array() ) {
 	$allowed  = wp_list_pluck( law_events_invoice_id_scan(), 'event_id' );
 	$repaired = 0;
 	$skipped  = array();
@@ -345,7 +462,10 @@ function law_events_invoice_id_apply( array $ids ) {
 			continue;
 		}
 
-		$look = law_events_invoice_id_lookup( $id );
+		$chosen = trim( (string) ( $choices[ $id ] ?? '' ) );
+		$look   = '' !== $chosen
+			? law_events_invoice_id_verify_choice( $id, $chosen )
+			: law_events_invoice_id_lookup( $id );
 		if ( '' === $look['invoice_id'] ) {
 			$skipped[] = sprintf( '#%d %s', $id, $look['error'] ?: 'no invoice matched.' );
 			continue;
@@ -412,8 +532,14 @@ function law_events_invoice_id_panel() {
 		check_admin_referer( 'law_invoice_id_repair', 'law_invoice_id_nonce' );
 
 		if ( isset( $_POST['law_invoice_id_apply'] ) ) {
-			$ids    = array_map( 'absint', (array) ( $_POST['law_invoice_id_ids'] ?? array() ) );
-			$result = law_events_invoice_id_apply( $ids );
+			$ids     = array_map( 'absint', (array) ( $_POST['law_invoice_id_ids'] ?? array() ) );
+			$choices = array();
+			foreach ( (array) ( $_POST['law_invoice_id_choice'] ?? array() ) as $event_id => $invoice_id ) {
+				// Only ever an `in_…`; the verify step re-fetches it from Stripe
+				// and proves it belongs to this event before anything is written.
+				$choices[ (int) $event_id ] = sanitize_text_field( wp_unslash( (string) $invoice_id ) );
+			}
+			$result = law_events_invoice_id_apply( $ids, $choices );
 			$notice = sprintf(
 				'<div class="notice notice-%s"><p><strong>%d event(s) now hold their Stripe invoice ID.</strong></p>%s%s</div>',
 				$result['skipped'] ? 'warning' : 'success',
@@ -473,8 +599,9 @@ function law_events_invoice_id_panel() {
 				<?php foreach ( $proposals as $row ) : $look = $row['look']; ?>
 					<tr>
 						<td>
-							<?php if ( '' !== $look['invoice_id'] ) : ?>
-								<input type="checkbox" name="law_invoice_id_ids[]" value="<?php echo esc_attr( (string) $row['event_id'] ); ?>" checked>
+							<?php if ( '' !== $look['invoice_id'] || $look['candidates'] ) : ?>
+								<input type="checkbox" name="law_invoice_id_ids[]" value="<?php echo esc_attr( (string) $row['event_id'] ); ?>"
+									<?php checked( '' !== $look['invoice_id'] ); ?>>
 							<?php endif; ?>
 						</td>
 						<td>
@@ -489,11 +616,39 @@ function law_events_invoice_id_panel() {
 							<?php if ( '' !== $look['invoice_id'] ) : ?>
 								<code><?php echo esc_html( $look['invoice_id'] ); ?></code>
 								<br><span class="description"><?php echo esc_html( sprintf( '%s, %s', $look['status'] ?: 'status unknown', law_events_format_pence( $look['total'] ) ) ); ?></span>
+							<?php elseif ( $look['candidates'] ) : ?>
+								<span style="color:#b32d2e"><?php echo esc_html( $look['error'] ); ?></span>
+								<?php // Nothing is preselected. The whole point is that the machine
+								// could not tell, so a default would be a guess wearing a tick. ?>
+								<ul style="margin:.5em 0 0;list-style:none">
+									<?php foreach ( $look['candidates'] as $candidate ) : ?>
+										<li style="margin-bottom:.35em">
+											<label>
+												<input type="radio"
+													name="law_invoice_id_choice[<?php echo esc_attr( (string) $row['event_id'] ); ?>]"
+													value="<?php echo esc_attr( $candidate['id'] ); ?>">
+												<code><?php echo esc_html( $candidate['id'] ); ?></code>
+												<strong><?php echo esc_html( $candidate['status'] ?: '?' ); ?></strong>
+												<?php echo esc_html( law_events_format_pence( $candidate['total'] ) ); ?>
+												<?php if ( 'paid' === $candidate['status'] ) : ?>
+													<?php echo esc_html( sprintf( '(%s received)', law_events_format_pence( $candidate['amount_paid'] ) ) ); ?>
+												<?php endif; ?>
+											</label>
+											<br><span class="description" style="margin-left:1.8em">
+												<?php echo $candidate['created'] ? esc_html( gmdate( 'j M Y', $candidate['created'] ) ) : 'date unknown'; ?>
+												<?php if ( '' !== $candidate['email'] ) : ?>
+													· <?php echo esc_html( $candidate['email'] ); ?>
+												<?php endif; ?>
+												<?php if ( '' !== $candidate['hosted_url'] ) : ?>
+													· <a href="<?php echo esc_url( $candidate['hosted_url'] ); ?>" target="_blank" rel="noopener">open in Stripe &#8599;</a>
+												<?php endif; ?>
+											</span>
+										</li>
+									<?php endforeach; ?>
+								</ul>
+								<span class="description">Tick the row and choose one. It is re-fetched and re-checked against this event before anything is written.</span>
 							<?php else : ?>
 								<span style="color:#b32d2e"><?php echo esc_html( $look['error'] ); ?></span>
-								<?php if ( $look['ambiguous'] ) : ?>
-									<br><span class="description"><?php echo esc_html( implode( ' · ', $look['ambiguous'] ) ); ?></span>
-								<?php endif; ?>
 							<?php endif; ?>
 							<?php foreach ( $look['notes'] as $note ) : ?>
 								<br><span class="description"><?php echo esc_html( $note ); ?></span>
