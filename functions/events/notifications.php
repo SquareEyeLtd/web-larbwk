@@ -519,13 +519,33 @@ function law_events_email_registry() {
 			'subject' => 'New registration for {event_title}',
 			'body'    => "A new registration has been received for {event_title}.\n\nRegistration: #{booking_number}\nDelegate: {attendee_list}\nPrice: {price_total} ({price} plus {price_vat} VAT)\n{discount_note}\n\nReview it, with everyone else waiting, on the flagship bookings dashboard: {flagship_bookings_link}",
 		),
+		/* The money moved out of the body and into {payment_note} on
+		 * 21 September 2026, so this one template can confirm a ticket to the
+		 * person who paid for it AND to somebody a place was transferred to,
+		 * who paid nothing and must never be shown the payer's invoice or card
+		 * (law_flagship_substitute()). A whole resolved paragraph rather than
+		 * four separate tags, because that is the only shape a single strtr()
+		 * pass can carry a sentence that changes wholesale.
+		 *
+		 * The opening line lost "has been approved" in the same change: an
+		 * approval is one of the two ways to arrive here now, and the subject
+		 * already says the thing they need to read first. The approval itself
+		 * did not disappear — it is the first sentence of {payment_note} on
+		 * that path.
+		 *
+		 * {account_note} arrived with the same change and is EMPTY on an
+		 * approval, where the delegate self-evidently has an account already:
+		 * it is there for the transfer path, where the place may be going to
+		 * somebody who has never signed in, and their set-password link has to
+		 * ride in this email rather than a welcome of its own ("one welcome
+		 * email, not two", 17 September 2026). */
 		'user_flagship_approved' => array(
-			'name'    => 'Email to delegate > flagship registration approved',
-			'trigger' => 'Approved and the payment taken',
+			'name'    => 'Email to delegate > flagship ticket confirmed',
+			'trigger' => 'Approved and the payment taken, or a place transferred from another delegate',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your ticket for {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour registration to attend {event_title} has been approved and your ticket is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nWe have taken {price_total} from your saved payment method ({payment_method}), which is {price} plus {price_vat} VAT. {discount_note}\n\nYour VAT invoice is here, and you can download it at any time: {invoice_link}\n\nA calendar invitation is attached. Your booking and your receipt are always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{payment_note}\n\n{account_note}\n\nA calendar invitation is attached. Your booking is always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
 		),
 		/* Approved with a code covering the whole price. Deliberately NOT
 		 * user_flagship_complimentary: that one says "with our compliments",
@@ -578,6 +598,36 @@ function law_events_email_registry() {
 			'active'  => true,
 			'subject' => 'Your registration for {event_title} has been withdrawn',
 			'body'    => "Dear {attendee_name},\n\nThis confirms that you have withdrawn your registration to attend {event_title} (registration #{booking_number}).\n\nYou have not been charged, and the payment details you gave us have been removed.\n\nIf you change your mind, you can register again from the event page while registration is open.",
+		),
+		/* Substituting the delegate on a confirmed ticket (the client's ask,
+		 * 21 September 2026). A firm bought a place for a partner who cannot
+		 * come and is sending a colleague instead.
+		 *
+		 * THE ONLY new template the feature adds (Denis, 21 September 2026).
+		 * The person arriving gets the ordinary confirmation every other
+		 * confirmed delegate gets; this one exists because nothing in the
+		 * registry says "you no longer have a place, and here is where your
+		 * receipt went", and that is a thing somebody has to be told.
+		 *
+		 * {receipt_note} rather than a bare {invoice_link}: a ticket paid for
+		 * with a code that covered the whole price has no Stripe invoice at
+		 * all, and the sentence promising one then ended in a colon and
+		 * nothing. It is a whole resolved sentence or none, the same idiom as
+		 * {account_note} and {discount_note}, because
+		 * law_events_email_render_body() substitutes in a single strtr() pass
+		 * and a {invoice_link} nested inside another tag's value would reach
+		 * the reader printed literally.
+		 *
+		 * The line about the calendar is there because the .ics we send
+		 * carries no METHOD:CANCEL, so nothing removes the entry from their
+		 * diary by itself. */
+		'user_flagship_place_transferred' => array(
+			'name'    => 'Email to delegate > your flagship place has been transferred',
+			'trigger' => 'The committee transferred this person\'s confirmed ticket to somebody else',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'Your place at {event_title} has been transferred',
+			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} (ticket #{booking_number}) has been transferred to {substitute_name}, and it no longer appears in your bookings.\n\n{receipt_note}\n\nIf you added the conference to your calendar, please delete that entry — we cannot remove it for you.\n\nIf this is not what you expected, please reply to this email and we will look into it.",
 		),
 		'committee_flagship_payment_failed' => array(
 			'name'    => 'Email to committee > flagship payment still unpaid',
@@ -1454,6 +1504,19 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{card_label}'            => '',
 		'{payment_method}'        => '',
 		'{update_payment_link}'   => '',
+		// Substituting the delegate on a confirmed flagship ticket
+		// (21 September 2026). Two names rather than one, because the two
+		// emails a substitution sends are addressed to opposite ends of it:
+		// the new delegate is told who they are replacing, and the person
+		// giving the place up is told who is taking it.
+		'{substitute_name}'       => '',
+		'{previous_attendee_name}' => '',
+		// Whole resolved paragraphs, never assembled from other tags: strtr()
+		// makes ONE pass, so a {invoice_link} sitting inside another tag's
+		// value would reach the reader printed literally. Same idiom as
+		// {account_note}, {discount_note} and {party_note}.
+		'{payment_note}'          => '',
+		'{receipt_note}'          => '',
 		'{flagship_bookings_link}' => function_exists( 'law_flagship_bookings_url' ) ? law_flagship_bookings_url() : '',
 		'{bookings_link}'     => law_account_url( 'my_bookings' ),
 		'{profile_link}'      => home_url( '/account/profile/' ),
@@ -1515,6 +1578,61 @@ function law_events_email_recipients( $definition, $event_id, array $extra = arr
 	return array();
 }
 
+/* Suppressing the sends ______________________________________________________ */
+
+/**
+ * Hold every law_events_send() back for the duration of one operation.
+ *
+ * There is exactly one job for this, and it is a repair: settling a payment
+ * that arrived weeks ago runs the SAME confirm transition a live payment runs
+ * (functions/events/stripe/reconcile.php), because a correct Payment column
+ * that still refuses bookings has fixed nothing. What must not follow is the
+ * host receiving "your event is confirmed, thank you for your payment" as
+ * though the money had just landed, and the committee receiving a payment
+ * notification for a payment they banked in August.
+ *
+ * Deliberately NOT a filter on wp_mail: this mutes the module's own registered
+ * emails and nothing else, so a password reset or a comment notification
+ * raised in the same request still goes out.
+ *
+ * Never silent. A muted send still writes its activity-log line, saying it was
+ * suppressed and why, because the module's standing rule is that an email that
+ * did not go out leaves a trace on the event (and because the committee then
+ * has a list of hosts to contact by hand).
+ *
+ * @var string Reason, or '' when sending normally.
+ */
+$GLOBALS['law_events_email_mute'] = '';
+
+/**
+ * Run a callback with the module's emails suppressed.
+ *
+ * try/finally, so a fatal inside the callback cannot leave the site silently
+ * unable to email anybody for the rest of the request.
+ *
+ * @param string   $reason   Short phrase for the log line, e.g. 'payment reconciliation'.
+ * @param callable $callback Work to run muted.
+ * @return mixed Whatever the callback returns.
+ */
+function law_events_without_emails( $reason, callable $callback ) {
+	$previous                          = (string) ( $GLOBALS['law_events_email_mute'] ?? '' );
+	$GLOBALS['law_events_email_mute'] = (string) $reason;
+	try {
+		return $callback();
+	} finally {
+		$GLOBALS['law_events_email_mute'] = $previous;
+	}
+}
+
+/**
+ * The reason sends are currently muted, or '' when they are not.
+ *
+ * @return string
+ */
+function law_events_emails_muted() {
+	return (string) ( $GLOBALS['law_events_email_mute'] ?? '' );
+}
+
 /**
  * Send one registered email for an event. Rendering: placeholders replaced,
  * plain-text body autop'd to HTML content; the Email Templates plugin wrapper
@@ -1532,6 +1650,19 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 	// keeps the site-wide view.
 	$definition = law_events_email( $slug, $event_id );
 	if ( ! $definition || empty( $definition['active'] ) ) {
+		return false;
+	}
+
+	// Muted for this operation (law_events_without_emails()). Logged, not
+	// dropped: the event's history has to show that the email belonging to
+	// this step was deliberately held back, and why.
+	$muted = law_events_emails_muted();
+	if ( '' !== $muted ) {
+		law_event_log(
+			$event_id,
+			sprintf( 'Email NOT sent (suppressed during %s): %s.', $muted, $definition['name'] ),
+			array( 'action' => 'email', 'slug' => $slug, 'to' => array(), 'sent' => false, 'suppressed' => $muted, 'source' => 'notifications' )
+		);
 		return false;
 	}
 

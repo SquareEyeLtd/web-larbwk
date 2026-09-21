@@ -637,6 +637,37 @@ function law_booking_attendee_email( $booking ) {
 }
 
 /**
+ * May this person be shown the payment facts on this booking — the payment
+ * method, the Stripe invoice and its PDF?
+ *
+ * Normally yes: the author of a booking is the person who paid for it. The
+ * exception is a place that has been SUBSTITUTED (law_flagship_substitute()),
+ * where the money deliberately did not move. The invoice belongs to the person
+ * who bought the ticket, the hosted Stripe page carries their name, billing
+ * address and card last four, and the new delegate is a different person who
+ * would otherwise find all of it one click from My bookings.
+ *
+ * So the rule is the payer's, not the holder's: only the delegate named in
+ * _law_substituted_from still sees them. In practice they no longer reach the
+ * page at all, because it is gated on post_author — which is exactly why their
+ * copy of the transfer email carries the invoice link instead.
+ *
+ * The committee's own surfaces (the Flagship bookings dashboard, the exports
+ * and the wp-admin booking screen) do NOT use this and are unchanged: tracing
+ * a refund is the job those screens exist for.
+ *
+ * @param int $booking_id The booking.
+ * @param int $user_id    Whose view; 0 for the current user.
+ */
+function law_booking_payment_facts_visible( $booking_id, $user_id = 0 ) {
+	$booking_id  = (int) $booking_id;
+	$user_id     = (int) $user_id ? (int) $user_id : get_current_user_id();
+	$substituted = (int) law_event_meta( $booking_id, '_law_substituted_from' );
+
+	return ! $substituted || $substituted === $user_id;
+}
+
+/**
  * The single write path for a booking's attendee snapshot and its booker.
  *
  * @param int   $person    user_id / name / email / organisation / job_title.
@@ -2632,10 +2663,26 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
  * Delete accounts this request created after the submission was refused. The
  * people were never emailed, so nothing points at them.
  *
+ * KEYED BY USER ID, not a list of them. Passing array( 123 ) rather than
+ * array( 123 => true ) means this deletes user 0 and the real account
+ * survives, silently — which is exactly what law_flagship_add_complimentary()
+ * did until 21 September 2026, leaving an orphan behind every time a
+ * complimentary place was refused for an email that already held one. The
+ * guard below refuses a list outright rather than quietly doing nothing,
+ * because the failure it replaces was invisible.
+ *
  * @param array $created_ids user_id => true.
  */
 function law_booking_delete_created_users( array $created_ids, $event_id, $actor_id ) {
 	if ( ! $created_ids ) {
+		return;
+	}
+	if ( array_keys( $created_ids ) === range( 0, count( $created_ids ) - 1 ) ) {
+		_doing_it_wrong(
+			__FUNCTION__,
+			'$created_ids must be keyed by user ID (array( 123 => true )), not a list of IDs.',
+			'4.2'
+		);
 		return;
 	}
 	require_once ABSPATH . 'wp-admin/includes/user.php';

@@ -3001,6 +3001,53 @@
   margin-bottom: 1rem;
 }
 
+/* Substituting the delegate on a confirmed ticket (21 September 2026). The
+   dialog itself is position:fixed and takes no space, exactly like the
+   add-attendee one, so this styles only the no-JS copy: with scripts off there
+   is no dialog to open, so ?law_substitute={id} renders the same form inline
+   above the table. Boxed, because it is about ONE row of the list below it and
+   would otherwise read as a second page heading. */
+.law-flagship-bookings__substitute--inline {
+  margin: 0 0 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #c9c9d4;
+  border-radius: 4px;
+}
+
+.law-flagship-bookings__substitute--inline h2 {
+  margin-top: 0;
+}
+
+/* The Substitute dialog once it has been submitted.
+
+   .law-modal--busy goes on when the request STARTS (booking-form.js
+   busyState()) and comes off again only on a refusal, so it covers both the
+   in-flight moment and the success that follows: on success the same script
+   replaces the FIRST .law-modal__copy with the server's message and the title
+   with the server's title, then reloads 2.5 seconds later.
+
+   Every other confirm dialog on this page is two or three lines long, so
+   leaving them on screen through that costs nothing. This one is a
+   fifteen-field form, and a filled-in form sitting under "Place transferred"
+   reads as though it had not been submitted at all. So everything but the
+   outcome goes: the line naming the current delegate, the two warning
+   paragraphs after the first (by then they warn about a thing that has already
+   happened) and the fields. The first paragraph stays because it is the one the
+   outcome lands in, and it reads correctly in the meantime. The buttons stay,
+   disabled, because a dialog with nothing at the bottom looks broken rather
+   than finished.
+
+   A refusal takes the class off again, so the fields come straight back with
+   everything the committee typed still in them, and the error beside the field
+   that caused it. */
+#law-flagship-substitute.law-modal--busy [data-law-sub-current],
+#law-flagship-substitute.law-modal--busy .law-modal__copy ~ .law-modal__copy,
+#law-flagship-substitute.law-modal--busy .law-row-grid,
+#law-flagship-substitute.law-modal--busy .law-attendee-profile,
+#law-flagship-substitute.law-modal--busy .law-form-field {
+  display: none;
+}
+
 /* The delegate's own application, laid out as facts rather than as a list:
    the label column is fixed so the values line up down the page. */
 .law-flagship-application th {

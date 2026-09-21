@@ -36,6 +36,17 @@ $law_fm_pay      = (string) law_event_meta( $law_fm_id, '_law_payment_status' );
 $law_fm_price    = law_booking_price( $law_fm_id );
 $law_fm_card     = law_booking_payment_method_label( $law_fm_id );
 $law_fm_invoice  = (string) law_event_meta( $law_fm_id, '_law_stripe_invoice_url' );
+// A place this delegate was SUBSTITUTED into was paid for by somebody else,
+// and the money deliberately never moved with it. The invoice, its PDF and the
+// payment method all describe that other person — the hosted Stripe page
+// carries their name, billing address and card last four — so they are blanked
+// here rather than guarded at each of the six places below, and one line says
+// why. The person who paid gets the link in their transfer email instead.
+$law_fm_moved    = ! law_booking_payment_facts_visible( $law_fm_id );
+if ( $law_fm_moved ) {
+	$law_fm_card    = '';
+	$law_fm_invoice = '';
+}
 $law_fm_error    = (string) law_event_meta( $law_fm_id, '_law_payment_error' );
 $law_fm_deadline = law_flagship_payment_deadline_ts( $law_fm_id );
 // Read LIVE from the profile, not from the booking. The registration form
@@ -262,7 +273,14 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && ! $law_fm_free 
 				</tr>
 			<?php endif; ?>
 
-			<?php if ( $law_fm_can_method || '' !== $law_fm_card ) : ?>
+			<?php if ( $law_fm_moved ) : ?>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Payment', 'law' ); ?></th>
+					<td>
+						<?php esc_html_e( 'This place was transferred to you. The receipt is held by the person who paid for it.', 'law' ); ?>
+					</td>
+				</tr>
+			<?php elseif ( $law_fm_can_method || '' !== $law_fm_card ) : ?>
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Payment method', 'law' ); ?></th>
 					<td>

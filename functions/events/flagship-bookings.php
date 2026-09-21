@@ -1108,6 +1108,7 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 	}
 
 	$extra = law_flagship_email_extra( $booking_id );
+	$extra['placeholders']['payment_note'] = law_flagship_payment_note( $booking_id );
 	if ( $receptions ) {
 		$extra['placeholders']['included_receptions'] = law_reception_choices_note( $receptions );
 	}
@@ -1497,6 +1498,17 @@ function law_flagship_retry_charge( $booking_id, $actor_id = 0 ) {
 	if ( 'law-payment-failed' !== $booking->post_status ) {
 		return new WP_Error( 'law_flagship_not_failed', 'That registration is not waiting on a payment.' );
 	}
+	// A substituted place holds somebody else's saved payment method and
+	// somebody else's invoice. Charging it would take money from a person who
+	// is no longer attending, for a ticket already paid for. Unreachable while
+	// a substitution requires a confirmed place, and stated anyway so it stays
+	// unreachable (21 September 2026).
+	if ( (int) law_event_meta( (int) $booking->ID, '_law_substituted_from' ) ) {
+		return new WP_Error(
+			'law_flagship_substituted',
+			'This place has been transferred to a different delegate, so the payment details saved against it belong to somebody else and must not be charged.'
+		);
+	}
 
 	return law_flagship_approve( (int) $booking->ID, $actor_id, array( 'confirm_overbook' => true ) );
 }
@@ -1612,7 +1624,7 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	);
 	if ( is_wp_error( $dup ) ) {
 		if ( ! empty( $resolved['created'] ) ) {
-			law_booking_delete_created_users( array( $user_id ), $event_id, (int) $actor_id );
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, (int) $actor_id );
 		}
 		return $dup;
 	}
@@ -1637,7 +1649,7 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 			law_booking_unlock( $event_id );
 		}
 		if ( ! empty( $resolved['created'] ) ) {
-			law_booking_delete_created_users( array( $user_id ), $event_id, (int) $actor_id );
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, (int) $actor_id );
 		}
 		return $booking_id;
 	}
@@ -1697,6 +1709,528 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	law_booking_send_with_ics( 'user_flagship_complimentary', $event_id, $law_fc_extra );
 
 	return $booking_id;
+}
+
+/**
+ * Move the included reception places from one holder of a flagship ticket to
+ * the next, when the ticket itself is substituted.
+ *
+ * Deliberately NOT law_reception_revoke_included() followed by
+ * law_reception_grant_choices(), which is the obvious route and is wrong three
+ * ways. It emails the original that "the flagship place it came with is no
+ * longer confirmed", which is untrue here — the place is fine, they are not on
+ * it. It silently drops any reception that has already happened, because
+ * law_reception_grant_included() refuses anything outside
+ * law_reception_included_ids(). And the revoke half calls law_booking_cancel(),
+ * which ends in law_waitlist_process(), so somebody queued can be seated into
+ * the place between the revoke and the grant — and the grant has no capacity
+ * guard by design, so the reception silently over-books.
+ *
+ * Moving the booking in place has none of those problems: the headcount never
+ * changes, so no recount and no waitlist are involved at all.
+ *
+ * The one case that does release a place is a substitute who ALREADY bought
+ * their own ticket to that reception. They keep the one they paid for and the
+ * included one is cancelled, so nobody holds two. Here the waitlist firing is
+ * correct, because a place really has been freed. Nothing is refunded: the
+ * committee is told, and the conversation is theirs.
+ *
+ * @param int   $booking_id The flagship booking, already re-authored.
+ * @param int   $to_user_id The new holder.
+ * @param array $person     law_booking_attendee()-shaped row for the new holder.
+ * @param int   $actor_id   The committee member.
+ * @return array{moved:array<int,string>,released:array<int,string>,failed:array<int,string>}
+ */
+function law_flagship_move_included_receptions( $booking_id, $to_user_id, array $person, $actor_id ) {
+	$result = array( 'moved' => array(), 'released' => array(), 'failed' => array() );
+
+	$included = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_status'    => law_booking_holding_statuses(),
+			'meta_key'       => '_law_included_with',
+			'meta_value'     => (int) $booking_id,
+			'posts_per_page' => 50,
+			'no_found_rows'  => true,
+		)
+	);
+	if ( ! $included ) {
+		return $result;
+	}
+
+	foreach ( $included as $place ) {
+		$reception_id = (int) $place->post_parent;
+		$title        = (string) get_the_title( $reception_id );
+		$number       = (int) law_event_meta( (int) $place->ID, '_law_booking_number' );
+
+		// They bought their own place at this one already. Cancel the included
+		// place rather than leaving them holding two, and say so loudly enough
+		// that somebody thinks about the money they spent on it.
+		if ( law_reception_holds_place( (int) $to_user_id, $reception_id ) ) {
+			$cancelled = law_booking_cancel( (int) $place->ID, (int) $actor_id, 'included_revoked' );
+			if ( is_wp_error( $cancelled ) ) {
+				$result['failed'][ $reception_id ] = $title;
+				continue;
+			}
+			$result['released'][ $reception_id ] = $title;
+			law_event_log(
+				$reception_id,
+				sprintf(
+					'Included reception place #%1$d released: the flagship ticket it came with was substituted to %2$s, who already holds a place here that they booked themselves. Nothing has been refunded to them.',
+					$number,
+					$person['name']
+				),
+				array(
+					'source'   => 'flagship',
+					'action'   => 'reception_included_released',
+					'booking'  => (int) $place->ID,
+					'flagship' => (int) $booking_id,
+				),
+				array( 'user_id' => (int) $actor_id )
+			);
+			continue;
+		}
+
+		// The ordinary case: the place moves with the ticket. One lock per
+		// reception, never nested inside the flagship's — GET_LOCK does not
+		// nest — and no recount, because one seat out is one seat in.
+		$locked = law_booking_lock( $reception_id );
+		$moved  = wp_update_post(
+			array( 'ID' => (int) $place->ID, 'post_author' => (int) $to_user_id ),
+			true
+		);
+		if ( is_wp_error( $moved ) ) {
+			if ( $locked ) {
+				law_booking_unlock( $reception_id );
+			}
+			$result['failed'][ $reception_id ] = $title;
+			continue;
+		}
+		law_booking_write_attendee(
+			(int) $place->ID,
+			array( 'user_id' => (int) $to_user_id ) + $person,
+			(int) $to_user_id,
+			(bool) law_event_meta( (int) $place->ID, '_law_is_press' )
+		);
+		if ( $locked ) {
+			law_booking_unlock( $reception_id );
+		}
+
+		$result['moved'][ $reception_id ] = $title;
+		law_event_log(
+			$reception_id,
+			sprintf(
+				'Included reception place #%1$d moved to %2$s with the flagship ticket it came with.',
+				$number,
+				$person['name']
+			),
+			array(
+				'source'   => 'flagship',
+				'action'   => 'reception_included_moved',
+				'booking'  => (int) $place->ID,
+				'flagship' => (int) $booking_id,
+			),
+			array( 'user_id' => (int) $actor_id )
+		);
+	}
+
+	return $result;
+}
+
+/**
+ * The sentence the substitution emails and the committee's confirmation use
+ * about the drinks receptions that came with the ticket.
+ *
+ * Shaped like law_reception_choices_note(), and separate from it because the
+ * three outcomes are different: nothing was granted here, things MOVED, and
+ * the third case is a place given up rather than one already held.
+ *
+ * @param array $result law_flagship_move_included_receptions().
+ * @return string '' when the ticket carried no reception places.
+ */
+function law_flagship_receptions_moved_note( array $result ) {
+	$lines = array();
+	if ( ! empty( $result['moved'] ) ) {
+		$lines[] = sprintf(
+			/* translators: %s: a list of reception names. */
+			_n(
+				'%s comes with this ticket and is now in your bookings, at no cost.',
+				'%s come with this ticket and are now in your bookings, at no cost.',
+				count( $result['moved'] ),
+				'law'
+			),
+			wp_sprintf_l( '%l', array_values( $result['moved'] ) )
+		);
+	}
+	if ( ! empty( $result['released'] ) ) {
+		$lines[] = sprintf(
+			/* translators: %s: a list of reception names. */
+			_n(
+				'You already had your own place at %s, so the one included with this ticket has been released.',
+				'You already had your own places at %s, so the ones included with this ticket have been released.',
+				count( $result['released'] ),
+				'law'
+			),
+			wp_sprintf_l( '%l', array_values( $result['released'] ) )
+		);
+	}
+	if ( ! empty( $result['failed'] ) ) {
+		$lines[] = sprintf(
+			/* translators: %s: a list of reception names. */
+			__( 'Please get in touch about your place at %s.', 'law' ),
+			wp_sprintf_l( '%l', array_values( $result['failed'] ) )
+		);
+	}
+
+	return implode( ' ', $lines );
+}
+
+/**
+ * Hand a confirmed flagship ticket to somebody else (the client's ask,
+ * 21 September 2026).
+ *
+ * The case is ordinary and had no answer at all before this: a firm buys a
+ * place for a named partner, the partner cannot come, and a colleague goes
+ * instead. The only route the committee had was to cancel the confirmed ticket
+ * and add the replacement as a complimentary place, which threw away the
+ * payment trail, understated the revenue and filed a paying delegate as a
+ * freebie.
+ *
+ * THE MONEY DOES NOT MOVE (Denis, 21 September 2026). No Stripe call is made
+ * at all: the invoice, the charge and the VAT receipt stay exactly as issued
+ * to whoever paid, because the receipt records who paid and re-addressing it
+ * to somebody who paid nothing would mislead whoever later handles a refund.
+ * Every _law_stripe_* key on the booking therefore still describes the
+ * ORIGINAL delegate, deliberately, and _law_substituted_from_email is what
+ * finds their Stripe customer months later. The one live consequence is that
+ * the delegate's own view of the application must stop showing the payment
+ * facts to the new holder, which parts/events/booking-payment-facts.php does.
+ *
+ * CONFIRMED PLACES ONLY. A registration still under review carries a payment
+ * method the original person saved and consented to; that is theirs, not a
+ * thing to pass on, so it is declined and the replacement registers afresh.
+ *
+ * post_author is what moves. It is the canonical attendee everywhere in this
+ * module — My bookings queries by it, law_booking_attendee() reads it, the
+ * duplicate guard indexes it, the clash guard reads it — so rewriting only the
+ * snapshot would leave the ticket in the wrong person's account while claiming
+ * to be somebody else's.
+ *
+ * @param int   $booking_id The confirmed flagship booking.
+ * @param array $row        name, email, organisation, job_title, press, plus
+ *                          profile (the cleaned country/accessibility/dietary
+ *                          set, written onto the new delegate's account).
+ * @param int   $actor_id   The committee member doing it.
+ * @return array{user_id:int,created:bool,name:string,from_name:string,receptions:array}|WP_Error
+ */
+function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
+		return new WP_Error( 'law_flagship_not_application', 'That is not a flagship registration.' );
+	}
+	$booking_id = (int) $booking->ID;
+	$event_id   = (int) $booking->post_parent;
+	$actor_id   = (int) $actor_id;
+
+	// Deliberately NOT law_flagship_guard_open(), which law_flagship_apply()
+	// and law_flagship_add_complimentary() both call: it refuses once _law_start
+	// has passed, and a substitution routinely happens in the last week and
+	// sometimes on the morning of the conference. Nobody is registering here;
+	// the place already exists and is only changing hands.
+	if ( 'publish' !== $booking->post_status ) {
+		return new WP_Error(
+			'law_flagship_not_confirmed',
+			'Only a confirmed place can be handed to somebody else. Decline a registration that is still under review and let the new person register themselves, and use Cancel on a place you want to release rather than move.'
+		);
+	}
+
+	$profile = (array) ( $row['profile'] ?? array() );
+	$row     = array(
+		'name'         => sanitize_text_field( (string) ( $row['name'] ?? '' ) ),
+		'email'        => sanitize_email( (string) ( $row['email'] ?? '' ) ),
+		'organisation' => sanitize_text_field( (string) ( $row['organisation'] ?? '' ) ),
+		'job_title'    => sanitize_text_field( (string) ( $row['job_title'] ?? '' ) ),
+		'press'        => ! empty( $row['press'] ),
+	);
+	if ( '' === $row['name'] ) {
+		return new WP_Error( 'law_flagship_no_name', 'Please give the new delegate a name.', array( 'field' => 'name' ) );
+	}
+	if ( ! is_email( $row['email'] ) ) {
+		return new WP_Error( 'law_flagship_bad_email', 'Please give a valid email address.', array( 'field' => 'email' ) );
+	}
+
+	// Everything about the person losing the place, read BEFORE anything moves.
+	// The address comes from law_booking_attendee_email() rather than the
+	// snapshot because that helper prefers the live account address, and that
+	// is where their email has to go.
+	$from_user_id = (int) $booking->post_author;
+	$from         = law_booking_attendee( $booking );
+	$from_email   = law_booking_attendee_email( $booking );
+	$from_name    = '' !== $from['name'] ? $from['name'] : $from_email;
+
+	// Substituting somebody for themselves is a mistake, not a no-op, and it is
+	// caught here rather than left to the duplicate guard: that guard would
+	// answer "You already have a booking for this event", which is written for
+	// a person booking themselves and reads as nonsense on a committee dialog.
+	// Checked on the address before any account is resolved, so the mistake
+	// never mints a user.
+	$wanted = strtolower( $row['email'] );
+	$held   = array_filter( array( strtolower( $from_email ), strtolower( $from['email'] ) ) );
+	if ( in_array( $wanted, $held, true ) ) {
+		return new WP_Error(
+			'law_flagship_same_person',
+			sprintf( '%s already holds this place, so there is nothing to substitute.', $from_name ),
+			array( 'field' => 'email' )
+		);
+	}
+
+	// Validation first, accounts second: a refusal must never leave an account
+	// behind that nothing points at.
+	$resolved = law_booking_resolve_attendee_user( $row, $event_id, $actor_id );
+	if ( is_wp_error( $resolved ) ) {
+		return $resolved;
+	}
+	$user_id = (int) $resolved['user_id'];
+	$created = ! empty( $resolved['created'] );
+
+	// Belt and braces on the same-person check above, for an account whose
+	// address differs from both of the ones compared there.
+	if ( $user_id === $from_user_id ) {
+		return new WP_Error(
+			'law_flagship_same_person',
+			sprintf( '%s already holds this place, so there is nothing to substitute.', $from_name ),
+			array( 'field' => 'email' )
+		);
+	}
+
+	// Refused across every status that holds a place, so a substitute with an
+	// application of their own still under review is caught too: approving that
+	// afterwards would charge them for a second place.
+	$dup = law_booking_guard_duplicates(
+		$event_id,
+		array( array( 'user_id' => $user_id, 'email' => $row['email'], 'name' => $row['name'] ) ),
+		law_booking_holding_statuses()
+	);
+	if ( is_wp_error( $dup ) ) {
+		if ( $created ) {
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
+		}
+		return new WP_Error(
+			'law_flagship_duplicate',
+			sprintf(
+				'%s already has a place at the conference, so this ticket cannot be moved to them.',
+				$row['name']
+			),
+			array( 'field' => 'email' )
+		);
+	}
+
+	$person = array( 'user_id' => $user_id ) + array(
+		'name'         => $row['name'],
+		'email'        => $row['email'],
+		'organisation' => $row['organisation'],
+		'job_title'    => $row['job_title'],
+	);
+
+	// The lock covers the swap and nothing else. Its whole job is the re-read
+	// below: between the guards above and here, another committee member's
+	// Cancel or another substitution could have moved this same place.
+	$locked = law_booking_lock( $event_id );
+	// clean_post_cache() before the re-read, or there is no re-read at all:
+	// get_post() answers from this request's own cache, which still holds the
+	// copy loaded at the top of this function, and the check below would
+	// compare the row against itself. Without a persistent object cache another
+	// request's write is invisible to us until we go back to the database.
+	clean_post_cache( $booking_id );
+	$fresh = get_post( $booking_id );
+	if ( ! $fresh || 'publish' !== $fresh->post_status || (int) $fresh->post_author !== $from_user_id ) {
+		if ( $locked ) {
+			law_booking_unlock( $event_id );
+		}
+		if ( $created ) {
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
+		}
+		return new WP_Error(
+			'law_flagship_moved',
+			'That place changed while you were filling this in. Please reload the page and look at it again.'
+		);
+	}
+
+	// Only these two keys. post_status is unchanged, so workflow.php's
+	// wp_insert_post_data guard is a no-op and transition_post_status does not
+	// fire — which is why $GLOBALS['law_booking_transitioning'] is deliberately
+	// NOT raised here: disarming the status guard for a change that does not
+	// touch the status would only widen the window something else could slip
+	// through.
+	$updated = wp_update_post( array( 'ID' => $booking_id, 'post_author' => $user_id ), true );
+	if ( is_wp_error( $updated ) ) {
+		if ( $locked ) {
+			law_booking_unlock( $event_id );
+		}
+		if ( $created ) {
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
+		}
+		return $updated;
+	}
+
+	// The fourth argument matters: law_booking_write_attendee() DELETES
+	// _law_is_press unless it is passed, so a press pass on the ticket would
+	// vanish silently. It is a property of the seat, so it is carried over
+	// unless the dialog says otherwise.
+	law_booking_write_attendee( $booking_id, $person, $user_id, ! empty( $row['press'] ) );
+
+	law_event_update_meta( $booking_id, '_law_substituted_from', $from_user_id );
+	law_event_update_meta( $booking_id, '_law_substituted_from_name', $from_name );
+	law_event_update_meta( $booking_id, '_law_substituted_from_email', $from_email );
+	law_event_update_meta( $booking_id, '_law_substituted_at', gmdate( 'Y-m-d H:i' ) );
+	law_event_update_meta( $booking_id, '_law_substituted_by', $actor_id );
+
+	// NO law_event_recount_attendees(). One seat out is one seat in, so the
+	// headcount is unchanged and a recount would only re-arm the capacity
+	// warnings for a change that took no place.
+	if ( $locked ) {
+		law_booking_unlock( $event_id );
+	}
+
+	/*
+	 * Past this point the seat has changed hands and there is nothing to roll
+	 * back to. Everything below is best-effort: it is logged and reported, and
+	 * it never turns a completed substitution into an error. In particular the
+	 * new holder now owns a booking, so they are never passed to
+	 * law_booking_delete_created_users() again.
+	 */
+
+	$receptions = law_flagship_move_included_receptions( $booking_id, $user_id, $person, $actor_id );
+
+	law_booking_apply_attendee_profile( $user_id, $profile, $created, $event_id, $actor_id );
+
+	$actor      = $actor_id ? get_user_by( 'id', $actor_id ) : null;
+	$price      = law_booking_price( $booking_id );
+	$payment    = (string) law_event_meta( $booking_id, '_law_payment_status' );
+	$ticket     = (string) law_event_meta( $booking_id, '_law_ticket_type' );
+	$money_note = 'paid' === $payment && (int) $price['gross'] > 0
+		? sprintf(
+			'The money has not moved: the Stripe invoice, the charge and the VAT receipt for %s stay with %s, who has been emailed the link to them.',
+			law_events_format_pence( (int) $price['gross'] ),
+			$from_name
+		)
+		: 'There was nothing to pay on this place, so there is nothing to move.';
+
+	law_event_log(
+		$event_id,
+		sprintf(
+			'Flagship ticket #%1$d transferred from %2$s (%3$s) to %4$s (%5$s) by %6$s. %7$s%8$s%9$s',
+			(int) law_event_meta( $booking_id, '_law_booking_number' ),
+			$from_name,
+			$from_email ? $from_email : 'no address',
+			$row['name'],
+			$row['email'],
+			$actor ? $actor->display_name : 'the committee',
+			$money_note,
+			$receptions['moved'] || $receptions['released'] || $receptions['failed']
+				? ' ' . law_flagship_receptions_moved_note( $receptions )
+				: '',
+			'' !== $ticket
+				? sprintf( ' The ticket type is still %s — please check it still applies.', law_booking_ticket_type_label( $ticket ) )
+				: ''
+		),
+		array(
+			'source'   => 'flagship',
+			'action'   => 'flagship_substituted',
+			'booking'  => $booking_id,
+			'from'     => $from_user_id,
+			'to'       => $user_id,
+			'payment'  => $payment,
+		),
+		array( 'user_id' => $actor_id )
+	);
+
+	law_flagship_send_substitution_emails(
+		$booking_id,
+		$event_id,
+		$person,
+		$created,
+		array( 'user_id' => $from_user_id, 'name' => $from_name, 'email' => $from_email ),
+		$receptions
+	);
+
+	return array(
+		'user_id'    => $user_id,
+		'created'    => $created,
+		'name'       => $row['name'],
+		'from_name'  => $from_name,
+		'receptions' => $receptions,
+	);
+}
+
+/**
+ * The two emails a substitution sends, and the one rule that matters in them.
+ *
+ * ONE new template, not two (Denis, 21 September 2026). The person arriving
+ * gets user_flagship_approved — the ordinary confirmation every other confirmed
+ * delegate gets — because that is what they are: somebody with a confirmed
+ * place. Only the person LOSING a place needed a template of its own, since
+ * nothing in the registry said "you no longer have a ticket, and here is where
+ * your receipt went".
+ *
+ * What makes one template serve both is {payment_note}: a whole resolved
+ * paragraph that says "we have taken £660 from your card, here is the invoice"
+ * on an approval and "somebody else paid for this, the receipt stays with
+ * them" on a transfer. The payment tags are ALSO blanked on the way out, so an
+ * environment whose stored override of that template still names {invoice_link}
+ * or {payment_method} by hand cannot hand the payer's hosted Stripe invoice —
+ * their name, billing address and card last four — to a person who paid
+ * nothing. The tag carries the right sentence; the blanking is what makes the
+ * wrong one impossible.
+ *
+ * The original's note goes to the address captured BEFORE the swap, with an
+ * explicit 'to'. Reading it back out of law_flagship_email_extra() would
+ * resolve to the new holder, and "your place has been passed on" would land on
+ * the person who received it.
+ */
+function law_flagship_send_substitution_emails( $booking_id, $event_id, array $person, $created, array $from, array $receptions ) {
+	$note = law_flagship_receptions_moved_note( $receptions );
+
+	// To the new delegate: the standard confirmation, with the calendar invite.
+	$to_extra = law_flagship_email_extra( $booking_id );
+	$to_extra['placeholders']['attendee_name']          = $person['name'];
+	$to_extra['placeholders']['previous_attendee_name'] = $from['name'];
+	$to_extra['placeholders']['included_receptions']    = $note;
+	$to_extra['placeholders']['payment_note']           = law_flagship_payment_note( $booking_id, $from['name'] );
+
+	// Every fact about somebody else's money, emptied. law_flagship_email_extra()
+	// supplies all of them for every flagship email, and each one describes the
+	// person who paid rather than the person reading.
+	foreach ( array( 'invoice_link', 'invoice_url', 'price', 'price_vat', 'price_total', 'payment_method', 'card_label', 'update_payment_link', 'discount_note' ) as $law_fs_payer_tag ) {
+		$to_extra['placeholders'][ $law_fs_payer_tag ] = '';
+	}
+
+	// A brand-new account gets its set-password link in THIS email rather than
+	// a welcome of its own — the "one welcome email, not two" rule of
+	// 17 September 2026, through the same resolved paragraph the on-behalf
+	// bookings use.
+	$new_user = $created ? get_user_by( 'id', (int) $person['user_id'] ) : null;
+	$link     = $new_user ? law_events_password_setup_link( $new_user, $event_id, 'flagship_substitute_error' ) : '';
+	$to_extra['placeholders']['set_password_link'] = $link;
+	$to_extra['placeholders']['account_note']      = law_booking_account_note( $link );
+	if ( '' !== $link && $new_user ) {
+		$to_extra['placeholders']['username'] = $new_user->user_login;
+	}
+
+	law_booking_send_with_ics( 'user_flagship_approved', $event_id, $to_extra );
+
+	// To the person who gave it up. {receipt_note} rather than a bare
+	// {invoice_link}, because a ticket a discount code covered in full has no
+	// Stripe invoice and the promise of one then ended in a colon and nothing.
+	if ( ! is_email( (string) $from['email'] ) ) {
+		return;
+	}
+	$from_extra = law_flagship_email_extra( $booking_id );
+	$from_extra['to'] = array( $from['email'] );
+	$from_extra['placeholders']['attendee_name']   = $from['name'];
+	$from_extra['placeholders']['substitute_name'] = $person['name'];
+	$from_extra['placeholders']['receipt_note']    = law_flagship_receipt_note( $booking_id );
+	law_events_send( 'user_flagship_place_transferred', $event_id, $from_extra );
 }
 
 /**
@@ -1763,6 +2297,112 @@ function law_flagship_set_ticket_type( $booking_id, $type, $actor_id ) {
  */
 function law_flagship_email_extra( $booking_id ) {
 	return law_booking_email_extra( $booking_id );
+}
+
+
+/**
+ * The money paragraph on a confirmed flagship ticket, already resolved.
+ *
+ * It is ONE paragraph rather than the four tags it replaces because the
+ * sentence changes wholesale, not word by word: the delegate who paid is told
+ * what was taken and where the receipt is, and a delegate a place was
+ * TRANSFERRED to is told that somebody else paid and the receipt is theirs.
+ * law_events_email_render_body() substitutes in a single strtr() pass, so a
+ * {invoice_link} sitting inside another tag's value would reach the reader
+ * printed literally — which is why this resolves everything itself. Same idiom
+ * as law_booking_account_note().
+ *
+ * @param int    $booking_id The confirmed booking.
+ * @param string $from_name  The delegate it was transferred from; '' on an
+ *                           ordinary approval.
+ */
+function law_flagship_payment_note( $booking_id, $from_name = '' ) {
+	$booking_id = (int) $booking_id;
+
+	// Transferred. Nothing about the payment is this person's business: the
+	// invoice names somebody else, the hosted Stripe page carries that
+	// person's billing address and card, and they were charged nothing.
+	if ( '' !== (string) $from_name ) {
+		return sprintf(
+			/* translators: %s: the delegate who gave the place up. */
+			__( 'This place has been transferred to you from %s, at your organisation\'s request. It has already been paid for, so there is nothing for you to pay, and the receipt stays with whoever bought it.', 'law' ),
+			$from_name
+		);
+	}
+
+	$price = law_booking_price( $booking_id );
+	// The approval is the news, and it moved in here when the body's opening
+	// line had to serve a transfer as well. It is first because it is what the
+	// delegate has been waiting to read.
+	$lines = array( __( 'Your registration has been approved by the committee.', 'law' ) );
+
+	if ( (int) $price['gross'] > 0 ) {
+		$lines[] = sprintf(
+			/* translators: 1: total, 2: payment method, 3: net, 4: VAT. */
+			__( 'We have taken %1$s from your saved payment method (%2$s), which is %3$s plus %4$s VAT.', 'law' ),
+			law_events_format_pence( (int) $price['gross'] ),
+			law_booking_payment_method_label( $booking_id ) ?: __( 'the method you saved', 'law' ),
+			law_events_format_pence( (int) $price['net'] ),
+			law_events_format_pence( (int) $price['vat'] )
+		);
+	}
+
+	$code     = (string) law_event_meta( $booking_id, '_law_discount_code' );
+	$discount = (int) law_event_meta( $booking_id, '_law_discount_pence' );
+	if ( '' !== $code && $discount > 0 ) {
+		$lines[] = sprintf(
+			/* translators: 1: the code, 2: the amount off. */
+			__( 'Discount code %1$s: %2$s off.', 'law' ),
+			$code,
+			law_events_format_pence( $discount )
+		);
+	}
+
+	// Only when there IS one. A ticket a code covered in full never raises a
+	// Stripe invoice, and the sentence promising one then ended in a colon
+	// and nothing at all (Denis, 21 September 2026).
+	$invoice = (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' );
+	if ( '' !== $invoice ) {
+		$lines[] = sprintf(
+			/* translators: %s: the invoice URL. */
+			__( 'Your VAT invoice is here, and you can download it at any time: %s', 'law' ),
+			$invoice
+		);
+	}
+
+	return implode( "\n\n", $lines );
+}
+
+/**
+ * What the delegate who gave a place up is told about their receipt.
+ *
+ * Its own resolved paragraph for exactly the reason above, and for one more:
+ * a ticket bought with a code that covered the whole price has no Stripe
+ * invoice, so the bare {invoice_link} this replaces rendered a promise of a
+ * receipt followed by a colon and nothing (Denis spotted it on a real
+ * transfer, 21 September 2026). No invoice means a different sentence, not a
+ * broken one.
+ */
+function law_flagship_receipt_note( $booking_id ) {
+	$booking_id = (int) $booking_id;
+	$price      = law_booking_price( $booking_id );
+	$invoice    = (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' );
+
+	if ( '' !== $invoice ) {
+		return sprintf(
+			/* translators: %s: the invoice URL. */
+			__( "Nothing has been refunded, and nothing further will be charged. Your VAT invoice stays with you and you can download it here at any time:\n\n%s\n\nPlease keep this email: it is your link to that receipt now that the booking has moved.", 'law' ),
+			$invoice
+		);
+	}
+
+	// Paid, but with no invoice we can link to. Say what is true rather than
+	// promise a document that does not exist.
+	if ( (int) $price['gross'] > 0 ) {
+		return __( 'Nothing has been refunded, and nothing further will be charged. If you need a receipt for what you paid, please reply to this email and we will send you one.', 'law' );
+	}
+
+	return __( 'There was nothing to pay on this place, so there is nothing to refund and nothing further will be charged.', 'law' );
 }
 
 /* Handlers ___________________________________________________________________
@@ -2335,6 +2975,69 @@ function law_flagship_add_attendee_handler() {
 			'redirect' => add_query_arg( 'law_notice', 'flagship-added', law_flagship_bookings_url() ),
 		),
 		'flagship-added'
+	);
+}
+
+add_action( 'admin_post_law_flagship_substitute', 'law_flagship_substitute_handler' );
+add_action( 'admin_post_nopriv_law_flagship_substitute', 'law_events_nopriv_json' );
+
+function law_flagship_substitute_handler() {
+	$is_ajax = law_events_guard_post(
+		'law_flagship_substitute',
+		array( 'rate' => array( 'flagship_review', 60, 600, 300 ), 'honeypot_json' => array( 'message' => 'Done.' ) )
+	);
+
+	$booking = law_flagship_require_committee_booking( $is_ajax );
+
+	// Country, accessibility and dietary as well, on the same reasoning as the
+	// comp dialog: the delegate list and the exports read those live from the
+	// profile, and somebody put on the list this way never filled a
+	// registration form in. Not required, and validated BEFORE the model
+	// function resolves an account, so a bad "Other" box never mints a user.
+	$profile = law_registration_clean_attendee_profile( wp_unslash( $_POST ) );
+	$valid   = law_registration_validate_attendee_profile( $profile, false );
+	if ( is_wp_error( $valid ) ) {
+		law_events_respond( $is_ajax, false, law_booking_error_payload( $valid ), 'flagship-failed' );
+	}
+
+	$result = law_flagship_substitute(
+		(int) $booking->ID,
+		array(
+			'name'         => wp_unslash( (string) ( $_POST['name'] ?? '' ) ),
+			'email'        => wp_unslash( (string) ( $_POST['email'] ?? '' ) ),
+			'organisation' => wp_unslash( (string) ( $_POST['organisation'] ?? '' ) ),
+			'job_title'    => wp_unslash( (string) ( $_POST['job_title'] ?? '' ) ),
+			'press'        => ! empty( $_POST['law_press'] ),
+			'profile'      => $profile,
+		),
+		get_current_user_id()
+	);
+
+	if ( is_wp_error( $result ) ) {
+		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'flagship-failed' );
+	}
+
+	// The reception outcome is reported rather than swallowed: a place the
+	// substitute already owned has been released and nobody refunded them for
+	// it, and that is a conversation the committee has to know to have.
+	$note = law_flagship_receptions_moved_note( (array) $result['receptions'] );
+
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => 'Place transferred',
+			'message'  => trim(
+				sprintf(
+					'%1$s now holds this ticket in place of %2$s. Both of them have been emailed, and the payment stays with %2$s. %3$s',
+					$result['name'],
+					$result['from_name'],
+					$note
+				)
+			),
+			'redirect' => add_query_arg( 'law_notice', 'flagship-substituted', law_flagship_bookings_url() ),
+		),
+		'flagship-substituted'
 	);
 }
 
