@@ -2427,6 +2427,21 @@ resolve-or-create, the log, the email registry and the `.ics` generator.
   tell them apart. Its dialog collects country, accessibility and dietary as
   well (Denis, 11 September 2026), through the shared
   `parts/events/attendee-profile-fields.php`.
+- `law_flagship_substitute()` hands a CONFIRMED place to somebody else
+  (21 September 2026, the client's ask). A firm bought a ticket for a partner
+  who cannot come and is sending a colleague; before this the only route was to
+  cancel the confirmed place and add the replacement as a complimentary one,
+  which threw the payment trail away and filed a paying delegate as a freebie.
+  **The money does not move**: no Stripe call is made at all, and every
+  `_law_stripe_*` key still describes the original payer, because the receipt
+  records who paid and re-addressing it to somebody who paid nothing would
+  mislead whoever handles a refund. `post_author` is what moves, since that is
+  the canonical attendee everywhere here. Confirmed places only: an application
+  under review carries a payment method its owner consented to, so it is
+  declined and the replacement registers afresh. Deliberately does **not** call
+  `law_flagship_guard_open()`, which the apply and comp paths do — that refuses
+  once `_law_start` has passed, and a substitution routinely happens on the
+  morning. See the change-history entry below for the rest.
 - `law_flagship_mark_payment_processing()` is the third outcome of a charge,
   beside paid and failed: Stripe accepted the payment but it has not settled.
   The application stays where it is holding its place, nothing is emailed, and
@@ -3135,12 +3150,41 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 - `law_events_form_state()`, `law_events_form_values()`,
   `law_events_form_reusable_input()`: transient-backed re-population of a failed
   submission (typed values win over stored values).
+- `law_events_form_error_modal()` and `law_events_form_error_selector()` (21
+  September 2026): the failed save says so in a dialog as well as in the
+  notice. Both the host form (`templates/account-event-form.php`) and the
+  committee edit view (`parts/events/committee-event-form.php`) call the first
+  right after their `law-form-notice is-error` block, which is unchanged and
+  still reads "Please fix the highlighted fields below." — the dialog is the
+  same information, said up front, because a save fired from the Finish section
+  at the foot of a long form put that notice several screens above the fold and
+  read as a save that had worked. It renders `parts/layout/modal.php` with
+  `'confirm' => false` and the new `list` and `autoopen` args: one line per
+  failed field, carrying **the message that field itself prints** (the first
+  message of each error code, so the dialog cannot drift from the form), each
+  line a button that closes the dialog and jumps to its control. The title is
+  the caller's: "Your event was not saved" for a draft or a first submission,
+  "Your changes were not saved" everywhere else. The edit-lock refusal
+  (`errors['locked']`) is the exception — nothing is highlighted below on that
+  path, so the dialog is that one sentence with no lines and no count.
+  `law_events_form_error_selector()` turns an error code into the CSS selector
+  `law-modal.js` resolves: the code is the posted field name, so it is
+  `[name="<code>"], [name="<code>[]"]` (the second half is what matches the
+  preferred-slots and sectors checkbox groups), with `speaker_photo_<n>` mapped
+  to that row's `[name="speaker_photo[<n>]"]` and an unrecognised code
+  returning nothing, which the dialog prints as plain text. `FormErrorModalTest`
+  pins all of it, including that every code `law_events_form_save()` can raise
+  has a control on the rendered form to point at. Without JavaScript the dialog
+  stays hidden and the inline notice does the whole job, exactly as before.
 - A `wp_enqueue_scripts` closure loads `assets/css/event-form.css` and
   `assets/js/event-form.js` on the five account templates that use them
   (`account-event-form`, `account-dashboard`, `account-events`,
   `account-profile`, `register`), versioned by `filemtime` so an edit can never
   serve stale CSS, and adds WordPress's `password-strength-meter` dependency on
-  the register/profile templates.
+  the register/profile templates. It also calls `law_modal_enqueue()` on the
+  host form template (as it already did on the dashboard): the modal partial
+  enqueues the component itself, but mid-template, by which time the head is
+  out and the stylesheet would print after the failed-save dialog it styles.
 
 ### `registration.php`: the custom registration and profile forms (forms 1 & 3)
 
@@ -5420,7 +5464,14 @@ These predate the rebuild and now branch on `law_events_source()`.
   The confirm array takes an optional `busy` label (rendered as
   `data-law-modal-busy`, the in-flight text a fetch layer swaps in), and
   `'confirm' => false` renders an informational dialog with no submit button —
-  what the dashboard's script-opened success dialog uses.
+  what the dashboard's script-opened success dialog uses. Two args were added
+  on 21 September 2026 for the event form's failed-save dialog: `list`, a
+  bulleted list under the copy whose items are plain strings or
+  `array( 'text' => …, 'goto' => '<css selector>' )` (a `goto` makes the line a
+  button that closes the dialog and scrolls to the control that selector
+  names), and `autoopen`, which marks the dialog `data-law-modal-autoopen` so
+  `law-modal.js` opens it as the page loads — for a dialog that reports what
+  just happened rather than confirming what is about to.
 - **Calendar parts** (`parts/`): `calendar-body.php` (the shared list/single
   view; its optional caller variables, set before the `require` —
   `$law_cal_show_status` for committee mode, `$law_cal_hero_title` for the
@@ -5737,7 +5788,17 @@ These predate the rebuild and now branch on `law_events_source()`.
   label. It forces a reload when the target is the page we are already on
   (keeping the anchor) and replaces otherwise. The API object is assigned before
   the file's "no openers on this page" early return, because a page can carry a
-  fetch form with no dialog at all.
+  fetch form with no dialog at all. Two more hooks, added 21 September 2026 for
+  the event form's failed-save dialog: the first
+  `.law-modal[data-law-modal-autoopen]` on the page is opened at load, and a
+  click on a `[data-law-modal-goto="<css selector>"]` control closes the dialog
+  (first, so the body scroll lock is off) and then centres the target's
+  `.law-form-field`, focusing the control itself unless it is unfocusable —
+  the rich-text description's textarea belongs to TinyMCE, so that line
+  scrolls and stops there. A `goto` whose selector matches nothing on the page
+  is `disabled` at load, which takes it out of the tab order and (in
+  `law-modal.css`) paints it as the plain sentence it is, rather than leaving a
+  line that looks clickable and goes nowhere.
   `assets/js/committee-actions.js` is that fetch layer for the dashboard's
   workflow actions: it intercepts only submits whose submitter sits inside a
   `.law-modal` (so Save changes keeps the classic POST), appends the
@@ -8245,7 +8306,7 @@ so the two share one set of declarations -- brand navy `#292459` fill, orange
 left edge, white title and meta, the inverted button pair, the white repaint of
 the committee's status badge. Splitting them would have produced two copies of
 the same twelve rules. What tells a reader which is which is the identity pill
-(`.law-event-card__reception-badge`, "Drinks reception", added to the shared
+(`.law-event-card__reception-badge`, "Reception", added to the shared
 five-selector pill shape rather than copied) and, on the programme, the fact
 that the conference is a photo block rather than a row at all. The block is
 declared **after** `.law-event-card--sponsored`, which is the whole mechanism by
@@ -9090,6 +9151,334 @@ Touched: `functions/events/meta.php`, `functions/events/statuses.php`,
 `templates/account-dashboard.php`, `parts/events/dashboard-list.php`,
 `parts/loop/event.php`, `assets/css/calendar.css`, `assets/css/event-form.css`,
 `tests/EventDisabledTest.php`.
+
+---
+
+## The ticket outlives the delegate named on it (21 September 2026)
+
+The client asked for a way to swap the person holding a flagship place. The
+case is ordinary and had no answer at all: a firm buys a ticket for a named
+partner, the partner cannot come, and a colleague goes instead. The committee's
+only route was `law_flagship_cancel_confirmed()` followed by
+`law_flagship_add_complimentary()`, which released and re-sold the seat, threw
+away the payment trail and recorded a paying delegate as a freebie.
+
+**Four decisions settled it** (Denis, 21 September 2026). The money does not
+move. Confirmed places only. Both people are emailed. The included reception
+places move with the ticket.
+
+**The money not moving is the decision everything else follows from.** No Stripe
+call is made — no refund, no credit note, no re-invoice, and no patch to the
+invoice metadata. `_law_stripe_customer_id`, `_law_stripe_payment_method_id`,
+the invoice IDs and the charge ID all stay pointing at the original payer,
+because that is what they record. `law_stripe_booking_metadata()` mirrors
+`post_author` into `law_user_id`, so the invoice's copy is now stale, and it is
+left that way on purpose: repointing it at somebody who paid nothing would
+mislead whoever handles a refund. Nothing breaks, because the webhook resolves
+by `law_booking_id` and refunds fall back to the stored charge ID. This is a
+deliberate exception to the standing rule that a mirrored identifier is kept in
+sync, so it is said out loud in the code rather than left looking like an
+oversight.
+
+**Two guards make that invariant real rather than incidental.** Three Stripe
+functions resolve `law_stripe_user_customer_id( $booking->post_author )` and
+then OVERWRITE `_law_stripe_customer_id` with the result. Running any of them on
+a substituted booking would destroy the record of who paid and could raise a
+charge against a person who never consented to one. None was reachable — the
+card form is hidden on a confirmed place and `law_flagship_retry_charge()`
+requires a failed payment — but that was an accident of two status checks, so
+`law_flagship_retry_charge()` and `law_stripe_create_setup_session()` now refuse
+a substituted paid booking outright.
+
+**`post_author` is what moves.** It is the canonical attendee throughout the
+module: `law_user_booking_ids()` queries by it, `law_booking_attendee()` reads
+it, the duplicate and clash guards index it, and
+`law_reception_grant_included()` checks it. Rewriting only the
+`_law_attendee_*` snapshot would have left the ticket in the wrong person's
+account while claiming to be somebody else's. `wp_update_post()` is passed those
+two keys and nothing else, so `post_status` is unchanged, `workflow.php`'s
+status guard is a no-op and `transition_post_status` does not fire — and
+`$GLOBALS['law_booking_transitioning']` is deliberately not raised, since
+disarming the status guard for a change that does not touch the status would
+only widen the window. The one thing the event lock is held for is a re-read:
+between the guards and the write, another committee member's Cancel could have
+moved the same place. There is no recount, because one seat out is one seat in.
+
+**`law_booking_write_attendee()`'s fourth argument matters here.** It DELETES
+`_law_is_press` unless a press flag is passed, so a press pass would have
+vanished silently. It is a property of the seat, so the dialog carries it over
+and lets the committee untick it.
+
+**The receptions move in place, and that is not the obvious implementation.**
+`law_reception_revoke_included()` followed by `law_reception_grant_choices()` is
+wrong three ways: it emails the original "the flagship place it came with is no
+longer confirmed", which is untrue here; it silently drops any reception that
+has already happened, because the grant refuses anything outside
+`law_reception_included_ids()`; and the revoke calls `law_booking_cancel()`,
+which ends in `law_waitlist_process()`, so somebody queued can be seated into
+the place between the revoke and the grant — and the grant has no capacity guard
+by design, so the room over-books. `law_flagship_move_included_receptions()`
+re-authors each place instead, which changes no headcount and involves no
+waitlist at all. The one case that does release a place is a substitute who
+already bought their own ticket to that reception: theirs is kept, the included
+one is cancelled so nobody holds two, and the committee is told, because nobody
+has been refunded for the one they bought.
+
+**The new delegate must not see the payer's facts.**
+`parts/events/flagship-manage-application.php` gates on
+`post_author === get_current_user_id()` and renders the payment-method label and
+the Stripe invoice URL; `parts/events/booking-payment-facts.php` renders those
+plus the PDF. Moving `post_author` would therefore have put the original payer's
+hosted invoice — carrying their name, billing address and card last four — one
+click from the substitute's My bookings. `law_booking_payment_facts_visible()`
+(`bookings.php`) answers on the PAYER rather than the holder, both partials
+blank the three values through it and print one line instead, and the
+committee's own surfaces are untouched, because tracing a refund is what they
+exist for.
+
+**One new template, not two** (Denis, 21 September 2026, correcting the first
+cut, which had written one for each end of the transfer). The test is what state
+the recipient ends up in, not which feature put them there: somebody substituted
+onto a confirmed ticket is simply a confirmed delegate, so they get
+`user_flagship_approved`, the same email everybody else with a confirmed place
+gets. Only the person LOSING a place lands somewhere the registry had no wording
+for — "you no longer have a ticket, and here is where your receipt went" — so
+`user_flagship_place_transferred` is the single entry the feature adds.
+
+**What lets one template serve both is `{payment_note}`.** The approval email had
+the money hard-coded into its body — "We have taken {price_total} from your saved
+payment method ({payment_method})… Your VAT invoice is here: {invoice_link}" —
+and every clause of that is false for somebody a place was transferred to: they
+paid nothing, and that invoice names a different person. All of it moved into one
+resolved paragraph (`law_flagship_payment_note()`), which says what was charged
+on an approval and "this has already been paid for, and the receipt stays with
+whoever bought it" on a transfer. It is a whole paragraph rather than four tags
+because `law_events_email_render_body()` substitutes in a single `strtr()` pass,
+so a `{invoice_link}` nested inside another tag's value would reach the reader
+printed literally — the `{account_note}` idiom exactly. The opening line lost
+"has been approved" in the same change and that sentence moved into the note, and
+`{account_note}` joined the body so a transfer to somebody who has never signed
+in still carries their set-password link in the one email.
+
+**The payment tags are blanked on a transfer as well as unused.**
+`law_flagship_email_extra()` supplies `{invoice_link}`, `{price_total}`,
+`{payment_method}`, `{card_label}`, `{discount_note}` and
+`{update_payment_link}` for every flagship email, and each describes the payer
+rather than the reader. The template not naming them is not enough on its own: an
+environment whose stored override still names one by hand would hand the payer's
+hosted Stripe invoice — their name, billing address and card last four — to a
+person who paid nothing. So the note carries the right sentence and the blanking
+makes the wrong one impossible.
+
+**`{receipt_note}`, because a promise of a receipt is not always keepable.** The
+transfer email first shipped with a bare `{invoice_link}`, and on the first real
+transfer Denis tried it — a ticket a discount code had covered in full — it
+rendered "you can download it here at any time:" followed by nothing, because a
+code-covered ticket raises no Stripe invoice at all. `law_flagship_receipt_note()`
+resolves three ways instead: the link when there is one, an offer to send a
+receipt by hand when money was taken but no invoice exists, and "there was
+nothing to pay on this place" when there was not. A sentence that cannot be
+completed is a different sentence, not a broken one.
+
+**A pre-existing bug fell out of this.** `law_booking_delete_created_users()`
+iterates `array_keys( $created_ids )` and every caller in `bookings.php` passes a
+map keyed by user ID — but `law_flagship_add_complimentary()` passed a bare
+list, so `array_keys( array( 0 => 123 ) )` is `array( 0 )`, the call was
+`wp_delete_user( 0 )`, and the account survived every refusal. Adding a
+complimentary place for an email that already held one left an orphan behind
+every time. Both call sites are fixed, and the function now refuses a list
+outright rather than quietly doing nothing, because the failure it replaces was
+invisible.
+
+**The UI.** The actions column already existed, so Substitute joins Approve,
+Decline, Retry charge, Resend request and Cancel rather than getting a column of
+its own. ONE dialog serves the whole table
+(`parts/events/flagship-substitute.php`, rendered outside `#law-cal-events` so a
+filter swap cannot destroy it), because the form carries fifteen fields and a
+copy per row on a list that runs to hundreds would be most of the page.
+`assets/js/flagship-substitute.js` fills it from the pressed row on the capture
+phase, and does two things the ticket-type script does not: it resets the form
+BEFORE writing the booking id (the other order clears the id it just set), and
+it leaves the new delegate's fields empty, because pre-filling them from the
+current holder would make the quickest path through the dialog substitute a seat
+to the person already in it. Without JavaScript there is no dialog to open and a
+form asking for a post ID would be dishonest — the committee knows registration
+numbers — so each row's `<noscript>` links to `?law_substitute={id}` and the
+template renders the same form inline and pre-filled above the table. The
+delegate's name cell gains a "Substituted for X, who paid" sub-line, the exports
+gain a Substituted from column, and the wp-admin facts box gains a row naming
+the payer, because that screen is where a receipt query is answered.
+
+**Audit meta**, all five in `law_booking_meta_schema()`:
+`_law_substituted_from`, `_law_substituted_from_name`,
+`_law_substituted_from_email`, `_law_substituted_at`, `_law_substituted_by`. The
+name and the address are frozen rather than looked up — the name because the
+account may be deleted and leave a bare integer nothing can render (the lesson
+`law_booking_invited_by_label()` already pays for), the address because it is
+what finds the Stripe customer months later without reading the log. They hold
+the most recent hop only; the chain lives in the activity log under
+`flagship_substituted`.
+
+**Tests**: `tests/FlagshipSubstituteTest.php`, 38 cases. The ones that earn
+their keep are the whole `_law_stripe_*` set asserted unchanged in one go
+alongside an empty `$GLOBALS['law_test_stripe_calls']`; the waitlist case, where
+a queued person must NOT be promoted by a reception place changing hands; the
+orphan-account case, which asserts the account is gone rather than that an error
+came back, and is what would have caught the rollback bug above; the two access
+cases on `law_booking_payment_facts_visible()`; and the concurrency case, which
+writes the row behind WordPress's back and fails without the
+`clean_post_cache()` that makes the re-check under the lock a real read rather
+than a comparison of this request's cached copy against itself; and the pair on
+the duplicate guard, which walk every status that holds a place and both of the
+two that do not; and the two on the receipt sentence, one of which reproduces the
+code-covered ticket whose email ended on a colon. 1153 tests in the suite.
+
+Touched: `functions/events/flagship-bookings.php`,
+`functions/events/flagship-bookings-dashboard.php`,
+`functions/events/bookings.php`, `functions/events/meta.php`,
+`functions/events/notifications.php`, `functions/events/stripe/attendees.php`,
+`functions/events/admin/booking-screen.php`,
+`parts/events/flagship-substitute.php`,
+`parts/events/flagship-bookings-list.php`,
+`parts/events/flagship-manage-application.php`,
+`parts/events/booking-payment-facts.php`,
+`templates/account-dashboard-flagship-bookings.php`,
+`assets/js/flagship-substitute.js`, `assets/css/calendar.css`,
+`tests/FlagshipSubstituteTest.php`.
+
+---
+
+## A paid event that nobody knew was paid (21 September 2026)
+
+Denis found event 5979 (Geopolitical Tensions -- Impact on International
+Arbitration and Energy Security) reading Unpaid on the committee dashboard
+while its Stripe invoice was plainly paid, and asked where that could come
+from.
+
+**The migration did not get it wrong. It copied a record that was already
+wrong.** Event 5979 came from form 2 (Event > submit an event) entry 1222,
+where field 95 (Event status) reads "Approved" and field 96 (Payment status) is
+empty. `law_migration_derive_payment()` (`migration/runner.php`) derives payment
+purely from field 95 -- Confirmed means paid, anything else means unpaid --
+because field 96 was blank on every active entry and no legacy workflow step
+ever wrote it (EVENTS.md, "Known defects", item 1). The event's own activity log
+says so: *"Migrated from Gravity Forms entry 1222. Status Approved carried over;
+payment status \"unpaid\" was derived (field 96 was blank, defect 1)."*
+
+**Why field 95 was stale.** It only reached "Confirmed" when Gravity Flow step
+23 (Set status to Confirmed) ran, and step 23 only ran when step 20 (Waiting for
+payment), an incoming-webhook step, was released by Make scenario B calling in
+on `invoice.paid`. Where that call was lost the entry sat at step 20 for ever.
+The entry meta proves it: entry 1222 has `workflow_step = 20`,
+`workflow_step_status_20 = pending`, `workflow_final_status = pending`. Across
+the whole local copy, **all 33 events now reading Approved and unpaid are parked
+at step 20, and all 21 reading paid are complete.** So the divide between "paid"
+and "unpaid" in the migrated data records whether Make succeeded, not whether
+anybody paid, and the only place the truth exists is Stripe.
+
+**What it costs is not a wrong label.** Paying is what confirms and publishes an
+event, and `law_booking_guard_open()` gates booking on `post_status ===
+'publish'`. A host who has paid has an event sitting on the programme reading
+"Open soon" that cannot take a single booking, while the Payment column invites
+somebody to chase them for money they have already sent.
+
+Four things were built for it, on Denis's instruction to implement all of them.
+
+**1. The comparison engine, `functions/events/stripe/reconcile.php`.**
+`law_stripe_reconcile_check()` reads the invoice behind an event -- one GET when
+it holds its `in_…` ID, otherwise falling back to
+`law_events_invoice_id_lookup()` in `repair-stripe-invoice-ids.php`, so the two
+files cannot disagree about what counts as proof that an invoice is this
+event's -- and returns one of six verdicts: `agreed`, `paid_not_recorded`,
+`recorded_paid_not_settled`, `recorded_paid_written_off`,
+`paid_after_cancellation`, `no_invoice`.
+
+**Exactly one verdict is settled automatically, and the asymmetry is the
+design.** `paid_not_recorded` is healed; everything else is reported and left
+alone. Unpublishing a live event because its invoice reads `void`, or reversing
+a payment status, is a decision with attendees and money on the other side of
+it. A `refunded` event counts as settled against a `paid` invoice, because a
+refund goes out through the charge and leaves the invoice `paid` -- without that
+the sweep would re-confirm and re-publish every event the committee had
+refunded.
+
+**2. Settling goes all the way, not just to the meta.**
+`law_stripe_reconcile_settle()` walks the same path
+`law_stripe_handle_invoice_paid()` walks: record the invoice and customer IDs if
+they are missing, reconcile the amount against the approval snapshot (logged
+loudly, never blocking, because the money genuinely arrived), capture the charge
+for later refunds, set the payment status, and run the `confirm` transition,
+which publishes and opens booking. A repair that corrected the Payment column
+and left the event unpublished would have fixed the symptom nobody was hurt by.
+
+**3. The emails are the one thing that differs between the two callers, and it
+needed a new mechanism.** `law_events_without_emails( $reason, $callback )` in
+`notifications.php` mutes the module's own registered sends for the duration of
+one operation -- deliberately not a `wp_mail` filter, so a password reset in the
+same request still goes out -- with try/finally so a fatal cannot leave the site
+silently unable to email anybody. A muted send still writes its activity-log
+line saying it was suppressed and why, which is both the module's
+exhaustive-logging rule and the committee's list of hosts to contact by hand.
+The daily sweep emails (a delivery missed hours ago owes the host their
+confirmation); the migration panel does not by default (a payment banked in
+August does not want "thank you for your payment" arriving today).
+
+**4. The two callers.** `migration/reconcile-payments.php` is the one-off panel
+on LAW → Migration, over the legacy events, batched ten at a time, dry until the
+Settle button, re-reading Stripe on apply rather than trusting the rendered
+page. The daily sweep in `reconcile.php` (`law_events_payment_reconcile`, WP
+Cron, switchable on Events → Settings) watches only events holding an invoice
+ID, because a legacy lookup costs a search plus a customer's whole invoice list
+and can come back ambiguous. **So the order is: run "Repair: legacy Stripe
+invoices with no invoice ID" first, then the reconciliation panel, after which
+every one of those events is inside the sweep.** A discrepancy needing a human
+is alerted ONCE per event per verdict (`_law_reconcile_flagged`), because an
+alert that arrives every morning until somebody has time is an alert everybody
+learns to delete.
+
+**The endpoint check, `functions/events/stripe/health.php`, is the fifth thing
+and arguably the most valuable.** Everything the module knows about money
+arrives as a webhook, and an endpoint that is missing, disabled, pointed at the
+wrong address or subscribed to the wrong set of types fails in complete silence
+-- Stripe's own dashboard shows nothing wrong, because from its side nothing is.
+`law_stripe_webhook_health()` asks Stripe what it actually has and compares it
+against `law_stripe_webhook_event_types()`, the new canonical list of the
+thirteen types `law_stripe_webhook_dispatch()` and
+`law_stripe_webhook_booking_outcome()` act on. Adding a case to either means
+adding it to that list and nowhere else; the panel prints the matching
+`stripe listen --forward-to … --events …` command, so the local forwarding
+Denis runs cannot silently drift from what the code handles either. It names
+the right-path-wrong-host case explicitly (a staging endpoint left pointing at
+production is the commonest way this breaks), and it reports "no endpoint" on a
+test key as expected rather than alarming, because `stripe listen` registers
+none.
+
+**Scope deliberately not widened.** Attendee bookings (flagship applications,
+reception places) hold their own `_law_stripe_invoice_id` and would reconcile
+the same way, but their payment states are a longer vocabulary with their own
+handler table, so that is a separate job rather than something half-done here.
+
+**Tests.** `tests/PaymentReconcileTest.php` (21) walks every verdict, both
+settle paths, the mute being lifted after a throw, the amount mismatch that
+reports without blocking, the legacy event gaining its IDs as it settles, the
+sweep's scope, and the alert that fires once and not twice.
+`tests/WebhookHealthTest.php` (8) covers ok, wildcard, a missing type, disabled,
+no endpoint, the wrong host, and a Stripe error not being misreported as a
+broken endpoint.
+
+**Still outstanding for Denis.** The endpoint check has only been run here
+against the local test key. The check that matters is the one run on production
+against the live key, and it should be run before the reconciliation panel,
+because an endpoint not subscribed to `invoice.paid` would go on producing this
+defect for the remaining events whatever the panel repairs today.
+
+Touched: `functions/events/stripe/reconcile.php` (new),
+`functions/events/stripe/health.php` (new),
+`functions/events/migration/reconcile-payments.php` (new),
+`functions/events/stripe/webhook.php`, `functions/events/notifications.php`,
+`functions/events/settings.php`, `functions/events/migration/page.php`,
+`functions/events/_load.php`, `tests/PaymentReconcileTest.php` (new),
+`tests/WebhookHealthTest.php` (new).
 
 ---
 
