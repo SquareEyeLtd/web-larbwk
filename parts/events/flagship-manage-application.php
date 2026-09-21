@@ -42,9 +42,12 @@ $law_fm_invoice  = (string) law_event_meta( $law_fm_id, '_law_stripe_invoice_url
 // carries their name, billing address and card last four — so they are blanked
 // here rather than guarded at each of the six places below, and one line says
 // why. The person who paid gets the link in their transfer email instead.
-$law_fm_moved    = ! law_booking_payment_facts_visible( $law_fm_id );
-if ( $law_fm_moved ) {
-	$law_fm_card    = '';
+$law_fm_mask     = law_booking_payment_facts_mask( $law_fm_id );
+$law_fm_moved    = ! $law_fm_mask['invoice'];
+if ( ! $law_fm_mask['card'] ) {
+	$law_fm_card = '';
+}
+if ( ! $law_fm_mask['invoice'] ) {
 	$law_fm_invoice = '';
 }
 $law_fm_error    = (string) law_event_meta( $law_fm_id, '_law_payment_error' );
@@ -69,8 +72,11 @@ $law_fm_comp     = (bool) law_event_meta( $law_fm_id, '_law_is_complimentary' );
 // A discount code that covered the whole price. Free like a complimentary
 // place, but for a different reason and by a different hand, so the panel says
 // so rather than calling it a gift.
-$law_fm_code     = (string) law_event_meta( $law_fm_id, '_law_discount_code' );
-$law_fm_off      = (int) law_event_meta( $law_fm_id, '_law_discount_pence' );
+// Blanked on a transferred place for the same reason as the invoice: the code
+// is the payer's negotiated commercial term, and it is reusable by whoever
+// reads it. The substitution email already withholds it.
+$law_fm_code     = $law_fm_mask['code'] ? (string) law_event_meta( $law_fm_id, '_law_discount_code' ) : '';
+$law_fm_off      = $law_fm_mask['code'] ? (int) law_event_meta( $law_fm_id, '_law_discount_pence' ) : 0;
 $law_fm_free     = ! $law_fm_comp && '' !== $law_fm_code && $law_fm_price['free'];
 
 // What the delegate can still do. A confirmed, paid place is not withdrawn
@@ -277,7 +283,18 @@ $law_fm_can_method   = $law_fm_can_withdraw && ! $law_fm_comp && ! $law_fm_free 
 				<tr>
 					<th scope="row"><?php esc_html_e( 'Payment', 'law' ); ?></th>
 					<td>
-						<?php esc_html_e( 'This place was transferred to you. The receipt is held by the person who paid for it.', 'law' ); ?>
+						<?php
+						$law_fm_payer = (string) law_event_meta( $law_fm_id, '_law_substituted_from_name' );
+						echo esc_html(
+							'' !== $law_fm_payer
+								? sprintf(
+									/* translators: %s: the delegate who bought the place. */
+									__( 'This place was transferred to you from %s, who bought it. They hold the VAT receipt, so please ask them if you need a copy.', 'law' ),
+									$law_fm_payer
+								)
+								: __( 'This place was transferred to you. The VAT receipt is held by the person who bought it.', 'law' )
+						);
+						?>
 					</td>
 				</tr>
 			<?php elseif ( $law_fm_can_method || '' !== $law_fm_card ) : ?>

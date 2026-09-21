@@ -238,6 +238,17 @@ function law_committee_events( array $overrides = array() ) {
 			array( 'key' => '_law_is_external', 'value' => '1', 'compare' => '!=' ),
 		);
 	}
+	// The Assignee filter, the last select on the bar. An ID rather than a name,
+	// so two committee members sharing a display name still filter apart, and
+	// checked against the assignees actually in use rather than trusted: a
+	// hand-typed ?law_assignee=<any id> would otherwise select on a meta value
+	// no event carries and quietly return nothing.
+	$assignee  = absint( $_GET['law_assignee'] ?? 0 );
+	$assignees = $assignee ? law_committee_assignees() : array();
+	if ( $assignee && isset( $assignees[ $assignee ] ) ) {
+		$meta_query[] = array( 'key' => '_law_assignee', 'value' => (string) $assignee );
+	}
+
 	if ( $meta_query ) {
 		// Still AND-wrapped with one clause in it: the external-drafts query
 		// below merges its own clause into the same array, and a relation-less
@@ -330,6 +341,54 @@ function law_committee_events( array $overrides = array() ) {
 
 	$limit = (int) ( $args['posts_per_page'] ?? 300 );
 	return $limit > 0 ? array_slice( $rows, 0, $limit ) : $rows;
+}
+
+/**
+ * The committee members an event is actually assigned to, for the dashboard's
+ * Assignee filter.
+ *
+ * Built from the _law_assignee meta rows in use rather than from
+ * law_events_committee_users(), and deliberately so: that helper lists the
+ * events_committee role only, while law_events_sanitize_assignee() accepts
+ * anyone with edit_others_law_events, so an event assigned to an administrator
+ * or an editor would be unreachable from a select built off the role. A filter
+ * offering a name that matches nothing is the other half of the same problem,
+ * and this way the list is exactly the set of names the Event column prints.
+ *
+ * Ordered by display name, like the assignee picker on the detail view.
+ *
+ * @return array<int,string> User ID => display name.
+ */
+function law_committee_assignees() {
+	global $wpdb;
+	// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+	$ids = $wpdb->get_col(
+		$wpdb->prepare(
+			"SELECT DISTINCT pm.meta_value FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE pm.meta_key = '_law_assignee' AND p.post_type = %s",
+			LAW_EVENT_CPT
+		)
+	);
+	// meta_value > 0 is not a numeric comparison to leave to MySQL on a
+	// varchar column; "(none)" is stored as the literal '0' by
+	// law_event_update_meta(), which only deletes on '', so it is filtered here.
+	$ids = array_values( array_unique( array_filter( array_map( 'intval', (array) $ids ) ) ) );
+	if ( ! $ids ) {
+		return array();
+	}
+	cache_users( $ids );
+
+	$names = array();
+	foreach ( $ids as $user_id ) {
+		$user = get_userdata( $user_id );
+		if ( $user ) {
+			$names[ $user_id ] = $user->display_name;
+		}
+	}
+	natcasesort( $names );
+
+	return $names;
 }
 
 /** Count per status for the dashboard filter chips. */

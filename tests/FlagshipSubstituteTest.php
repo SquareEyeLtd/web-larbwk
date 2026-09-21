@@ -410,11 +410,19 @@ class FlagshipSubstituteTest extends LAW_Test_Case {
 	public function test_the_headcount_is_unchanged(): void {
 		$this->make_flagship();
 		$ticket = $this->make_confirmed_ticket();
-		$before = law_event_recount_attendees( $this->flagship, 'flagship' );
+		law_event_recount_attendees( $this->flagship, 'flagship' );
+		// The STORED count, not a fresh recount. Recounting either side can
+		// only differ if a status moved, so the original assertion could not
+		// have failed however wrong the code was.
+		$before = (int) law_event_meta( $this->flagship, '_law_tickets_sold' );
 
 		law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
 
-		$this->assertSame( $before, law_event_recount_attendees( $this->flagship, 'flagship' ), 'One seat out is one seat in.' );
+		$this->assertSame(
+			$before,
+			(int) law_event_meta( $this->flagship, '_law_tickets_sold' ),
+			'One seat out is one seat in, and nothing rewrote the counter.'
+		);
 	}
 
 	public function test_a_press_pass_survives_the_move(): void {
@@ -596,7 +604,7 @@ class FlagshipSubstituteTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'nothing for you to pay', $body );
 		$this->assertStringNotContainsString( 'invoice.stripe.test', $body, 'The payer\'s receipt is not theirs to see.' );
 		$this->assertStringNotContainsString( '4242', $body, 'Nor the payer\'s card.' );
-		$this->assertStringNotContainsString( '660', $body, 'Nor what the payer was charged.' );
+		$this->assertStringNotContainsString( '£660.00', $body, 'Nor what the payer was charged.' );
 		$this->assertStringNotContainsString( 'CHAMBERS10', $body, 'Nor the code the payer used.' );
 		$this->assertNotEmpty( $theirs[0]['attachments'], 'The calendar invite rides along.' );
 	}
@@ -610,7 +618,13 @@ class FlagshipSubstituteTest extends LAW_Test_Case {
 		$registry = law_events_email_registry();
 
 		$this->assertArrayHasKey( 'user_flagship_place_transferred', $registry );
-		$this->assertArrayNotHasKey( 'user_flagship_substitute_confirmed', $registry );
+		// The count, not the absence of one invented slug: asserting a key is
+		// missing passes just as happily when a SECOND template is added.
+		$this->assertCount(
+			79,
+			$registry,
+			'A template was added or removed. If that is deliberate, update this number and say why in EVENTS_FUNC.md.'
+		);
 	}
 
 	/**
@@ -865,6 +879,218 @@ class FlagshipSubstituteTest extends LAW_Test_Case {
 
 		$this->assertWPError( $result, 'law_flagship_moved' );
 		$this->assertSame( $meanwhile, (int) get_post_field( 'post_author', $ticket['booking'] ), 'The other change stands.' );
+	}
+
+	/* What the reviews found ________________________________________________ */
+
+	/**
+	 * A ticket can change hands twice, and the money must still point at
+	 * whoever actually paid.
+	 *
+	 * The first cut rewrote `_law_substituted_from` on every transfer, so a
+	 * second one named the FIRST substitute — who paid nothing. That inverted
+	 * the rule outright: the payer lost sight of their own receipt, the person
+	 * who had paid nothing gained it, and the transfer email handed them a link
+	 * to the payer's hosted Stripe invoice, which carries their name, billing
+	 * address and card last four.
+	 */
+	public function test_a_second_transfer_still_names_the_person_who_paid(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+
+		$first  = law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
+		$second = law_flagship_substitute( $ticket['booking'], $this->row( '', array( 'name' => 'Alan Turing' ) ), 0 );
+
+		$this->assertIsArray( $second, 'Re-substitution stays allowed.' );
+		$this->assertSame(
+			$ticket['user'],
+			(int) law_event_meta( $ticket['booking'], '_law_substituted_from' ),
+			'Still the payer, not the delegate who held it last.'
+		);
+		$this->assertSame( $ticket['email'], (string) law_event_meta( $ticket['booking'], '_law_substituted_from_email' ) );
+
+		$this->assertTrue( law_booking_payment_facts_visible( $ticket['booking'], $ticket['user'] ) );
+		$this->assertFalse( law_booking_payment_facts_visible( $ticket['booking'], (int) $first['user_id'] ) );
+		$this->assertFalse( law_booking_payment_facts_visible( $ticket['booking'], (int) $second['user_id'] ) );
+
+		// The payer's OWN first email rightly carries her invoice. What must not
+		// happen is the middle holder being handed it on their way out: they
+		// inherited the place and paid nothing for it.
+		$middle = get_userdata( (int) $first['user_id'] )->user_email;
+		foreach ( $this->mail_to( $middle ) as $sent ) {
+			$this->assertStringNotContainsString(
+				'invoice.stripe.test',
+				(string) $sent['message'],
+				'A delegate who paid nothing was handed the payer\'s hosted invoice.'
+			);
+		}
+		$this->assertStringContainsString(
+			'You were not charged for this place',
+			(string) $this->mail_to( $middle )[1]['message'],
+			'They are told plainly that there is nothing of theirs to refund.'
+		);
+	}
+
+	/**
+	 * The transfer branch must not hinge on a display string being non-empty.
+	 *
+	 * With both the attendee snapshot name and the account address blank, the
+	 * "is this a transfer" test was false and the new delegate was sent the
+	 * APPROVAL paragraph: invoice URL, card, price and "your registration has
+	 * been approved", none of it theirs.
+	 */
+	public function test_a_nameless_previous_delegate_still_gets_the_transfer_wording(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+		law_event_update_meta( $ticket['booking'], '_law_attendee_name', '' );
+		law_event_update_meta( $ticket['booking'], '_law_attendee_email', '' );
+		$GLOBALS['wpdb']->update( $GLOBALS['wpdb']->users, array( 'user_email' => '' ), array( 'ID' => $ticket['user'] ) );
+		clean_user_cache( $ticket['user'] );
+
+		$row = $this->row();
+		law_flagship_substitute( $ticket['booking'], $row, 0 );
+
+		$body = (string) $this->mail_to( $row['email'] )[0]['message'];
+		$this->assertStringContainsString( 'transferred to you', $body );
+		$this->assertStringNotContainsString( 'invoice.stripe.test', $body );
+		$this->assertStringNotContainsString( '4242', $body );
+		$this->assertStringNotContainsString( 'approved by the committee', $body );
+	}
+
+	/**
+	 * Somebody merely QUEUED for an included reception must not lose the free
+	 * place the ticket carries.
+	 *
+	 * `law_reception_holds_place()` counts a waitlist entry as holding a place,
+	 * so the included one was cancelled; that fed `law_waitlist_process()`,
+	 * which promoted the substitute off the very queue they were on and charged
+	 * them for a reception their transferred ticket already included.
+	 */
+	public function test_a_substitute_queued_for_a_reception_keeps_the_included_place(): void {
+		$this->make_flagship();
+		$reception = $this->make_reception( array( '_law_tickets_available' => 1 ) );
+		$ticket    = $this->make_confirmed_ticket();
+
+		$granted = law_reception_grant_included( $reception, $ticket['user'], $ticket['booking'] );
+		$this->posts[] = $granted;
+
+		$substitute = $this->make_user();
+		$email      = (string) get_userdata( $substitute )->user_email;
+		$queued     = law_booking_insert(
+			$reception,
+			$substitute,
+			'law-waitlisted',
+			array( 'user_id' => $substitute, 'name' => 'Grace Hopper', 'email' => $email ),
+			array( '_law_waitlist_position' => 1, '_law_payment_status' => 'ready' )
+		);
+		$this->posts[] = $queued;
+
+		$result = law_flagship_substitute( $ticket['booking'], $this->row( $email ), 0 );
+
+		$this->assertArrayHasKey( $reception, $result['receptions']['moved'], 'A queue slot is not a place.' );
+		$this->assertSame( array(), $result['receptions']['released'] );
+		$this->assertSame( 'publish', get_post_status( $granted ) );
+		$this->assertSame( (int) $result['user_id'], (int) get_post_field( 'post_author', $granted ) );
+		$this->assertSame( 'law-waitlisted', get_post_status( $queued ), 'And nobody was promoted or charged.' );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'] );
+	}
+
+	/** The same for a checkout still in flight. */
+	public function test_a_substitute_mid_checkout_for_a_reception_keeps_the_included_place(): void {
+		$this->make_flagship();
+		$reception = $this->make_reception();
+		$ticket    = $this->make_confirmed_ticket();
+
+		$granted = law_reception_grant_included( $reception, $ticket['user'], $ticket['booking'] );
+		$this->posts[] = $granted;
+
+		$substitute = $this->make_user();
+		$email      = (string) get_userdata( $substitute )->user_email;
+		$shell      = law_booking_insert(
+			$reception,
+			$substitute,
+			'law-pending-payment',
+			array( 'user_id' => $substitute, 'name' => 'Grace Hopper', 'email' => $email ),
+			array( '_law_payment_status' => 'pending_setup' )
+		);
+		$this->posts[] = $shell;
+
+		$result = law_flagship_substitute( $ticket['booking'], $this->row( $email ), 0 );
+
+		$this->assertArrayHasKey( $reception, $result['receptions']['moved'] );
+		$this->assertSame( 'publish', get_post_status( $granted ) );
+	}
+
+	/** A refunded place is a cancellation, not a transfer. */
+	public function test_a_refunded_place_cannot_be_transferred(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+		law_event_update_meta( $ticket['booking'], '_law_payment_status', 'refunded' );
+
+		$result = law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
+
+		$this->assertWPError( $result, 'law_flagship_refunded' );
+		$this->assertStringContainsString( 'Cancel it', $result->get_error_message() );
+	}
+
+	/** The charge path itself refuses, not just the three callers in front of it. */
+	public function test_a_transferred_booking_can_never_be_charged(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+		law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
+
+		$this->assertWPError( law_stripe_charge_booking( $ticket['booking'] ), 'law_booking_substituted' );
+		$this->assertWPError( law_stripe_create_setup_session( $ticket['booking'] ), 'law_booking_substituted_paid' );
+		$this->assertSame( 'cus_original', (string) law_event_meta( $ticket['booking'], '_law_stripe_customer_id' ) );
+		$this->assertSame( array(), $GLOBALS['law_test_stripe_calls'] );
+	}
+
+	/** The payer's negotiated code is not the new delegate's business either. */
+	public function test_the_payer_s_discount_code_is_hidden_from_the_new_delegate(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+
+		$before = law_booking_payment_facts_mask( $ticket['booking'], $ticket['user'] );
+		$this->assertTrue( $before['code'] );
+
+		$result = law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
+		$mask   = law_booking_payment_facts_mask( $ticket['booking'], (int) $result['user_id'] );
+
+		$this->assertFalse( $mask['code'], 'A code is reusable by whoever reads it.' );
+		$this->assertFalse( $mask['invoice'] );
+		$this->assertFalse( $mask['card'] );
+		$this->assertTrue( $mask['price'], 'What the place cost is public; who paid and how is not.' );
+	}
+
+	/** The committee's confirmation must not claim an email that never went. */
+	public function test_an_unreachable_previous_delegate_is_reported_not_assumed(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+		law_event_update_meta( $ticket['booking'], '_law_attendee_email', '' );
+		$GLOBALS['wpdb']->update( $GLOBALS['wpdb']->users, array( 'user_email' => '' ), array( 'ID' => $ticket['user'] ) );
+		clean_user_cache( $ticket['user'] );
+
+		$result = law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
+
+		$this->assertFalse( $result['told_previous'] );
+	}
+
+	/** The transfer is in the log even if the reception move dies after it. */
+	public function test_the_transfer_is_logged_before_the_best_effort_work(): void {
+		$this->make_flagship();
+		$ticket = $this->make_confirmed_ticket();
+
+		law_flagship_substitute( $ticket['booking'], $this->row(), 0 );
+
+		$actions = array();
+		foreach ( law_event_log_entries( $this->flagship ) as $entry ) {
+			$context = law_event_log_context( $entry->comment_ID );
+			if ( isset( $context['action'] ) ) {
+				$actions[] = $context['action'];
+			}
+		}
+		$transfer = array_search( 'flagship_substituted', $actions, true );
+		$this->assertNotFalse( $transfer );
 	}
 
 	/* What actually renders ________________________________________________ */

@@ -668,6 +668,37 @@ function law_booking_payment_facts_visible( $booking_id, $user_id = 0 ) {
 }
 
 /**
+ * Which of a booking's money values this viewer may be shown.
+ *
+ * ONE list, because the two delegate-facing partials that need it
+ * (parts/events/booking-payment-facts.php and
+ * parts/events/flagship-manage-application.php) had already drifted: both
+ * blanked the invoice and the card, neither blanked the DISCOUNT CODE, and the
+ * substitution email blanks all three. So a delegate handed a transferred
+ * ticket could not see the payer's receipt but could read the code their firm
+ * had negotiated, and reuse it while its remaining uses lasted. The module
+ * treats codes as confidential everywhere else — law_discount_refusal_payload()
+ * collapses every refusal into one message precisely so a signed-in member
+ * cannot learn that a guessed string is a real code.
+ *
+ * @return array{card:bool,invoice:bool,code:bool,price:bool} What may be shown.
+ */
+function law_booking_payment_facts_mask( $booking_id, $user_id = 0 ) {
+	$visible = law_booking_payment_facts_visible( $booking_id, $user_id );
+
+	// The PRICE stays. It is what the ticket cost, it is on the conference page
+	// for anybody to read, and a delegate needs to know the place they hold was
+	// a paid one. What goes is anything describing the transaction: who paid
+	// with what, where the receipt is, and what commercial terms they had.
+	return array(
+		'card'    => $visible,
+		'invoice' => $visible,
+		'code'    => $visible,
+		'price'   => true,
+	);
+}
+
+/**
  * The single write path for a booking's attendee snapshot and its booker.
  *
  * @param int   $person    user_id / name / email / organisation / job_title.

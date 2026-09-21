@@ -1346,7 +1346,14 @@ function law_flagship_cancel_confirmed( $booking_id, $actor_id ) {
 			'Flagship ticket #%1$d cancelled by the committee. %2$s The delegate has NOT been emailed and nothing has been refunded: both are for the committee to handle by hand.',
 			law_event_meta( $booking_id, '_law_booking_number' ),
 			'paid' === $payment && (int) $price['gross'] > 0
-				? sprintf( 'They paid %s, so a refund may be owed.', law_events_format_pence( (int) $price['gross'] ) )
+				? sprintf(
+					'%s paid %s, so a refund may be owed.',
+					// Not "They": on a transferred place the delegate in the
+					// row paid nothing, and this is the line somebody reads
+					// before sending money back.
+					(string) law_event_meta( $booking_id, '_law_substituted_from_name' ) ?: 'The delegate',
+					law_events_format_pence( (int) $price['gross'] )
+				)
 				: 'There was nothing to refund.'
 		),
 		array( 'source' => 'flagship', 'action' => 'flagship_cancelled', 'booking' => $booking_id ),
@@ -1712,6 +1719,33 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 }
 
 /**
+ * Does this person hold a CONFIRMED place at this reception in their own right?
+ *
+ * Narrower than law_reception_holds_place() on purpose. That one answers "is
+ * this person already accounted for here", which rightly includes a waitlist
+ * entry and a checkout in flight, and it is the correct test when deciding
+ * whether to GRANT somebody a place. This one is asked before CANCELLING a
+ * free place, where counting a queue entry as a place meant taking away the
+ * reception a transferred ticket had paid for and then charging the delegate
+ * for the same seat off the waitlist.
+ */
+function law_flagship_holds_reception_place( $user_id, $reception_id ) {
+	$held = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_status'    => 'publish',
+			'post_parent'    => (int) $reception_id,
+			'author'         => (int) $user_id,
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+			'no_found_rows'  => true,
+		)
+	);
+
+	return ! empty( $held );
+}
+
+/**
  * Move the included reception places from one holder of a flagship ticket to
  * the next, when the ticket itself is substituted.
  *
@@ -1766,7 +1800,17 @@ function law_flagship_move_included_receptions( $booking_id, $to_user_id, array 
 		// They bought their own place at this one already. Cancel the included
 		// place rather than leaving them holding two, and say so loudly enough
 		// that somebody thinks about the money they spent on it.
-		if ( law_reception_holds_place( (int) $to_user_id, $reception_id ) ) {
+		//
+		// Deliberately NOT law_reception_holds_place(), which tests
+		// law_booking_holding_statuses() and therefore counts a WAITLIST entry
+		// and an unfinished checkout as "holds a place". Both were disastrous
+		// here: cancelling the included place fed law_waitlist_process(), which
+		// promoted the substitute off that very queue and charged them for a
+		// reception their transferred ticket already included; and the
+		// pending-payment case cancelled the free place and left them with the
+		// abandoned checkout shell and no reception at all. A place they really
+		// have is a confirmed one (21 September 2026).
+		if ( law_flagship_holds_reception_place( (int) $to_user_id, $reception_id ) ) {
 			$cancelled = law_booking_cancel( (int) $place->ID, (int) $actor_id, 'included_revoked' );
 			if ( is_wp_error( $cancelled ) ) {
 				$result['failed'][ $reception_id ] = $title;
@@ -1848,38 +1892,76 @@ function law_flagship_move_included_receptions( $booking_id, $to_user_id, array 
  * @param array $result law_flagship_move_included_receptions().
  * @return string '' when the ticket carried no reception places.
  */
-function law_flagship_receptions_moved_note( array $result ) {
-	$lines = array();
+function law_flagship_receptions_moved_note( array $result, $about = '' ) {
+	// Second person for the delegate's own email, third for the committee's
+	// confirmation and the activity log. Without the split the committee was
+	// told a reception place "is now in your bookings" and that "you already
+	// had your own place", about somebody else entirely, and the log kept that
+	// wrong voice permanently.
+	$about  = trim( (string) $about );
+	$theirs = '' !== $about;
+	$lines  = array();
 	if ( ! empty( $result['moved'] ) ) {
-		$lines[] = sprintf(
-			/* translators: %s: a list of reception names. */
-			_n(
-				'%s comes with this ticket and is now in your bookings, at no cost.',
-				'%s come with this ticket and are now in your bookings, at no cost.',
-				count( $result['moved'] ),
-				'law'
-			),
-			wp_sprintf_l( '%l', array_values( $result['moved'] ) )
-		);
+		$lines[] = $theirs
+			? sprintf(
+				/* translators: 1: a list of reception names, 2: the delegate. */
+				_n(
+					'%1$s came with this ticket and is now in %2$s\'s bookings, at no cost.',
+					'%1$s came with this ticket and are now in %2$s\'s bookings, at no cost.',
+					count( $result['moved'] ),
+					'law'
+				),
+				wp_sprintf_l( '%l', array_values( $result['moved'] ) ),
+				$about
+			)
+			: sprintf(
+				/* translators: %s: a list of reception names. */
+				_n(
+					'%s comes with this ticket and is now in your bookings, at no cost.',
+					'%s come with this ticket and are now in your bookings, at no cost.',
+					count( $result['moved'] ),
+					'law'
+				),
+				wp_sprintf_l( '%l', array_values( $result['moved'] ) )
+			);
 	}
 	if ( ! empty( $result['released'] ) ) {
-		$lines[] = sprintf(
-			/* translators: %s: a list of reception names. */
-			_n(
-				'You already had your own place at %s, so the one included with this ticket has been released.',
-				'You already had your own places at %s, so the ones included with this ticket have been released.',
-				count( $result['released'] ),
-				'law'
-			),
-			wp_sprintf_l( '%l', array_values( $result['released'] ) )
-		);
+		$lines[] = $theirs
+			? sprintf(
+				/* translators: 1: a list of reception names, 2: the delegate. */
+				_n(
+					'%2$s already had their own place at %1$s, so the one included with this ticket has been released. Nothing has been refunded to them.',
+					'%2$s already had their own places at %1$s, so the ones included with this ticket have been released. Nothing has been refunded to them.',
+					count( $result['released'] ),
+					'law'
+				),
+				wp_sprintf_l( '%l', array_values( $result['released'] ) ),
+				$about
+			)
+			: sprintf(
+				/* translators: %s: a list of reception names. */
+				_n(
+					'You already had your own place at %s, so the one included with this ticket has been released.',
+					'You already had your own places at %s, so the ones included with this ticket have been released.',
+					count( $result['released'] ),
+					'law'
+				),
+				wp_sprintf_l( '%l', array_values( $result['released'] ) )
+			);
 	}
 	if ( ! empty( $result['failed'] ) ) {
-		$lines[] = sprintf(
-			/* translators: %s: a list of reception names. */
-			__( 'Please get in touch about your place at %s.', 'law' ),
-			wp_sprintf_l( '%l', array_values( $result['failed'] ) )
-		);
+		$lines[] = $theirs
+			? sprintf(
+				/* translators: 1: a list of reception names, 2: the delegate. */
+				__( 'The place at %1$s could NOT be moved to %2$s. Please sort it out by hand.', 'law' ),
+				wp_sprintf_l( '%l', array_values( $result['failed'] ) ),
+				$about
+			)
+			: sprintf(
+				/* translators: %s: a list of reception names. */
+				__( 'Please get in touch about your place at %s.', 'law' ),
+				wp_sprintf_l( '%l', array_values( $result['failed'] ) )
+			);
 	}
 
 	return implode( ' ', $lines );
@@ -1941,6 +2023,17 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 		return new WP_Error(
 			'law_flagship_not_confirmed',
 			'Only a confirmed place can be handed to somebody else. Decline a registration that is still under review and let the new person register themselves, and use Cancel on a place you want to release rather than move.'
+		);
+	}
+	// A refunded place stays on publish (law_flagship_mark_refunded() does not
+	// cancel it), so it reaches here looking transferable. It is not: the money
+	// has gone back to the person who paid, so there is nothing for a
+	// substitute to inherit, and every sentence the emails would say about the
+	// receipt is false. The committee almost certainly means to cancel it.
+	if ( 'refunded' === (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
+		return new WP_Error(
+			'law_flagship_refunded',
+			'This place has been refunded, so there is nothing to transfer. Cancel it to release the place, and let the new delegate register in their own right.'
 		);
 	}
 
@@ -2036,6 +2129,19 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	// below: between the guards above and here, another committee member's
 	// Cancel or another substitution could have moved this same place.
 	$locked = law_booking_lock( $event_id );
+	// Refused rather than proceeded when the lock is not granted, unlike the
+	// older functions in this file. Everything the lock protects here is the
+	// re-read below, so running without it would be doing the checks and then
+	// ignoring the answer. law_booking_cancel() takes the same line.
+	if ( ! $locked ) {
+		if ( $created ) {
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
+		}
+		return new WP_Error(
+			'law_flagship_busy',
+			'Somebody else is working on this conference right now. Please try again in a moment.'
+		);
+	}
 	// clean_post_cache() before the re-read, or there is no re-read at all:
 	// get_post() answers from this request's own cache, which still holds the
 	// copy loaded at the top of this function, and the check below would
@@ -2044,9 +2150,7 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	clean_post_cache( $booking_id );
 	$fresh = get_post( $booking_id );
 	if ( ! $fresh || 'publish' !== $fresh->post_status || (int) $fresh->post_author !== $from_user_id ) {
-		if ( $locked ) {
-			law_booking_unlock( $event_id );
-		}
+		law_booking_unlock( $event_id );
 		if ( $created ) {
 			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
 		}
@@ -2056,17 +2160,76 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 		);
 	}
 
+	// The duplicate guard AGAIN, now that nothing else can move. The one above
+	// runs before the account is resolved so a refusal mints nobody, but it is
+	// a read-then-act check: between it and here, another committee member's
+	// substitution — or this person registering for themselves — could have
+	// given them a place, and they would end up holding two.
+	$dup = law_booking_guard_duplicates(
+		$event_id,
+		array( array( 'user_id' => $user_id, 'email' => $row['email'], 'name' => $row['name'] ) ),
+		law_booking_holding_statuses()
+	);
+	if ( is_wp_error( $dup ) ) {
+		law_booking_unlock( $event_id );
+		if ( $created ) {
+			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
+		}
+		return new WP_Error(
+			'law_flagship_duplicate',
+			sprintf( '%s already has a place at the conference, so this ticket cannot be moved to them.', $row['name'] ),
+			array( 'field' => 'email' )
+		);
+	}
+
 	// Only these two keys. post_status is unchanged, so workflow.php's
 	// wp_insert_post_data guard is a no-op and transition_post_status does not
 	// fire — which is why $GLOBALS['law_booking_transitioning'] is deliberately
 	// NOT raised here: disarming the status guard for a change that does not
 	// touch the status would only widen the window something else could slip
 	// through.
+	/*
+	 * The audit meta goes in BEFORE post_author moves, and that order is the
+	 * whole point. law_booking_payment_facts_visible() reads
+	 * _law_substituted_from to decide whether to show the payer's hosted Stripe
+	 * invoice — their name, billing address and card last four. Writing it
+	 * afterwards leaves a window in which a fatal or a timeout inside
+	 * wp_update_post()'s hooks strands the booking owned by the new delegate
+	 * with no marker, and every one of those facts on their own page for good.
+	 * Written first, the same crash leaves a marker on a booking that never
+	 * moved, which hides a receipt from the person who paid until somebody
+	 * notices. Wrong in the harmless direction.
+	 */
+	$law_fs_first = ! (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	// WHO PAID, not who held it last. Written once and never again: a second
+	// transfer would otherwise name the FIRST substitute, somebody who paid
+	// nothing, and everything downstream reads these as the payer. Rewriting
+	// them inverted the rule outright — the invoice was hidden from the person
+	// who bought it and shown to the person who did not, the wp-admin facts box
+	// named the wrong person as holding the receipt, and the transfer email
+	// handed that substitute a link to the payer's hosted invoice.
+	// Re-substitution stays allowed (a firm's replacement drops out too); these
+	// simply stop moving, and the full chain lives in the activity log.
+	if ( $law_fs_first ) {
+		law_event_update_meta( $booking_id, '_law_substituted_from', $from_user_id );
+		law_event_update_meta( $booking_id, '_law_substituted_from_name', $from_name );
+		law_event_update_meta( $booking_id, '_law_substituted_from_email', $from_email );
+	}
+	// These two DO move: they are about the most recent transfer, not the money.
+	law_event_update_meta( $booking_id, '_law_substituted_at', gmdate( 'Y-m-d H:i' ) );
+	law_event_update_meta( $booking_id, '_law_substituted_by', $actor_id );
+
 	$updated = wp_update_post( array( 'ID' => $booking_id, 'post_author' => $user_id ), true );
 	if ( is_wp_error( $updated ) ) {
-		if ( $locked ) {
-			law_booking_unlock( $event_id );
+		// Nothing moved, so take the marker back off — but only the part this
+		// call added, or a re-substitution that fails here would erase the
+		// original payer recorded by the one before it.
+		if ( $law_fs_first ) {
+			delete_post_meta( $booking_id, '_law_substituted_from' );
+			delete_post_meta( $booking_id, '_law_substituted_from_name' );
+			delete_post_meta( $booking_id, '_law_substituted_from_email' );
 		}
+		law_booking_unlock( $event_id );
 		if ( $created ) {
 			law_booking_delete_created_users( array( $user_id => true ), $event_id, $actor_id );
 		}
@@ -2079,18 +2242,10 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	// unless the dialog says otherwise.
 	law_booking_write_attendee( $booking_id, $person, $user_id, ! empty( $row['press'] ) );
 
-	law_event_update_meta( $booking_id, '_law_substituted_from', $from_user_id );
-	law_event_update_meta( $booking_id, '_law_substituted_from_name', $from_name );
-	law_event_update_meta( $booking_id, '_law_substituted_from_email', $from_email );
-	law_event_update_meta( $booking_id, '_law_substituted_at', gmdate( 'Y-m-d H:i' ) );
-	law_event_update_meta( $booking_id, '_law_substituted_by', $actor_id );
-
 	// NO law_event_recount_attendees(). One seat out is one seat in, so the
 	// headcount is unchanged and a recount would only re-arm the capacity
 	// warnings for a change that took no place.
-	if ( $locked ) {
-		law_booking_unlock( $event_id );
-	}
+	law_booking_unlock( $event_id );
 
 	/*
 	 * Past this point the seat has changed hands and there is nothing to roll
@@ -2100,26 +2255,37 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	 * law_booking_delete_created_users() again.
 	 */
 
-	$receptions = law_flagship_move_included_receptions( $booking_id, $user_id, $person, $actor_id );
-
-	law_booking_apply_attendee_profile( $user_id, $profile, $created, $event_id, $actor_id );
-
-	$actor      = $actor_id ? get_user_by( 'id', $actor_id ) : null;
-	$price      = law_booking_price( $booking_id );
-	$payment    = (string) law_event_meta( $booking_id, '_law_payment_status' );
-	$ticket     = (string) law_event_meta( $booking_id, '_law_ticket_type' );
+	/*
+	 * The log FIRST, before any of the best-effort work below. The activity log
+	 * is the only surface the committee reads to find out a place changed
+	 * hands, and writing it last meant a fatal inside the reception move — which
+	 * cancels bookings and can enter the waitlist engine — left the seat
+	 * transferred, the audit meta written, nobody emailed and nothing at all in
+	 * the log to say so. It needs nothing from the receptions, so it does not
+	 * wait for them; what they did is appended after.
+	 */
+	$actor   = $actor_id ? get_user_by( 'id', $actor_id ) : null;
+	$price   = law_booking_price( $booking_id );
+	$payment = (string) law_event_meta( $booking_id, '_law_payment_status' );
+	$ticket  = (string) law_event_meta( $booking_id, '_law_ticket_type' );
+	// Named against whoever actually PAID, which on a re-substitution is not
+	// the person handing it on.
+	$law_fs_payer_id   = (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	$law_fs_payer_name = ( ! $law_fs_payer_id || $law_fs_payer_id === $from_user_id )
+		? $from_name
+		: (string) law_event_meta( $booking_id, '_law_substituted_from_name' );
 	$money_note = 'paid' === $payment && (int) $price['gross'] > 0
 		? sprintf(
 			'The money has not moved: the Stripe invoice, the charge and the VAT receipt for %s stay with %s, who has been emailed the link to them.',
 			law_events_format_pence( (int) $price['gross'] ),
-			$from_name
+			$law_fs_payer_name
 		)
 		: 'There was nothing to pay on this place, so there is nothing to move.';
 
 	law_event_log(
 		$event_id,
 		sprintf(
-			'Flagship ticket #%1$d transferred from %2$s (%3$s) to %4$s (%5$s) by %6$s. %7$s%8$s%9$s',
+			'Flagship ticket #%1$d transferred from %2$s (%3$s) to %4$s (%5$s) by %6$s. %7$s%8$s',
 			(int) law_event_meta( $booking_id, '_law_booking_number' ),
 			$from_name,
 			$from_email ? $from_email : 'no address',
@@ -2127,11 +2293,8 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 			$row['email'],
 			$actor ? $actor->display_name : 'the committee',
 			$money_note,
-			$receptions['moved'] || $receptions['released'] || $receptions['failed']
-				? ' ' . law_flagship_receptions_moved_note( $receptions )
-				: '',
 			'' !== $ticket
-				? sprintf( ' The ticket type is still %s — please check it still applies.', law_booking_ticket_type_label( $ticket ) )
+				? sprintf( ' The ticket type is still %s, so please check it still applies.', law_booking_ticket_type_label( $ticket ) )
 				: ''
 		),
 		array(
@@ -2144,8 +2307,26 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 		),
 		array( 'user_id' => $actor_id )
 	);
+	$receptions = law_flagship_move_included_receptions( $booking_id, $user_id, $person, $actor_id );
+	if ( $receptions['moved'] || $receptions['released'] || $receptions['failed'] ) {
+		law_event_log(
+			$event_id,
+			law_flagship_receptions_moved_note( $receptions, $row['name'] ),
+			array(
+				'source'   => 'flagship',
+				'action'   => 'flagship_substituted_receptions',
+				'booking'  => $booking_id,
+				'moved'    => array_keys( $receptions['moved'] ),
+				'released' => array_keys( $receptions['released'] ),
+				'failed'   => array_keys( $receptions['failed'] ),
+			),
+			array( 'user_id' => $actor_id )
+		);
+	}
 
-	law_flagship_send_substitution_emails(
+	law_booking_apply_attendee_profile( $user_id, $profile, $created, $event_id, $actor_id );
+
+	$law_fs_told_previous = law_flagship_send_substitution_emails(
 		$booking_id,
 		$event_id,
 		$person,
@@ -2155,11 +2336,14 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	);
 
 	return array(
-		'user_id'    => $user_id,
-		'created'    => $created,
-		'name'       => $row['name'],
-		'from_name'  => $from_name,
-		'receptions' => $receptions,
+		'user_id'       => $user_id,
+		'created'       => $created,
+		'name'          => $row['name'],
+		'from_name'     => $from_name,
+		'payer_name'    => $law_fs_payer_name,
+		'paid'          => 'paid' === $payment && (int) $price['gross'] > 0,
+		'told_previous' => $law_fs_told_previous,
+		'receptions'    => $receptions,
 	);
 }
 
@@ -2187,6 +2371,8 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
  * explicit 'to'. Reading it back out of law_flagship_email_extra() would
  * resolve to the new holder, and "your place has been passed on" would land on
  * the person who received it.
+ *
+ * @return bool Whether the person losing the place could be emailed.
  */
 function law_flagship_send_substitution_emails( $booking_id, $event_id, array $person, $created, array $from, array $receptions ) {
 	$note = law_flagship_receptions_moved_note( $receptions );
@@ -2196,7 +2382,7 @@ function law_flagship_send_substitution_emails( $booking_id, $event_id, array $p
 	$to_extra['placeholders']['attendee_name']          = $person['name'];
 	$to_extra['placeholders']['previous_attendee_name'] = $from['name'];
 	$to_extra['placeholders']['included_receptions']    = $note;
-	$to_extra['placeholders']['payment_note']           = law_flagship_payment_note( $booking_id, $from['name'] );
+	$to_extra['placeholders']['payment_note']           = law_flagship_payment_note( $booking_id, true, $from['name'] );
 
 	// Every fact about somebody else's money, emptied. law_flagship_email_extra()
 	// supplies all of them for every flagship email, and each one describes the
@@ -2222,15 +2408,27 @@ function law_flagship_send_substitution_emails( $booking_id, $event_id, array $p
 	// To the person who gave it up. {receipt_note} rather than a bare
 	// {invoice_link}, because a ticket a discount code covered in full has no
 	// Stripe invoice and the promise of one then ended in a colon and nothing.
+	//
+	// Returns whether this half actually went, so the committee's confirmation
+	// can stop claiming "both of them have been emailed" when one of them was
+	// not reachable.
 	if ( ! is_email( (string) $from['email'] ) ) {
-		return;
+		return false;
 	}
 	$from_extra = law_flagship_email_extra( $booking_id );
 	$from_extra['to'] = array( $from['email'] );
 	$from_extra['placeholders']['attendee_name']   = $from['name'];
 	$from_extra['placeholders']['substitute_name'] = $person['name'];
-	$from_extra['placeholders']['receipt_note']    = law_flagship_receipt_note( $booking_id );
+	// Only the FIRST holder paid. On a re-substitution the person handing the
+	// place on inherited it, so they get no receipt wording and no invoice link.
+	$law_fs_payer = (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	$from_extra['placeholders']['receipt_note'] = law_flagship_receipt_note(
+		$booking_id,
+		! $law_fs_payer || $law_fs_payer === (int) $from['user_id']
+	);
 	law_events_send( 'user_flagship_place_transferred', $event_id, $from_extra );
+
+	return true;
 }
 
 /**
@@ -2312,20 +2510,31 @@ function law_flagship_email_extra( $booking_id ) {
  * printed literally — which is why this resolves everything itself. Same idiom
  * as law_booking_account_note().
  *
- * @param int    $booking_id The confirmed booking.
- * @param string $from_name  The delegate it was transferred from; '' on an
- *                           ordinary approval.
+ * @param int    $booking_id  The confirmed booking.
+ * @param bool   $transferred Whether this is a transfer rather than an approval.
+ *                            An explicit flag, NOT "is there a name": the branch
+ *                            decides whether somebody else's invoice, card and
+ *                            price reach this reader, and a booking whose
+ *                            attendee snapshot and account address were both
+ *                            empty made that test false and sent the approval
+ *                            paragraph — invoice link, card and all — to a
+ *                            person who had paid nothing.
+ * @param string $from_name   The delegate it was transferred from.
  */
-function law_flagship_payment_note( $booking_id, $from_name = '' ) {
+function law_flagship_payment_note( $booking_id, $transferred = false, $from_name = '' ) {
 	$booking_id = (int) $booking_id;
 
 	// Transferred. Nothing about the payment is this person's business: the
 	// invoice names somebody else, the hosted Stripe page carries that
 	// person's billing address and card, and they were charged nothing.
-	if ( '' !== (string) $from_name ) {
+	if ( $transferred ) {
+		// Named where we have a name, and still safe where we do not.
+		if ( '' === trim( (string) $from_name ) ) {
+			return __( 'This place has been transferred to you. It has already been paid for, so there is nothing for you to pay, and the VAT receipt stays with the person who bought it.', 'law' );
+		}
 		return sprintf(
 			/* translators: %s: the delegate who gave the place up. */
-			__( 'This place has been transferred to you from %s, at your organisation\'s request. It has already been paid for, so there is nothing for you to pay, and the receipt stays with whoever bought it.', 'law' ),
+			__( 'This place has been transferred to you from %s, who bought it. There is nothing for you to pay, and the VAT receipt stays with them. If you need a copy for your records, please ask them for it.', 'law' ),
 			$from_name
 		);
 	}
@@ -2383,12 +2592,27 @@ function law_flagship_payment_note( $booking_id, $from_name = '' ) {
  * transfer, 21 September 2026). No invoice means a different sentence, not a
  * broken one.
  */
-function law_flagship_receipt_note( $booking_id ) {
+function law_flagship_receipt_note( $booking_id, $paid_by_them = true ) {
 	$booking_id = (int) $booking_id;
 	$price      = law_booking_price( $booking_id );
 	$invoice    = (string) law_event_meta( $booking_id, '_law_stripe_invoice_url' );
+	$status     = (string) law_event_meta( $booking_id, '_law_payment_status' );
 
-	if ( '' !== $invoice ) {
+	// Somebody who received this place from a previous transfer never paid for
+	// it, so none of the receipt wording below is theirs. The invoice on the
+	// booking belongs to whoever bought it, several hands back.
+	if ( ! $paid_by_them ) {
+		return __( 'You were not charged for this place, so there is nothing to refund.', 'law' );
+	}
+
+	// Only where the money is actually still with us. A refunded place is
+	// refused before it reaches here, but say something true rather than
+	// depend on that.
+	if ( 'refunded' === $status ) {
+		return __( 'This place was already refunded, so there is nothing further to refund and nothing further will be charged.', 'law' );
+	}
+
+	if ( '' !== $invoice && in_array( $status, array( 'paid', 'complimentary', 'included', 'no_charge' ), true ) ) {
 		return sprintf(
 			/* translators: %s: the invoice URL. */
 			__( "Nothing has been refunded, and nothing further will be charged. Your VAT invoice stays with you and you can download it here at any time:\n\n%s\n\nPlease keep this email: it is your link to that receipt now that the booking has moved.", 'law' ),
@@ -2398,7 +2622,7 @@ function law_flagship_receipt_note( $booking_id ) {
 
 	// Paid, but with no invoice we can link to. Say what is true rather than
 	// promise a document that does not exist.
-	if ( (int) $price['gross'] > 0 ) {
+	if ( (int) $price['gross'] > 0 && 'paid' === $status ) {
 		return __( 'Nothing has been refunded, and nothing further will be charged. If you need a receipt for what you paid, please reply to this email and we will send you one.', 'law' );
 	}
 
@@ -2984,7 +3208,14 @@ add_action( 'admin_post_nopriv_law_flagship_substitute', 'law_events_nopriv_json
 function law_flagship_substitute_handler() {
 	$is_ajax = law_events_guard_post(
 		'law_flagship_substitute',
-		array( 'rate' => array( 'flagship_review', 60, 600, 300 ), 'honeypot_json' => array( 'message' => 'Done.' ) )
+		array(
+			'rate'           => array( 'flagship_review', 60, 600, 300 ),
+			'honeypot_json'  => array( 'message' => 'Done.' ),
+			// Without this a no-JS honeypot trip redirects with law_notice=saved,
+			// which this page's notice map does not carry, so it says nothing at
+			// all. The siblings all name their own.
+			'honeypot_notice' => 'flagship-substituted',
+		)
 	);
 
 	$booking = law_flagship_require_committee_booking( $is_ajax );
@@ -3020,18 +3251,29 @@ function law_flagship_substitute_handler() {
 	// The reception outcome is reported rather than swallowed: a place the
 	// substitute already owned has been released and nobody refunded them for
 	// it, and that is a conversation the committee has to know to have.
-	$note = law_flagship_receptions_moved_note( (array) $result['receptions'] );
+	$note = law_flagship_receptions_moved_note( (array) $result['receptions'], (string) $result['name'] );
 
 	law_events_respond(
 		$is_ajax,
 		true,
 		array(
-			'title'    => 'Place transferred',
+			'title'    => 'Delegate substituted',
 			'message'  => trim(
 				sprintf(
-					'%1$s now holds this ticket in place of %2$s. Both of them have been emailed, and the payment stays with %2$s. %3$s',
+					'%1$s now holds this ticket in place of %2$s. %3$s %4$s %5$s',
 					$result['name'],
 					$result['from_name'],
+					// Never assert an email that was not sent: the send returns
+					// early when the previous delegate's address is unusable,
+					// and that is exactly the case where the committee needs to
+					// know to telephone somebody.
+					$result['told_previous']
+						? sprintf( 'Both of them have been emailed.', $result['from_name'] )
+						: sprintf( '%s has been emailed. We could NOT email %s: their account has no usable address, so please tell them yourself.', $result['name'], $result['from_name'] ),
+					// And never claim a payment stayed put when there was none.
+					$result['paid']
+						? sprintf( 'The payment, the invoice and the VAT receipt stay with %s.', $result['payer_name'] )
+						: 'There was nothing to pay on this place.',
 					$note
 				)
 			),
