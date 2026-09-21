@@ -13,6 +13,15 @@
  *   'title'   => 'Approve this event',     // Required.
  *   'copy'    => 'One paragraph.',         // String, or an array of strings,
  *                                          // one paragraph each. Optional.
+ *   'list'    => array(                    // Optional bulleted list, under the
+ *     'A plain sentence.',                 // copy. A plain string is a plain
+ *     array(                               // line; an array with a 'goto' CSS
+ *       'text' => 'Please give a title.',  // selector makes the line a link
+ *       'goto' => '[name="event_title"]',  // that closes the dialog and jumps
+ *     ),                                   // to that control on the page
+ *   ),                                     // (law-modal.js resolves it, and
+ *                                          // flattens a line whose control is
+ *                                          // not on the page to plain text).
  *   'field'   => array(                    // Optional; omit for a plain
  *     'name'     => 'law_note',            // confirmation with no input.
  *     'label'    => 'What needs changing?',
@@ -38,6 +47,11 @@
  *   ),                                     // as data-law-modal-busy for a
  *                                          // script that submits over fetch.
  *   'close'   => 'Close',                  // Secondary button. Default 'Cancel'.
+ *   'autoopen' => true,                    // Optional: law-modal.js opens this
+ *                                          // dialog as soon as the page loads,
+ *                                          // for a dialog that answers what
+ *                                          // just happened rather than
+ *                                          // confirming what is about to.
  * ) );
  *
  * 'confirm' => false renders an informational dialog with no submit button at
@@ -69,6 +83,8 @@ law_modal_enqueue();
 
 $law_modal_copy = $args['copy'] ?? array();
 $law_modal_copy = is_array( $law_modal_copy ) ? $law_modal_copy : array( $law_modal_copy );
+
+$law_modal_list = isset( $args['list'] ) && is_array( $args['list'] ) ? $args['list'] : array();
 
 $law_modal_close = isset( $args['close'] ) && '' !== trim( (string) $args['close'] ) ? trim( (string) $args['close'] ) : 'Cancel';
 
@@ -134,7 +150,7 @@ if ( $law_modal_field ) {
 // tabindex="-1" on the dialog so law-modal.js can put focus inside it when
 // there is no field to focus (a plain confirmation).
 ?>
-<div class="law-modal" id="<?php echo esc_attr( $law_modal_id ); ?>" hidden>
+<div class="law-modal" id="<?php echo esc_attr( $law_modal_id ); ?>"<?php echo empty( $args['autoopen'] ) ? '' : ' data-law-modal-autoopen'; ?> hidden>
 	<div class="law-modal__overlay" data-law-modal-close></div>
 	<div class="law-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="<?php echo esc_attr( $law_modal_id ); ?>-title" tabindex="-1">
 		<button type="button" class="law-modal__close" data-law-modal-close aria-label="Close">&times;</button>
@@ -149,6 +165,29 @@ if ( $law_modal_field ) {
 			echo "\t\t" . '<p class="law-modal__copy">' . wp_kses_post( (string) $law_modal_paragraph ) . "</p>\n";
 		}
 		?>
+		<?php if ( $law_modal_list ) : ?>
+			<ul class="law-modal__list">
+				<?php
+				foreach ( $law_modal_list as $law_modal_item ) {
+					$law_modal_item = is_array( $law_modal_item ) ? $law_modal_item : array( 'text' => $law_modal_item );
+					$law_modal_text = trim( (string) ( $law_modal_item['text'] ?? '' ) );
+					if ( '' === $law_modal_text ) {
+						continue;
+					}
+					$law_modal_goto = trim( (string) ( $law_modal_item['goto'] ?? '' ) );
+					echo "\t\t\t\t<li>";
+					if ( '' === $law_modal_goto ) {
+						echo esc_html( $law_modal_text );
+					} else {
+						// A button, not a link: there is no URL to go to, only a
+						// control on this page to scroll to and focus.
+						echo '<button type="button" class="law-modal__goto" data-law-modal-goto="' . esc_attr( $law_modal_goto ) . '">' . esc_html( $law_modal_text ) . '</button>';
+					}
+					echo "</li>\n";
+				}
+				?>
+			</ul>
+		<?php endif; ?>
 		<?php if ( $law_modal_field ) : ?>
 			<?php
 			// The control ships disabled and law-modal.js enables it only while
