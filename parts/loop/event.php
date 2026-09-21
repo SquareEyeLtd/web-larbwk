@@ -182,7 +182,7 @@ if ( $law_is_reception && ! $law_is_flagship ) {
 			<span class="law-event-card__flagship-badge"><?php esc_html_e( 'Flagship event', 'law' ); ?></span>
 		<?php elseif ( $law_is_reception ) : ?>
 			<?php /* Same pill, same reason: the navy fill says "not an ordinary event", the words say which kind. */ ?>
-			<span class="law-event-card__reception-badge"><?php esc_html_e( 'Drinks reception', 'law' ); ?></span>
+			<span class="law-event-card__reception-badge"><?php esc_html_e( 'Reception', 'law' ); ?></span>
 		<?php endif; ?>
 		<h4 class="law-event-card__title">
 			<?php /* law_calendar_highlight() returns escaped HTML with only its <mark> tags raw, and falls back to plain esc_html() output whenever there is no keyword or no hit in this field. */ ?>
