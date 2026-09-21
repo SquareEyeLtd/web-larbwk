@@ -128,9 +128,16 @@ function law_stripe_reconcile_read_invoice( $event_id ) {
 		return $out;
 	}
 
-	$look           = law_events_invoice_id_lookup( $event_id );
-	$out['notes']   = (array) $look['notes'];
+	$look         = law_events_invoice_id_lookup( $event_id );
+	$out['notes'] = (array) $look['notes'];
 	if ( '' === $look['invoice_id'] ) {
+		// The ambiguous case is resolvable, just not here: the invoice ID panel
+		// offers the candidates as a choice. Naming them means this row is not
+		// a dead end the reader has to go and investigate blind.
+		if ( ! empty( $look['ambiguous'] ) ) {
+			$out['notes'][] = 'Candidates: ' . implode( ' · ', (array) $look['ambiguous'] )
+				. '. Choose between them on "Repair: legacy Stripe invoices with no invoice ID", then re-check here.';
+		}
 		$out['error'] = $look['error'] ?: 'No invoice in Stripe could be matched to this event.';
 		return $out;
 	}
