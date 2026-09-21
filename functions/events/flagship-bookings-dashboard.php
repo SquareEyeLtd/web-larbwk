@@ -168,6 +168,14 @@ function law_flagship_bookings_rows( array $filters ) {
 			// alongside Decline, because the two are the same decision taken
 			// before and after the money moved.
 			'cancellable'   => 'publish' === $post->post_status,
+			// Handing a confirmed place to somebody else (21 September 2026).
+			// Identical to 'cancellable' today and deliberately its own key:
+			// the two are different decisions about the same row, and the first
+			// time one of them changes the shared flag would take the other
+			// with it.
+			'substitutable' => 'publish' === $post->post_status,
+			'substituted_from' => (string) law_event_meta( $booking_id, '_law_substituted_from_name' ),
+			'substituted_at'   => (string) law_event_meta( $booking_id, '_law_substituted_at' ),
 		);
 	}
 
@@ -213,6 +221,7 @@ function law_flagship_bookings_export_rows( array $filters ) {
 		'Press',
 		'Complimentary',
 		'Ticket type',
+		'Substituted from',
 		'List price',
 		'Discount code',
 		'Discount',
@@ -241,6 +250,7 @@ function law_flagship_bookings_export_rows( array $filters ) {
 			$row['press'] ? 'Yes' : '',
 			$row['complimentary'] ? 'Yes' : '',
 			$row['ticket_label'],
+			$row['substituted_from'],
 			law_events_format_pence( $row['list_pence'] ),
 			$row['discount_code'],
 			$row['discount_pence'] > 0 ? law_events_format_pence( $row['discount_pence'] ) : '',
@@ -265,6 +275,52 @@ function law_flagship_bookings_export_rows( array $filters ) {
 			wp_date( 'j F Y' )
 		),
 	);
+}
+
+/* Substitution ________________________________________________________________ */
+
+/**
+ * The DOM id of the shared "hand this place to somebody else" dialog.
+ *
+ * ONE dialog for the whole table, like the ticket-type one and for the same
+ * reason plus a stronger one: it carries fifteen fields, and a copy per row on
+ * a list that runs to hundreds would be most of the page. The opener lives in
+ * each row's actions cell and fills it from data attributes.
+ */
+function law_flagship_substitute_modal_id() {
+	return 'law-flagship-substitute';
+}
+
+/**
+ * Which booking the no-JS substitution form is being opened for, or 0.
+ *
+ * A committee member with scripts off cannot be handed a dialog, and a form
+ * asking them to type a post ID would be dishonest — they know registration
+ * numbers, not post IDs. So each row's <noscript> links here instead, and the
+ * template renders the same form inline, pre-filled, above the table.
+ */
+function law_flagship_substitute_requested_id() {
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- a read-only view switch; the POST it leads to carries the nonce.
+	$id = absint( $_GET['law_substitute'] ?? 0 );
+	if ( ! $id || ! law_user_is_committee() ) {
+		return 0;
+	}
+	// Not on the way back from a successful one. law_events_redirect_back()
+	// returns to the referring URL, which still carries law_substitute, so
+	// without this the page would report "the place has been transferred" and
+	// then offer the same form again — pre-filled with the person who has just
+	// received it, one press away from passing it straight on. A FAILED
+	// substitution deliberately still renders it, so the committee can correct
+	// whatever was refused.
+	if ( 'flagship-substituted' === sanitize_key( wp_unslash( $_GET['law_notice'] ?? '' ) ) ) {
+		return 0;
+	}
+	// phpcs:enable WordPress.Security.NonceVerification.Recommended
+	$booking = get_post( $id );
+	if ( ! $booking || ! law_flagship_booking_is( $booking ) || 'publish' !== $booking->post_status ) {
+		return 0;
+	}
+	return (int) $booking->ID;
 }
 
 /* Ticket type _________________________________________________________________ */
@@ -459,6 +515,7 @@ add_action(
 		law_modal_enqueue();
 		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
 		wp_enqueue_script( 'law-flagship-ticket-type', get_theme_file_uri( 'assets/js/flagship-ticket-type.js' ), array( 'law-modal', 'law-booking-form' ), $mtime( 'assets/js/flagship-ticket-type.js' ), true );
+		wp_enqueue_script( 'law-flagship-substitute', get_theme_file_uri( 'assets/js/flagship-substitute.js' ), array( 'law-modal', 'law-booking-form' ), $mtime( 'assets/js/flagship-substitute.js' ), true );
 		wp_enqueue_script( 'law-pdfmake', get_theme_file_uri( 'assets/js/vendor/pdfmake.min.js' ), array(), $mtime( 'assets/js/vendor/pdfmake.min.js' ), true );
 		wp_enqueue_script( 'law-pdfmake-fonts', get_theme_file_uri( 'assets/js/vendor/vfs_fonts.js' ), array( 'law-pdfmake' ), $mtime( 'assets/js/vendor/vfs_fonts.js' ), true );
 		wp_enqueue_script( 'law-export-buttons', get_theme_file_uri( 'assets/js/export-buttons.js' ), array( 'law-pdfmake-fonts' ), $mtime( 'assets/js/export-buttons.js' ), true );

@@ -36,6 +36,16 @@ $law_pf_included = (int) law_event_meta( $law_pf_id, '_law_included_with' );
 $law_pf_method   = law_booking_payment_method_label( $law_pf_id );
 $law_pf_error    = (string) law_event_meta( $law_pf_id, '_law_payment_error' );
 $law_pf_deadline = law_booking_payment_deadline_ts( $law_pf_id );
+// A place SUBSTITUTED to this person was paid for by somebody else and the
+// money deliberately stayed where it was, so the invoice, its PDF and the
+// payment method all describe that other person. Blanked here rather than
+// guarded at each row, with one line below saying why (21 September 2026).
+$law_pf_moved    = ! law_booking_payment_facts_visible( $law_pf_id );
+if ( $law_pf_moved ) {
+	$law_pf_method  = '';
+	$law_pf_invoice = '';
+	$law_pf_pdf     = '';
+}
 ?>
 
 <?php if ( 'law-payment-failed' === $law_pf_status ) : ?>
@@ -172,6 +182,15 @@ $law_pf_deadline = law_booking_payment_deadline_ts( $law_pf_id );
 						);
 						?>
 					</span>
+				</td>
+			</tr>
+		<?php endif; ?>
+
+		<?php if ( $law_pf_moved ) : ?>
+			<tr>
+				<th scope="row"><?php esc_html_e( 'Payment', 'law' ); ?></th>
+				<td>
+					<?php esc_html_e( 'This place was transferred to you. The receipt is held by the person who paid for it.', 'law' ); ?>
 				</td>
 			</tr>
 		<?php endif; ?>

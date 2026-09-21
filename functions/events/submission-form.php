@@ -1305,6 +1305,97 @@ function law_events_form_state() {
 }
 
 /**
+ * The control one validation error belongs to, as a CSS selector for
+ * law-modal.js to resolve (the jump lines in the failed-save dialog below).
+ *
+ * The error codes are the field names the form posts, so the selector is
+ * almost always the name itself; the [] form covers the checkbox groups
+ * (preferred slots, sectors), and the speaker photos are keyed by their row
+ * index because a row has no single name of its own. An unknown shape returns
+ * nothing at all, and the dialog prints that line as plain text.
+ *
+ * @param string $key Error code from law_events_form_save().
+ * @return string CSS selector, or '' when there is no control to point at.
+ */
+function law_events_form_error_selector( $key ) {
+	$key = (string) $key;
+
+	if ( preg_match( '/^speaker_photo_(\d+)$/', $key, $matches ) ) {
+		return '[name="speaker_photo[' . $matches[1] . ']"]';
+	}
+	if ( ! preg_match( '/^[a-z0-9_]+$/', $key ) ) {
+		return '';
+	}
+	return '[name="' . $key . '"], [name="' . $key . '[]"]';
+}
+
+/**
+ * The failed-save dialog, shown over the form the moment the page comes back.
+ *
+ * The inline notice and the red message on each field stay exactly as they
+ * were; this says the same thing once more, up front, because a save that
+ * failed on a field three screens down looked from the Finish section like a
+ * save that had worked (Denis, 21 September 2026). Every line is the message
+ * its own field carries, so the dialog cannot drift from the form, and each
+ * one jumps to the control it is about.
+ *
+ * Render it outside the form: it carries no submit button of its own, only the
+ * jump lines and a close control. Without JavaScript it stays hidden and the
+ * inline notice does the whole job, as before.
+ *
+ * @param array  $errors law_events_form_state()['errors'].
+ * @param string $title  Dialog title; the host form's first submission says
+ *                       something different from a save of a live event.
+ */
+function law_events_form_error_modal( array $errors, $title = 'Your changes were not saved' ) {
+	if ( ! $errors ) {
+		return;
+	}
+
+	// The whole-form refusal (someone else holds the edit lock): nothing is
+	// highlighted below, so the dialog is that one sentence and no jump lines.
+	if ( isset( $errors['locked'][0] ) ) {
+		get_template_part( 'parts/layout/modal', null, array(
+			'id'       => 'law-modal-form-errors',
+			'title'    => $title,
+			'copy'     => (string) $errors['locked'][0],
+			'confirm'  => false,
+			'close'    => 'Close',
+			'autoopen' => true,
+		) );
+		return;
+	}
+
+	$items = array();
+	foreach ( $errors as $key => $messages ) {
+		// The first message only, which is the one the field itself prints.
+		$message = isset( $messages[0] ) ? trim( (string) $messages[0] ) : '';
+		if ( '' === $message ) {
+			continue;
+		}
+		$items[] = array(
+			'text' => $message,
+			'goto' => law_events_form_error_selector( $key ),
+		);
+	}
+	if ( ! $items ) {
+		return;
+	}
+
+	get_template_part( 'parts/layout/modal', null, array(
+		'id'       => 'law-modal-form-errors',
+		'title'    => $title,
+		'copy'     => 1 === count( $items )
+			? 'One field needs your attention:'
+			: sprintf( '%d fields need your attention:', count( $items ) ),
+		'list'     => $items,
+		'confirm'  => false,
+		'close'    => 'Back to the form',
+		'autoopen' => true,
+	) );
+}
+
+/**
  * Current values for the form template: previous input on error, else the
  * stored event, else blanks.
  *
@@ -1455,6 +1546,12 @@ add_action( 'wp_enqueue_scripts', function () {
 			|| ( is_page_template( 'templates/account-speakers-dashboard.php' ) && ! empty( $_GET['law_speaker'] ) ) ) {
 			law_rich_text_enqueue();
 		}
+	}
+	// The host form's failed-save dialog (law_events_form_error_modal()). The
+	// partial enqueues the component itself, but by then the head is already
+	// out and the stylesheet would print in the footer, after the dialog.
+	if ( is_page_template( 'templates/account-event-form.php' ) ) {
+		law_modal_enqueue();
 	}
 	// The committee dashboard's confirmation dialogs (parts/layout/modal.php).
 	// The partial enqueues these itself, but by then the head is already out,

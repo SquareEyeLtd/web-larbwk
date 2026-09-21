@@ -31,6 +31,11 @@
  * forcing a reload when that URL is the page we are already on; and a modal
  * carrying the law-modal--busy class is mid-request, so Escape and the close
  * controls are ignored until the caller removes it.
+ *
+ * Two hooks for dialogs that report rather than confirm: [data-law-modal-autoopen]
+ * on the modal opens it as soon as the page loads (the event form's failed save
+ * uses this), and [data-law-modal-goto="<css selector>"] on a control inside one
+ * closes the dialog and scrolls to the field that selector names.
  */
 (function () {
 	'use strict';
@@ -238,6 +243,61 @@
 			first.focus();
 		}
 	});
+
+	/* The control one jump line points at, or null when the page has none. The
+	   selector is written by the caller that built the list (for the event form,
+	   law_events_form_error_selector() in functions/events/submission-form.php),
+	   so a malformed one must not take the rest of the dialog down with it. */
+	function gotoTarget(link) {
+		var selector = link.getAttribute('data-law-modal-goto');
+		if (!selector) { return null; }
+		try {
+			return document.querySelector(selector);
+		} catch (e) {
+			return null;
+		}
+	}
+
+	/* A jump line whose control is not on this page is disabled, which takes it
+	   out of the tab order and (in law-modal.css) paints it as the plain
+	   sentence it is. Better than a line that looks clickable and does nothing.
+	   Runs at load: the lists these appear in are rendered with the page. */
+	document.querySelectorAll('[data-law-modal-goto]').forEach(function (link) {
+		if (!gotoTarget(link)) { link.disabled = true; }
+	});
+
+	/* Close the dialog and go to the field the line names. Delegated, like
+	   opening, so a dialog fetched or swapped in later works the same. */
+	document.addEventListener('click', function (event) {
+		var link = event.target.closest ? event.target.closest('[data-law-modal-goto]') : null;
+		if (!link || link.disabled) { return; }
+		event.preventDefault();
+		var target = gotoTarget(link);
+		/* Close FIRST: the body scroll lock is on while the dialog is up, so
+		   scrolling the page underneath it would do nothing. */
+		closeModal();
+		if (!target) { return; }
+		/* The whole field, not the bare control, so its label and its red
+		   message are on screen too. */
+		var field = (target.closest && (target.closest('.law-form-field') || target.closest('fieldset'))) || target;
+		if (field.scrollIntoView) { field.scrollIntoView({ block: 'center' }); }
+		/* offsetParent: a control an editor has taken over (the rich-text
+		   description hands its textarea to TinyMCE) cannot take focus, and the
+		   scroll above is the whole of what we can offer it. preventScroll so
+		   the browser does not undo the centring we just asked for. */
+		if (target.offsetParent !== null && target.focus) {
+			target.focus({ preventScroll: true });
+		}
+	});
+
+	/* A dialog that answers what just happened, rather than confirming what is
+	   about to: the event form renders one listing every field that failed
+	   validation and marks it data-law-modal-autoopen, so a save that failed
+	   three screens further down cannot read as a save that worked. Only the
+	   first one opens; a page with two answers has a worse problem than which
+	   of them to show. */
+	var autoOpen = document.querySelector('.law-modal[data-law-modal-autoopen]');
+	if (autoOpen) { openModal(autoOpen, null); }
 
 	/* A courtesy check only: the server refuses an empty required note either
 	   way. The message comes from the field's own data-law-modal-error and goes

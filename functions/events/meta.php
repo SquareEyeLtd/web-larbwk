@@ -275,6 +275,28 @@ function law_booking_meta_schema() {
 		// wp-admin box, and no price, capacity or guard depends on it. Unset on
 		// every registration until somebody classifies it.
 		'_law_ticket_type'            => 'ticket_type',
+		// Substituting the delegate on a confirmed ticket: the firm paid, the
+		// named partner cannot come, and a colleague goes instead. The money
+		// never moves, so every _law_stripe_* key above still describes the
+		// ORIGINAL payer and these five say who that was.
+		//
+		// The name and the email are frozen rather than looked up from
+		// _law_substituted_from, for two different reasons. The name, because
+		// the account may later be deleted and leave a bare integer nothing
+		// can render (the lesson law_booking_invited_by_label() already pays
+		// for). The email, because it is what lets the committee find the
+		// Stripe customer when a receipt query arrives months later, without
+		// reading the activity log.
+		//
+		// These hold the MOST RECENT hop only. A ticket substituted twice
+		// names its second-to-last holder here and the whole chain in the
+		// activity log, which is append-only and is already the module's
+		// record of who did what.
+		'_law_substituted_from'       => 'int',
+		'_law_substituted_from_name'  => 'text',
+		'_law_substituted_from_email' => 'email',
+		'_law_substituted_at'         => 'datetime',
+		'_law_substituted_by'         => 'int',
 		// The receptions (RECEPTIONS.md §1.2).
 		//
 		// _law_discount_id is the CLAIMED code and is DELETED on release, which

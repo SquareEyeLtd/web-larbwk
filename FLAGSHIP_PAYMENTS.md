@@ -1074,6 +1074,67 @@ Cases worth naming, each with a comment saying which bug it guards:
 
 ---
 
+## 12a. Substituting the delegate (21 September 2026)
+
+The client's ask, and the first thing in this document that moves a place
+rather than creating or ending one. A firm buys a ticket for a named partner,
+the partner cannot come, and a colleague goes instead. Four decisions, settled
+by Denis on 21 September 2026. **Do not reopen them.**
+
+1. **The money does not move.** No Stripe call at all. The invoice, the charge
+   and the VAT receipt stay exactly as issued to whoever paid, and every
+   `_law_stripe_*` key on the booking still describes that person. The reason
+   is the same one §12 gives for having no refund flow: the receipt records who
+   paid, and re-addressing it to somebody who paid nothing would mislead
+   whoever handles a refund. The invoice metadata's `law_user_id` is therefore
+   deliberately left stale, which is an exception to the rule that a mirrored
+   identifier is kept in sync, and is stated as one in the code.
+2. **Confirmed places only** (`publish`). A registration still under review
+   carries a payment method its owner saved and consented to; that is theirs,
+   not a thing to pass on. Decline it and let the replacement register.
+3. **Both people are emailed, and the feature adds exactly ONE template**
+   (Denis, 21 September 2026). The new delegate gets `user_flagship_approved`,
+   the standard confirmation every confirmed delegate gets, with the `.ics` and
+   — for a brand-new account — the set-password link in that same message. What
+   makes that possible is `{payment_note}`: the money moved out of that body
+   into a resolved paragraph, so the same template can say "we have taken £660
+   from your card, here is the invoice" to the person who paid and "somebody
+   else paid for this, the receipt stays with them" to the person who did not.
+   The payer's tags are blanked on that send too, so a stored override naming
+   one by hand cannot leak the hosted invoice. `user_flagship_place_transferred`
+   is the one new entry, to the person giving the place up; its `{receipt_note}`
+   links the invoice when there is one and says something true when there is not
+   — a code-covered ticket raises no invoice, and the first draft promised one
+   anyway and ended on a colon.
+4. **The included reception places move with the ticket.**
+
+Two consequences worth recording, because neither is obvious.
+
+**The new delegate must not be shown the payer's facts.** §6 puts everything on
+the My bookings page, gated on `post_author`, and that page renders the payment
+method and the Stripe invoice link. Moving `post_author` would put the payer's
+hosted invoice — their name, billing address and card last four — one click from
+somebody else's account. `law_booking_payment_facts_visible()` answers on the
+payer rather than the holder, and both delegate-facing partials blank those
+values through it. The committee's surfaces are unchanged.
+
+**The receptions move in place rather than being revoked and re-granted.** The
+revoke path emails the original that the flagship place "is no longer
+confirmed", which is untrue here; it drops any reception that has already
+happened; and it frees a place `law_reception_grant_included()` will then
+re-take with no capacity guard, so a queued person can be seated in between and
+the room over-books. Re-authoring changes no headcount and touches no waitlist.
+The one case that does release a place is a substitute who already bought their
+own ticket to that reception: theirs is kept, the included one is cancelled, and
+the committee is told, because nobody has refunded them for it.
+
+Deliberately out of scope: any Stripe call, substituting a pending or ended
+registration, a delegate-initiated substitution, a substitution fee, and any
+automatic review of `_law_ticket_type` (it stays with the seat; the dialog and
+the log both say to check it).
+
+---
+
 ## 13. Discount codes on the flagship
 
 Ruled out on 10 September 2026, reinstated on 15 September. The catalogue in

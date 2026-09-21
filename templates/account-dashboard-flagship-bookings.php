@@ -44,6 +44,7 @@ $law_fb_url    = get_permalink();
 			'flagship-resent'      => array( 'is-success', __( 'The delegate has been emailed again.', 'law' ) ),
 			'flagship-added'       => array( 'is-success', __( 'The attendee has a confirmed place with no charge.', 'law' ) ),
 			'flagship-ticket-type' => array( 'is-success', __( 'The ticket type has been saved.', 'law' ) ),
+			'flagship-substituted' => array( 'is-success', __( 'The place has been transferred. Both delegates have been emailed, and the payment stays where it was.', 'law' ) ),
 			'flagship-failed'      => array( 'is-error', __( 'That could not be done. Please check the details and try again.', 'law' ) ),
 			'flagship-denied'      => array( 'is-error', __( 'Sorry, reviewing registrations is for the committee.', 'law' ) ),
 			'rate-limited'         => array( 'is-error', __( 'Too many actions in a short time; please wait a moment and try again.', 'law' ) ),
@@ -191,6 +192,25 @@ $law_fb_url    = get_permalink();
 		// would point at a dialog that no longer exists.
 		?>
 		<?php get_template_part( 'parts/events/flagship-ticket-type' ); ?>
+
+		<?php
+		// The Substitute dialog, once for the whole table and OUTSIDE
+		// #law-cal-events for the same reason as the two above. It carries
+		// fifteen fields, so one copy per row is not an option either.
+		?>
+		<?php get_template_part( 'parts/events/flagship-substitute', null, array( 'booking_id' => 0 ) ); ?>
+
+		<?php
+		// Without JavaScript there is no dialog to open, so each row's
+		// <noscript> links to ?law_substitute={id} and the same form is
+		// rendered here instead, pre-filled with the place it is about. Above
+		// the table, because nothing may sit under a list that can run to
+		// hundreds of rows.
+		$law_fb_substitute = law_flagship_substitute_requested_id();
+		?>
+		<?php if ( $law_fb_substitute ) : ?>
+			<?php get_template_part( 'parts/events/flagship-substitute', null, array( 'booking_id' => $law_fb_substitute ) ); ?>
+		<?php endif; ?>
 
 		<div class="law-cal-events" id="law-cal-events" aria-live="polite" data-law-skeleton="table">
 			<?php get_template_part( 'parts/events/flagship-bookings-list' ); ?>

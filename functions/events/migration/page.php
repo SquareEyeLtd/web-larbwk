@@ -199,6 +199,8 @@ function law_migration_admin_page() {
 
 		<?php law_events_invoice_id_panel(); ?>
 
+		<?php law_events_reconcile_panel(); ?>
+
 		<?php law_events_nbsp_panel(); ?>
 
 		<?php law_events_signoff_panel(); ?>
