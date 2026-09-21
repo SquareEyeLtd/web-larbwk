@@ -156,6 +156,24 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 						<?php law_event_external_badge( $law_row->ID ); ?>
 						<?php law_event_disabled_badge( $law_row->ID ); ?><br>
 						<code><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_reference' ) ); ?></code>
+						<?php
+						// The committee member the event is assigned to, under the
+						// reference (Denis, 21 September 2026). Nothing is printed when
+						// nothing is assigned: most rows carry no assignee, and an
+						// "Assignee: none" on each of them would be a column of noise in
+						// the one cell that already holds the title, the reference and
+						// the agenda summary.
+						//
+						// Read through get_user_by() rather than
+						// law_committee_assignees(), which is the filter's list: this is
+						// one cached user row per assigned event, and a row whose
+						// assignee has since been deleted prints nothing rather than a
+						// bare ID.
+						$law_row_assignee = get_user_by( 'id', (int) law_event_meta( $law_row->ID, '_law_assignee' ) );
+						?>
+						<?php if ( $law_row_assignee ) : ?>
+							<br><span class="law-dashboard__row-note"><?php printf( esc_html__( 'Assignee: %s', 'law' ), esc_html( $law_row_assignee->display_name ) ); ?></span>
+						<?php endif; ?>
 						<?php $law_row_agenda = law_event_agenda_summary( $law_row->ID ); ?>
 						<?php if ( '' !== $law_row_agenda ) : ?>
 							<br><span class="law-dashboard__row-note"><?php echo esc_html( $law_row_agenda ); ?></span>

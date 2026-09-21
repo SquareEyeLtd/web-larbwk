@@ -362,14 +362,34 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 						// list (21 September 2026).
 						?>
 						<?php if ( '' !== $law_fbl_row['substituted_from'] ) : ?>
-							<span class="law-booking-table__sub">
+							<span class="law-booking-table__sub"
+								<?php if ( '' !== $law_fbl_row['substituted_at'] ) : ?>
+									title="<?php echo esc_attr( sprintf( __( 'Transferred on %1$s. Previous delegate: %2$s', 'law' ), mysql2date( 'j M Y', $law_fbl_row['substituted_at'] ), $law_fbl_row['substituted_from_email'] ) ); ?>"
+								<?php endif; ?>>
 								<?php
+								// "Replaced X", not "substituted for X": the
+								// latter is read both ways in English, so a
+								// committee member who did not perform the
+								// action could not tell from it which name was
+								// the old holder.
+								//
+								// And "who holds the receipt" only where money
+								// actually changed hands. A complimentary or
+								// fully discounted place is transferable too,
+								// and the old line asserted "who paid" about
+								// somebody who had paid nothing.
 								echo esc_html(
-									sprintf(
-										/* translators: %s: the delegate who gave the place up. */
-										__( 'Substituted for %s, who paid', 'law' ),
-										$law_fbl_row['substituted_from']
-									)
+									$law_fbl_row['gross_pence'] > 0 && 'paid' === $law_fbl_row['payment']
+										? sprintf(
+											/* translators: %s: the delegate who gave the place up. */
+											__( 'Replaced %s, who holds the receipt', 'law' ),
+											$law_fbl_row['substituted_from']
+										)
+										: sprintf(
+											/* translators: %s: the delegate who gave the place up. */
+											__( 'Replaced %s', 'law' ),
+											$law_fbl_row['substituted_from']
+										)
 								);
 								?>
 							</span>

@@ -3257,8 +3257,8 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
 ### `committee.php`: the committee dashboard back end
 
 - `law_committee_events( $overrides = array() )`: the review queue query
-  (status filter + "run by" filter + keyword). The `$overrides` array is merged
-  over the query
+  (status filter + "run by" filter + assignee filter + keyword). The
+  `$overrides` array is merged over the query
   args; the dashboard export passes `posts_per_page => -1` through it to
   escape the 300-row screen cap without duplicating the filter logic.
 - `law_committee_keyword_event_ids()`: **what the keyword box actually
@@ -3317,6 +3317,41 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   name that is nowhere on screen reads as a broken filter in exactly the way
   the missing firm did. Host email and the LAW reference remain deliberately
   **not** searched.
+- **The Assignee filter and the assignee line on the row** (Denis,
+  21 September 2026). `_law_assignee` had been committee-only data until then:
+  it was set on the detail view's Committee controls panel and in the wp-admin
+  event screen, it named the recipient of the assignment notification
+  (`law_event_maybe_notify_assignee()`) and it filled a column in the export,
+  but the dashboard the committee actually works from printed it nowhere and
+  could not filter on it. The Event cell now carries an `Assignee: <name>` line
+  in the same `.law-dashboard__row-note` span as the reference, the agenda
+  summary and the Host column's firm, so it needed no CSS, and **nothing is
+  printed when nothing is assigned** — most rows carry no assignee, and an
+  "Assignee: none" on each of them would be a column of noise in the one cell
+  that already holds three other things.
+  The filter is the **last select on the bar**, after "Run by", and its options
+  come from `law_committee_assignees()`: the distinct `_law_assignee` values in
+  use on the event CPT, resolved to display names and sorted with
+  `natcasesort()`. Deliberately not `law_events_committee_users()`, which is
+  what the assignee *picker* offers: that helper lists the `events_committee`
+  role only, while `law_events_sanitize_assignee()` accepts anyone with
+  `edit_others_law_events`, so an event assigned to an administrator or an
+  editor would be unreachable from a select built off the role. Building the
+  list from the meta in use fixes both halves — every name offered can return a
+  row, and every name on a row can be filtered for. The select is **not
+  rendered at all** when nothing is assigned anywhere, rather than an
+  "All assignees" control with no assignees under it. The `?law_assignee=` value
+  is checked against that same list before it becomes a `meta_query` clause, so
+  a hand-typed ID cannot filter on a value no event carries. The literal `'0'`
+  that `law_event_update_meta()` writes for "(none)" (it deletes only on `''`,
+  and the `int` sanitiser returns `0`) is filtered out of the options in PHP
+  rather than left to a numeric comparison on a varchar column.
+  It needed no JavaScript: `assets/js/calendar-filters.js` binds every `select`
+  in the form and builds both the replaced URL and the `&law_partial=1` fetch
+  from the named inputs, so the filter works over AJAX, as a no-JS GET, in the
+  timeline view (`law_slotchart_items()` goes through the same query) and in the
+  exports, whose hrefs gained `law_assignee` alongside `law_kw`, `law_status`
+  and `law_run_by`.
 - The list's **Host column carries the firm under the person's name**
   (`parts/events/dashboard-list.php`), in the same `.law-dashboard__row-note`
   span the Event and Slot cells use, so it needed no CSS. Without it a
@@ -9319,7 +9354,68 @@ what finds the Stripe customer months later without reading the log. They hold
 the most recent hop only; the chain lives in the activity log under
 `flagship_substituted`.
 
-**Tests**: `tests/FlagshipSubstituteTest.php`, 38 cases. The ones that earn
+**What three specialist reviews found, and what changed** (21 September 2026,
+an implementation, a UX and a security pass run in parallel). Every finding
+below was reproduced before it was fixed.
+
+- **A second transfer named the wrong payer.** The five `_law_substituted_*`
+  keys were rewritten on every substitution, so a ticket handed on twice
+  recorded the FIRST substitute — who paid nothing — as the payer. That
+  inverted `law_booking_payment_facts_visible()` outright: the person who
+  bought the place lost sight of their own receipt, the person who had paid
+  nothing gained it, the wp-admin facts box named the wrong person in writing,
+  and the middle holder's transfer email handed them a link to the payer's
+  hosted Stripe invoice. The three keys that describe the MONEY are now written
+  once and never again; `_law_substituted_at` and `_law_substituted_by`, which
+  describe the most recent transfer, still move.
+- **They are written BEFORE `post_author` moves.** Writing them afterwards left
+  a window in which a fatal inside `wp_update_post()`'s hooks stranded the
+  booking owned by the new delegate with no marker, and every payment fact on
+  their own page for good. Written first, the same crash hides a receipt from
+  the person who paid until somebody notices. Wrong in the harmless direction.
+- **A substitute merely QUEUED for an included reception lost the free place and
+  was charged for it.** `law_reception_holds_place()` counts a waitlist entry
+  and an unfinished checkout as holding a place, so the included place was
+  cancelled; that fed `law_waitlist_process()`, which promoted the substitute
+  off the very queue they were on and charged them for a reception their
+  transferred ticket already included. `law_flagship_holds_reception_place()`
+  is the narrower test: a place someone really has is a confirmed one.
+- **The "is this a transfer" branch failed open.** It tested whether the
+  previous delegate's name was non-empty, so a booking whose snapshot name and
+  account address were both blank sent the new delegate the APPROVAL paragraph
+  — invoice URL, card, price and all. It now takes an explicit flag, and the
+  nameless case has wording of its own.
+- **The charge guard moved to the choke point.** It was three status checks in
+  three files; it is now a refusal inside `law_stripe_charge_booking()` itself,
+  so every future caller is safe by construction. The setup-session guard lost
+  its `'paid'` conjunct, which bought nothing.
+- **A refunded place is refused outright.** It stays on `publish`, so it
+  reached the transfer looking transferable, and every sentence the emails would
+  have said about the receipt was false.
+- **The payer's discount code was still on screen.** Both delegate-facing
+  partials hid the invoice and the card and neither hid the code, which is the
+  payer's negotiated commercial term and reusable by whoever reads it — while
+  the substitution email already withheld it. `law_booking_payment_facts_mask()`
+  is now the one list both partials read, so they cannot drift again.
+- **The duplicate guard is repeated inside the lock**, and the lock is now
+  refused rather than skipped when `GET_LOCK` is not granted, since the re-read
+  is the only thing it protects.
+- **The log is written before the best-effort work**, not after it: a fatal
+  inside the reception move used to leave the seat transferred, the meta
+  written, nobody emailed and nothing at all in the one surface the committee
+  reads.
+- **Copy.** The receptions sentence was written in the delegate's second person
+  and pasted straight into the committee's confirmation and the log, telling a
+  committee member a reception was in *their* bookings; it now takes a
+  third-person form. "Substituted for X, who paid" asserted payment about
+  complimentary and code-covered places and could be read in either direction,
+  and is now "Replaced X" with the receipt clause only where money moved. "Both
+  of them have been emailed" is no longer asserted when the previous delegate
+  has no usable address. `{payment_note}` moved to the top of the confirmation,
+  because a lawyer who never registered was reading four paragraphs of date and
+  venue before anything explained why the email existed. Two em-dashes went.
+
+**Tests**: `tests/FlagshipSubstituteTest.php`, 47 cases. The ones that earn
 their keep are the whole `_law_stripe_*` set asserted unchanged in one go
 alongside an empty `$GLOBALS['law_test_stripe_calls']`; the waitlist case, where
 a queued person must NOT be promoted by a reception place changing hands; the

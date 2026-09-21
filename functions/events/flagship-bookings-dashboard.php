@@ -176,6 +176,9 @@ function law_flagship_bookings_rows( array $filters ) {
 			'substitutable' => 'publish' === $post->post_status,
 			'substituted_from' => (string) law_event_meta( $booking_id, '_law_substituted_from_name' ),
 			'substituted_at'   => (string) law_event_meta( $booking_id, '_law_substituted_at' ),
+			// The payer's address, for the title on the sub-line: tracing a
+			// refund otherwise means opening the activity log.
+			'substituted_from_email' => (string) law_event_meta( $booking_id, '_law_substituted_from_email' ),
 		);
 	}
 

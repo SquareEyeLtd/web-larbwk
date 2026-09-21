@@ -1116,6 +1116,32 @@ $law_email_mode = $law_detail
 							</select>
 						</p>
 
+						<?php
+						// Assignee, the last select on the bar (Denis, 21 September
+						// 2026). Its options are the committee members actually named
+						// on an event (law_committee_assignees()), not the whole
+						// assignee picker: a filter is only worth offering for a name
+						// that can return a row, and an event assigned to an
+						// administrator would be missing from a list built off the
+						// events_committee role alone.
+						//
+						// Nothing is offered when nothing is assigned anywhere, rather
+						// than an "All assignees" select with no assignees under it.
+						$law_assignees       = function_exists( 'law_committee_assignees' ) ? law_committee_assignees() : array();
+						$law_assignee_filter = absint( $_GET['law_assignee'] ?? 0 );
+						?>
+						<?php if ( $law_assignees ) : ?>
+						<p class="law-cal-filter-form__field">
+							<label class="show-for-sr" for="law-dash-assignee-filter"><?php esc_html_e( 'Assignee', 'law' ); ?></label>
+							<select id="law-dash-assignee-filter" name="law_assignee">
+								<option value=""><?php esc_html_e( 'All assignees', 'law' ); ?></option>
+								<?php foreach ( $law_assignees as $law_assignee_id => $law_assignee_name ) : ?>
+									<option value="<?php echo esc_attr( (string) $law_assignee_id ); ?>" <?php selected( $law_assignee_filter, $law_assignee_id ); ?>><?php echo esc_html( $law_assignee_name ); ?></option>
+								<?php endforeach; ?>
+							</select>
+						</p>
+						<?php endif; ?>
+
 						<div class="law-cal-filter-form__actions">
 							<button type="submit" class="button law-cal-filter-form__apply"><?php esc_html_e( 'Apply', 'law' ); ?></button>
 							<a class="button second law-cal-filter-form__clear" href="<?php echo esc_url( $law_page_url ); ?>"><?php esc_html_e( 'Clear all', 'law' ); ?></a>
@@ -1130,7 +1156,7 @@ $law_email_mode = $law_detail
 			// them with the live values (assets/js/export-buttons.js). PDF is
 			// built client-side by pdfmake, so it only renders with JS.
 			$law_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_committee_export' ), 'law_committee_export' );
-			$law_export_args = array_filter( array( 'law_kw' => $law_kw, 'law_status' => $law_current, 'law_run_by' => $law_run_by ) );
+			$law_export_args = array_filter( array( 'law_kw' => $law_kw, 'law_status' => $law_current, 'law_run_by' => $law_run_by, 'law_assignee' => $law_assignee_filter ) );
 			?>
 			<div class="law-cal-export" data-law-export data-export-url="<?php echo esc_url( $law_export_base ); ?>">
 				<span class="law-cal-export__label"><?php esc_html_e( 'Export:', 'law' ); ?></span>

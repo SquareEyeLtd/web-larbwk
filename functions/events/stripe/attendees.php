@@ -143,11 +143,10 @@ function law_stripe_create_setup_session( $booking_id, $reason = 'apply' ) {
 	// confirmed place and law_flagship_retry_charge() needs a failed payment),
 	// but that is an accident of two status checks rather than a stated rule,
 	// so this states it (21 September 2026).
-	$substituted = (int) law_event_meta( $booking_id, '_law_substituted_from' );
-	if ( $substituted && 'paid' === (string) law_event_meta( $booking_id, '_law_payment_status' ) ) {
+	if ( (int) law_event_meta( $booking_id, '_law_substituted_from' ) ) {
 		return new WP_Error(
 			'law_booking_substituted_paid',
-			'This place has already been paid for and has since been transferred to a different delegate, so no new payment details can be attached to it.'
+			'This place has been transferred to a different delegate, so no new payment details can be attached to it.'
 		);
 	}
 
@@ -778,6 +777,24 @@ function law_stripe_charge_booking( $booking_id ) {
 
 	if ( $price['free'] ) {
 		return new WP_Error( 'law_booking_free', 'There is nothing to charge for this booking.' );
+	}
+
+	// A booking whose delegate was SUBSTITUTED must never be charged, and this
+	// is the choke point rather than the three callers, which is where the
+	// guard first went. Two things go wrong at once here: the customer lookup
+	// below overwrites _law_stripe_customer_id with the CURRENT author's
+	// customer, destroying the record of who actually paid, and
+	// _law_stripe_payment_method_id is still the ORIGINAL delegate's card — so
+	// a charge would take money from somebody who is no longer attending, for a
+	// ticket already paid for, and book it against a third party's Stripe
+	// customer. Every present caller is closed by a status check, but those are
+	// three checks in three files and none of them says this; stating it once
+	// here makes every future caller safe by construction (21 September 2026).
+	if ( (int) law_event_meta( $booking_id, '_law_substituted_from' ) ) {
+		return new WP_Error(
+			'law_booking_substituted',
+			'This place has been transferred to a different delegate. The payment details on it belong to the person who bought it and must not be charged.'
+		);
 	}
 
 	// The same loud configuration guard the host path uses: a VAT-liable

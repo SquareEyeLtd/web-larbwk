@@ -530,8 +530,15 @@ function law_events_email_registry() {
 		 * The opening line lost "has been approved" in the same change: an
 		 * approval is one of the two ways to arrive here now, and the subject
 		 * already says the thing they need to read first. The approval itself
-		 * did not disappear — it is the first sentence of {payment_note} on
-		 * that path.
+		 * did not disappear; it is the first sentence of {payment_note} on that
+		 * path.
+		 *
+		 * {payment_note} sits FIRST, above the event details, because on the
+		 * transfer path it is the only thing explaining why this email exists.
+		 * A lawyer who never registered, opening "Your ticket is confirmed"
+		 * followed by four paragraphs of date, time and venue, reads it as a
+		 * mistake or a phishing attempt. It serves the approval equally well
+		 * there, since its first line is the approval.
 		 *
 		 * {account_note} arrived with the same change and is EMPTY on an
 		 * approval, where the delegate self-evidently has an account already:
@@ -545,7 +552,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your ticket for {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{payment_note}\n\n{account_note}\n\nA calendar invitation is attached. Your booking is always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\n{payment_note}\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}).\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nA calendar invitation is attached. Your booking is always available under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile so we can look after you on the day: {profile_link}",
 		),
 		/* Approved with a code covering the whole price. Deliberately NOT
 		 * user_flagship_complimentary: that one says "with our compliments",
@@ -627,7 +634,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your place at {event_title} has been transferred',
-			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} (ticket #{booking_number}) has been transferred to {substitute_name}, and it no longer appears in your bookings.\n\n{receipt_note}\n\nIf you added the conference to your calendar, please delete that entry — we cannot remove it for you.\n\nIf this is not what you expected, please reply to this email and we will look into it.",
+			'body'    => "Dear {attendee_name},\n\nYour place at {event_title} (ticket #{booking_number}) has been transferred to {substitute_name}, and it no longer appears in your bookings.\n\n{receipt_note}\n\nIf you added the conference to your calendar, please delete that entry, as we cannot remove it for you.\n\nIf this is not what you expected, please reply to this email and we will look into it.",
 		),
 		'committee_flagship_payment_failed' => array(
 			'name'    => 'Email to committee > flagship payment still unpaid',
