@@ -40,11 +40,22 @@ $law_pf_deadline = law_booking_payment_deadline_ts( $law_pf_id );
 // money deliberately stayed where it was, so the invoice, its PDF and the
 // payment method all describe that other person. Blanked here rather than
 // guarded at each row, with one line below saying why (21 September 2026).
-$law_pf_moved    = ! law_booking_payment_facts_visible( $law_pf_id );
-if ( $law_pf_moved ) {
-	$law_pf_method  = '';
+// One mask, shared with parts/events/flagship-manage-application.php, because
+// the two copies had already drifted: both hid the invoice and the card and
+// neither hid the discount CODE, which is the payer's negotiated commercial
+// term and reusable by whoever reads it.
+$law_pf_mask     = law_booking_payment_facts_mask( $law_pf_id );
+$law_pf_moved    = ! $law_pf_mask['invoice'];
+if ( ! $law_pf_mask['card'] ) {
+	$law_pf_method = '';
+}
+if ( ! $law_pf_mask['invoice'] ) {
 	$law_pf_invoice = '';
 	$law_pf_pdf     = '';
+}
+if ( ! $law_pf_mask['code'] ) {
+	$law_pf_code = '';
+	$law_pf_off  = 0;
 }
 ?>
 
@@ -151,7 +162,10 @@ if ( $law_pf_moved ) {
 					<?php echo esc_html( law_events_price_label( $law_pf_price['net'] ) ); ?>
 					<span class="law-booking-table__sub">
 						<?php
-						if ( 'paid' === $law_pf_pay ) {
+						if ( 'paid' === $law_pf_pay && $law_pf_moved ) {
+							// "Paid." with no subject reads as "you paid this".
+							esc_html_e( 'Already paid, by the person who bought this place.', 'law' );
+						} elseif ( 'paid' === $law_pf_pay ) {
 							esc_html_e( 'Paid.', 'law' );
 						} elseif ( 'processing' === $law_pf_pay ) {
 							esc_html_e( 'Payment in progress.', 'law' );
@@ -190,7 +204,21 @@ if ( $law_pf_moved ) {
 			<tr>
 				<th scope="row"><?php esc_html_e( 'Payment', 'law' ); ?></th>
 				<td>
-					<?php esc_html_e( 'This place was transferred to you. The receipt is held by the person who paid for it.', 'law' ); ?>
+					<?php
+					// Named where we have a name. "The person who paid for it"
+					// answered none of the question a delegate actually has,
+					// which is who to ask for a receipt for their expenses.
+					$law_pf_payer = (string) law_event_meta( $law_pf_id, '_law_substituted_from_name' );
+					echo esc_html(
+						'' !== $law_pf_payer
+							? sprintf(
+								/* translators: %s: the delegate who bought the place. */
+								__( 'This place was transferred to you from %s, who bought it. They hold the VAT receipt, so please ask them if you need a copy.', 'law' ),
+								$law_pf_payer
+							)
+							: __( 'This place was transferred to you. The VAT receipt is held by the person who bought it.', 'law' )
+					);
+					?>
 				</td>
 			</tr>
 		<?php endif; ?>

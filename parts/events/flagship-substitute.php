@@ -157,6 +157,13 @@ $law_fsub_warning = static function () {
 	</p>
 	<p class="law-modal__copy">
 		<?php esc_html_e( 'Nothing is refunded and nothing is charged. The payment, the Stripe invoice and the VAT receipt stay with whoever paid, and their email carries the link to it.', 'law' ); ?>
+		<?php
+		// The two things the first draft did not say, and the two that matter
+		// most: a mistyped address creates an account for a stranger, hands
+		// them a confirmed ticket with a calendar invitation, and tells the
+		// current delegate their place has gone.
+		?>
+		<strong><?php esc_html_e( 'Both emails are sent as soon as you press this, and it cannot be undone, so please check the address.', 'law' ); ?></strong>
 	</p>
 	<p class="law-modal__copy">
 		<?php esc_html_e( 'Any drinks reception places included with the ticket move across with it. The ticket type is not reviewed, so please check it still applies afterwards.', 'law' ); ?>
@@ -178,7 +185,7 @@ $law_fsub_hidden = static function ( $law_fsub_booking ) {
 <?php if ( $law_fsub_inline ) : ?>
 
 	<section class="law-flagship-bookings__substitute law-flagship-bookings__substitute--inline">
-		<h2><?php esc_html_e( 'Hand this place to somebody else', 'law' ); ?></h2>
+		<h2><?php esc_html_e( 'Substitute the delegate on this ticket', 'law' ); ?></h2>
 		<p class="law-booking-substate">
 			<?php
 			echo esc_html(
@@ -197,8 +204,8 @@ $law_fsub_hidden = static function ( $law_fsub_booking ) {
 			<?php $law_fsub_hidden( $law_fsub_for ); ?>
 			<?php $law_fsub_fields( 'law-fsub-nojs', true, (bool) law_event_meta( $law_fsub_for, '_law_is_press' ) ); ?>
 			<p class="law-form-buttons">
-				<button type="submit" class="button orange"><?php esc_html_e( 'Transfer the place', 'law' ); ?></button>
-				<a class="button second" href="<?php echo esc_url( law_flagship_bookings_url() ); ?>"><?php esc_html_e( 'Leave it as it is', 'law' ); ?></a>
+				<button type="submit" class="button orange"><?php esc_html_e( 'Substitute the delegate', 'law' ); ?></button>
+				<a class="button second" href="<?php echo esc_url( law_flagship_bookings_url() ); ?>"><?php esc_html_e( 'Keep the current delegate', 'law' ); ?></a>
 			</p>
 		</form>
 	</section>
@@ -209,7 +216,7 @@ $law_fsub_hidden = static function ( $law_fsub_booking ) {
 		<div class="law-modal__overlay" data-law-modal-close></div>
 		<div class="law-modal__dialog law-modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="law-flagship-substitute-title" tabindex="-1">
 			<button type="button" class="law-modal__close" data-law-modal-close aria-label="<?php esc_attr_e( 'Close', 'law' ); ?>">&times;</button>
-			<h2 class="law-modal__title" id="law-flagship-substitute-title"><?php esc_html_e( 'Hand this place to somebody else', 'law' ); ?></h2>
+			<h2 class="law-modal__title" id="law-flagship-substitute-title"><?php esc_html_e( 'Substitute the delegate on this ticket', 'law' ); ?></h2>
 
 			<form class="law-event-form law-event-form--light law-booking-form" method="post"
 				action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"
@@ -224,9 +231,9 @@ $law_fsub_hidden = static function ( $law_fsub_booking ) {
 				<?php $law_fsub_fields( 'law-fsub' ); ?>
 
 				<p class="law-modal__actions">
-					<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Keep it as it is', 'law' ); ?></button>
-					<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Transferring…', 'law' ); ?>">
-						<?php esc_html_e( 'Transfer the place', 'law' ); ?>
+					<button type="button" class="button second" data-law-modal-close><?php esc_html_e( 'Keep the current delegate', 'law' ); ?></button>
+					<button type="submit" class="button orange" data-law-modal-busy="<?php esc_attr_e( 'Substituting…', 'law' ); ?>">
+						<?php esc_html_e( 'Substitute the delegate', 'law' ); ?>
 					</button>
 				</p>
 			</form>
