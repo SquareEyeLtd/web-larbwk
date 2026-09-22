@@ -49,6 +49,11 @@ $law_em_to       = $law_em_fixed_to
 	: '';
 
 $law_em_customised = law_events_email_is_customised( $law_em_slug );
+
+// Whether "Send a test to committee" is offered. The registry AUDIENCE, not
+// the resolved address list: an empty list is a misconfiguration to be told
+// about (the handler says so), not a reason to hide the control.
+$law_em_committee_audience = 'committee' === $law_em_email['to'];
 $law_em_tags       = array_keys( law_events_email_placeholders( 0 ) );
 ?>
 
@@ -179,21 +184,44 @@ get_template_part(
 					data-law-busy="<?php esc_attr_e( 'Sending…', 'law' ); ?>">
 					<?php esc_html_e( 'Send a test to me', 'law' ); ?>
 				</button>
-				<?php if ( $law_em_customised ) : ?>
+				<?php if ( $law_em_committee_audience ) : ?>
 					<?php
-					// Behind the shared confirm dialog (parts/layout/modal.php), like
-					// every other destructive action in the module. Without JS it is a
-					// plain submit carrying its own name and value, which is why those
-					// attributes are on the opener as well as on the dialog's button.
+					// Only on the notifications the committee itself receives
+					// (Denis, 22 September 2026): the wording of those is written
+					// for that inbox, and reading it there is the only way to see
+					// it as they will. On a host or attendee notification the
+					// committee list is not an audience the email ever reaches,
+					// so there is no such test to offer.
 					?>
-					<button type="submit" class="button second" name="law_email_reset" value="1"
-						data-law-modal-open="law-modal-email-reset"
-						data-law-busy="<?php esc_attr_e( 'Resetting…', 'law' ); ?>">
-						<?php esc_html_e( 'Reset to the standard wording', 'law' ); ?>
+					<button type="submit" class="button second" name="law_email_test_committee" value="1"
+						data-law-busy="<?php esc_attr_e( 'Sending…', 'law' ); ?>">
+						<?php esc_html_e( 'Send a test to committee', 'law' ); ?>
 					</button>
 				<?php endif; ?>
 				<a class="button second" href="<?php echo esc_url( law_emails_dashboard_url() ); ?>"><?php esc_html_e( 'Cancel', 'law' ); ?></a>
 			</p>
+
+			<?php if ( $law_em_customised ) : ?>
+				<?php
+				// Under the button row and as plain underlined text (Denis,
+				// 22 September 2026): resetting is the rarest thing anybody does
+				// here and the only one that throws work away, so it should not
+				// compete with Save for attention the way a fourth filled button
+				// did.
+				//
+				// Behind the shared confirm dialog (parts/layout/modal.php), like
+				// every other destructive action in the module. Without JS it is a
+				// plain submit carrying its own name and value, which is why those
+				// attributes are on the opener as well as on the dialog's button.
+				?>
+				<p class="law-form-buttons__aside">
+					<button type="submit" class="law-text-button" name="law_email_reset" value="1"
+						data-law-modal-open="law-modal-email-reset"
+						data-law-busy="<?php esc_attr_e( 'Resetting…', 'law' ); ?>">
+						<?php esc_html_e( 'Reset to the standard wording', 'law' ); ?>
+					</button>
+				</p>
+			<?php endif; ?>
 
 			<?php
 			// Outside the buttons paragraph, inside the form: the dialog is a <div>

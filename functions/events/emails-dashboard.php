@@ -251,13 +251,39 @@ function law_email_manage_handler() {
 	// Send test renders what is on screen and persists nothing, so the wording
 	// can be read in a real inbox before anybody commits to it. The draft rides
 	// a one-shot transient so the redirect does not throw it away.
-	if ( ! empty( $_POST['law_email_test'] ) ) {
+	//
+	// Two of them: to whoever is editing, and — on the notifications the
+	// committee itself receives — to the whole committee address list, which is
+	// the audience whose inbox the wording is actually being written for
+	// (Denis, 22 September 2026). Both share the rate budget: the committee one
+	// is the more expensive of the two, so it must not have a budget of its own
+	// to spend.
+	$test_to_committee = ! empty( $_POST['law_email_test_committee'] );
+
+	if ( ! empty( $_POST['law_email_test'] ) || $test_to_committee ) {
 		if ( ! law_events_rate_limit_ok( 'email_test', get_current_user_id(), 20, 600 ) ) {
 			law_events_respond( $is_ajax, false, array( 'message' => 'Too many test emails in a short time; please wait a moment and try again.', 'status' => 429 ), 'rate-limited' );
 		}
 
 		law_emails_dashboard_store_state( $slug, $input );
-		$test = law_events_email_send_test( $override );
+
+		// Refused rather than quietly sent to the editor alone: the button is
+		// only rendered on a committee notification, so arriving here with
+		// anything else is a posted value that does not match the screen.
+		if ( $test_to_committee && 'committee' !== $definition['to'] ) {
+			law_events_respond( $is_ajax, false, array( 'message' => 'This notification is not sent to the committee, so there is no committee test to send.', 'status' => 400 ), 'email-test-not-committee' );
+		}
+
+		// The address list is a site setting (Events → Settings), and an empty
+		// one means the real notification reaches nobody either. Say which it
+		// is, rather than reporting a send that went nowhere.
+		if ( $test_to_committee && ! law_events_committee_emails() ) {
+			law_events_respond( $is_ajax, false, array( 'message' => 'There are no committee addresses in the events settings, so there was nobody to send the test to. Note that the real notification is not reaching anyone either.', 'status' => 400 ), 'email-test-no-committee' );
+		}
+
+		$test = $test_to_committee
+			? law_events_email_send_test_committee( $override )
+			: law_events_email_send_test( $override );
 
 		if ( ! $test['sent'] ) {
 			law_events_respond( $is_ajax, false, array( 'message' => 'The test email could not be sent. Please try again.', 'status' => 500 ), 'email-test-failed' );
@@ -266,6 +292,9 @@ function law_email_manage_handler() {
 		// Test mode diverts every send, so "sent to you" would be a lie while
 		// it is on. Say where it actually went.
 		$diverted = law_events_test_mode_address();
+		$went_to  = $test_to_committee
+			? sprintf( 'the committee (%s)', implode( ', ', $test['emails'] ) )
+			: $test['email'];
 
 		law_events_respond(
 			$is_ajax,
@@ -273,8 +302,8 @@ function law_email_manage_handler() {
 			array(
 				'title'    => 'Test email sent',
 				'message'  => '' !== $diverted
-					? sprintf( 'Test mode is on, so the test went to %s rather than to you. Nothing was saved: use Save changes to keep this wording.', $diverted )
-					: sprintf( 'A test has been sent to %s. Nothing was saved: use Save changes to keep this wording.', $test['email'] ),
+					? sprintf( 'Test mode is on, so the test went to %1$s rather than to %2$s. Nothing was saved: use Save changes to keep this wording.', $diverted, $test_to_committee ? 'the committee' : 'you' )
+					: sprintf( 'A test has been sent to %s. Nothing was saved: use Save changes to keep this wording.', $went_to ),
 				'redirect' => law_emails_dashboard_url( $slug ),
 			),
 			'' !== $diverted ? 'email-tested-diverted' : 'email-tested'

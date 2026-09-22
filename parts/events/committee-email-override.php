@@ -153,21 +153,29 @@ get_template_part(
 				<button type="submit" class="button orange" data-law-busy="<?php esc_attr_e( 'Saving…', 'law' ); ?>">
 					<?php esc_html_e( 'Save changes', 'law' ); ?>
 				</button>
-				<?php if ( law_event_override_written( $law_eo_event ) ) : ?>
-					<?php
-					// Behind the shared confirm dialog, like every other
-					// destructive action in the module. Without JS it is a plain
-					// submit carrying its own name and value, which is why those
-					// attributes are on the opener as well as the dialog button.
-					?>
-					<button type="submit" class="button second" name="law_email_override_reset" value="1"
+				<a class="button second" href="<?php echo esc_url( law_committee_event_url( $law_eo_event ) ); ?>"><?php esc_html_e( 'Cancel', 'law' ); ?></a>
+			</p>
+
+			<?php if ( law_event_override_written( $law_eo_event ) ) : ?>
+				<?php
+				// Under the button row and as plain underlined text, the same
+				// treatment the site-wide Manage emails editor gives it (Denis,
+				// 22 September 2026): the rarest action on the screen and the
+				// only one that throws work away should not compete with Save.
+				//
+				// Behind the shared confirm dialog, like every other
+				// destructive action in the module. Without JS it is a plain
+				// submit carrying its own name and value, which is why those
+				// attributes are on the opener as well as the dialog button.
+				?>
+				<p class="law-form-buttons__aside">
+					<button type="submit" class="law-text-button" name="law_email_override_reset" value="1"
 						data-law-modal-open="law-modal-email-override-reset"
 						data-law-busy="<?php esc_attr_e( 'Resetting…', 'law' ); ?>">
 						<?php esc_html_e( 'Reset to the standard wording', 'law' ); ?>
 					</button>
-				<?php endif; ?>
-				<a class="button second" href="<?php echo esc_url( law_committee_event_url( $law_eo_event ) ); ?>"><?php esc_html_e( 'Cancel', 'law' ); ?></a>
-			</p>
+				</p>
+			<?php endif; ?>
 
 			<?php
 			// Outside the buttons paragraph, inside the form: the dialog is a
