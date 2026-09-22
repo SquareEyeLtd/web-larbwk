@@ -67,6 +67,8 @@ function law_setup_account_pages() {
 		// The committee's discount-code catalogue
 		// (functions/events/discounts-dashboard.php).
 		$setup['account/dashboard/discounts'] = 'templates/account-dashboard-discounts.php';
+		// Who may propose an event (functions/events/submitters-dashboard.php).
+		$setup['account/dashboard/submitters'] = 'templates/account-dashboard-submitters.php';
 		// The committee's front-end copy of the wp-admin Emails screen
 		// (functions/events/emails-dashboard.php).
 		$setup['account/dashboard/emails'] = 'templates/account-dashboard-emails.php';
@@ -157,6 +159,7 @@ function law_setup_account_pages() {
 	$report[] = 'ACCESS   /account/dashboard/receptions/ committee restriction: ' . law_setup_receptions_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/flagship-bookings/ committee restriction: ' . law_setup_flagship_bookings_access();
 	$report[] = 'ACCESS   /account/dashboard/discounts/ committee restriction: ' . law_setup_discounts_dashboard_access();
+	$report[] = 'ACCESS   /account/dashboard/submitters/ committee restriction: ' . law_setup_submitters_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/emails/ committee restriction: ' . law_setup_emails_dashboard_access();
 
 	// The flagship conference. A law_event post rather than a page, so a git
@@ -526,6 +529,11 @@ function law_setup_flagship_dashboard_access() {
 /** The discount-code catalogue's Members restriction. */
 function law_setup_discounts_dashboard_access() {
 	return law_setup_child_page_access( 'account/dashboard/discounts' );
+}
+
+/** The Event submitters screen's Members restriction. */
+function law_setup_submitters_dashboard_access() {
+	return law_setup_child_page_access( 'account/dashboard/submitters' );
 }
 
 /** Manage emails' Members restriction. */

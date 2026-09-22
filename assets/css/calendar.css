@@ -3195,3 +3195,163 @@
   font-family: inherit;
   line-height: 1.5;
 }
+
+/* Event submitters (templates/account-dashboard-submitters.php) _____________ */
+
+/* The Add opener sits above the table, on its own line, like the discount
+   catalogue's. It ships hidden and law-modal.js reveals it, so nothing here may
+   set a display that would override the hidden attribute. */
+.law-submitters__actions {
+  margin: 0 0 1rem;
+}
+
+.law-submitters__summary {
+  margin: 0 0 0.75rem;
+  color: #4a4a6a;
+  font-size: 0.95rem;
+}
+
+/* The no-JS disclosure. Only ever rendered inside <noscript>, so it is styled
+   to look like the dialog's contents rather than like a table control. */
+.law-submitters__fallback {
+  margin: 0 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid rgba(26, 26, 61, 0.18);
+}
+
+.law-submitters__fallback summary {
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The people picker ________________________________________________________ */
+
+/* The list is IN FLOW, not an absolutely-positioned dropdown, and that is a
+   correction rather than a preference. The dialog it sits in carries
+   `overflow-y: auto` (law-modal.css, so a short viewport scrolls inside the
+   dialog instead of pushing the buttons off screen), and an absolute list is
+   laid out against the field while being clipped by that ancestor: with six
+   matches, five of them were painted outside the dialog's box and simply did
+   not appear. In flow, the list makes the dialog taller, the dialog scrolls if
+   it has to, and nothing can be cut off at any viewport size.
+   The buttons below move down as matches arrive, which is the cost. */
+.law-submitter-search__results {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #c9c9d8;
+  box-shadow: 0 10px 24px rgba(26, 26, 61, 0.18);
+  /* About three and a half rows, so a long list scrolls inside itself rather
+     than pushing the dialog's own buttons out of reach. Deliberately not a
+     round number of rows: a part-row at the bottom edge is what says "there is
+     more here" without a second piece of furniture to say it. */
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.law-submitter-search__option {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 0.75rem;
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid #edeef3;
+  color: #1a1a3d;
+}
+
+.law-submitter-search__option:last-child {
+  border-bottom: 0;
+}
+
+/* One highlight state for hover and keyboard both: the script sets .is-active
+   on mouseenter as well as on arrow keys, so the two can never disagree about
+   which row Enter would pick. */
+.law-submitter-search__option.is-active {
+  background: #f1f1f7;
+}
+
+.law-submitter-search__name {
+  grid-column: 1;
+  font-weight: 600;
+}
+
+.law-submitter-search__meta {
+  grid-column: 1;
+  font-size: 0.875rem;
+  color: #4a4a6a;
+  overflow-wrap: anywhere;
+}
+
+/* Somebody who cannot be added is still listed, with the reason where the
+   choice would be. A dashed outline rather than a fade: the row is a real
+   answer to the search, not a lesser version of one. */
+.law-submitter-search__option.is-unavailable {
+  cursor: default;
+  background: #fafafc;
+}
+
+.law-submitter-search__reason {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-size: 0.8125rem;
+  color: #4a4a6a;
+  white-space: nowrap;
+  padding: 0.15rem 0.5rem;
+  border: 1px dashed #b6b6c8;
+}
+
+.law-submitter-search__empty {
+  padding: 0.75rem;
+  color: #4a4a6a;
+  font-size: 0.9rem;
+}
+
+/* The in-flight state. Two grey bars in the shape of a result row, so the list
+   opens the instant a search starts and the control is never silent while the
+   network is working. */
+.law-submitter-search__loading {
+  padding: 0.6rem 0.75rem;
+}
+
+.law-submitter-search__loading span {
+  display: block;
+  height: 0.7rem;
+  background: #edeef3;
+  animation: law-submitter-pulse 1.1s ease-in-out infinite;
+}
+
+.law-submitter-search__loading span:first-child {
+  width: 45%;
+  margin-bottom: 0.4rem;
+}
+
+.law-submitter-search__loading span:last-child {
+  width: 70%;
+  height: 0.6rem;
+}
+
+@keyframes law-submitter-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .law-submitter-search__loading span {
+    animation: none;
+  }
+}
+
+/* Who is about to be added, above the button that does it. */
+.law-submitter-search__chosen {
+  margin: 0.25rem 0 1rem;
+  padding: 0.6rem 0.75rem;
+  background: #f1f1f7;
+  color: #1a1a3d;
+}
+
+.law-submitter-search__clear {
+  margin-left: 0.5rem;
+  font-size: 0.875rem;
+}
