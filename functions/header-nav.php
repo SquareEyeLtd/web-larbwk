@@ -65,6 +65,7 @@ function law_account_paths() {
 		'receptions'  => 'account/dashboard/receptions',
 		'flagship_bookings' => 'account/dashboard/flagship-bookings',
 		'discounts'   => 'account/dashboard/discounts',
+		'submitters'  => 'account/dashboard/submitters',
 		'emails'      => 'account/dashboard/emails',
 		'events'      => 'account/events',
 		'my_bookings' => 'account/bookings',
@@ -433,6 +434,18 @@ function law_header_nav() {
 			'group'       => 'committee',
 			'icon'        => 'type',
 			'description' => __( 'Prepare and manage discount codes', 'law' ),
+		);
+		// Who may propose an event at all (functions/events/submitters-dashboard.php).
+		// Beside Discount codes rather than up with the review queue: both are
+		// settings the committee prepares, not things that happen during the
+		// week, and this one exists so handing out the `event_submitter` role
+		// never means opening wp-admin.
+		$items[] = array(
+			'key'         => 'submitters',
+			'label'       => __( 'Event submitters', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'user-check',
+			'description' => __( 'Who may propose a new event', 'law' ),
 		);
 		// Last in the committee group, by decision: every item above is a
 		// thing that happens during the week, and this one is the wording the

@@ -9889,5 +9889,113 @@ Touched: `functions/events/capabilities.php`,
 
 ---
 
+## Handing out the submitter role (22 September 2026)
+
+**`/account/dashboard/submitters/` is where the committee makes somebody an
+event submitter, and takes it back.** The role landed earlier the same day with
+no home but the wp-admin Users screen, and the committee is deliberately kept
+out of wp-admin — the same reason the review queue, Bookings, Manage speakers,
+Manage flagship and Discount codes are all front-end screens. This is the sixth,
+and it is built exactly like the fifth: `functions/events/submitters-dashboard.php`
+owns the data, the two handlers, the search endpoint and the asset gating, and
+`functions/events/capabilities.php` (which defines the role) knows nothing about
+the screen.
+
+It is called **Event submitters**, and it sits beside Discount codes in the
+committee group rather than up with the review queue: both are settings the
+committee prepares, not things that happen during the week. Manage emails stays
+last.
+
+**What it does, and pointedly nothing else.** Grant `event_submitter` to an
+account that exists, and take it away. It never creates accounts, never touches
+another role and never edits anybody's details. `add_role()` and
+`remove_role()`, never `set_role()`, so a subscriber stays a subscriber
+throughout — which matters more than it looks: the Members rows on /account/
+name subscriber, so a `set_role()` would have cost somebody their own account
+pages as a side effect of a permission change. `law_submitter_revoke()` guards
+the other end of the same cliff: an account whose only role is `event_submitter`
+(set that way by hand) is given subscriber back before the role is removed,
+because this screen must never be able to leave somebody with no role at all.
+
+**The list is a ROLE query, not a capability one.** Committee members, editors
+and administrators can submit through their own roles and are deliberately
+absent: they are not what this screen hands out, and a Remove button beside them
+would do nothing to their ability to submit. The same judgement runs through
+`law_submitters_candidate_state()`, which is why searching for a committee
+member finds them but marks them "Can already submit".
+
+**The picker.** One text input, upgraded by `assets/js/submitter-search.js` into
+an ARIA combobox: two characters or more, debounced 220 ms, matches over AJAX
+from `wp_ajax_law_submitters_search`. Down/Up move, Enter picks, Escape closes
+the list and then clears the choice; focus never leaves the input, and each
+option is announced through `aria-activedescendant`. Matches are marked with
+`<mark class="law-hit">` on the term as ONE phrase, case-insensitively, which is
+the site-wide highlighting rule, and the rows are built as nodes rather than
+HTML because the text is somebody's name and email out of the database.
+
+Three decisions inside it worth keeping:
+
+1. **The search is two queries merged.** `WP_User_Query`'s `search` covers the
+   user table — email, login, nicename, display name — and the module stores the
+   halves of a person's name as `first_name` / `last_name` user meta. A
+   committee member typing a surname that never reached the display name would
+   otherwise find nobody, and "search by first or last name" is half the ask.
+2. **Somebody who cannot be added is still listed**, at full weight, with the
+   reason in a dashed chip where the action would be. A match that silently
+   vanished is indistinguishable from a person who has no account, and which of
+   the two it is happens to be the question being asked.
+3. **The results list is in flow, not an absolutely-positioned dropdown.** This
+   is a correction, found in the browser rather than reasoned out: the dialog
+   carries `overflow-y: auto` so a short viewport scrolls inside it, and an
+   absolute list is laid out against the field while being clipped by that
+   ancestor. With six matches, five were painted outside the dialog and simply
+   did not appear. In flow, the dialog grows, scrolls if it must, and nothing
+   can be cut off at any viewport size.
+
+**Without JavaScript it still works.** The opener ships hidden and law-modal.js
+reveals it, so a browser with no JS is never shown a button that opens nothing;
+it gets a `<noscript>` disclosure holding the same form with the same field
+names. The field is a real email input in both, and
+`law_submitters_resolve_posted()` prefers the hidden user ID the picker fills
+and falls back to resolving a typed address — so the no-JS path is a working
+route rather than a courtesy. The script clears that hidden ID on every
+keystroke, so a stale pick can never outlive what is on screen and be posted
+instead of it.
+
+**Who did it, and when.** WordPress records nothing about when a role was added,
+so granting writes `_law_submitter_granted` and `_law_submitter_granted_by` and
+the table's Added column reads them. A row with no grant recorded is not a gap
+in the data — the role can be added on the wp-admin Users screen — so it says
+"Added outside this screen" rather than printing a dash that could mean either.
+
+**Access.** Four surfaces, four checks: the page template asks
+`law_user_is_committee()` itself (the Members restriction filters
+`the_content()`, which the template never calls), and so do both handlers and
+the search endpoint, which answers with other people's email addresses. The page
+is provisioned by both routes and takes its Members rows from
+/account/dashboard/ like every other committee child page.
+
+**Verified in a browser** on 22 September 2026, signed in as a committee member:
+the nav item appears between Discount codes and Manage emails; searching by
+surname, forename and email all match and highlight; an existing submitter shows
+"Already a submitter" and cannot be picked; adding through the keyboard alone
+works and writes `subscriber, event_submitter`; removing restores `subscriber`
+and leaves the person's events untouched. Signed in as a submitter who is not
+committee, the page renders only "This dashboard is for the LAW committee." and
+the search endpoint answers 403.
+
+Touched: `functions/events/submitters-dashboard.php` (new),
+`templates/account-dashboard-submitters.php` (new),
+`parts/events/submitters-add.php` (new),
+`parts/events/submitters-list.php` (new),
+`assets/js/submitter-search.js` (new), `assets/css/calendar.css`,
+`functions/events/_load.php`, `functions/header-nav.php`,
+`functions/helpers.php`, `functions/enqueue.php`,
+`functions/events/submission-form.php`, `functions/setup-account-pages.php`,
+`functions/events/migration/runner.php`, and the tests
+`tests/EventSubmittersDashboardTest.php` (new), `tests/HeaderNavTest.php`.
+
+---
+
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.
