@@ -32,9 +32,13 @@ class HeaderNavTest extends LAW_Test_Case {
 	 *
 	 * It used to be a table of ROLES, and that is the change worth pinning.
 	 * Since 14 September 2026 there are no self-service roles: everybody is a
-	 * subscriber, everybody may submit, and "My events" is offered to whoever
-	 * HAS events. So the same role appears twice below with different
-	 * expectations, which would have been impossible before.
+	 * subscriber and "My events" is offered to whoever HAS events. So the same
+	 * role appears twice below with different expectations, which would have
+	 * been impossible before.
+	 *
+	 * No row carries 'submit' any more: submissions closed on 22 September
+	 * 2026 and the item is withheld from everybody, committee and
+	 * administrators included. Its own two tests are further down.
 	 *
 	 * Personal items come first and the committee tools after (Denis), because
 	 * the account hub renders this same list as boxes and somebody arriving
@@ -61,32 +65,32 @@ class HeaderNavTest extends LAW_Test_Case {
 			'subscriber, no events'   => array(
 				'subscriber',
 				false,
-				array( 'profile', 'my_bookings', 'submit', 'signout' ),
+				array( 'profile', 'my_bookings', 'signout' ),
 			),
 			'subscriber, owns one'    => array(
 				'subscriber',
 				true,
-				array( 'profile', 'my_bookings', 'events', 'submit', 'signout' ),
+				array( 'profile', 'my_bookings', 'events', 'signout' ),
 			),
 			'committee, no events'    => array(
 				'events_committee',
 				false,
-				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings' ), $committee, array( 'signout' ) ),
 			),
 			'committee, owns one'     => array(
 				'events_committee',
 				true,
-				array_merge( array( 'profile', 'my_bookings', 'events', 'submit' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings', 'events' ), $committee, array( 'signout' ) ),
 			),
 			'administrator'           => array(
 				'administrator',
 				false,
-				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings' ), $committee, array( 'signout' ) ),
 			),
 			'editor'                  => array(
 				'editor',
 				false,
-				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings' ), $committee, array( 'signout' ) ),
 			),
 		);
 	}
@@ -261,8 +265,9 @@ class HeaderNavTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * Somebody who has never submitted anything gets their bookings and the
-	 * invitation to submit, and NOT a link to an empty My events page.
+	 * Somebody who has never submitted anything gets their bookings, and NOT a
+	 * link to an empty My events page. Nor the invitation to submit: that came
+	 * off on 22 September 2026, when submissions closed.
 	 */
 	public function test_a_user_with_no_events_is_not_offered_my_events(): void {
 		wp_set_current_user( $this->make_user() );
@@ -271,8 +276,24 @@ class HeaderNavTest extends LAW_Test_Case {
 		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
 
 		$this->assertSame( 'My bookings', $items['my_bookings'] );
-		$this->assertSame( 'Submit an event', $items['submit'], 'Everyone signed in may submit, so the route in is always offered.' );
+		$this->assertArrayNotHasKey( 'submit', $items, 'Submissions are closed, so the bar may not offer the page.' );
 		$this->assertArrayNotHasKey( 'events', $items );
+	}
+
+	/**
+	 * The other half of the same seam: the item is withheld, not deleted, so
+	 * reopening submissions has to bring it back where it always sat, straight
+	 * after My events and before the committee group.
+	 */
+	public function test_reopening_submissions_restores_the_item(): void {
+		wp_set_current_user( $this->make_user() );
+		law_account_events_reset_cache();
+
+		add_filter( 'law_events_submissions_open', '__return_true' );
+		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
+		remove_filter( 'law_events_submissions_open', '__return_true' );
+
+		$this->assertSame( 'Submit an event', $items['submit'] );
 	}
 
 	/**

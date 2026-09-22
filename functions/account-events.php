@@ -386,8 +386,16 @@ function law_account_event_actions( $event, $entry ) {
 				'modal'    => array(
 					'id'      => 'law-modal-withdraw-' . $event_id,
 					'title'   => __( 'Withdraw this event', 'law' ),
+					// The second sentence depends on whether a new submission
+					// is even possible. With submissions closed (Denis,
+					// 22 September 2026) "you will need to submit a new event"
+					// would be telling the host to do something the site no
+					// longer lets them do, which is worse than saying nothing:
+					// they would withdraw expecting a way back and find none.
 					'copy'    => array(
-						__( 'The event is cancelled and comes out of the committee\'s review. It cannot be resubmitted: if you change your mind later, you will need to submit a new event.', 'law' ),
+						( function_exists( 'law_events_submissions_open' ) && law_events_submissions_open() )
+							? __( 'The event is cancelled and comes out of the committee\'s review. It cannot be resubmitted: if you change your mind later, you will need to submit a new event.', 'law' )
+							: __( 'The event is cancelled and comes out of the committee\'s review. It cannot be resubmitted, so please speak to the committee first if there is any chance you will want it back.', 'law' ),
 						__( 'The committee is notified of the withdrawal.', 'law' ),
 					),
 					'field'   => array(

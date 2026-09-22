@@ -371,8 +371,6 @@ add_action( 'admin_post_law_register', function () {
 } );
 
 function law_registration_handler() {
-	check_admin_referer( 'law_register' );
-
 	// The booking modal's register link arrives with a return destination,
 	// which survives the whole round trip, error paths included, so the new
 	// attendee lands back on the event they were booking. It used to carry a
@@ -380,14 +378,17 @@ function law_registration_handler() {
 	// lock any more, because everyone signed in may book and submit.
 	$redirect_to = wp_validate_redirect( wp_unslash( (string) ( $_POST['redirect_to'] ?? '' ) ), '' );
 
-	// Honeypot: pretend success.
-	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
-		wp_safe_redirect( '' !== $redirect_to ? $redirect_to : home_url( '/account/?action=registered' ) );
-		exit;
-	}
 	// Anonymous surface: per-IP limit. 20/hour absorbs a law-firm office or
 	// conference venue behind one NAT while still capping scripted abuse
-	// (which the nonce and honeypot already blunt).
+	// (which the honeypot and the nonce already blunt).
+	//
+	// It runs BEFORE the nonce now, because the nonce below no longer ends the
+	// request: a stale one stores a transient and bounces back to the form, so
+	// without a budget in front of it that path would be a way to fill the
+	// options table with junk. Nothing is lost by the swap — for a logged-out
+	// visitor the nonce is a value shared by every visitor (see the note on
+	// the forgot-password rate limit in EVENTS_FUNC.md), so it never gated
+	// this counter in any meaningful way.
 	if ( ! law_events_rate_limit_ok( 'register', 0, 20, HOUR_IN_SECONDS ) ) {
 		// 429 (not the wp_die default 500) with a title and a way back, so a
 		// shared-office/NAT user who hits the cap isn't left on a bare error.
@@ -396,6 +397,43 @@ function law_registration_handler() {
 			esc_html__( 'Please try again shortly', 'law' ),
 			array( 'response' => 429, 'back_link' => true )
 		);
+	}
+
+	// An expired or missing nonce is answered with the form and a readable
+	// sentence, NOT with core's wp_nonce_ays() screen (22 September 2026).
+	//
+	// The reason is a real report: /register/ was being held in the Kinsta edge
+	// cache for up to 24 hours (`s-maxage=86400`) while a logged-out visitor's
+	// nonce only lives between 12 and 24 hours, so anyone served a cached copy
+	// from the back half of its life posted a nonce that was already dead and
+	// got "The link you followed has expired." on a bare wp-admin/admin-post.php
+	// URL, with their typed details gone. law_no_store_nonce_pages() in
+	// functions/wordpress.php is the actual fix — the page is no longer
+	// cacheable at all — and this is the safety net for the case that fix
+	// cannot reach: a form left open in a tab overnight.
+	//
+	// The typed values come back with it (never the passwords, as everywhere
+	// else here), so "try again" means pressing the button, not retyping a
+	// page of profile fields.
+	if ( ! wp_verify_nonce( (string) ( $_POST['_wpnonce'] ?? '' ), 'law_register' ) ) {
+		$safe_input = law_events_form_reusable_input( wp_unslash( $_POST ) );
+		unset( $safe_input['password'], $safe_input['password_confirm'] );
+		law_registration_store_state( array(
+			'errors' => array( 'expired' => array( 'Your details were not submitted: this page had been open long enough for its security check to expire. Everything you typed is still here, so please press "Create account" again.' ) ),
+			'input'  => $safe_input,
+		) );
+		$back = add_query_arg( 'law_form_error', 1, home_url( '/register/' ) );
+		if ( '' !== $redirect_to ) {
+			$back = add_query_arg( 'redirect_to', rawurlencode( $redirect_to ), $back );
+		}
+		wp_safe_redirect( $back );
+		exit;
+	}
+
+	// Honeypot: pretend success.
+	if ( '' !== trim( (string) ( $_POST['law_website_url'] ?? '' ) ) ) {
+		wp_safe_redirect( '' !== $redirect_to ? $redirect_to : home_url( '/account/?action=registered' ) );
+		exit;
 	}
 
 	$input  = wp_unslash( $_POST );

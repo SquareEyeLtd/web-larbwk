@@ -502,7 +502,13 @@ class BookingEmailsTest extends LAW_Test_Case {
 	 */
 	public function test_welcome_email_resolves_with_no_event(): void {
 		$email = $this->unique_email( 'welcome' );
+		// Submissions closed on 22 September 2026 and the paragraph carrying
+		// {submit_link} went with them, so the send is made with the seam open:
+		// what is under test is the merge tag resolving with no event to
+		// resolve against, and that has to keep working for the day it reopens.
+		add_filter( 'law_events_submissions_open', '__return_true' );
 		law_events_send( 'user_welcome_registered', 0, array( 'to' => array( $email ), 'placeholders' => array( 'user_name' => 'New Person' ) ) );
+		remove_filter( 'law_events_submissions_open', '__return_true' );
 		$mail = $this->mail_to( $email );
 		$this->assertNotEmpty( $mail );
 		$this->assertStringContainsString( 'Welcome to', $mail[0]['subject'] );

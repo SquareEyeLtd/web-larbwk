@@ -25,6 +25,34 @@ function law_events_user_can_submit( $user_id = 0 ) {
 	return (bool) $user && $user->exists();
 }
 
+/**
+ * Whether the site still INVITES new event submissions.
+ *
+ * Deliberately separate from law_events_user_can_submit(), and the two must
+ * never be collapsed into one test. That function answers "may this account
+ * use the submission form", and it still answers yes, because page 294 (Submit
+ * an event) is also the EDIT form for an event somebody already owns
+ * (/account/events/submit/?law_event=<id>). Closing it there would take a
+ * host's ability to edit their own event away with it.
+ *
+ * This function answers the narrower question: do we OFFER the page to
+ * somebody who is not already using it. The answer is no (Denis, 22 September
+ * 2026): the client does not want new events submitted, and access to the page
+ * itself is being closed with the Members plugin rather than in the theme, so
+ * nothing here may refuse a request — it only stops advertising.
+ *
+ * Everything that advertises submission asks this: the account bar and hub
+ * item (header-nav.php), the My events toolbar button and empty state
+ * (templates/account-events.php), the withdraw dialog's "you would have to
+ * submit a new one" line (account-events.php) and the welcome email's closing
+ * paragraph (events/notifications.php). Reopening submissions is one return
+ * value; the filter is there so a single audience (the committee, say) can be
+ * let back in without touching any of the call sites.
+ */
+function law_events_submissions_open() {
+	return (bool) apply_filters( 'law_events_submissions_open', false );
+}
+
 /** The event being edited on the form page, 0 for a new submission. */
 function law_events_form_event_id() {
 	return absint( $_GET['law_event'] ?? 0 );
@@ -1352,13 +1380,20 @@ function law_events_form_error_modal( array $errors, $title = 'Your changes were
 		return;
 	}
 
-	// The whole-form refusal (someone else holds the edit lock): nothing is
-	// highlighted below, so the dialog is that one sentence and no jump lines.
-	if ( isset( $errors['locked'][0] ) ) {
+	// The whole-form refusals: nothing is highlighted below, so the dialog is
+	// that one sentence and no jump lines. Two of them —
+	// `locked` (someone else holds the edit lock) and `expired` (the nonce on
+	// a page left open too long, added 22 September 2026 for the registration
+	// form), and a jump line would be meaningless for either, because there is
+	// no field at fault to jump to.
+	foreach ( array( 'locked', 'expired' ) as $whole_form ) {
+		if ( ! isset( $errors[ $whole_form ][0] ) ) {
+			continue;
+		}
 		get_template_part( 'parts/layout/modal', null, array(
 			'id'       => 'law-modal-form-errors',
 			'title'    => $title,
-			'copy'     => (string) $errors['locked'][0],
+			'copy'     => (string) $errors[ $whole_form ][0],
 			'confirm'  => false,
 			'close'    => 'Close',
 			'autoopen' => true,
