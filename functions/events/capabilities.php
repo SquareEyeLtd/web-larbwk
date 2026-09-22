@@ -4,10 +4,45 @@
  * (retiring) GravityView caps, so the module grants it the law_event
  * capability set so the wp-admin screens work for the whole committee
  * (EVENTS_4.1_REBUILD.md §3.4).
+ *
+ * Since 22 September 2026 this file also owns `event_submitter`, the role that
+ * decides who may START a new event. See law_events_submitter_role() below for
+ * why that is a role of its own rather than a property of an account.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
+}
+
+/**
+ * The role that may submit a NEW event, and the capability behind it.
+ *
+ * The three self-service roles (event_host, sponsor, attendee) were retired on
+ * 14 September 2026 precisely because they gated nothing, and this one is not a
+ * return to that: it gates exactly one thing, creating an event, and nothing
+ * else in the module may ever read it. Editing, booking, the account hub and
+ * every dashboard go on asking ownership or committee capability as before.
+ *
+ * It exists because the client stopped wanting open submissions (Denis,
+ * 22 September 2026). The first plan was to close page 294 (Submit an event)
+ * with the Members plugin, which was dropped when it became clear the same page
+ * is where a host edits an event they already own: closing the page would have
+ * closed editing with it. A capability separates the two cleanly — the page
+ * stays open to everybody, and only the "start a new one" path asks for this.
+ *
+ * Committee members, editors and administrators hold the capability too. They
+ * already hold the whole law_event set from law_events_capability_names(), the
+ * committee dashboard has no create route of its own (it only edits events that
+ * exist), and page 294 is therefore their only front-end way to raise one. The
+ * request was to stop members of the public submitting, not to stop LAW.
+ */
+function law_events_submitter_role() {
+	return 'event_submitter';
+}
+
+/** The single capability `event_submitter` exists to carry. */
+function law_events_submit_capability() {
+	return 'law_submit_event';
 }
 
 function law_events_capability_names() {
@@ -28,9 +63,20 @@ function law_events_capability_names() {
 	);
 }
 
-/** Grant the module caps once per version. */
+/**
+ * Grant the module caps once per version.
+ *
+ * Roles live in the `wp_user_roles` option, which is database state a git
+ * deploy cannot carry, so this runs itself off a version stamp rather than off
+ * theme activation: pushing the code is enough on every environment, with no
+ * manual step and nothing to remember. Bump $version whenever the grant below
+ * changes, or existing sites keep the old one.
+ *
+ * Version 2 (22 September 2026) adds the `event_submitter` role and the
+ * law_submit_event capability.
+ */
 function law_events_grant_capabilities() {
-	$version = '1';
+	$version = '2';
 	if ( get_option( 'law_events_caps_version' ) === $version ) {
 		return;
 	}
@@ -43,12 +89,30 @@ function law_events_grant_capabilities() {
 		foreach ( law_events_capability_names() as $cap ) {
 			$role->add_cap( $cap );
 		}
+		$role->add_cap( law_events_submit_capability() );
 	}
 
 	// Committee needs the media library for speaker photos.
 	$committee = get_role( 'events_committee' );
 	if ( $committee ) {
 		$committee->add_cap( 'upload_files' );
+	}
+
+	// `event_submitter` carries `read` and one capability, nothing more. It is
+	// added ALONGSIDE whatever role a person already holds (subscriber, in
+	// practice), never instead of it, so granting it takes nothing away: the
+	// Users screen's own "Add role" control is how the committee will hand it
+	// out. add_role() returns null and changes nothing when the role already
+	// exists, so an existing site keeps any capability somebody has added to it
+	// by hand; the add_cap() after it is what guarantees the one that matters.
+	add_role(
+		law_events_submitter_role(),
+		__( 'Event submitter', 'law' ),
+		array( 'read' => true, law_events_submit_capability() => true )
+	);
+	$submitter = get_role( law_events_submitter_role() );
+	if ( $submitter ) {
+		$submitter->add_cap( law_events_submit_capability() );
 	}
 
 	update_option( 'law_events_caps_version', $version );

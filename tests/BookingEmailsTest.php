@@ -495,25 +495,30 @@ class BookingEmailsTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * The hosting-side companion to this test went with the second welcome
-	 * template on 16 September 2026, so the {submit_link} coverage it carried
-	 * moved here. That link resolving without an event is the interesting part:
-	 * this is one of the three sends that has no event to resolve against.
+	 * The welcome is one of the three sends with no event to resolve merge tags
+	 * against, so the account-level links are what this pins. It used to carry
+	 * {submit_link} too; that paragraph came off on 22 September 2026 with the
+	 * `event_submitter` role, and the tag's own resolution is asserted directly
+	 * below rather than through an email that no longer uses it.
 	 */
 	public function test_welcome_email_resolves_with_no_event(): void {
 		$email = $this->unique_email( 'welcome' );
-		// Submissions closed on 22 September 2026 and the paragraph carrying
-		// {submit_link} went with them, so the send is made with the seam open:
-		// what is under test is the merge tag resolving with no event to
-		// resolve against, and that has to keep working for the day it reopens.
-		add_filter( 'law_events_submissions_open', '__return_true' );
 		law_events_send( 'user_welcome_registered', 0, array( 'to' => array( $email ), 'placeholders' => array( 'user_name' => 'New Person' ) ) );
-		remove_filter( 'law_events_submissions_open', '__return_true' );
 		$mail = $this->mail_to( $email );
 		$this->assertNotEmpty( $mail );
 		$this->assertStringContainsString( 'Welcome to', $mail[0]['subject'] );
 		$body = wp_strip_all_tags( $mail[0]['message'] );
 		$this->assertStringContainsString( '/account/profile/', $body );
-		$this->assertStringContainsString( '/account/events/submit/', $body, '{submit_link} resolves with no event.' );
+		$this->assertStringContainsString( '/account/bookings/', $body );
+		$this->assertStringNotContainsString( '/account/events/submit/', $body, 'A brand-new account cannot start an event, so the welcome may not link the page.' );
+	}
+
+	/**
+	 * {submit_link} stays in the placeholder map, and still resolves with no
+	 * event, so a committee member writing to a host on the Manage emails
+	 * screen can use it deliberately.
+	 */
+	public function test_the_submit_merge_tag_still_resolves(): void {
+		$this->assertStringContainsString( '/account/events/submit/', law_events_email_placeholders( 0 )['{submit_link}'] );
 	}
 }

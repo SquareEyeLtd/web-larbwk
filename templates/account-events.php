@@ -85,14 +85,19 @@ get_header();
 
 				<?php
 				$law_items      = law_account_events();
-				// Empty while submissions are closed (Denis, 22 September
-				// 2026), which is what silences both call-to-action branches
-				// below: the toolbar button and the empty state's own link.
-				// The page 294 (Submit an event) URL itself is unchanged and
-				// still reachable, because the same page is where a host edits
-				// an event they already own; this list simply stops offering
-				// it to somebody starting a new one.
-				$law_submit_url = ( function_exists( 'law_events_submissions_open' ) && law_events_submissions_open() )
+				// Empty unless this viewer may actually START an event, which
+				// since 22 September 2026 means the `event_submitter` role or
+				// committee-level capability (Denis). That one variable
+				// silences both call-to-action branches below, the toolbar
+				// button and the empty state's own link, so the two can never
+				// disagree about who is being invited.
+				//
+				// The page 294 (Submit an event) URL itself is untouched and
+				// stays reachable for everybody, because the same page is
+				// where a host edits an event they already own. The Edit links
+				// on the cards below therefore keep working for a host with no
+				// role; only the invitation to start a new one is withheld.
+				$law_submit_url = law_events_user_can_submit()
 					? law_account_events_submit_url()
 					: '';
 				?>
@@ -146,11 +151,11 @@ get_header();
 							<div class="law-account-events__empty">
 								<div class="law-account-events__empty-text">
 									<p class="law-account-events__empty-title"><?php esc_html_e( 'You have no events yet.', 'law' ); ?></p>
-									<?php // Two sentences, one per state: an invitation while submissions are open, a plain statement of fact while they are closed. Neither promises the other will happen. ?>
+									<?php // Two sentences, one per audience: an invitation for somebody who may submit, a plain description of the page for somebody who may not. The second deliberately does not say "you cannot", because this is an empty list rather than a refusal, and it names the committee as the way in. ?>
 									<?php if ( $law_submit_url ) : ?>
-										<p><?php esc_html_e( 'Anyone with an account can propose an event for London Arbitration Week. Drafts are saved here until you submit them.', 'law' ); ?></p>
+										<p><?php esc_html_e( 'Drafts are saved here until you submit them, and every event you host or co-own appears here afterwards.', 'law' ); ?></p>
 									<?php else : ?>
-										<p><?php esc_html_e( 'Events you host or co-own appear here. Submissions for the London Arbitration Week programme are closed.', 'law' ); ?></p>
+										<p><?php esc_html_e( 'Events you host or co-own appear here. If you would like to propose an event for London Arbitration Week, please contact the events committee.', 'law' ); ?></p>
 									<?php endif; ?>
 								</div>
 								<?php if ( $law_submit_url ) : ?>

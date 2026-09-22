@@ -140,6 +140,16 @@ function law_setup_account_pages() {
 	// After my_bookings on purpose: that helper copies /account/'s rows onto a
 	// page that has none, so the subscriber pass must see the copied rows.
 	$report[] = 'ACCESS   account page roles: ' . law_setup_account_page_roles();
+	// The `event_submitter` role and its capability (22 September 2026). It is
+	// granted on init off a version stamp, so a git push alone is enough and
+	// this line only reports the state; it is here because somebody running the
+	// trigger after a deploy is asking "did everything land", and a role that
+	// exists nowhere in this report is the one thing they would have to go and
+	// check by hand.
+	if ( function_exists( 'law_events_submitter_role' ) ) {
+		$report[] = 'ROLES    ' . law_events_submitter_role() . ': '
+			. ( get_role( law_events_submitter_role() ) ? 'registered' : 'MISSING — check the law_events_caps_version option' );
+	}
 	$report[] = 'EMAILS   registration emails, Roles line: ' . law_setup_strip_user_roles_from_emails();
 	$report[] = 'ACCESS   /account/dashboard/bookings/ committee restriction: ' . law_setup_bookings_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/speakers/ committee restriction: ' . law_setup_speakers_dashboard_access();
@@ -271,7 +281,20 @@ function law_setup_account_pages() {
  */
 function law_setup_account_page_roles() {
 	$paths   = array( 'account', 'account/events', 'account/bookings', 'account/events/submit' );
-	$needed  = array_merge( array( 'subscriber' ), function_exists( 'law_registration_legacy_roles' ) ? law_registration_legacy_roles() : array( 'event_host', 'sponsor', 'attendee' ) );
+	// subscriber, the three retired roles (see the header), and since
+	// 22 September 2026 `event_submitter`. The new role is normally ADDED to an
+	// account that is already a subscriber, in which case the subscriber row
+	// admits them anyway — but nothing stops the committee setting it as
+	// somebody's only role from the Users screen, and that account would then
+	// be offered page 294 (Submit an event) by the theme and refused it by the
+	// plugin. That is the exact failure the attendee gap caused on
+	// 14 September 2026, so the row goes on before it can happen rather than
+	// after.
+	$needed  = array_merge(
+		array( 'subscriber' ),
+		function_exists( 'law_registration_legacy_roles' ) ? law_registration_legacy_roles() : array( 'event_host', 'sponsor', 'attendee' ),
+		function_exists( 'law_events_submitter_role' ) ? array( law_events_submitter_role() ) : array( 'event_submitter' )
+	);
 	$updated = array();
 	$missing = array();
 	$open    = array();

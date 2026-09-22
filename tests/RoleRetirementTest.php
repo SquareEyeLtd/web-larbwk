@@ -27,13 +27,50 @@ class RoleRetirementTest extends LAW_Test_Case {
 
 	/* The two gates ______________________________________________________ */
 
-	public function test_any_signed_in_account_may_submit_an_event(): void {
+	/**
+	 * Submitting stopped being open to everybody on 22 September 2026: it now
+	 * needs the `event_submitter` role. The retirement's OTHER promise is
+	 * untouched and is asserted here beside it — law_account_user_is_host_like()
+	 * still says yes to a plain subscriber, because the host-side PAGES stayed
+	 * open to everybody and only creating an event narrowed.
+	 */
+	public function test_only_a_submitter_may_start_an_event(): void {
+		$plain = $this->make_user();
+		wp_set_current_user( $plain );
+
+		$this->assertFalse( law_events_user_can_submit(), 'A plain subscriber may not start an event.' );
+		$this->assertFalse( law_events_user_can_submit( $plain ), 'The explicit-user form must agree with the current-user form.' );
+		$this->assertTrue( law_account_user_is_host_like(), 'The host-side pages stayed open to everybody.' );
+
+		$submitter = $this->make_user( law_events_submitter_role() );
+		wp_set_current_user( $submitter );
+
+		$this->assertTrue( law_events_user_can_submit() );
+		$this->assertTrue( law_events_user_can_submit( $submitter ) );
+	}
+
+	/**
+	 * The role is ADDITIVE. The committee will hand it out from the Users
+	 * screen to people who already hold subscriber, so gaining it may never
+	 * cost somebody anything they had before.
+	 */
+	public function test_the_role_can_be_added_without_replacing_subscriber(): void {
 		$user_id = $this->make_user();
+		$user    = new WP_User( $user_id );
+		$user->add_role( law_events_submitter_role() );
 		wp_set_current_user( $user_id );
 
-		$this->assertTrue( law_events_user_can_submit(), 'A plain subscriber may submit.' );
-		$this->assertTrue( law_events_user_can_submit( $user_id ), 'The explicit-user form must agree with the current-user form.' );
+		$this->assertTrue( law_events_user_can_submit() );
+		$this->assertContains( 'subscriber', (array) $user->roles );
 		$this->assertTrue( law_account_user_is_host_like() );
+	}
+
+	/** Committee, editors and administrators carry the capability too. */
+	public function test_committee_level_accounts_may_still_start_an_event(): void {
+		foreach ( array( 'events_committee', 'editor', 'administrator' ) as $role ) {
+			wp_set_current_user( $this->make_user( $role ) );
+			$this->assertTrue( law_events_user_can_submit(), "A {$role} may still start an event." );
+		}
 	}
 
 	public function test_the_gates_are_still_closed_to_a_logged_out_visitor(): void {
@@ -336,7 +373,7 @@ class RoleRetirementTest extends LAW_Test_Case {
 			law_account_events_reset_cache();
 
 			$items = law_header_nav()['account']['items'];
-			$this->assertNotContains( 'submit', wp_list_pluck( $items, 'key' ), "Submissions closed on 22 September 2026, so no role is offered the link." );
+			$this->assertNotContains( 'submit', wp_list_pluck( $items, 'key' ), "None of these roles carries law_submit_event, so the link may not be offered to a {$role}." );
 
 			foreach ( $items as $item ) {
 				$page_id = 'signout' === $item['key'] ? 0 : law_account_page_id( $item['key'] );

@@ -52,10 +52,24 @@ class AccountHubTest extends LAW_Test_Case {
 
 		$this->assertStringContainsString( esc_url( law_account_url( 'profile' ) ), $html );
 		$this->assertStringContainsString( esc_url( law_account_url( 'my_bookings' ) ), $html );
-		$this->assertStringNotContainsString( esc_url( law_account_url( 'submit' ) ), $html, 'Submissions are closed, so the hub has no tile for page 294 (Submit an event).' );
+		$this->assertStringNotContainsString( esc_url( law_account_url( 'submit' ) ), $html, 'A plain subscriber may not start an event, so the hub has no tile for page 294 (Submit an event).' );
 		$this->assertStringContainsString( 'Sign out', $html );
 		$this->assertStringNotContainsString( 'Committee tools', $html );
 		$this->assertStringNotContainsString( '>My events<', $html );
+	}
+
+	/**
+	 * The hub renders law_header_nav()'s list, so the `event_submitter` role
+	 * has to reach the tiles as well as the bar. Asserted separately because
+	 * they are two surfaces and have drifted apart before.
+	 */
+	public function test_a_submitter_gets_the_submit_tile(): void {
+		$user_id = $this->make_user();
+		( new WP_User( $user_id ) )->add_role( law_events_submitter_role() );
+		wp_set_current_user( $user_id );
+		law_account_events_reset_cache();
+
+		$this->assertStringContainsString( esc_url( law_account_url( 'submit' ) ), $this->render() );
 	}
 
 	public function test_an_owner_gets_the_my_events_tile(): void {
