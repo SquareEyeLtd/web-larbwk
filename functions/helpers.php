@@ -50,6 +50,9 @@ function law_icon_paths() {
 		'flag'       => '<path d="M5 21V4"/><path d="M5 4h11l-1.5 3.5L16 11H5"/>',
 		// A raised glass: the drinks receptions (RECEPTIONS.md §0.4).
 		'receptions' => '<path d="M4 4h16l-8 9-8-9Z"/><path d="M12 13v7"/><path d="M8 21h8"/>',
+		// A person with a tick: the committee's Event submitters screen, which
+		// is about who is allowed to do something rather than about a thing.
+		'user-check' => '<circle cx="10" cy="8" r="4"/><path d="M3 21v-1a6 6 0 0 1 6-6h3"/><path d="m14.5 17.5 2.5 2.5 4.5-4.5"/>',
 		// An envelope: the committee's Manage emails screen.
 		'email'      => '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
 		'signout'    => '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',

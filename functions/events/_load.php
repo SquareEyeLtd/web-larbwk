@@ -31,6 +31,7 @@ require_once __DIR__ . '/bookings.php';
 require_once __DIR__ . '/waitlist.php';
 require_once __DIR__ . '/bookings-dashboard.php';
 require_once __DIR__ . '/discounts-dashboard.php';
+require_once __DIR__ . '/submitters-dashboard.php';
 require_once __DIR__ . '/test-mode.php';
 require_once __DIR__ . '/notifications.php';
 // The committee's front-end copy of the wp-admin Emails screen. After

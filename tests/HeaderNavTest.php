@@ -59,9 +59,12 @@ class HeaderNavTest extends LAW_Test_Case {
 		// 'receptions' sits after 'flagship' because it is a configuration
 		// screen for an event LAW runs itself, not one of the two bookings
 		// views, which are kept together (RECEPTIONS.md §0.4).
-		// 'emails' is last: every item before it is something that happens
-		// during the week, and it is the wording the site sends about all of them.
-		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts', 'emails' );
+		// 'submitters' sits beside 'discounts' for the same reason: both are
+		// settings the committee prepares rather than things that happen during
+		// the week. 'emails' is last: every item before it is something that
+		// happens during the week, and it is the wording the site sends about
+		// all of them.
+		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts', 'submitters', 'emails' );
 
 		return array(
 			'subscriber, no events'   => array(

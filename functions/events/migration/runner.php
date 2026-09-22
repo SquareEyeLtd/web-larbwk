@@ -2248,6 +2248,7 @@ function law_migration_page_map() {
 		'account/dashboard/receptions' => array( 'title' => 'Receptions dashboard', 'template' => 'templates/account-dashboard-receptions.php' ),
 		'account/dashboard/flagship-bookings' => array( 'title' => 'Flagship bookings', 'template' => 'templates/account-dashboard-flagship-bookings.php' ),
 		'account/dashboard/discounts' => array( 'title' => 'Discount codes', 'template' => 'templates/account-dashboard-discounts.php' ),
+		'account/dashboard/submitters' => array( 'title' => 'Event submitters', 'template' => 'templates/account-dashboard-submitters.php' ),
 		'account/dashboard/emails'   => array( 'title' => 'Manage emails', 'template' => 'templates/account-dashboard-emails.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
 		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
