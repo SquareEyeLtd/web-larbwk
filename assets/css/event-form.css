@@ -383,6 +383,31 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 @media screen and (max-width: 39.9375em) { .law-row-grid, .law-row-grid--three { grid-template-columns: 1fr; } }
 
 .law-form-buttons .button { margin-right: .75rem; }
+/* A plain underlined text button, for an action that belongs on the form but
+   must not compete with Save: the reset on both email editors is the only one
+   today (Denis, 22 September 2026). Same shape as .law-file-clear above, and
+   the same destructive token, because both discard something; it is a separate
+   class rather than a reuse of that one because .law-file-clear carries the
+   file control's own margins and [hidden] rule. */
+.law-text-button {
+	display: inline-block;
+	margin: 0;
+	padding: 0;
+	background: none;
+	border: 0;
+	color: var(--law-form-destructive-soft);
+	font-size: .8rem;
+	text-decoration: underline;
+	cursor: pointer;
+}
+/* The two destructive tokens are the same red in the light palette, so the
+   hover state thickens the underline rather than relying on a colour change
+   that only one of the two palettes would show. */
+.law-text-button:hover, .law-text-button:focus { color: var(--law-form-destructive); text-decoration-thickness: 2px; }
+/* The row beneath the buttons. The gap is the button row's own bottom margin
+   closed up, so the link reads as belonging to the buttons above it rather
+   than as the start of whatever follows. */
+.law-form-buttons__aside { margin: -.5rem 0 1rem; }
 .law-terms label { color: var(--law-form-choice-label); font-weight: 400; }
 .law-terms a { color: #ffcc02; text-decoration: underline; }
 

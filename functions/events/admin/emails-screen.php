@@ -131,6 +131,15 @@ function law_events_emails_edit_screen( $slug ) {
 			<p>
 				<?php submit_button( 'Save email', 'primary', 'save', false ); ?>
 				<?php submit_button( 'Send test to me', 'secondary', 'send_test', false ); ?>
+				<?php
+				// Only on the notifications the committee itself receives, the
+				// same rule as the front-end screen's "Send a test to committee"
+				// (Denis, 22 September 2026). The address list is the one in
+				// Events settings.
+				if ( 'committee' === $email['to'] ) {
+					submit_button( 'Send test to committee', 'secondary', 'send_test_committee', false );
+				}
+				?>
 				<?php submit_button( 'Reset to default', 'delete', 'reset', false, array( 'onclick' => "return confirm('Discard the customised version and return to the code default?');" ) ); ?>
 			</p>
 		</form>
@@ -177,10 +186,21 @@ function law_events_emails_handle_post( $slug ) {
 
 	// Send test renders the values AS TYPED without persisting anything, so
 	// admins can preview safely before deciding to save.
-	if ( isset( $_POST['send_test'] ) ) {
-		$test = law_events_email_send_test( $override );
+	if ( isset( $_POST['send_test'] ) || isset( $_POST['send_test_committee'] ) ) {
+		$to_committee = isset( $_POST['send_test_committee'] );
+
+		if ( $to_committee && ! law_events_committee_emails() ) {
+			echo '<div class="notice notice-error"><p>There are no committee addresses in Events settings, so there was nobody to send the test to. Note that the real notification is not reaching anyone either.</p></div>';
+			return;
+		}
+
+		$test = $to_committee
+			? law_events_email_send_test_committee( $override )
+			: law_events_email_send_test( $override );
+		$went_to = $to_committee ? 'the committee (' . implode( ', ', $test['emails'] ) . ')' : $test['email'];
+
 		echo $test['sent']
-			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $test['email'] ) . ( $test['event_id'] ? ' using event "' . esc_html( $test['event_title'] ) . '"' : ' (no events exist yet, placeholders were blank)' ) . '. Nothing was saved: use Save email to keep these values.</p></div>'
+			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $went_to ) . ( $test['event_id'] ? ' using event "' . esc_html( $test['event_title'] ) . '"' : ' (no events exist yet, placeholders were blank)' ) . '. Nothing was saved: use Save email to keep these values.</p></div>'
 			: '<div class="notice notice-error"><p>Send failed.</p></div>';
 		return;
 	}
