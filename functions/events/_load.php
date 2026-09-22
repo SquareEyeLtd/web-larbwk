@@ -99,6 +99,9 @@ require_once __DIR__ . '/migration/repair-signoff.php';
 require_once __DIR__ . '/migration/backfill-session-agenda.php';
 require_once __DIR__ . '/migration/fetch-speaker-photos.php';
 require_once __DIR__ . '/migration/content-transfer.php';
+// The confirmed-slot comparison (/wp-admin/?test-events-confirmed-slots). After
+// the runner, whose entry reader and page size it borrows.
+require_once __DIR__ . '/migration/test-confirmed-slots.php';
 
 /**
  * Which data source the front end reads: 'gf' (legacy Gravity Forms entries)

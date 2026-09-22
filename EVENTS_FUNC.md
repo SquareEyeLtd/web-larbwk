@@ -9681,5 +9681,68 @@ Touched: `functions/events/notifications.php`,
 
 ---
 
+## Comparing confirmed slots across the cutover (22 September 2026)
+
+**`/wp-admin/?test-events-confirmed-slots` lists every event whose confirmed
+slot differs between Gravity Forms and the module, and nothing else.** The
+report came from Denis: some events looked to have a confirmed slot on form 2
+(Event > submit an event) field 68 (Confirmed slot) that the migrated
+`law_event` did not hold. That failure is invisible by design. Nothing
+downstream can recompute a confirmed slot, and an event without one simply
+reads "Slot not confirmed" and drops out of the day grid, which is exactly how
+an event the committee has not scheduled yet looks. So there was no error to
+find, only a silence, and the screen turns that silence into a list.
+
+**What it compares.** Every active entry on form 2 (Event > submit an event) is
+matched to its `law_event` post and four values are read: field 68 (Confirmed
+slot) and `_law_slot_label`, then the datetimes that label means against the
+stored `_law_start` / `_law_end`. The dates are compared as well as the label
+because they are what the programme actually sorts and groups by, so a correct
+label sitting over stale datetimes still renders wrongly and would otherwise
+pass. Differences are sorted worst first: set in Gravity Forms but missing in
+the module, then both set and different, then the same label over different
+dates, then set in the module but missing in Gravity Forms (the ordinary case
+for anything the committee has scheduled since cutover).
+
+**Punctuation is not a difference.** Field 68 (Confirmed slot) carries en
+dashes where field 77 (Preferred date & time slots) and some stored labels
+carry plain hyphens, so both sides go through `law_events_slot_label_key()` —
+the same normaliser the migration and the settings list already use. Compared
+raw, all ninety-nine events would report as mismatched and the handful that
+genuinely differ would be lost in the noise.
+
+**Matching is done on `_law_gf_entry_id`, in one query.**
+`law_events_resolve_event_post_id()` was deliberately not used: it treats a
+numeric argument that happens to BE a `law_event` post ID as that post, which
+is right where it is called with post IDs and wrong here, where every argument
+is an entry ID and a collision would quietly compare an event against somebody
+else's entry. The `law_events_entry_map` option is consulted second, for an
+event whose meta is missing but whose migration mapping survives; the meta wins
+a disagreement, because it lives on the post while the option is one serialized
+blob a partial re-run can leave stale.
+
+**Two supporting lists, and one deliberate exclusion.** Entries with no
+`law_event` at all are listed separately (a migration gap, not a slot
+disagreement), and so are hosted events naming an entry the active list no
+longer has, usually trashed after migration. Receptions, the flagship and
+external events are dropped from that second list rather than shown in it:
+their `_law_slot_label` is deliberately empty and an external event's
+`_law_gf_entry_id` names a form 10 (Event > external events) entry, which this
+screen never reads, so every one of them would appear under a heading claiming
+its form 2 entry had vanished.
+
+**On this database, all 99 entries agree**, which is the answer the screen is
+built to give quickly rather than an argument that the reported problem was
+imagined: the copies that differ are on whichever environment they were seen
+on, and the same URL answers there.
+
+The screen only reads. It is gated on `manage_options`, writes nothing, and is
+safe to open on production as often as it is useful.
+
+Touched: `functions/events/migration/test-confirmed-slots.php` (new),
+`functions/events/_load.php`.
+
+---
+
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.
