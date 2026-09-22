@@ -52,7 +52,7 @@ class AccountHubTest extends LAW_Test_Case {
 
 		$this->assertStringContainsString( esc_url( law_account_url( 'profile' ) ), $html );
 		$this->assertStringContainsString( esc_url( law_account_url( 'my_bookings' ) ), $html );
-		$this->assertStringContainsString( esc_url( law_account_url( 'submit' ) ), $html );
+		$this->assertStringNotContainsString( esc_url( law_account_url( 'submit' ) ), $html, 'Submissions are closed, so the hub has no tile for page 294 (Submit an event).' );
 		$this->assertStringContainsString( 'Sign out', $html );
 		$this->assertStringNotContainsString( 'Committee tools', $html );
 		$this->assertStringNotContainsString( '>My events<', $html );

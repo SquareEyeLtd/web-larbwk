@@ -118,16 +118,30 @@ class RegistrationTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * The welcome everybody now gets has to cover the whole job, because
-	 * anybody signed in may book AND submit.
+	 * The welcome everybody now gets has to cover browsing and booking. The
+	 * submitting paragraph came off on 22 September 2026, with submissions:
+	 * a welcome email is read minutes after registering, so it may not invite
+	 * somebody to a page they will then be refused.
 	 */
-	public function test_the_welcome_email_offers_booking_and_submitting(): void {
+	public function test_the_welcome_email_offers_booking_and_not_submitting(): void {
 		$welcome = law_events_email( 'user_welcome_registered' );
 
 		$this->assertTrue( (bool) $welcome['active'] );
 		$this->assertStringContainsString( 'browse the programme', $welcome['body'] );
 		$this->assertStringContainsString( '{bookings_link}', $welcome['body'] );
-		$this->assertStringContainsString( '{submit_link}', $welcome['body'], 'A new account can submit an event, and the welcome must say so (Denis, 14 September 2026).' );
+		$this->assertStringNotContainsString( '{submit_link}', $welcome['body'], 'Submissions are closed, so the welcome may not advertise them.' );
+	}
+
+	/**
+	 * The paragraph is composed behind the seam rather than deleted, so
+	 * reopening submissions restores the wording and the merge tag intact.
+	 */
+	public function test_reopening_submissions_restores_the_welcome_paragraph(): void {
+		add_filter( 'law_events_submissions_open', '__return_true' );
+		$welcome = law_events_email( 'user_welcome_registered' );
+		remove_filter( 'law_events_submissions_open', '__return_true' );
+
+		$this->assertStringContainsString( '{submit_link}', $welcome['body'] );
 	}
 
 	/**
@@ -166,5 +180,65 @@ class RegistrationTest extends LAW_Test_Case {
 			}
 		}
 		$this->assertSame( 5, $allowed, 'The sixth anonymous attempt from one IP is refused.' );
+	}
+
+	/**
+	 * The cached-nonce regression (22 September 2026).
+	 *
+	 * A user reported "The link you followed has expired." on every attempt to
+	 * create an account. The cause was not the form: /register/ was being held
+	 * in the host's edge cache for 24 hours (`s-maxage=86400`) while the nonce
+	 * a logged-out visitor is given only lives between 12 and 24 hours, so a
+	 * copy served from the back half of that window carried a nonce that was
+	 * already dead. law_no_store_nonce_pages() makes the page uncacheable, and
+	 * this test is what stops the register template quietly dropping off that
+	 * list again.
+	 */
+	public function test_the_registration_page_is_never_cacheable(): void {
+		$this->assertContains(
+			'templates/register.php',
+			law_nonce_bearing_public_templates(),
+			'The register page prints a nonce to logged-out visitors; a shared cache holding it is the reported bug.'
+		);
+	}
+
+	/**
+	 * And the list stays honest: a template named there must actually print a
+	 * nonce, or the entry is a leftover telling the next person the wrong
+	 * thing about a page that no longer needs the protection.
+	 */
+	public function test_every_listed_template_really_prints_a_nonce(): void {
+		foreach ( law_nonce_bearing_public_templates() as $template ) {
+			$path = get_theme_file_path( $template );
+			$this->assertFileExists( $path, $template . ' is listed but does not exist.' );
+			$body = (string) file_get_contents( $path );
+			// The login template hands its two anonymous forms (forgot
+			// password, reset password) to functions/auth.php, so the nonce is
+			// one function call away rather than in the file itself.
+			$prints_nonce = false !== strpos( $body, 'wp_nonce_field' )
+				|| false !== strpos( $body, 'law_auth_render' );
+			$this->assertTrue( $prints_nonce, $template . ' is listed as nonce-bearing but prints no nonce.' );
+		}
+	}
+
+	/**
+	 * An expired nonce is a refusal of the whole form, not of one field, so the
+	 * dialog is the sentence and nothing else: a jump line would point at a
+	 * control that is perfectly fine.
+	 */
+	public function test_an_expired_session_is_one_sentence_with_nothing_to_jump_to(): void {
+		ob_start();
+		law_events_form_error_modal(
+			array( 'expired' => array( 'Your details were not submitted: this page had been open long enough for its security check to expire.' ) ),
+			'Your account was not created'
+		);
+		$html = (string) ob_get_clean();
+
+		$this->assertStringContainsString( 'id="law-modal-form-errors"', $html );
+		$this->assertStringContainsString( 'data-law-modal-autoopen', $html );
+		$this->assertStringContainsString( 'Your account was not created', $html );
+		$this->assertStringContainsString( 'security check to expire', $html );
+		$this->assertStringNotContainsString( '<li>', $html, 'A whole-form refusal has no field to jump to.' );
+		$this->assertStringNotContainsString( 'fields need your attention', $html );
 	}
 }

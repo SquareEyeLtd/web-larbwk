@@ -9,11 +9,21 @@
  * @package LAW
  */
 
-get_header();
-
+// Read BEFORE get_header(), for two reasons. law_registration_state() is a
+// one-shot read (it deletes the transient), so it can only be called once in
+// the page and this is the only place that may call it. And knowing here
+// whether the last attempt failed is what lets the failure dialog's stylesheet
+// go out in the head with everything else, instead of arriving after the
+// dialog it is supposed to dress.
 $law_reg_state  = function_exists( 'law_registration_state' ) ? law_registration_state() : array( 'errors' => array(), 'input' => array() );
 $law_reg_errors = (array) $law_reg_state['errors'];
 $law_reg_values = (array) $law_reg_state['input'];
+
+if ( $law_reg_errors && function_exists( 'law_modal_enqueue' ) ) {
+	law_modal_enqueue();
+}
+
+get_header();
 
 // The booking modal's register link: ?redirect_to= returns the new user to the
 // event page they came from, and survives an error round trip (the handler
@@ -41,9 +51,18 @@ $law_reg_redirect = wp_validate_redirect( wp_unslash( (string) ( $_GET['redirect
 
 				<?php else : ?>
 
-					<?php if ( $law_reg_errors ) : ?>
-						<div class="law-form-notice is-error" role="alert">Please fix the highlighted fields below.</div>
-					<?php endif; ?>
+					<?php
+					// A whole-form refusal (today only `expired`: the nonce on
+					// a page that sat open too long) speaks for itself and
+					// highlights nothing below, so it replaces the standard
+					// line rather than sitting above it and contradicting it.
+					$law_reg_whole_form = (string) ( $law_reg_errors['expired'][0] ?? '' );
+					if ( $law_reg_errors ) :
+						?>
+						<div class="law-form-notice is-error" role="alert"><?php echo esc_html( '' !== $law_reg_whole_form ? $law_reg_whole_form : 'Please fix the highlighted fields below.' ); ?></div>
+						<?php
+					endif;
+					?>
 
 					<form class="law-event-form law-auth-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 						<input type="hidden" name="action" value="law_register">
@@ -86,6 +105,24 @@ $law_reg_redirect = wp_validate_redirect( wp_unslash( (string) ( $_GET['redirect
 		</div>
 	</div>
 </section>
+
+<?php
+// The same failure again as a dialog opened on load (law-modal.js), the house
+// pattern for a failed save (law_events_form_error_modal(), 21 September
+// 2026): the notice above is off screen by the time somebody has filled in a
+// page of profile fields and pressed the button at the foot, and an expired
+// session that announces itself quietly is how this form came to be reported
+// as simply broken.
+//
+// OUTSIDE the section on purpose, which is where this page differs from the
+// event form. The column the notice sits in carries `wow fadeIn`, and WOW.js
+// holds a `.wow` element at `visibility: hidden` until it scrolls into view;
+// visibility inherits, so a dialog rendered inside that column would be
+// invisible however correctly it opened. Nothing wraps it out here.
+if ( ! is_user_logged_in() && $law_reg_errors ) {
+	law_events_form_error_modal( $law_reg_errors, 'Your account was not created' );
+}
+?>
 <?php endwhile; endif; ?>
 
 <?php get_footer(); ?>

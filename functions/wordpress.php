@@ -73,6 +73,74 @@ add_action(
 );
 
 /**
+ * The page templates that print a WordPress nonce for a LOGGED-OUT visitor.
+ *
+ * Every other nonce on the site is behind the login cookie, which the host's
+ * page cache already treats as a bypass. These are the ones a shared cache can
+ * reach, and a shared cache must never hold them: see
+ * law_no_store_nonce_pages() below for what went wrong when one did.
+ *
+ * Adding an anonymous form to the theme means adding its template here. The
+ * test in tests/RegistrationTest.php reads this list and fails if a template
+ * named in it has stopped calling wp_nonce_field(), so a form that moves does
+ * not quietly leave a stale entry behind.
+ *
+ * @return string[]
+ */
+function law_nonce_bearing_public_templates() {
+	return array(
+		// The custom registration form (templates/register.php, phase D).
+		'templates/register.php',
+		// The login template also carries the forgot-password and
+		// password-reset forms (functions/auth.php), which have nonces of
+		// their own. Both only appear on an ?action= URL, which the host
+		// bypasses the cache for anyway, so this entry is belt and braces
+		// rather than a fix for anything observed.
+		'templates/login.php',
+	);
+}
+
+/**
+ * Keep those pages out of every shared cache.
+ *
+ * WordPress builds a nonce for a logged-out visitor from the nonce tick alone,
+ * so it is the same string for everybody and it dies between 12 and 24 hours
+ * after it was made. Live is on Kinsta, whose edge cache was holding
+ * /register/ with `Cache-Control: public, max-age=0, s-maxage=86400` — a full
+ * 24 hours. Anyone served a copy from the back half of that window posted a
+ * nonce that had already expired, and check_admin_referer() answered with
+ * core's bare "The link you followed has expired." page on a
+ * wp-admin/admin-post.php URL. A user reported exactly that on 22 September
+ * 2026: three attempts, three identical dead ends, because the "Please try
+ * again" link went back to the same cached page holding the same dead nonce.
+ *
+ * nocache_headers() sends `no-cache, must-revalidate, max-age=0, no-store,
+ * private`, and `private` is the part that matters: it tells the edge the
+ * response belongs to one visitor and must not be reused for the next one.
+ * The browser stops re-showing the form from its own back/forward cache too,
+ * which is the same bug one step smaller.
+ *
+ * This costs the site nothing worth counting: these are two low-traffic pages
+ * that were only ever cacheable because nothing had told the edge otherwise.
+ * Belt and braces, ask Kinsta for a cache bypass rule on /register/ as well,
+ * so the fix does not depend on the edge honouring an origin header.
+ */
+add_action(
+	'template_redirect',
+	function () {
+		if ( is_user_logged_in() ) {
+			return; // Already a bypass everywhere; nothing to protect.
+		}
+		foreach ( law_nonce_bearing_public_templates() as $template ) {
+			if ( is_page_template( $template ) ) {
+				nocache_headers();
+				return;
+			}
+		}
+	}
+);
+
+/**
  * GravityView Advanced Filter 4.7 calls crypto.randomUUID(), which browsers
  * only expose in a secure context (HTTPS or localhost). Live is HTTPS;
  * Local is http://larbwk.local, so the query builder never mounts.

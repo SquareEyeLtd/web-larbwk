@@ -440,13 +440,29 @@ function law_events_email_registry() {
 		// AND submitting an event, because anybody signed in may do all three
 		// (Denis). It may not describe what the reader is ALLOWED to do, since
 		// everybody signed in can do everything.
+		//
+		// The closing paragraph is the exception, and it is dropped while
+		// submissions are closed (Denis, 22 September 2026). A welcome email
+		// is read minutes after registering, so inviting somebody to submit an
+		// event and then refusing them the page is the worst possible order to
+		// do it in. It comes back with law_events_submissions_open(), which is
+		// also why the paragraph is composed here rather than deleted: the
+		// wording, and the {submit_link} merge tag behind it, survive intact.
+		//
+		// A body an editor has overridden on the Emails screen is NOT touched
+		// by this — overrides win over the defaults in this array — so an
+		// environment that has edited the welcome email has to have that
+		// paragraph taken out by hand.
 		'user_welcome_registered' => array(
 			'name'    => 'Email to new user > welcome after registration',
 			'trigger' => 'user registration',
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Welcome to {site_name}',
-			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nThe events you book live here, under My bookings: {bookings_link}\n\nYou can also submit an event of your own for the programme, and follow it through review to publication: {submit_link}",
+			'body'    => "Dear {user_name},\n\nWelcome to London Arbitration Week. Your account has been created and you are signed in.\n\nFrom your account you can browse the programme, book places at events and manage your details. Please add any dietary or accessibility requirements to your profile, so event organisers can look after you: {profile_link}\n\nThe events you book live here, under My bookings: {bookings_link}"
+				. ( ( function_exists( 'law_events_submissions_open' ) && law_events_submissions_open() )
+					? "\n\nYou can also submit an event of your own for the programme, and follow it through review to publication: {submit_link}"
+					: '' ),
 		),
 		/* The flagship conference's approval-gated registration and payment
 		 * (FLAGSHIP_PAYMENTS.md §8). Every one of these is addressed to a

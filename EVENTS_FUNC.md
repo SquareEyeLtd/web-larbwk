@@ -3227,11 +3227,51 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   deliberately unchanged**, so `law_hubspot_contact_type` stays comparable for
   whatever reads it downstream) and the ACF user meta
   (accessibility/dietary) both forms share.
-- `law_registration_handler()` (on `admin_post_nopriv_law_register`): honeypot,
-  per-IP rate limit (20/hour), account creation **hardcoded to `subscriber`**
+- `law_registration_handler()` (on `admin_post_nopriv_law_register`): per-IP
+  rate limit (20/hour), nonce, honeypot, account creation **hardcoded to
+  `subscriber`**
   (no role is taken from input at all now, so there is nothing to escalate),
   auto-login; a tripped rate limit returns a titled 429 with a back link.
   Logged-in users are bounced.
+  **The order of those first three matters, and it changed on 22 September
+  2026.** The nonce used to be first, as `check_admin_referer()`, which ends
+  the request with core's "The link you followed has expired." screen. It now
+  comes second and it no longer ends anything: a bad or missing nonce stores
+  the typed values (never the passwords) and bounces back to `/register/` with
+  a whole-form `expired` error, so the visitor reads a sentence over their own
+  form instead of a dead end on a `wp-admin/admin-post.php` URL. The rate limit
+  moved in front of it to pay for that, because a path that writes a transient
+  before checking anything is a way to fill the options table; nothing is lost
+  by the swap, since for a logged-out visitor the nonce is a value shared by
+  every visitor and never gated that counter meaningfully.
+  **Why this came up** is the part worth keeping. A user reported three
+  identical failures creating an account, and the form was not at fault:
+  `/register/` was being served from the Kinsta edge cache with
+  `Cache-Control: public, max-age=0, s-maxage=86400`, a full 24 hours, while
+  the nonce WordPress gives a logged-out visitor is built from the nonce tick
+  alone and dies between 12 and 24 hours after it is made. Anyone served a
+  cached copy from the back half of its life posted a nonce that was already
+  dead, and "Please try again" took them back to the same cached page with the
+  same dead nonce. The fix is `law_nonce_bearing_public_templates()` and the
+  `template_redirect` hook beside it in `functions/wordpress.php`: the two
+  templates that print a nonce to a logged-out visitor (`templates/register.php`
+  and `templates/login.php`, the latter belt and braces because its forms only
+  appear on an `?action=` URL the edge bypasses anyway) call
+  `nocache_headers()`, whose `private` is what tells a shared cache the
+  response belongs to one visitor. The soft-fail path above is the safety net
+  for the case no cache header can reach, a form left open in a tab overnight.
+  Two things follow for anyone adding an anonymous form: name its template in
+  that list, and check the finding still holds with
+  `curl -sI https://londonarbitrationweek.co.uk/register/ | grep -i cache`,
+  which should show no `s-maxage` and `x-kinsta-cache: BYPASS`.
+  The failure also renders through the shared failed-save dialog
+  (`law_events_form_error_modal()`), with `expired` handled beside `locked` as
+  a whole-form refusal: one sentence, no jump lines, because no field is at
+  fault. On this page the dialog is rendered **outside** the `<section>`, not
+  beside the inline notice as on the event form, because the column the notice
+  sits in carries `wow fadeIn` and WOW.js holds a `.wow` element at
+  `visibility: hidden` until it scrolls into view — visibility inherits, and a
+  dialog inside that column would open correctly and still be invisible.
 - `law_profile_handler()` (on `admin_post_law_profile`): the self-service
   profile edit — no role changes at all, and an
   **email or password change requires the current password**
@@ -9741,6 +9781,87 @@ safe to open on production as often as it is useful.
 
 Touched: `functions/events/migration/test-confirmed-slots.php` (new),
 `functions/events/_load.php`.
+
+---
+
+## The site stops asking for new events (22 September 2026)
+
+**Nothing on the site offers page 294 (Submit an event) any more, and the page
+itself is untouched.** The client does not want new events submitted (Denis,
+22 September 2026), and the way it is being closed matters as much as the fact:
+access to the page is being refused by the Members plugin, in the database, not
+by anything in the theme. So the theme's job here is only to stop advertising.
+
+**Why the existing gate could not simply be flipped.**
+`law_events_user_can_submit()` reads as the obvious switch — it is documented as
+the single seam, and the POST handler, the account bar and the form template all
+ask it — but turning it off would have closed the EDIT form too. A host edits an
+event they already own at `/account/events/submit/?law_event=<id>`, which is the
+same page 294 behind the same gate, so "nobody may submit" and "nobody may open
+the submission form" are not the same sentence. The first is the ask; the second
+would have taken away every host's ability to correct their own event.
+
+**The new seam is `law_events_submissions_open()`**
+(`functions/events/submission-form.php`), which sits beside
+`law_events_user_can_submit()` and answers the narrower question: does the site
+INVITE a new submission. It returns `false`, behind a
+`law_events_submissions_open` filter so a single audience could be let back in
+without editing any call site. It refuses nothing — no request is blocked, no
+`wp_die()` is reached through it — which is what keeps the theme out of the
+Members plugin's way.
+
+**The four places that advertised submission, all now asking it:**
+
+1. **The account bar and the account hub** (`functions/header-nav.php`). The
+   `submit` item is withheld. One change covers both surfaces, because
+   `templates/account-hub.php` renders the same `law_header_nav()` list as
+   tiles. The condition is added to `law_events_user_can_submit()` rather than
+   replacing it, so the two questions stay distinguishable in the code.
+2. **My events** (`templates/account-events.php`). `$law_submit_url` is empty
+   while submissions are closed, which silences the toolbar button and the
+   empty state's call to action together. The empty state's second sentence
+   changes with it: "Anyone with an account can propose an event…" becomes
+   "Events you host or co-own appear here. Submissions for the London
+   Arbitration Week programme are closed." The panel title loses "submitted"
+   and reads "You have no events yet.", which is true in both states.
+3. **The withdraw dialog** (`functions/account-events.php`). It used to close
+   with "if you change your mind later, you will need to submit a new event",
+   which is now an instruction to do something impossible — and a host would
+   only discover that after withdrawing. Closed, it reads "It cannot be
+   resubmitted, so please speak to the committee first if there is any chance
+   you will want it back."
+4. **The welcome email** (`functions/events/notifications.php`,
+   `user_welcome_registered`). The closing paragraph offering `{submit_link}`
+   is dropped. This is the sharpest of the four: the email is read minutes
+   after registering, so inviting somebody to submit an event and then having
+   the plugin refuse them the page is the worst possible order to do it in. The
+   paragraph is composed behind the seam rather than deleted, so the wording
+   and the merge tag both survive; `{submit_link}` itself still resolves, and
+   BookingEmailsTest opens the seam to go on covering that.
+
+**What deliberately did NOT change.** The submission form, its POST handler and
+`law_events_user_can_submit()` all behave exactly as before, so an in-flight
+draft can still be finished and any owned event can still be edited, until the
+Members restriction lands. The transactional emails that name submission
+("Thank you for submitting your event…", the committee's "New event submitted",
+the rejection copy) are all addressed to somebody who has already submitted, so
+they stay. Menu 19's If Menu rule on item 409 (→ page 294, Submit an event) is
+untouched because nothing renders menu 19: the theme registers only `main-menu`
+and `footer-menu`.
+
+**Two things a deploy cannot carry, both database state.** A welcome email body
+overridden on the Manage emails screen beats the default in code, so an
+environment that has edited that template has to have the paragraph taken out by
+hand. And the Members restriction on page 294 is the client's half of this
+change; nothing in the theme can compensate for it being wrong, in either
+direction.
+
+Touched: `functions/events/submission-form.php`, `functions/header-nav.php`,
+`functions/account-events.php`, `functions/events/notifications.php`,
+`templates/account-events.php`, and the tests
+`tests/HeaderNavTest.php`, `tests/AccountHubTest.php`,
+`tests/RegistrationTest.php`, `tests/RoleRetirementTest.php`,
+`tests/BookingEmailsTest.php`.
 
 ---
 

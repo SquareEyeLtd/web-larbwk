@@ -335,7 +335,16 @@ function law_header_nav() {
 	// the two belong together, and My bookings is a different errand. Offered
 	// to everybody signed in now, so it is also the route in for a first-time
 	// host who has nothing yet.
-	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit() ) {
+	//
+	// Withheld from everybody while submissions are closed (Denis, 22
+	// September 2026). law_events_submissions_open() is the single seam for
+	// that, and it is asked IN ADDITION to law_events_user_can_submit()
+	// rather than instead of it: the second question is still "may this
+	// account use the form at all", which stays true so that a host can go on
+	// editing an event they already own through the same page. This is the
+	// account hub's list as well as the bar's, so both lose the tile together.
+	if ( function_exists( 'law_events_user_can_submit' ) && law_events_user_can_submit()
+		&& function_exists( 'law_events_submissions_open' ) && law_events_submissions_open() ) {
 		$items[] = array(
 			'key'         => 'submit',
 			'label'       => __( 'Submit an event', 'law' ),
