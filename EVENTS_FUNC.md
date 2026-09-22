@@ -9784,5 +9784,86 @@ Touched: `functions/events/migration/test-confirmed-slots.php` (new),
 
 ---
 
+## The site stops asking for new events (22 September 2026)
+
+**Nothing on the site offers page 294 (Submit an event) any more, and the page
+itself is untouched.** The client does not want new events submitted (Denis,
+22 September 2026), and the way it is being closed matters as much as the fact:
+access to the page is being refused by the Members plugin, in the database, not
+by anything in the theme. So the theme's job here is only to stop advertising.
+
+**Why the existing gate could not simply be flipped.**
+`law_events_user_can_submit()` reads as the obvious switch — it is documented as
+the single seam, and the POST handler, the account bar and the form template all
+ask it — but turning it off would have closed the EDIT form too. A host edits an
+event they already own at `/account/events/submit/?law_event=<id>`, which is the
+same page 294 behind the same gate, so "nobody may submit" and "nobody may open
+the submission form" are not the same sentence. The first is the ask; the second
+would have taken away every host's ability to correct their own event.
+
+**The new seam is `law_events_submissions_open()`**
+(`functions/events/submission-form.php`), which sits beside
+`law_events_user_can_submit()` and answers the narrower question: does the site
+INVITE a new submission. It returns `false`, behind a
+`law_events_submissions_open` filter so a single audience could be let back in
+without editing any call site. It refuses nothing — no request is blocked, no
+`wp_die()` is reached through it — which is what keeps the theme out of the
+Members plugin's way.
+
+**The four places that advertised submission, all now asking it:**
+
+1. **The account bar and the account hub** (`functions/header-nav.php`). The
+   `submit` item is withheld. One change covers both surfaces, because
+   `templates/account-hub.php` renders the same `law_header_nav()` list as
+   tiles. The condition is added to `law_events_user_can_submit()` rather than
+   replacing it, so the two questions stay distinguishable in the code.
+2. **My events** (`templates/account-events.php`). `$law_submit_url` is empty
+   while submissions are closed, which silences the toolbar button and the
+   empty state's call to action together. The empty state's second sentence
+   changes with it: "Anyone with an account can propose an event…" becomes
+   "Events you host or co-own appear here. Submissions for the London
+   Arbitration Week programme are closed." The panel title loses "submitted"
+   and reads "You have no events yet.", which is true in both states.
+3. **The withdraw dialog** (`functions/account-events.php`). It used to close
+   with "if you change your mind later, you will need to submit a new event",
+   which is now an instruction to do something impossible — and a host would
+   only discover that after withdrawing. Closed, it reads "It cannot be
+   resubmitted, so please speak to the committee first if there is any chance
+   you will want it back."
+4. **The welcome email** (`functions/events/notifications.php`,
+   `user_welcome_registered`). The closing paragraph offering `{submit_link}`
+   is dropped. This is the sharpest of the four: the email is read minutes
+   after registering, so inviting somebody to submit an event and then having
+   the plugin refuse them the page is the worst possible order to do it in. The
+   paragraph is composed behind the seam rather than deleted, so the wording
+   and the merge tag both survive; `{submit_link}` itself still resolves, and
+   BookingEmailsTest opens the seam to go on covering that.
+
+**What deliberately did NOT change.** The submission form, its POST handler and
+`law_events_user_can_submit()` all behave exactly as before, so an in-flight
+draft can still be finished and any owned event can still be edited, until the
+Members restriction lands. The transactional emails that name submission
+("Thank you for submitting your event…", the committee's "New event submitted",
+the rejection copy) are all addressed to somebody who has already submitted, so
+they stay. Menu 19's If Menu rule on item 409 (→ page 294, Submit an event) is
+untouched because nothing renders menu 19: the theme registers only `main-menu`
+and `footer-menu`.
+
+**Two things a deploy cannot carry, both database state.** A welcome email body
+overridden on the Manage emails screen beats the default in code, so an
+environment that has edited that template has to have the paragraph taken out by
+hand. And the Members restriction on page 294 is the client's half of this
+change; nothing in the theme can compensate for it being wrong, in either
+direction.
+
+Touched: `functions/events/submission-form.php`, `functions/header-nav.php`,
+`functions/account-events.php`, `functions/events/notifications.php`,
+`templates/account-events.php`, and the tests
+`tests/HeaderNavTest.php`, `tests/AccountHubTest.php`,
+`tests/RegistrationTest.php`, `tests/RoleRetirementTest.php`,
+`tests/BookingEmailsTest.php`.
+
+---
+
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.

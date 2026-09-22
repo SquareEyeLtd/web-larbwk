@@ -336,7 +336,7 @@ class RoleRetirementTest extends LAW_Test_Case {
 			law_account_events_reset_cache();
 
 			$items = law_header_nav()['account']['items'];
-			$this->assertContains( 'submit', wp_list_pluck( $items, 'key' ), "A {$role} may submit an event, so the link must be offered." );
+			$this->assertNotContains( 'submit', wp_list_pluck( $items, 'key' ), "Submissions closed on 22 September 2026, so no role is offered the link." );
 
 			foreach ( $items as $item ) {
 				$page_id = 'signout' === $item['key'] ? 0 : law_account_page_id( $item['key'] );

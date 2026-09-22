@@ -118,16 +118,30 @@ class RegistrationTest extends LAW_Test_Case {
 	}
 
 	/**
-	 * The welcome everybody now gets has to cover the whole job, because
-	 * anybody signed in may book AND submit.
+	 * The welcome everybody now gets has to cover browsing and booking. The
+	 * submitting paragraph came off on 22 September 2026, with submissions:
+	 * a welcome email is read minutes after registering, so it may not invite
+	 * somebody to a page they will then be refused.
 	 */
-	public function test_the_welcome_email_offers_booking_and_submitting(): void {
+	public function test_the_welcome_email_offers_booking_and_not_submitting(): void {
 		$welcome = law_events_email( 'user_welcome_registered' );
 
 		$this->assertTrue( (bool) $welcome['active'] );
 		$this->assertStringContainsString( 'browse the programme', $welcome['body'] );
 		$this->assertStringContainsString( '{bookings_link}', $welcome['body'] );
-		$this->assertStringContainsString( '{submit_link}', $welcome['body'], 'A new account can submit an event, and the welcome must say so (Denis, 14 September 2026).' );
+		$this->assertStringNotContainsString( '{submit_link}', $welcome['body'], 'Submissions are closed, so the welcome may not advertise them.' );
+	}
+
+	/**
+	 * The paragraph is composed behind the seam rather than deleted, so
+	 * reopening submissions restores the wording and the merge tag intact.
+	 */
+	public function test_reopening_submissions_restores_the_welcome_paragraph(): void {
+		add_filter( 'law_events_submissions_open', '__return_true' );
+		$welcome = law_events_email( 'user_welcome_registered' );
+		remove_filter( 'law_events_submissions_open', '__return_true' );
+
+		$this->assertStringContainsString( '{submit_link}', $welcome['body'] );
 	}
 
 	/**

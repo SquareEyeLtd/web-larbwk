@@ -85,7 +85,16 @@ get_header();
 
 				<?php
 				$law_items      = law_account_events();
-				$law_submit_url = law_account_events_submit_url();
+				// Empty while submissions are closed (Denis, 22 September
+				// 2026), which is what silences both call-to-action branches
+				// below: the toolbar button and the empty state's own link.
+				// The page 294 (Submit an event) URL itself is unchanged and
+				// still reachable, because the same page is where a host edits
+				// an event they already own; this list simply stops offering
+				// it to somebody starting a new one.
+				$law_submit_url = ( function_exists( 'law_events_submissions_open' ) && law_events_submissions_open() )
+					? law_account_events_submit_url()
+					: '';
 				?>
 
 				<div class="grid-x grid-padding-x">
@@ -136,8 +145,13 @@ get_header();
 							<?php // A filled panel rather than a grey sentence: this is the page's call to action now, not a footnote on an empty list. ?>
 							<div class="law-account-events__empty">
 								<div class="law-account-events__empty-text">
-									<p class="law-account-events__empty-title"><?php esc_html_e( 'You have not submitted any events yet.', 'law' ); ?></p>
-									<p><?php esc_html_e( 'Anyone with an account can propose an event for London Arbitration Week. Drafts are saved here until you submit them.', 'law' ); ?></p>
+									<p class="law-account-events__empty-title"><?php esc_html_e( 'You have no events yet.', 'law' ); ?></p>
+									<?php // Two sentences, one per state: an invitation while submissions are open, a plain statement of fact while they are closed. Neither promises the other will happen. ?>
+									<?php if ( $law_submit_url ) : ?>
+										<p><?php esc_html_e( 'Anyone with an account can propose an event for London Arbitration Week. Drafts are saved here until you submit them.', 'law' ); ?></p>
+									<?php else : ?>
+										<p><?php esc_html_e( 'Events you host or co-own appear here. Submissions for the London Arbitration Week programme are closed.', 'law' ); ?></p>
+									<?php endif; ?>
 								</div>
 								<?php if ( $law_submit_url ) : ?>
 									<a class="button orange law-account-events__empty-cta" href="<?php echo esc_url( $law_submit_url ); ?>"><?php esc_html_e( 'Submit an event', 'law' ); ?></a>
