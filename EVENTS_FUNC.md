@@ -9626,5 +9626,60 @@ Touched: `functions/events/stripe/reconcile.php` (new),
 
 ---
 
+## A test the committee can read in its own inbox (22 September 2026)
+
+**"Send a test to committee", beside "Send a test to me", on every notification
+whose audience is the committee.** A committee notification is almost always
+being reworded on behalf of the people who receive it, and a preview that only
+ever lands in the editor's own inbox cannot show them how it reads there
+(Denis, 22 September 2026). The new button sends the wording AS TYPED, saving
+nothing, to the address list in Events → Settings: one `wp_mail()` addressed
+to the whole list, exactly the way `law_events_send()` addresses the real
+thing, so the test is a true preview of that too.
+
+**Where it is offered.** On the registry AUDIENCE, `'committee' === $email['to']`,
+and nowhere else: on a host or attendee notification the committee list is not
+an audience the email ever reaches, so a test to it would be a preview of
+nothing. That is the rule on both screens, and
+`EmailsDashboardTest::test_the_committee_test_is_offered_on_both_screens_and_only_where_it_means_something()`
+holds them to it. The front-end handler re-checks the audience rather than
+trusting the posted button, and both screens refuse the send with an
+explanation when the address list is empty, pointedly, because an empty list
+means the real notification is reaching nobody either.
+
+**One helper, both screens, as with everything else here.**
+`law_events_email_send_test()` now delegates to a new
+`law_events_email_send_test_to( $override, $emails )` in `notifications.php`,
+and `law_events_email_send_test_committee()` is that function over
+`law_events_committee_emails()`. The single-recipient return still carries
+`'email'`, which is the key both screens' confirmations have always read, with
+the full list alongside it as `'emails'`. Both new functions are in the
+reflection list `test_both_screens_share_one_write_path()` walks, so neither can
+drift into a screen. The committee send spends the same tighter `email_test`
+rate budget as the test to oneself: it is the more expensive of the two, so it
+must not have a budget of its own to spend.
+
+**"Reset to the standard wording" is now a small text link under the buttons**
+rather than a fourth filled button in the row (Denis, 22 September 2026). It is
+the rarest action on the screen and the only one that throws work away, so it
+should not compete with Save for attention. The same treatment on the
+per-event confirmation override (`parts/events/committee-email-override.php`),
+which carries the same control. The new `.law-text-button` utility in
+`event-form.css` is the shape `.law-file-clear` already used (plain underlined
+text on `--law-form-destructive-soft`), as a class of its own because
+`.law-file-clear` carries the file control's margins and its `[hidden]` rule.
+Both palettes define that token, so the light dashboard gets the darker red
+without a `--light` override; the hover state thickens the underline rather
+than changing a colour that only the dark palette would show. Behind the same
+shared confirm dialog as before, and still a plain submit without JavaScript.
+
+Touched: `functions/events/notifications.php`,
+`functions/events/emails-dashboard.php`,
+`functions/events/admin/emails-screen.php`,
+`parts/events/emails-manage.php`, `parts/events/committee-email-override.php`,
+`assets/css/event-form.css`, `tests/EmailsDashboardTest.php`.
+
+---
+
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
 this document maps that design onto the code as built.

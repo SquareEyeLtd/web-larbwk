@@ -90,6 +90,8 @@ class EmailsDashboardTest extends LAW_Test_Case {
 			'law_events_email_recipients_label',
 			'law_events_email_trigger_label',
 			'law_events_email_send_test',
+			'law_events_email_send_test_to',
+			'law_events_email_send_test_committee',
 			'law_events_email_recipients_survived',
 			'law_events_email_body_survived',
 			'law_events_email_body_sanitize',
@@ -540,6 +542,88 @@ class EmailsDashboardTest extends LAW_Test_Case {
 			$this->assertStringContainsString( '<li>', $mail['message'] );
 			$this->assertStringContainsString( '<p>Dear ', $mail['message'] );
 		}
+	}
+
+	/* The test to the committee (22 September 2026) ________________________ */
+
+	public function test_a_committee_test_goes_to_every_committee_address(): void {
+		// The point of the button: a notification the committee receives is
+		// being reworded for that inbox, so the preview has to land in it.
+		$this->isolate_option(
+			LAW_EVENTS_SETTINGS_OPTION,
+			array( 'committee_emails' => array( 'one@committee.test', 'two@committee.test' ) )
+		);
+
+		$captured = array();
+		$capture  = static function ( $atts ) use ( &$captured ) {
+			$captured[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $capture );
+
+		try {
+			$sent = law_events_email_send_test_committee( array( 'subject' => 'Committee subject', 'body' => '<p>Body</p>' ) );
+		} finally {
+			remove_filter( 'wp_mail', $capture );
+		}
+
+		$this->assertSame( array( 'one@committee.test', 'two@committee.test' ), $sent['emails'] );
+		$this->assertCount( 1, $captured, 'One send addressed to the whole list, exactly as a real committee notification is addressed.' );
+		$this->assertSame( array( 'one@committee.test', 'two@committee.test' ), $captured[0]['to'] );
+		$this->assertStringStartsWith( '[TEST] ', $captured[0]['subject'], 'A test says so in the subject, or somebody acts on it.' );
+	}
+
+	public function test_a_committee_test_with_no_addresses_configured_sends_nothing(): void {
+		// An empty list means the real notification reaches nobody either.
+		// Both screens say that rather than reporting a send that went nowhere.
+		$this->isolate_option( LAW_EVENTS_SETTINGS_OPTION, array( 'committee_emails' => array() ) );
+
+		$captured = 0;
+		$capture  = static function ( $atts ) use ( &$captured ) {
+			++$captured;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $capture );
+
+		try {
+			$sent = law_events_email_send_test_committee( array( 'subject' => 's', 'body' => 'b' ) );
+		} finally {
+			remove_filter( 'wp_mail', $capture );
+		}
+
+		$this->assertFalse( $sent['sent'] );
+		$this->assertSame( array(), $sent['emails'] );
+		$this->assertSame( 0, $captured );
+	}
+
+	public function test_the_committee_test_is_offered_on_both_screens_and_only_where_it_means_something(): void {
+		// The same rule on both, or the two screens drift: the button belongs
+		// on the notifications whose registry audience IS the committee, and
+		// nowhere else, because on a host or attendee notification the
+		// committee list is not an audience the email ever reaches.
+		$front = file_get_contents( get_theme_file_path( 'parts/events/emails-manage.php' ) );
+		$this->assertStringContainsString( "'committee' === \$law_em_email['to']", $front );
+		$this->assertStringContainsString( 'law_email_test_committee', $front );
+
+		$admin = file_get_contents( get_theme_file_path( 'functions/events/admin/emails-screen.php' ) );
+		$this->assertStringContainsString( "'committee' === \$email['to']", $admin );
+		$this->assertStringContainsString( 'send_test_committee', $admin );
+
+		// And the handler does not trust the posted button on a notification
+		// that is not sent to the committee.
+		$handler = file_get_contents( get_theme_file_path( 'functions/events/emails-dashboard.php' ) );
+		$this->assertStringContainsString( "\$test_to_committee && 'committee' !== \$definition['to']", $handler );
+	}
+
+	public function test_a_test_to_oneself_still_answers_in_its_old_shape(): void {
+		// Both screens and the wp-admin notice read $test['email'].
+		$user = $this->make_user( 'events_committee' );
+		wp_set_current_user( $user );
+
+		$sent = law_events_email_send_test( array( 'subject' => 's', 'body' => '<p>b</p>' ), $user );
+
+		$this->assertSame( get_userdata( $user )->user_email, $sent['email'] );
+		$this->assertSame( array( get_userdata( $user )->user_email ), $sent['emails'] );
 	}
 
 	public function test_both_screens_offer_the_same_formatting_buttons(): void {

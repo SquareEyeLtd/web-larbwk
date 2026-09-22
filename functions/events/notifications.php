@@ -1324,18 +1324,59 @@ function law_events_email_recipients_label( array $email ) {
  * Send one email AS TYPED to the current user, persisting nothing, so an
  * editor can see the result before deciding to save.
  *
- * Rendered exactly as law_events_send() renders a real one (placeholders,
- * esc_html, wpautop, make_clickable), against the most recent event so the
- * tags resolve to something recognisable.
- *
  * @param array $override subject and body, as typed.
  * @param int   $user_id  Recipient; defaults to the current user.
- * @return array{sent:bool,email:string,event_id:int,event_title:string}
+ * @return array{sent:bool,email:string,emails:array<int,string>,event_id:int,event_title:string}
  */
 function law_events_email_send_test( array $override, $user_id = 0 ) {
 	$user = $user_id ? get_user_by( 'id', (int) $user_id ) : wp_get_current_user();
 	if ( ! $user || ! is_email( $user->user_email ) ) {
-		return array( 'sent' => false, 'email' => '', 'event_id' => 0, 'event_title' => '' );
+		return array( 'sent' => false, 'email' => '', 'emails' => array(), 'event_id' => 0, 'event_title' => '' );
+	}
+
+	$test = law_events_email_send_test_to( $override, array( $user->user_email ) );
+
+	// 'email' (singular) is the shape both screens and the tests have always
+	// read for a test to oneself; the multi-recipient send below is the one
+	// that needs the list.
+	return array( 'email' => $user->user_email ) + $test;
+}
+
+/**
+ * Send one email AS TYPED to the committee, persisting nothing.
+ *
+ * The same preview as "Send a test to me", to the audience the notification
+ * actually goes to (Denis, 22 September 2026): a committee notification is
+ * usually being reworded on behalf of the people who receive it, and reading
+ * it in their own inbox is the only way to see it as they will. Offered only
+ * on the notifications whose registry audience IS 'committee' — for anything
+ * else the list would be a set of addresses the email never reaches.
+ *
+ * One wp_mail() to the whole list, exactly as law_events_send() addresses the
+ * real thing, so the test is a true preview of that too.
+ *
+ * @param array $override subject and body, as typed.
+ * @return array{sent:bool,emails:array<int,string>,event_id:int,event_title:string}
+ */
+function law_events_email_send_test_committee( array $override ) {
+	return law_events_email_send_test_to( $override, law_events_committee_emails() );
+}
+
+/**
+ * The shared body of both test sends.
+ *
+ * Rendered exactly as law_events_send() renders a real one (placeholders,
+ * esc_html, wpautop, make_clickable), against the most recent event so the
+ * tags resolve to something recognisable.
+ *
+ * @param array             $override subject and body, as typed.
+ * @param array<int,string> $emails   Recipients; anything that is not an address is dropped.
+ * @return array{sent:bool,emails:array<int,string>,event_id:int,event_title:string}
+ */
+function law_events_email_send_test_to( array $override, array $emails ) {
+	$emails = array_values( array_unique( array_filter( array_map( 'sanitize_email', $emails ), 'is_email' ) ) );
+	if ( ! $emails ) {
+		return array( 'sent' => false, 'emails' => array(), 'event_id' => 0, 'event_title' => '' );
 	}
 
 	$sample = get_posts(
@@ -1350,7 +1391,7 @@ function law_events_email_send_test( array $override, $user_id = 0 ) {
 	$placeholders = law_events_email_placeholders( $event_id );
 
 	$sent = wp_mail(
-		array( $user->user_email ),
+		$emails,
 		'[TEST] ' . strtr( (string) ( $override['subject'] ?? '' ), $placeholders ),
 		// The same renderer law_events_send() uses, so a test is a true
 		// preview of the real thing rather than a second opinion about it.
@@ -1360,7 +1401,7 @@ function law_events_email_send_test( array $override, $user_id = 0 ) {
 
 	return array(
 		'sent'        => (bool) $sent,
-		'email'       => $user->user_email,
+		'emails'      => $emails,
 		'event_id'    => $event_id,
 		'event_title' => $event_id ? (string) get_the_title( $event_id ) : '',
 	);
