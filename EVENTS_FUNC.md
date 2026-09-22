@@ -3227,11 +3227,51 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   deliberately unchanged**, so `law_hubspot_contact_type` stays comparable for
   whatever reads it downstream) and the ACF user meta
   (accessibility/dietary) both forms share.
-- `law_registration_handler()` (on `admin_post_nopriv_law_register`): honeypot,
-  per-IP rate limit (20/hour), account creation **hardcoded to `subscriber`**
+- `law_registration_handler()` (on `admin_post_nopriv_law_register`): per-IP
+  rate limit (20/hour), nonce, honeypot, account creation **hardcoded to
+  `subscriber`**
   (no role is taken from input at all now, so there is nothing to escalate),
   auto-login; a tripped rate limit returns a titled 429 with a back link.
   Logged-in users are bounced.
+  **The order of those first three matters, and it changed on 22 September
+  2026.** The nonce used to be first, as `check_admin_referer()`, which ends
+  the request with core's "The link you followed has expired." screen. It now
+  comes second and it no longer ends anything: a bad or missing nonce stores
+  the typed values (never the passwords) and bounces back to `/register/` with
+  a whole-form `expired` error, so the visitor reads a sentence over their own
+  form instead of a dead end on a `wp-admin/admin-post.php` URL. The rate limit
+  moved in front of it to pay for that, because a path that writes a transient
+  before checking anything is a way to fill the options table; nothing is lost
+  by the swap, since for a logged-out visitor the nonce is a value shared by
+  every visitor and never gated that counter meaningfully.
+  **Why this came up** is the part worth keeping. A user reported three
+  identical failures creating an account, and the form was not at fault:
+  `/register/` was being served from the Kinsta edge cache with
+  `Cache-Control: public, max-age=0, s-maxage=86400`, a full 24 hours, while
+  the nonce WordPress gives a logged-out visitor is built from the nonce tick
+  alone and dies between 12 and 24 hours after it is made. Anyone served a
+  cached copy from the back half of its life posted a nonce that was already
+  dead, and "Please try again" took them back to the same cached page with the
+  same dead nonce. The fix is `law_nonce_bearing_public_templates()` and the
+  `template_redirect` hook beside it in `functions/wordpress.php`: the two
+  templates that print a nonce to a logged-out visitor (`templates/register.php`
+  and `templates/login.php`, the latter belt and braces because its forms only
+  appear on an `?action=` URL the edge bypasses anyway) call
+  `nocache_headers()`, whose `private` is what tells a shared cache the
+  response belongs to one visitor. The soft-fail path above is the safety net
+  for the case no cache header can reach, a form left open in a tab overnight.
+  Two things follow for anyone adding an anonymous form: name its template in
+  that list, and check the finding still holds with
+  `curl -sI https://londonarbitrationweek.co.uk/register/ | grep -i cache`,
+  which should show no `s-maxage` and `x-kinsta-cache: BYPASS`.
+  The failure also renders through the shared failed-save dialog
+  (`law_events_form_error_modal()`), with `expired` handled beside `locked` as
+  a whole-form refusal: one sentence, no jump lines, because no field is at
+  fault. On this page the dialog is rendered **outside** the `<section>`, not
+  beside the inline notice as on the event form, because the column the notice
+  sits in carries `wow fadeIn` and WOW.js holds a `.wow` element at
+  `visibility: hidden` until it scrolls into view — visibility inherits, and a
+  dialog inside that column would open correctly and still be invisible.
 - `law_profile_handler()` (on `admin_post_law_profile`): the self-service
   profile edit — no role changes at all, and an
   **email or password change requires the current password**

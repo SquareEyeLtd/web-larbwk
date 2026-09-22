@@ -1352,13 +1352,20 @@ function law_events_form_error_modal( array $errors, $title = 'Your changes were
 		return;
 	}
 
-	// The whole-form refusal (someone else holds the edit lock): nothing is
-	// highlighted below, so the dialog is that one sentence and no jump lines.
-	if ( isset( $errors['locked'][0] ) ) {
+	// The whole-form refusals: nothing is highlighted below, so the dialog is
+	// that one sentence and no jump lines. Two of them —
+	// `locked` (someone else holds the edit lock) and `expired` (the nonce on
+	// a page left open too long, added 22 September 2026 for the registration
+	// form), and a jump line would be meaningless for either, because there is
+	// no field at fault to jump to.
+	foreach ( array( 'locked', 'expired' ) as $whole_form ) {
+		if ( ! isset( $errors[ $whole_form ][0] ) ) {
+			continue;
+		}
 		get_template_part( 'parts/layout/modal', null, array(
 			'id'       => 'law-modal-form-errors',
 			'title'    => $title,
-			'copy'     => (string) $errors['locked'][0],
+			'copy'     => (string) $errors[ $whole_form ][0],
 			'confirm'  => false,
 			'close'    => 'Close',
 			'autoopen' => true,
