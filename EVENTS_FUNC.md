@@ -9784,84 +9784,108 @@ Touched: `functions/events/migration/test-confirmed-slots.php` (new),
 
 ---
 
-## The site stops asking for new events (22 September 2026)
+## Only an `event_submitter` may start a new event (22 September 2026)
 
-**Nothing on the site offers page 294 (Submit an event) any more, and the page
-itself is untouched.** The client does not want new events submitted (Denis,
-22 September 2026), and the way it is being closed matters as much as the fact:
-access to the page is being refused by the Members plugin, in the database, not
-by anything in the theme. So the theme's job here is only to stop advertising.
+**Submitting a new event needs the `event_submitter` role; editing an event you
+already own needs nothing new.** The client stopped wanting open submissions
+(Denis, 22 September 2026). The first attempt was to leave the theme alone and
+close page 294 (Submit an event) with the Members plugin, and it was abandoned
+for a reason worth recording, because it is the whole shape of what was built
+instead: **page 294 is the edit form as well.** A host edits an event at
+`/account/events/submit/?law_event=<id>`, so a restriction on that page would
+have taken editing away from every host along with submission. Members cannot
+tell the two apart; only the code can.
 
-**Why the existing gate could not simply be flipped.**
-`law_events_user_can_submit()` reads as the obvious switch — it is documented as
-the single seam, and the POST handler, the account bar and the form template all
-ask it — but turning it off would have closed the EDIT form too. A host edits an
-event they already own at `/account/events/submit/?law_event=<id>`, which is the
-same page 294 behind the same gate, so "nobody may submit" and "nobody may open
-the submission form" are not the same sentence. The first is the ask; the second
-would have taken away every host's ability to correct their own event.
+**The role.** `event_submitter` is registered in
+`functions/events/capabilities.php` (`law_events_submitter_role()`), carries
+`read` plus one capability, `law_submit_event`
+(`law_events_submit_capability()`), and nothing else. That narrowness is
+deliberate. The three self-service roles retired on 14 September 2026 were
+retired because they gated several unrelated things at once and drifted apart
+from each other; this one gates exactly one thing and nothing in the module may
+ever read it for a second purpose. It is **additive**: the committee adds it
+from the Users screen to an account that is already a subscriber, so gaining it
+costs nobody anything they had.
 
-**The new seam is `law_events_submissions_open()`**
-(`functions/events/submission-form.php`), which sits beside
-`law_events_user_can_submit()` and answers the narrower question: does the site
-INVITE a new submission. It returns `false`, behind a
-`law_events_submissions_open` filter so a single audience could be let back in
-without editing any call site. It refuses nothing — no request is blocked, no
-`wp_die()` is reached through it — which is what keeps the theme out of the
-Members plugin's way.
+**Committee members, editors and administrators hold the capability too.** The
+request was to stop members of the public submitting, not to stop LAW. They
+already hold the whole `law_event` capability set, the committee dashboard has
+no create route of its own (it only edits events that exist), and page 294 is
+therefore their only front-end way to raise one.
 
-**The four places that advertised submission, all now asking it:**
+**The role is granted by code, not by hand.** `law_events_grant_capabilities()`
+runs on `init` behind the `law_events_caps_version` option, bumped to `2`, so
+pushing the code registers the role on every environment with no manual step.
+`?setup-account-pages` reports whether it is there.
 
-1. **The account bar and the account hub** (`functions/header-nav.php`). The
-   `submit` item is withheld. One change covers both surfaces, because
-   `templates/account-hub.php` renders the same `law_header_nav()` list as
-   tiles. The condition is added to `law_events_user_can_submit()` rather than
-   replacing it, so the two questions stay distinguishable in the code.
-2. **My events** (`templates/account-events.php`). `$law_submit_url` is empty
-   while submissions are closed, which silences the toolbar button and the
-   empty state's call to action together. The empty state's second sentence
-   changes with it: "Anyone with an account can propose an event…" becomes
-   "Events you host or co-own appear here. Submissions for the London
-   Arbitration Week programme are closed." The panel title loses "submitted"
-   and reads "You have no events yet.", which is true in both states.
-3. **The withdraw dialog** (`functions/account-events.php`). It used to close
-   with "if you change your mind later, you will need to submit a new event",
-   which is now an instruction to do something impossible — and a host would
-   only discover that after withdrawing. Closed, it reads "It cannot be
-   resubmitted, so please speak to the committee first if there is any chance
-   you will want it back."
+**`law_events_user_can_submit()` now means one thing, and only one.** It was
+"anybody with an account" from 14 September 2026; it is now
+`user_can( $user, 'law_submit_event' )`. Crucially it does NOT mean "may this
+account use the submission form", and every caller has to be clear which
+question it is asking:
+
+| Caller | Asks | When |
+|---|---|---|
+| `law_events_form_handler()` | `law_events_user_can_submit()` | only when the POST carries no event ID |
+| `law_events_form_handler()` | `law_user_can_manage_event()` | whenever it does, exactly as before |
+| `templates/account-event-form.php` | `law_events_user_can_submit()` | only when rendering a blank form (`! $law_post`) |
+| `functions/header-nav.php` | `law_events_user_can_submit()` | to offer the account bar / hub item |
+| `templates/account-events.php` | `law_events_user_can_submit()` | to offer the My events button and empty-state link |
+| `functions/account-events.php` | `law_events_user_can_submit()` | to word the withdraw dialog |
+
+**A draft started before the role existed still goes through.** It has an event
+ID, so it arrives on the editing side of the handler's split and can be
+finished and sent to the committee. Stranding half-written events would be a
+worse outcome than letting the last few through.
+
+**What each surface says now.**
+
+1. **The account bar and the account hub** (`functions/header-nav.php`) offer
+   "Submit an event" only to an account that may start one. One change covers
+   both, because `templates/account-hub.php` renders the same
+   `law_header_nav()` list as tiles.
+2. **My events** (`templates/account-events.php`) builds its toolbar button and
+   its empty-state link from a single gated `$law_submit_url`, so the two can
+   never disagree about who is being invited. The empty state now has a
+   sentence per audience: a submitter is told drafts are saved there, and
+   somebody without the role is told what the page holds and to contact the
+   committee if they would like to propose an event. The Edit links on the
+   cards are untouched.
+3. **The withdraw dialog** (`functions/account-events.php`) used to close with
+   "you will need to submit a new event". That is an instruction, and for most
+   hosts it is now one the site would refuse — discovered only after
+   withdrawing, when the event has already gone. Without the role it reads
+   "It cannot be resubmitted, so please speak to the committee first if there
+   is any chance you will want it back."
 4. **The welcome email** (`functions/events/notifications.php`,
-   `user_welcome_registered`). The closing paragraph offering `{submit_link}`
-   is dropped. This is the sharpest of the four: the email is read minutes
-   after registering, so inviting somebody to submit an event and then having
-   the plugin refuse them the page is the worst possible order to do it in. The
-   paragraph is composed behind the seam rather than deleted, so the wording
-   and the merge tag both survive; `{submit_link}` itself still resolves, and
-   BookingEmailsTest opens the seam to go on covering that.
+   `user_welcome_registered`) loses its closing paragraph offering
+   `{submit_link}`. Removed outright rather than made conditional, because the
+   condition could only ever be false: the email reaches an account seconds
+   after it is created, and a self-service registration is a plain subscriber.
+   `{submit_link}` stays in `law_events_email_placeholders()` so a committee
+   member can still use it deliberately on the Manage emails screen.
 
-**What deliberately did NOT change.** The submission form, its POST handler and
-`law_events_user_can_submit()` all behave exactly as before, so an in-flight
-draft can still be finished and any owned event can still be edited, until the
-Members restriction lands. The transactional emails that name submission
-("Thank you for submitting your event…", the committee's "New event submitted",
-the rejection copy) are all addressed to somebody who has already submitted, so
-they stay. Menu 19's If Menu rule on item 409 (→ page 294, Submit an event) is
-untouched because nothing renders menu 19: the theme registers only `main-menu`
-and `footer-menu`.
+**The Members trap, avoided in advance.** The account pages carry
+`_members_access_role` rows, and the plugin refuses anybody whose role is not
+named. Normally `event_submitter` sits on top of subscriber and the subscriber
+row admits them, but nothing stops the committee making it somebody's only role
+— and that account would be offered page 294 by the theme and refused it by the
+plugin, which is exactly the failure the `attendee` gap caused on 14 September
+2026. `law_setup_account_page_roles()` therefore adds the new role to
+/account/, /account/events/, /account/bookings/ and /account/events/submit/.
 
-**Two things a deploy cannot carry, both database state.** A welcome email body
-overridden on the Manage emails screen beats the default in code, so an
-environment that has edited that template has to have the paragraph taken out by
-hand. And the Members restriction on page 294 is the client's half of this
-change; nothing in the theme can compensate for it being wrong, in either
-direction.
+**The one thing a deploy cannot carry.** A welcome email body overridden on the
+Manage emails screen beats the default in code, so an environment that has
+edited that template has to have the paragraph taken out by hand.
 
-Touched: `functions/events/submission-form.php`, `functions/header-nav.php`,
+Touched: `functions/events/capabilities.php`,
+`functions/events/submission-form.php`, `functions/header-nav.php`,
 `functions/account-events.php`, `functions/events/notifications.php`,
+`functions/setup-account-pages.php`, `templates/account-event-form.php`,
 `templates/account-events.php`, and the tests
-`tests/HeaderNavTest.php`, `tests/AccountHubTest.php`,
-`tests/RegistrationTest.php`, `tests/RoleRetirementTest.php`,
-`tests/BookingEmailsTest.php`.
+`tests/EventSubmitterRoleTest.php` (new), `tests/HeaderNavTest.php`,
+`tests/AccountHubTest.php`, `tests/RegistrationTest.php`,
+`tests/RoleRetirementTest.php`, `tests/BookingEmailsTest.php`.
 
 ---
 

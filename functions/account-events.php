@@ -386,14 +386,16 @@ function law_account_event_actions( $event, $entry ) {
 				'modal'    => array(
 					'id'      => 'law-modal-withdraw-' . $event_id,
 					'title'   => __( 'Withdraw this event', 'law' ),
-					// The second sentence depends on whether a new submission
-					// is even possible. With submissions closed (Denis,
-					// 22 September 2026) "you will need to submit a new event"
-					// would be telling the host to do something the site no
-					// longer lets them do, which is worse than saying nothing:
-					// they would withdraw expecting a way back and find none.
+					// The second sentence depends on whether THIS host could
+					// raise a replacement. "You will need to submit a new
+					// event" is an instruction, and since 22 September 2026 it
+					// is one most hosts cannot follow: submitting needs the
+					// `event_submitter` role, editing does not. Telling
+					// somebody to do something the site will refuse them is
+					// worse than saying nothing, because they would only find
+					// out after withdrawing, when the event has already gone.
 					'copy'    => array(
-						( function_exists( 'law_events_submissions_open' ) && law_events_submissions_open() )
+						law_events_user_can_submit()
 							? __( 'The event is cancelled and comes out of the committee\'s review. It cannot be resubmitted: if you change your mind later, you will need to submit a new event.', 'law' )
 							: __( 'The event is cancelled and comes out of the committee\'s review. It cannot be resubmitted, so please speak to the committee first if there is any chance you will want it back.', 'law' ),
 						__( 'The committee is notified of the withdrawal.', 'law' ),

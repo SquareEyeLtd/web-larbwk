@@ -11,46 +11,32 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Who may submit an event: anybody with an account.
+ * Who may START a new event: an account holding the law_submit_event
+ * capability, which `event_submitter` and the committee/editor/administrator
+ * roles carry (functions/events/capabilities.php).
  *
- * The three self-service roles were retired on 14 September 2026 (Denis, from
- * the client), and with them the idea that submitting is for a particular kind
- * of member. This stays a function rather than an inline is_user_logged_in()
- * for one reason: it is the SINGLE seam. The POST handler, the header bar and
- * the form template all ask it, so a future narrowing (a verified-host flag,
- * say) has exactly one place to go.
+ * This is the SINGLE seam, and the whole point of it is that it answers one
+ * question and not two. It does NOT answer "may this account use the
+ * submission form", because page 294 (Submit an event) is the edit form for an
+ * event somebody already owns as well (/account/events/submit/?law_event=<id>).
+ * Editing asks law_user_can_manage_event() and always did; a host who is not a
+ * submitter goes on correcting their own events exactly as before, which is the
+ * requirement that ruled out closing the page outright (Denis, 22 September
+ * 2026).
+ *
+ * So every caller has to be clear which of the two it means. The POST handler
+ * asks this only when no event ID came with the request; the form template asks
+ * it only when it is rendering a blank form; the account bar, the account hub
+ * and My events ask it to decide whether to OFFER the page at all.
+ *
+ * It was "anybody with an account" from 14 September 2026, when the three
+ * self-service roles were retired, until 22 September 2026. That history is
+ * worth keeping in mind: the retired roles gated several unrelated things at
+ * once and drifted apart, so this one deliberately gates exactly one.
  */
 function law_events_user_can_submit( $user_id = 0 ) {
-	$user = $user_id ? get_user_by( 'id', $user_id ) : wp_get_current_user();
-	return (bool) $user && $user->exists();
-}
-
-/**
- * Whether the site still INVITES new event submissions.
- *
- * Deliberately separate from law_events_user_can_submit(), and the two must
- * never be collapsed into one test. That function answers "may this account
- * use the submission form", and it still answers yes, because page 294 (Submit
- * an event) is also the EDIT form for an event somebody already owns
- * (/account/events/submit/?law_event=<id>). Closing it there would take a
- * host's ability to edit their own event away with it.
- *
- * This function answers the narrower question: do we OFFER the page to
- * somebody who is not already using it. The answer is no (Denis, 22 September
- * 2026): the client does not want new events submitted, and access to the page
- * itself is being closed with the Members plugin rather than in the theme, so
- * nothing here may refuse a request — it only stops advertising.
- *
- * Everything that advertises submission asks this: the account bar and hub
- * item (header-nav.php), the My events toolbar button and empty state
- * (templates/account-events.php), the withdraw dialog's "you would have to
- * submit a new one" line (account-events.php) and the welcome email's closing
- * paragraph (events/notifications.php). Reopening submissions is one return
- * value; the filter is there so a single audience (the committee, say) can be
- * let back in without touching any of the call sites.
- */
-function law_events_submissions_open() {
-	return (bool) apply_filters( 'law_events_submissions_open', false );
+	$user_id = $user_id ? (int) $user_id : get_current_user_id();
+	return $user_id > 0 && user_can( $user_id, law_events_submit_capability() );
 }
 
 /** The event being edited on the form page, 0 for a new submission. */
@@ -1192,7 +1178,7 @@ function law_events_form_handler() {
 	check_admin_referer( 'law_event_form' );
 
 	$user_id = get_current_user_id();
-	if ( ! law_events_user_can_submit( $user_id ) ) {
+	if ( ! $user_id ) {
 		wp_die( 'Sorry, you are not allowed to submit events.' );
 	}
 
@@ -1211,8 +1197,23 @@ function law_events_form_handler() {
 	// routes; both targets are home_url()-built, so this is never an open redirect.
 	$is_committee_ctx = 'committee' === sanitize_key( $_POST['law_form_context'] ?? '' ) && law_user_is_committee( $user_id );
 
+	// The capability that matters depends on which of the two jobs this POST
+	// is. Creating asks law_events_user_can_submit(); editing asks
+	// law_user_can_manage_event() below, and always did. Splitting them here,
+	// rather than at the top of the handler, is what lets a host who is not an
+	// `event_submitter` go on correcting an event they already own (Denis,
+	// 22 September 2026).
+	//
+	// A law-draft the host started before the role existed has an ID, so it
+	// arrives on the editing side and can still be finished and sent to the
+	// committee. That is deliberate: the draft is already theirs, and stranding
+	// half-written events would be a worse outcome than letting the last few
+	// through.
 	$event_id = absint( $_POST['law_event_id'] ?? 0 );
 	$post     = null;
+	if ( ! $event_id && ! law_events_user_can_submit( $user_id ) ) {
+		wp_die( 'Sorry, you are not allowed to submit events.' );
+	}
 	if ( $event_id ) {
 		$post = get_post( $event_id );
 		if ( ! $post || LAW_EVENT_CPT !== $post->post_type || ! law_user_can_manage_event( $user_id, $event_id ) ) {
