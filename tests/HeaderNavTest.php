@@ -36,9 +36,11 @@ class HeaderNavTest extends LAW_Test_Case {
 	 * role appears twice below with different expectations, which would have
 	 * been impossible before.
 	 *
-	 * No row carries 'submit' any more: submissions closed on 22 September
-	 * 2026 and the item is withheld from everybody, committee and
-	 * administrators included. Its own two tests are further down.
+	 * 'submit' is the one item that is still decided by a role, since
+	 * 22 September 2026: it needs law_submit_event, which `event_submitter`
+	 * and the committee-level roles carry and a plain subscriber does not. Both
+	 * sides of that are rows below, so a change to the capability shows up here
+	 * as a diff rather than as a silently missing item.
 	 *
 	 * Personal items come first and the committee tools after (Denis), because
 	 * the account hub renders this same list as boxes and somebody arriving
@@ -72,31 +74,53 @@ class HeaderNavTest extends LAW_Test_Case {
 				true,
 				array( 'profile', 'my_bookings', 'events', 'signout' ),
 			),
+			// The same account plus the role: My events is unchanged, Submit an
+			// event appears straight after it, and nothing else moves.
+			'submitter, no events'    => array(
+				'event_submitter',
+				false,
+				array( 'profile', 'my_bookings', 'submit', 'signout' ),
+			),
+			'submitter, owns one'     => array(
+				'event_submitter',
+				true,
+				array( 'profile', 'my_bookings', 'events', 'submit', 'signout' ),
+			),
 			'committee, no events'    => array(
 				'events_committee',
 				false,
-				array_merge( array( 'profile', 'my_bookings' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
 			),
 			'committee, owns one'     => array(
 				'events_committee',
 				true,
-				array_merge( array( 'profile', 'my_bookings', 'events' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings', 'events', 'submit' ), $committee, array( 'signout' ) ),
 			),
 			'administrator'           => array(
 				'administrator',
 				false,
-				array_merge( array( 'profile', 'my_bookings' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
 			),
 			'editor'                  => array(
 				'editor',
 				false,
-				array_merge( array( 'profile', 'my_bookings' ), $committee, array( 'signout' ) ),
+				array_merge( array( 'profile', 'my_bookings', 'submit' ), $committee, array( 'signout' ) ),
 			),
 		);
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'nav_expectations' )]
 	public function test_items_per_situation( string $role, bool $owns_event, array $expected ): void {
+		// The bar hides anything the Members plugin would refuse
+		// (law_header_nav_can_view()), so the role rows on the account pages
+		// have to be provisioned before the expectations below mean anything.
+		// This is what catches a new role being offered a page it cannot open:
+		// an account whose ONLY role is `event_submitter` sees nothing at all
+		// until law_setup_account_page_roles() has run.
+		if ( function_exists( 'members_can_current_user_view_post' ) ) {
+			law_setup_account_page_roles();
+		}
+
 		$user_id = $this->make_user( $role );
 		if ( $owns_event ) {
 			$this->make_event( array(), 'law-proposed', $user_id );
@@ -266,8 +290,8 @@ class HeaderNavTest extends LAW_Test_Case {
 
 	/**
 	 * Somebody who has never submitted anything gets their bookings, and NOT a
-	 * link to an empty My events page. Nor the invitation to submit: that came
-	 * off on 22 September 2026, when submissions closed.
+	 * link to an empty My events page. Nor the invitation to submit, since
+	 * 22 September 2026: that needs the `event_submitter` role.
 	 */
 	public function test_a_user_with_no_events_is_not_offered_my_events(): void {
 		wp_set_current_user( $this->make_user() );
@@ -276,24 +300,25 @@ class HeaderNavTest extends LAW_Test_Case {
 		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
 
 		$this->assertSame( 'My bookings', $items['my_bookings'] );
-		$this->assertArrayNotHasKey( 'submit', $items, 'Submissions are closed, so the bar may not offer the page.' );
+		$this->assertArrayNotHasKey( 'submit', $items, 'A plain subscriber may not start an event, so the bar may not offer the page.' );
 		$this->assertArrayNotHasKey( 'events', $items );
 	}
 
 	/**
-	 * The other half of the same seam: the item is withheld, not deleted, so
-	 * reopening submissions has to bring it back where it always sat, straight
-	 * after My events and before the committee group.
+	 * The role is handed out on top of an existing account rather than
+	 * replacing it, so the item has to appear for somebody who is still a
+	 * subscriber underneath — and in its usual place, after My events.
 	 */
-	public function test_reopening_submissions_restores_the_item(): void {
-		wp_set_current_user( $this->make_user() );
+	public function test_adding_the_submitter_role_restores_the_item(): void {
+		$user_id = $this->make_user();
+		( new WP_User( $user_id ) )->add_role( law_events_submitter_role() );
+		wp_set_current_user( $user_id );
 		law_account_events_reset_cache();
 
-		add_filter( 'law_events_submissions_open', '__return_true' );
 		$items = wp_list_pluck( law_header_nav()['account']['items'], 'label', 'key' );
-		remove_filter( 'law_events_submissions_open', '__return_true' );
 
 		$this->assertSame( 'Submit an event', $items['submit'] );
+		$this->assertSame( 'My bookings', $items['my_bookings'] );
 	}
 
 	/**

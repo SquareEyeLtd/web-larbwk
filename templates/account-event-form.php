@@ -53,8 +53,8 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 
 			<?php if ( ! is_user_logged_in() ) : ?>
 				<div class="large-9 cell auth-intro"><p>Please <a href="<?php echo esc_url( wp_login_url( get_permalink() ) ); ?>">sign in</a> to submit an event.</p></div>
-			<?php elseif ( ! law_events_user_can_submit() ) : // Unreachable for a signed-in account today; kept as the seam's own fallback, and deliberately says nothing about roles. ?>
-				<div class="large-9 cell auth-intro"><p>Sorry, your account cannot submit events. Please <a href="<?php echo esc_url( home_url( '/contact/' ) ); ?>">contact us</a> if you think that is wrong.</p></div>
+			<?php elseif ( ! $law_post && ! law_events_user_can_submit() ) : // NEW events only. This page is also the edit form, and an owner who is not an `event_submitter` must reach their own event through the branches below (Denis, 22 September 2026). The copy names no role: a visitor cannot act on one, and "your account cannot" is the honest version of what happened. ?>
+				<div class="large-9 cell auth-intro"><p>Sorry, your account cannot submit new events. Please <a href="<?php echo esc_url( home_url( '/contact/' ) ); ?>">contact us</a> if you would like to propose one.</p></div>
 			<?php elseif ( ! $law_can_edit ) : ?>
 				<div class="large-9 cell auth-intro"><p>Sorry, you are not allowed to edit this event.</p></div>
 			<?php else : ?>
