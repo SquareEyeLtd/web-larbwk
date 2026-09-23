@@ -218,10 +218,13 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 							<?php
 							// Glyphs with an aria-label rather than three words of
 							// button text: five controls already share this row.
+							// Solid triangles for one step up and down, and the
+							// arrow-to-bar for "as far as it goes" (Denis, 23
+							// September 2026, replacing the thin ↑ and ↓).
 							$law_bl_moves = array(
 								'top'  => array( '⤒', __( 'Move %s to the top of the waitlist', 'law' ), 0 === $law_bl_i ),
-								'up'   => array( '↑', __( 'Move %s up the waitlist', 'law' ), 0 === $law_bl_i ),
-								'down' => array( '↓', __( 'Move %s down the waitlist', 'law' ), $law_bl_i === $law_bl_last ),
+								'up'   => array( '▲', __( 'Move %s up the waitlist', 'law' ), 0 === $law_bl_i ),
+								'down' => array( '▼', __( 'Move %s down the waitlist', 'law' ), $law_bl_i === $law_bl_last ),
 							);
 							foreach ( $law_bl_moves as $law_bl_dir => $law_bl_move ) :
 								// One form per direction: booking-form.js posts
