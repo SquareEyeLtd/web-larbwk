@@ -213,6 +213,8 @@ function law_rich_text_render( $value ) {
  *     @type string $id       Element id. Generated when omitted.
  *     @type string $value    Stored HTML.
  *     @type int    $rows     Fallback textarea height, used without JavaScript.
+ *     @type int    $lines    Editor height in lines of text, for a short note;
+ *                            0 keeps the editor's standard 220px.
  *     @type bool   $template Repeater template row: post nothing until cloned,
  *                            so the name goes in data-name (event-form.js).
  *     @type string $required Message to show when the field is left empty, or
@@ -233,6 +235,7 @@ function law_rich_text_field( array $args = array() ) {
 			'id'       => '',
 			'value'    => '',
 			'rows'     => 6,
+			'lines'    => 0,
 			'template' => false,
 			'required' => '',
 			'label'    => '',
@@ -251,6 +254,9 @@ function law_rich_text_field( array $args = array() ) {
 		sprintf( 'class="%s"', esc_attr( trim( 'law-rich-text__area ' . (string) $args['class'] ) ) ),
 		'data-law-rich',
 	);
+	if ( (int) $args['lines'] > 0 ) {
+		$attributes[] = sprintf( 'data-law-rich-lines="%d"', (int) $args['lines'] );
+	}
 	if ( '' !== (string) $args['required'] ) {
 		$attributes[] = sprintf( 'data-law-rich-required="%s"', esc_attr( (string) $args['required'] ) );
 	}

@@ -54,7 +54,17 @@
 		return textarea.id;
 	}
 
-	function config() {
+	/* The editor's height. 220px unless the field asks for a number of lines
+	   (data-law-rich-lines, law_rich_text_field()'s 'lines' arg): a short note
+	   such as a registration warning should not open as a tall box. One line
+	   is 15px at 1.5 line-height in rich-text-content.css, plus the body's
+	   10px top and bottom margin. */
+	function height(textarea) {
+		var lines = parseInt(textarea && textarea.getAttribute('data-law-rich-lines'), 10);
+		return lines > 0 ? Math.round(lines * 22.5 + 20) : 220;
+	}
+
+	function config(textarea) {
 		return {
 			tinymce: {
 				toolbar1: settings.toolbar || 'bold,italic,bullist,numlist,link',
@@ -79,7 +89,7 @@
 				relative_urls: false,
 				remove_script_host: false,
 				convert_urls: false,
-				height: 220,
+				height: height(textarea),
 				setup: function (editor) {
 					// The inline "please fill this in" message clears as soon as
 					// the author starts typing, matching the native behaviour the
@@ -102,7 +112,7 @@
 		if (window.tinymce.get(id)) {
 			return; // Already ours.
 		}
-		window.wp.editor.initialize(id, config());
+		window.wp.editor.initialize(id, config(textarea));
 	}
 
 	function remove(textarea) {

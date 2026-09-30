@@ -1523,15 +1523,19 @@ the top of its Register dialog, above the summary of what is being booked
 something a delegate should read before committing, not after in the
 confirmation email.
 
-- Storage is one `multiline` post meta key, `_law_registration_warning`, on the
-  `law_event`. Plain text, because it prints inside a warning box; line breaks
-  survive through `wpautop()` over the escaped text. Empty means no warning and
+- Storage is one `rich` post meta key, `_law_registration_warning`, on the
+  `law_event`, edited with the same TinyMCE field as the description and
+  printed through `law_rich_text_render()` (formatting asked for the same day).
+  Empty, including an editor emptied to `<p>&nbsp;</p>`, means no warning and
   the dialog prints nothing at all, not an empty box.
 - Receptions only today. The field is the last fieldset of
-  `parts/events/reception-manage.php`, a three-row textarea before the
+  `parts/events/reception-manage.php`, a three-line rich-text editor before the
   confirmation email section, carried through `law_reception_input_from_post()`
   and `law_reception_save()`. Blank is a real answer there and clears the key,
-  unlike the saver's other text keys where blank means "leave alone". A change
+  unlike the saver's other text keys where blank means "leave alone". The
+  editor's height comes from a new `lines` argument to `law_rich_text_field()`
+  (`data-law-rich-lines`, read by `law-rich-text.js`); without it an editor
+  stays at the standard 220px. A change
   is logged in the reception's activity log with the old-and-new style the rest
   of `law_reception_log_save()` uses.
 - Everything is named for the event rather than the reception, so a hosted
