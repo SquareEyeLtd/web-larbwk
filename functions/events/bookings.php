@@ -1011,6 +1011,19 @@ function law_event_is_invitation_only( $event_id ) {
 }
 
 /**
+ * The committee's registration warning for this event, as stored rich-text
+ * HTML, or '' when it holds no actual words (the _law_registration_warning
+ * key, meta.php). An editor emptied to "<p>&nbsp;</p>" counts as none. The Register
+ * dialog prints it through parts/events/registration-warning.php; any other
+ * booking surface that wants it should read it here rather than off the meta,
+ * so the "blank means nothing to say" rule lives in one place.
+ */
+function law_event_registration_warning( $event_id ) {
+	$value = trim( (string) law_event_meta( (int) $event_id, '_law_registration_warning' ) );
+	return law_rich_text_is_empty( $value ) ? '' : $value;
+}
+
+/**
  * An external event: a third party runs it and takes its bookings on its own
  * website, and the committee curates it onto the programme
  * (functions/events/external-events.php).

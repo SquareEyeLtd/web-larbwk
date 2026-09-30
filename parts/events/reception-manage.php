@@ -219,6 +219,33 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 		</p>
 	</fieldset>
 
+	<?php
+	// Last of the reception's own fields, before the confirmation email:
+	// it is what a delegate reads as they register, and the email is what
+	// they read after. The description's editor, three lines tall because
+	// it is a line or two, not a description.
+	?>
+	<fieldset>
+		<legend><?php esc_html_e( 'Registration warning', 'law' ); ?></legend>
+
+		<div class="law-form-field">
+			<label for="law-rm-registration-warning"><?php esc_html_e( 'Warning in the Register dialog', 'law' ); ?></label>
+			<?php
+			law_rich_text_field(
+				array(
+					'name'  => 'law_reception[registration_warning]',
+					'id'    => 'law-rm-registration-warning',
+					'value' => (string) $law_rm_values['registration_warning'],
+					'rows'  => 3,
+					'lines' => 3,
+					'label' => __( 'Registration warning', 'law' ),
+				)
+			);
+			?>
+			<span class="law-form-hint"><?php esc_html_e( 'Shown in yellow at the top of the Register dialog. Leave it empty for no warning.', 'law' ); ?></span>
+		</div>
+	</fieldset>
+
 	<?php if ( ! $law_rm_new ) : ?>
 		<?php
 		// Only on a reception that exists: the editor is addressed by event ID,
