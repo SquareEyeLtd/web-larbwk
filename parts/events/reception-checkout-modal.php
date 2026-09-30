@@ -69,6 +69,9 @@ $law_rc_when    = trim(
 $law_rc_missing = is_user_logged_in() ? law_booking_profile_gaps( get_current_user_id() ) : array();
 
 ob_start();
+// The committee's warning first, above everything else in the body, in every
+// state of the dialog (parts/events/registration-warning.php).
+get_template_part( 'parts/events/registration-warning', null, array( 'event_id' => $law_rc_id ) );
 if ( ! is_user_logged_in() ) :
 	?>
 	<p class="law-modal__copy"><?php echo esc_html(

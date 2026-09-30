@@ -1515,6 +1515,43 @@ email text template we have, even if it's customly modified").
   among them — so the worst case is a sign-off left in place, never a message
   truncated.
 
+### The registration warning (`_law_registration_warning`)
+
+A short note the committee writes on one event, printed as a yellow warning at
+the top of its Register dialog, above the summary of what is being booked
+(Denis, 30 September 2026). "Black tie" or "photo ID is checked at the door":
+something a delegate should read before committing, not after in the
+confirmation email.
+
+- Storage is one `multiline` post meta key, `_law_registration_warning`, on the
+  `law_event`. Plain text, because it prints inside a warning box; line breaks
+  survive through `wpautop()` over the escaped text. Empty means no warning and
+  the dialog prints nothing at all, not an empty box.
+- Receptions only today. The field is the last fieldset of
+  `parts/events/reception-manage.php`, a three-row textarea before the
+  confirmation email section, carried through `law_reception_input_from_post()`
+  and `law_reception_save()`. Blank is a real answer there and clears the key,
+  unlike the saver's other text keys where blank means "leave alone". A change
+  is logged in the reception's activity log with the old-and-new style the rest
+  of `law_reception_log_save()` uses.
+- Everything is named for the event rather than the reception, so a hosted
+  event can carry it the day it needs one: read it through
+  `law_event_registration_warning()` (`bookings.php`) and render it through
+  `parts/events/registration-warning.php`. Adding it to hosted events is a field
+  on the committee event form plus one `get_template_part()` at the top of
+  `parts/events/booking-modal.php`'s inner content.
+- `reception-checkout-modal.php` renders it before every state of the dialog,
+  signed out and profile-incomplete included: a warning matters most before
+  somebody goes off to create an account.
+- Styled as its own `.law-registration-warning` in `law-modal.css`, not as a
+  `.law-form-notice` variant: a signed-out visitor's page does not load
+  `event-form.css`, where the notice's padding lives. The partial calls
+  `law_modal_enqueue()` so the no-JS inline context has the stylesheet too.
+- The content transfer bundle carries it on each reception row as
+  `registration_warning`. The import writes it only when the row has the key,
+  so a bundle exported before the field existed leaves the target's warning
+  alone rather than clearing it.
+
 ### The per-event booking confirmation (`email-override.php`)
 
 One event can say its own thing in its confirmation without touching the

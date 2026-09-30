@@ -163,6 +163,14 @@ function law_event_meta_schema() {
 		'_law_email_override_body'         => 'rich',
 		'_law_email_override_subject_free' => 'text',
 		'_law_email_override_body_free'    => 'rich',
+		// The registration warning (EVENTS_FUNC.md): a short plain-text note
+		// the committee writes on one event, printed as a yellow warning at the
+		// top of its Register dialog ("Black tie", "Photo ID is checked at the
+		// door"). Empty means no warning, and the dialog prints nothing.
+		// Receptions only for now, on the receptions editor; named for the
+		// event rather than the reception so a hosted event can carry the same
+		// key the day it needs one, read through law_event_registration_warning().
+		'_law_registration_warning' => 'multiline',
 		'_law_gf_entry_id'          => 'int',
 		'_law_rejection_reason'     => 'multiline',
 		'_law_cancellation_reason'  => 'multiline',

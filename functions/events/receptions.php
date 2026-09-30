@@ -252,6 +252,7 @@ function law_reception_form_values( $event_id = 0 ) {
 			'included'    => false,
 			'invitation'  => false,
 			'show'        => false,
+			'registration_warning' => '',
 		);
 	}
 
@@ -275,6 +276,7 @@ function law_reception_form_values( $event_id = 0 ) {
 		'included'    => (bool) law_event_meta( $event_id, '_law_flagship_included' ),
 		'invitation'  => law_event_is_invitation_only( $event_id ),
 		'show'        => 'publish' === $post->post_status,
+		'registration_warning' => law_event_registration_warning( $event_id ),
 	);
 }
 
@@ -317,6 +319,11 @@ function law_reception_input_from_post() {
 	}
 	if ( array_key_exists( 'places', $raw ) ) {
 		$input['places'] = trim( (string) $raw['places'] );
+	}
+	// Unlike the other text keys, blank here is a real answer ("no warning")
+	// and clears the stored note, so it is kept even when empty.
+	if ( array_key_exists( 'registration_warning', $raw ) ) {
+		$input['registration_warning'] = sanitize_textarea_field( trim( (string) $raw['registration_warning'] ) );
 	}
 
 	// The sentinel: the checkboxes are only read when the form said it carried
@@ -510,6 +517,9 @@ function law_reception_save( array $input, $actor = 0, array $args = array() ) {
 	if ( array_key_exists( 'included', $input ) ) {
 		law_event_update_meta( $event_id, '_law_flagship_included', ! empty( $input['included'] ) );
 	}
+	if ( array_key_exists( 'registration_warning', $input ) ) {
+		law_event_update_meta( $event_id, '_law_registration_warning', $input['registration_warning'] );
+	}
 	if ( array_key_exists( 'invitation', $input ) ) {
 		// One vocabulary for "how is this booked", so nothing has to ask two
 		// keys and reconcile them: invitation-only wins, otherwise a priced
@@ -543,6 +553,7 @@ function law_reception_snapshot( $event_id ) {
 		'included'   => (int) (bool) law_event_meta( $event_id, '_law_flagship_included' ),
 		'state'      => (string) law_event_meta( $event_id, '_law_registration_state' ),
 		'reception'  => (int) (bool) law_event_meta( $event_id, '_law_is_reception' ),
+		'warning'    => law_event_registration_warning( $event_id ),
 	);
 }
 
@@ -592,6 +603,14 @@ function law_reception_log_save( $event_id, array $before, array $after, $actor 
 		$changes[] = 'invitation' === $after['state']
 			? 'invitation only: the site takes no bookings'
 			: sprintf( 'bookable on the site (%s)', 'open' === $after['state'] ? 'paid' : 'free' );
+	}
+
+	if ( $before['warning'] !== $after['warning'] ) {
+		if ( '' === $after['warning'] ) {
+			$changes[] = 'registration warning removed';
+		} else {
+			$changes[] = sprintf( 'registration warning %s: "%s"', '' === $before['warning'] ? 'added' : 'changed', $after['warning'] );
+		}
 	}
 
 	if ( ! $changes ) {
