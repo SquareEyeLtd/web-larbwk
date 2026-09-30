@@ -311,3 +311,19 @@ body.law-modal-open { overflow: hidden; }
 	margin-top: .15rem;
 	white-space: normal;
 }
+
+/* The committee's registration warning (parts/events/registration-warning.php),
+   at the top of a Register dialog's body. Self-contained rather than a
+   .law-form-notice variant, because a signed-out visitor's page does not load
+   event-form.css, where the notice's padding lives. Yellow, as asked for
+   (Denis, 30 September 2026), with navy text so it passes contrast on its own
+   pale fill whatever surface it lands on. */
+.law-registration-warning {
+	background: #fff4c2;
+	border-left: 4px solid #e6b800;
+	color: #1a1a3d;
+	padding: .8rem 1rem;
+	margin: 0 0 1.2rem;
+}
+.law-registration-warning p { margin: 0 0 .4rem; line-height: 1.45; color: inherit; }
+.law-registration-warning p:last-child { margin-bottom: 0; }

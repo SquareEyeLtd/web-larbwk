@@ -339,6 +339,7 @@ function law_content_transfer_receptions() {
 			'price'       => (string) $values['price'],
 			'included'    => (bool) $values['included'],
 			'invitation'  => (bool) $values['invitation'],
+			'registration_warning' => (string) $values['registration_warning'],
 		);
 	}
 
@@ -2060,7 +2061,7 @@ function law_content_transfer_run_reception( $reception, array $bundle, $dry, $a
 
 /** The bundle row as law_reception_save() input. */
 function law_content_transfer_reception_input( $reception ) {
-	return array(
+	$input = array(
 		'event_id'    => 0,
 		'title'       => sanitize_text_field( (string) ( $reception['title'] ?? '' ) ),
 		'description' => law_rich_text_sanitize( $reception['description'] ?? '' ),
@@ -2074,6 +2075,15 @@ function law_content_transfer_reception_input( $reception ) {
 		'included'    => ! empty( $reception['included'] ),
 		'invitation'  => ! empty( $reception['invitation'] ),
 	);
+
+	// Only when the bundle carries it: a bundle exported before the field
+	// existed (30 September 2026) must leave the target's warning alone rather
+	// than clear it, and the saver clears on a present-but-blank key.
+	if ( array_key_exists( 'registration_warning', $reception ) ) {
+		$input['registration_warning'] = sanitize_textarea_field( trim( (string) $reception['registration_warning'] ) );
+	}
+
+	return $input;
 }
 
 /**
@@ -2105,6 +2115,9 @@ function law_content_transfer_reception_after( array $input, $event_id ) {
 		'included'    => (int) (bool) $input['included'],
 		'state'       => $input['invitation'] ? 'invitation' : ( $price > 0 ? 'open' : 'free' ),
 		'reception'   => 1,
+		'warning'     => array_key_exists( 'registration_warning', $input )
+			? $input['registration_warning']
+			: ( $event_id ? law_event_registration_warning( $event_id ) : '' ),
 	);
 }
 
@@ -2120,6 +2133,7 @@ function law_content_transfer_reception_labels() {
 		'price'       => 'Price (pence, excluding VAT)',
 		'included'    => 'Included with a flagship place',
 		'state'       => 'How it is booked',
+		'warning'     => 'Registration warning',
 	);
 }
 
