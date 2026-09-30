@@ -32,5 +32,5 @@ if ( '' === $law_rw_text ) {
 law_modal_enqueue();
 ?>
 <div class="law-registration-warning" role="note">
-	<?php echo wp_kses( wpautop( esc_html( $law_rw_text ) ), array( 'p' => array(), 'br' => array() ) ); ?>
+	<?php echo law_rich_text_render( $law_rw_text ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- kses'd to the rich-text allowlist. ?>
 </div>

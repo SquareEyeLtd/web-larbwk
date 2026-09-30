@@ -323,7 +323,7 @@ function law_reception_input_from_post() {
 	// Unlike the other text keys, blank here is a real answer ("no warning")
 	// and clears the stored note, so it is kept even when empty.
 	if ( array_key_exists( 'registration_warning', $raw ) ) {
-		$input['registration_warning'] = sanitize_textarea_field( trim( (string) $raw['registration_warning'] ) );
+		$input['registration_warning'] = law_rich_text_is_empty( $raw['registration_warning'] ) ? '' : trim( law_rich_text_sanitize( $raw['registration_warning'] ) );
 	}
 
 	// The sentinel: the checkboxes are only read when the form said it carried
@@ -609,7 +609,7 @@ function law_reception_log_save( $event_id, array $before, array $after, $actor 
 		if ( '' === $after['warning'] ) {
 			$changes[] = 'registration warning removed';
 		} else {
-			$changes[] = sprintf( 'registration warning %s: "%s"', '' === $before['warning'] ? 'added' : 'changed', $after['warning'] );
+			$changes[] = sprintf( 'registration warning %s: "%s"', '' === $before['warning'] ? 'added' : 'changed', law_rich_text_plain( $after['warning'] ) );
 		}
 	}
 

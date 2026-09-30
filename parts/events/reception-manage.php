@@ -222,17 +222,28 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 	<?php
 	// Last of the reception's own fields, before the confirmation email:
 	// it is what a delegate reads as they register, and the email is what
-	// they read after. Three rows because it is a line or two, not a
-	// description; plain text, since it prints inside a warning box.
+	// they read after. The description's editor, three lines tall because
+	// it is a line or two, not a description.
 	?>
 	<fieldset>
 		<legend><?php esc_html_e( 'Registration warning', 'law' ); ?></legend>
 
-		<p class="law-form-field">
+		<div class="law-form-field">
 			<label for="law-rm-registration-warning"><?php esc_html_e( 'Warning in the Register dialog', 'law' ); ?></label>
-			<textarea id="law-rm-registration-warning" name="law_reception[registration_warning]" rows="3"><?php echo esc_textarea( (string) $law_rm_values['registration_warning'] ); ?></textarea>
+			<?php
+			law_rich_text_field(
+				array(
+					'name'  => 'law_reception[registration_warning]',
+					'id'    => 'law-rm-registration-warning',
+					'value' => (string) $law_rm_values['registration_warning'],
+					'rows'  => 3,
+					'lines' => 3,
+					'label' => __( 'Registration warning', 'law' ),
+				)
+			);
+			?>
 			<span class="law-form-hint"><?php esc_html_e( 'Shown in yellow at the top of the Register dialog. Leave it empty for no warning.', 'law' ); ?></span>
-		</p>
+		</div>
 	</fieldset>
 
 	<?php if ( ! $law_rm_new ) : ?>

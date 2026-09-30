@@ -325,5 +325,16 @@ body.law-modal-open { overflow: hidden; }
 	padding: .8rem 1rem;
 	margin: 0 0 1.2rem;
 }
-.law-registration-warning p { margin: 0 0 .4rem; line-height: 1.45; color: inherit; }
-.law-registration-warning p:last-child { margin-bottom: 0; }
+.law-registration-warning p,
+.law-registration-warning li { margin: 0 0 .4rem; line-height: 1.45; color: inherit; font-size: inherit; }
+/* The committee formats it with the description's editor, so everything that
+   editor can write must sit tidily inside the box: lists, the two heading
+   levels, a quote and links. */
+.law-registration-warning ul,
+.law-registration-warning ol { margin: 0 0 .4rem 1.25rem; }
+.law-registration-warning h2,
+.law-registration-warning h3 { color: inherit; font-size: 1.05rem; line-height: 1.3; margin: 0 0 .4rem; }
+.law-registration-warning blockquote { border-left: 2px solid currentColor; margin: 0 0 .4rem; padding: 0 0 0 .75rem; }
+.law-registration-warning a { color: inherit; text-decoration: underline; }
+.law-registration-warning > :last-child,
+.law-registration-warning > :last-child > li:last-child { margin-bottom: 0; }

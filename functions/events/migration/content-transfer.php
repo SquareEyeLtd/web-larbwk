@@ -2080,7 +2080,7 @@ function law_content_transfer_reception_input( $reception ) {
 	// existed (30 September 2026) must leave the target's warning alone rather
 	// than clear it, and the saver clears on a present-but-blank key.
 	if ( array_key_exists( 'registration_warning', $reception ) ) {
-		$input['registration_warning'] = sanitize_textarea_field( trim( (string) $reception['registration_warning'] ) );
+		$input['registration_warning'] = law_rich_text_is_empty( $reception['registration_warning'] ) ? '' : trim( law_rich_text_sanitize( $reception['registration_warning'] ) );
 	}
 
 	return $input;
