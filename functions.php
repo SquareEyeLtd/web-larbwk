@@ -31,6 +31,9 @@ require_once(get_theme_file_path('/functions/header-nav.php'));
 require_once(get_theme_file_path('/functions/migrate-speakers.php'));
 require_once(get_theme_file_path('/functions/setup-account-pages.php'));
 require_once(get_theme_file_path('/functions/events/_load.php'));
+// The native HubSpot sync (_docs/HUBSPOT_SYNC.md). After the events module,
+// whose settings, statuses, bookings and speakers it reads.
+require_once(get_theme_file_path('/functions/hubspot/_load.php'));
 
 // The original programme layout, kept for reference at ?variant=old.
 // Self-contained: delete programme-old/ and this line.
