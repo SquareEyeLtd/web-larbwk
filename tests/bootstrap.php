@@ -10,6 +10,12 @@ if ( ! defined( 'LAW_STRIPE_WEBHOOK_SECRET' ) ) {
 	define( 'LAW_STRIPE_WEBHOOK_SECRET', 'whsec_test_secret_for_unit_tests' );
 }
 
+// The HubSpot client tests exercise the HTTP layer through pre_http_request
+// and need a token to get that far. It is always this dummy, whatever
+// wp-config.php defines, so no test ever holds the real one (see the filter
+// after wp-load below).
+const LAW_TEST_HUBSPOT_TOKEN = 'pat-test-token-for-unit-tests';
+
 $wp_load = dirname( __DIR__, 4 ) . '/wp-load.php';
 if ( ! file_exists( $wp_load ) ) {
 	fwrite( STDERR, "Cannot find wp-load.php at {$wp_load}\n" );
@@ -83,6 +89,31 @@ add_filter(
 	},
 	10,
 	5
+);
+
+add_filter( 'law_hubspot_token', fn() => LAW_TEST_HUBSPOT_TOKEN, 1000 );
+
+// The HubSpot hooks (functions/hubspot/hooks.php) enqueue people on every
+// registration, booking and approval, in every suite, and the queue table is
+// installed lazily by dbDelta. DDL inside a test's transaction would commit
+// it, so the tables are installed here, before any test starts one.
+law_hubspot_install_tables();
+
+// Never hit HubSpot from tests. A test mocks the HTTP layer at the default
+// priority; anything still unanswered when it reaches this late filter fails
+// loudly instead of leaving the sandbox (HUBSPOT_SYNC.md §9: no test talks to
+// HubSpot). The module's own law_hubspot_request_mock filter sits above the
+// HTTP layer and is the usual seam; this is the backstop beneath it.
+add_filter(
+	'pre_http_request',
+	function ( $preempt, $args, $url ) {
+		if ( false === $preempt && str_contains( (string) $url, 'api.hubapi.com' ) ) {
+			return new WP_Error( 'law_test_unmocked', 'Unmocked HubSpot HTTP request in tests: ' . $url );
+		}
+		return $preempt;
+	},
+	1000,
+	3
 );
 
 require_once __DIR__ . '/class-law-test-case.php';
