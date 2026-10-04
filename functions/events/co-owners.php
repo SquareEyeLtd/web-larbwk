@@ -168,12 +168,24 @@ function law_event_notify_co_owner_created( $event_id, $user_id ) {
  * @param int[] $ids      Co-owner user IDs.
  */
 function law_event_set_co_owner_ids( $event_id, array $ids ) {
-	$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+	$ids      = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+	$previous = array_map( 'intval', (array) get_post_meta( $event_id, '_law_co_owner_ids', true ) );
 	update_post_meta( $event_id, '_law_co_owner_ids', $ids );
 	delete_post_meta( $event_id, '_law_co_owner' );
 	foreach ( $ids as $id ) {
 		add_post_meta( $event_id, '_law_co_owner', $id );
 	}
+
+	/**
+	 * The co-owner list changed. Fired from the single write path so nothing
+	 * that reacts to co-owners (the HubSpot sync, functions/hubspot/hooks.php)
+	 * can miss a route that sets them.
+	 *
+	 * @param int   $event_id law_event post ID.
+	 * @param int[] $ids      The new co-owner user IDs.
+	 * @param int[] $previous The IDs before this write.
+	 */
+	do_action( 'law_event_co_owners_set', (int) $event_id, $ids, $previous );
 }
 
 /**
