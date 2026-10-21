@@ -360,6 +360,37 @@ function law_speakers_dashboard_speaker( $speaker_id ) {
 	return ( $post && LAW_SPEAKER_CPT === $post->post_type && 'trash' !== $post->post_status ) ? $post : null;
 }
 
+/**
+ * Where a request about a record that has gone sends the committee: the list
+ * the press came from, filters kept, minus law_speaker (and the one-off flags),
+ * with a notice. From the edit view that is the plain list; leaving law_speaker
+ * in would reopen the editor on a reload if the record were later restored.
+ *
+ * @param string $notice law_notice value.
+ */
+function law_speakers_dashboard_list_return( $notice ) {
+	$back = wp_get_referer() ?: law_speakers_dashboard_url();
+	$back = remove_query_arg( array( 'law_speaker', 'law_notice', 'law_speaker_error', 'law_partial' ), $back );
+
+	return add_query_arg( 'law_notice', $notice, $back );
+}
+
+/**
+ * Refuse a save or a delete aimed at a record that is missing or already in
+ * the trash (another tab, or another committee member, got there first).
+ * Never returns.
+ *
+ * @param bool   $is_ajax From law_events_guard_post().
+ * @param string $message What the dialog or the fetch layer prints.
+ */
+function law_speakers_dashboard_refuse_missing( $is_ajax, $message ) {
+	if ( $is_ajax ) {
+		wp_send_json_error( array( 'message' => $message ), 404 );
+	}
+	wp_safe_redirect( law_speakers_dashboard_list_return( 'speaker-not-found' ) );
+	exit;
+}
+
 /** The dashboard URL, optionally addressing one speaker. */
 function law_speakers_dashboard_url( $speaker_id = 0 ) {
 	$url = law_account_url( 'speakers' );
@@ -501,7 +532,7 @@ function law_speakers_dashboard_save_handler() {
 
 	$speaker = law_speakers_dashboard_speaker( absint( $_POST['law_speaker_id'] ?? 0 ) );
 	if ( ! $speaker ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That speaker could not be found.', 'status' => 404 ), 'speaker-not-found' );
+		law_speakers_dashboard_refuse_missing( $is_ajax, 'That speaker could not be found. They may already have been deleted.' );
 	}
 	$speaker_id = (int) $speaker->ID;
 
@@ -694,7 +725,7 @@ function law_speakers_dashboard_delete_handler() {
 
 	$speaker = law_speakers_dashboard_speaker( absint( $_POST['law_speaker_id'] ?? 0 ) );
 	if ( ! $speaker ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That speaker could not be found. They may already have been deleted.', 'status' => 404 ), 'speaker-not-found' );
+		law_speakers_dashboard_refuse_missing( $is_ajax, 'That speaker could not be found. They may already have been deleted.' );
 	}
 
 	// Counted before the trash, which is what empties them. The same list the
@@ -708,9 +739,7 @@ function law_speakers_dashboard_delete_handler() {
 
 	// Back to the list the press came from, filters and all. From the edit view
 	// that means dropping law_speaker, whose record has just gone.
-	$back = wp_get_referer() ?: law_speakers_dashboard_url();
-	$back = remove_query_arg( array( 'law_speaker', 'law_notice', 'law_speaker_error', 'law_partial' ), $back );
-	$back = add_query_arg( 'law_notice', 'speaker-deleted', $back );
+	$back = law_speakers_dashboard_list_return( 'speaker-deleted' );
 
 	if ( $is_ajax ) {
 		wp_send_json_success(

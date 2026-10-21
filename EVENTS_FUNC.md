@@ -1979,7 +1979,16 @@ then follows the link that appears and writes that event's confirmation.
     changed (its own rows are the sessions' union) and flushes the appearance
     maps; `law_speaker_log_rows_change()` writes one `speaker_removed` /
     `speaker_restored` activity-log line per **event** (a session's change is
-    logged on its event, once). Tests: `tests/SpeakerDeleteTest.php` (7).
+    logged on its event, once). Tests: `tests/SpeakerDeleteTest.php` (21):
+    the hooks (trash, restore, the re-added-person skip, trashed and draft
+    holders, duplicate rows, emptying the trash, an event deleted meanwhile,
+    the flagship union), the dialog's wording for none, one and several events
+    under an event filter, the escaped name, and the handler's AJAX answers
+    (committee, not committee, a stale nonce, a record already deleted, an ID
+    that is not a speaker), the save handler refusing a deleted record, and the
+    way back to the list. The handler tests drive its real JSON branch by
+    filtering `wp_doing_ajax` on and swapping `wp_die_ajax_handler` for an
+    exception, the first suite here to do so.
 
 ### `speakers-dashboard.php`: the committee's Manage Speakers dashboard (9 September 2026)
 
@@ -2141,6 +2150,9 @@ then follows the link that appears and writes that event's confirmation.
   says that the per-event details go with them, warns when any of those events
   is already public, and says under the list that an administrator can
   restore the record from the wp-admin trash, which puts the appearances back.
+  The name is escaped where it enters that copy, because the modal passes copy
+  through `wp_kses_post()` and an administrator can type a tag into a wp-admin
+  title.
   The handler, `law_speakers_dashboard_delete_handler()`
   (`admin_post_law_speaker_delete`, the `speaker_manage` rate surface),
   checks committee, refuses a missing or already-trashed record, and calls
@@ -2152,7 +2164,11 @@ then follows the link that appears and writes that event's confirmation.
   `speaker-deleted` notice and its failure siblings. A trashed record is now
   refused by `law_speakers_dashboard_speaker()`, which the edit view's
   resolver, the save handler and the delete handler all share, so a stale tab
-  can neither reopen nor write to it. booking-form.js is enqueued on the
+  can neither reopen nor write to it. Both handlers refuse such a record
+  through `law_speakers_dashboard_refuse_missing()`, which, like the success
+  path, returns to the list via `law_speakers_dashboard_list_return()` rather
+  than to the referring edit view, so the address carries no `law_speaker`
+  that a later restore would reopen on a reload. booking-form.js is enqueued on the
   template for this. Without JS the opener is a plain submit with no dialog,
   as the committee's Delete event already is.
 - **Out of scope, deliberately**: creating a speaker here, and merging
@@ -10152,6 +10168,25 @@ three. No console errors. Two things the run caught were fixed: the edit view's
 text button sat outside the light form and drew in the pale hero red (the
 tokens are now set on `.law-speaker-delete`), and the restore note said "these
 events" for one event.
+
+**A second round** the same day, on fresh fixtures (a committee member, a
+subscriber, seven speakers, two events, a session, and a speaker added to the
+real local flagship's session): the subscriber gets only "This dashboard is for
+the LAW committee."; with the list filtered to one event the dialog still names
+both and the filter survives the delete; a second dialog after a dismissed
+first deletes only its own speaker; the public event page drops the speaker
+and their profile answers 404; the event's activity log carries the line; a
+keyboard alone reaches Delete, the focus stays trapped in the dialog, Escape
+returns it to the button and Enter deletes; with JavaScript disabled the
+button posts straight through to the list and its notice; the flagship page
+drops the speaker and its rows came back byte-identical to before the test;
+wp-admin's own Trash and Restore, as a committee member, take the speaker off
+and put them back. A save from an edit view left open in another tab after
+the delete wrote nothing (the job title typed there never landed) but returned
+to an address still carrying `law_speaker`, which is what
+`law_speakers_dashboard_refuse_missing()` above fixed. The dialog's name was
+also escaped (an administrator can type a tag into a wp-admin title), and the
+suite grew to 21 tests, including the handlers' JSON answers.
 
 **Found, not fixed:** at phone width with the WordPress admin bar showing
 (committee members get it), the shared modal's × sits under the admin bar and

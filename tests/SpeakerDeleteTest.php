@@ -19,7 +19,11 @@ class SpeakerDeleteTest extends LAW_Test_Case {
 		if ( function_exists( 'law_flagship_event_id' ) ) {
 			law_flagship_event_id( true );
 		}
-		$_GET = array();
+		$_GET     = array();
+		$_POST    = array();
+		$_REQUEST = array();
+		remove_filter( 'wp_doing_ajax', '__return_true' );
+		remove_all_filters( 'wp_die_ajax_handler' );
 		parent::tearDown();
 	}
 
@@ -209,5 +213,244 @@ class SpeakerDeleteTest extends LAW_Test_Case {
 		$this->assertSame( 0, law_speakers_dashboard_requested_speaker(), 'The edit view falls back to the list.' );
 		$this->assertNull( law_speakers_dashboard_speaker( $f['ada'] ), 'Neither handler will write to it.' );
 		$this->assertNotNull( law_speakers_dashboard_speaker( $f['bea'] ) );
+	}
+
+	/* Edge cases _____________________________________________________________ */
+
+	/** A form saved twice can leave the same person on an event twice: both rows go, both come back. */
+	public function test_duplicate_rows_on_one_event_all_go_and_all_return(): void {
+		$ada   = $this->make_speaker( 'Ada Twicelisted' );
+		$event = $this->make_event();
+		law_event_update_meta( $event, '_law_speakers', array( $this->row( $ada, 'One LLP' ), $this->row( $ada, 'Two LLP' ) ) );
+
+		wp_trash_post( $ada );
+		$this->assertSame( array(), $this->speaker_ids( $event ) );
+
+		wp_untrash_post( $ada );
+		$this->assertSame( array( $ada, $ada ), $this->speaker_ids( $event ) );
+		$this->assertSame( array( 'One LLP', 'Two LLP' ), array_column( law_event_meta( $event, '_law_speakers' ), 'organisation' ) );
+	}
+
+	/** Drafts are appearances too, and a draft session is still the event's. */
+	public function test_draft_events_and_draft_sessions_are_cleared(): void {
+		$ada     = $this->make_speaker( 'Ada Draftspeaker' );
+		$draft   = $this->make_event( array(), 'law-draft' );
+		law_event_update_meta( $draft, '_law_speakers', array( $this->row( $ada, 'Draft LLP' ) ) );
+		$session = $this->make_session( $draft, array( $this->row( $ada, 'Draft LLP' ) ) );
+		wp_update_post( array( 'ID' => $session, 'post_status' => 'draft' ) );
+
+		wp_trash_post( $ada );
+
+		$this->assertSame( array(), $this->speaker_ids( $draft ) );
+		$this->assertSame( array(), $this->speaker_ids( $session ) );
+	}
+
+	/** Emptying the trash later finds nothing left to take, and says nothing more. */
+	public function test_emptying_the_trash_after_a_delete_changes_nothing_more(): void {
+		$f = $this->fixture();
+		wp_trash_post( $f['ada'] );
+		$before = law_event_meta( $f['first'], '_law_speakers' );
+
+		wp_delete_post( $f['ada'], true );
+
+		$this->assertNull( get_post( $f['ada'] ) );
+		$this->assertSame( $before, law_event_meta( $f['first'], '_law_speakers' ) );
+		$this->assertCount( 1, $this->log_actions( $f['first'], 'speaker_removed' ), 'Still the one line from the trash.' );
+	}
+
+	/** An event deleted for good while the speaker sat in the trash is skipped, not an error. */
+	public function test_restore_skips_an_event_that_has_since_gone(): void {
+		$f = $this->fixture();
+		wp_trash_post( $f['ada'] );
+		wp_delete_post( $f['second'], true );
+
+		$this->assertNotFalse( wp_untrash_post( $f['ada'] ) );
+
+		$this->assertNull( get_post( $f['second'] ) );
+		$this->assertContains( $f['ada'], $this->speaker_ids( $f['first'] ), 'The rest still come back.' );
+	}
+
+	/* The dialog _____________________________________________________________ */
+
+	private function render( string $part, array $args = array() ): string {
+		ob_start();
+		get_template_part( $part, null, $args );
+		return (string) ob_get_clean();
+	}
+
+	/**
+	 * With the list filtered to one event, the row shows that event only, but
+	 * a delete takes the speaker off both, so the dialog must name both.
+	 */
+	public function test_the_list_dialog_names_every_event_under_an_event_filter(): void {
+		$f    = $this->fixture();
+		$_GET = array( 'law_event' => (string) $f['second'] );
+
+		$html = $this->render( 'parts/events/speakers-dashboard-list' );
+
+		$this->assertStringContainsString( 'id="law-modal-speaker-delete-' . $f['ada'] . '"', $html );
+		$this->assertStringContainsString( 'Ada Deletespeaker is on 2 events.', $html );
+		$this->assertStringContainsString( esc_html( get_the_title( $f['first'] ) ), $html, 'The filtered-out event is still named.' );
+		$this->assertStringContainsString( '(Confirmed)', $html );
+		$this->assertStringContainsString( 'Events already on the website change straight away.', $html, 'The Confirmed one is public.' );
+		$this->assertStringContainsString( 'which puts them back on these events too.', $html );
+	}
+
+	public function test_the_dialog_reads_right_for_one_event_and_for_none(): void {
+		$ada   = $this->make_speaker( 'Ada Oneevent' );
+		$event = $this->make_event( array(), 'law-proposed' );
+		law_event_update_meta( $event, '_law_speakers', array( $this->row( $ada, 'One LLP' ) ) );
+		law_speakers_flush_maps();
+
+		$one = $this->render( 'parts/events/speaker-delete', array( 'speaker_id' => $ada, 'name' => 'Ada Oneevent', 'appearances' => law_speakers_dashboard_appearances( $ada ) ) );
+		$this->assertStringContainsString( 'Ada Oneevent is on 1 event.', $one );
+		$this->assertStringContainsString( 'which puts them back on this event too.', $one );
+		$this->assertStringNotContainsString( 'website change straight away', $one, 'A Proposed event is not public.' );
+
+		$none = $this->render( 'parts/events/speaker-delete', array( 'speaker_id' => $ada, 'name' => 'Ada Oneevent', 'appearances' => array(), 'opener' => 'text' ) );
+		$this->assertStringContainsString( 'Ada Oneevent is not on any event, so deleting the record changes nothing else.', $none );
+		$this->assertStringNotContainsString( '<ul class="law-modal__list">', $none );
+		$this->assertStringContainsString( 'class="law-text-button"', $none, 'The edit view gets the quieter opener.' );
+	}
+
+	/** A tag typed into a wp-admin title prints as text, everywhere the dialog uses the name. */
+	public function test_a_name_carrying_markup_is_printed_not_rendered(): void {
+		$html = $this->render(
+			'parts/events/speaker-delete',
+			array( 'speaker_id' => 123456, 'name' => '<b>Bold</b> Speaker', 'appearances' => array() )
+		);
+
+		$this->assertStringNotContainsString( '<b>Bold</b>', $html );
+		$this->assertStringContainsString( '&lt;b&gt;Bold&lt;/b&gt; Speaker is not on any event', $html );
+	}
+
+	/* The handler, over its AJAX branch _______________________________________ */
+
+	/**
+	 * Run the delete handler as the dashboard's fetch would, and return its
+	 * JSON. wp_send_json() ends in wp_die() when the request is AJAX, so the
+	 * die handler is swapped for an exception to get control back.
+	 */
+	private function post_delete( array $fields, string $handler = 'law_speakers_dashboard_delete_handler' ): array {
+		$_POST    = $fields + array( 'action' => 'law_speaker_delete', 'law_ajax' => '1' );
+		$_REQUEST = $_POST;
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter(
+			'wp_die_ajax_handler',
+			fn() => function () {
+				throw new RuntimeException( 'law-test-die' );
+			}
+		);
+
+		ob_start();
+		try {
+			$handler();
+		} catch ( RuntimeException $e ) {
+			$this->assertSame( 'law-test-die', $e->getMessage() );
+		}
+		$out = (string) ob_get_clean();
+
+		$json = json_decode( $out, true );
+		$this->assertIsArray( $json, 'The handler answered JSON: ' . $out );
+		return $json;
+	}
+
+	public function test_the_committee_deletes_and_is_sent_back_to_the_list(): void {
+		$f = $this->fixture();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$json = $this->post_delete(
+			array(
+				'law_speaker_id'   => (string) $f['ada'],
+				'_wpnonce'         => wp_create_nonce( 'law_speaker_delete' ),
+				'_wp_http_referer' => '/law/account/dashboard/speakers/?law_speaker=' . $f['ada'] . '&law_kw=ada&law_partial=1',
+			)
+		);
+
+		$this->assertTrue( $json['success'] );
+		$this->assertSame( 'Speaker deleted', $json['data']['title'] );
+		$this->assertSame( 'Ada Deletespeaker has been deleted and taken off 2 events.', $json['data']['message'] );
+		$this->assertSame( '/law/account/dashboard/speakers/?law_kw=ada&law_notice=speaker-deleted', $json['data']['redirect'], 'The list, filters kept, the deleted record and the partial flag dropped.' );
+		$this->assertSame( 'trash', get_post_status( $f['ada'] ) );
+		$this->assertNotContains( $f['ada'], $this->speaker_ids( $f['first'] ) );
+	}
+
+	public function test_anybody_but_the_committee_is_refused(): void {
+		$f = $this->fixture();
+		wp_set_current_user( $this->make_user( 'subscriber' ) );
+
+		$json = $this->post_delete( array( 'law_speaker_id' => (string) $f['ada'], '_wpnonce' => wp_create_nonce( 'law_speaker_delete' ) ) );
+
+		$this->assertFalse( $json['success'] );
+		$this->assertSame( 'Sorry, managing speakers is for the committee.', $json['data']['message'] );
+		$this->assertSame( 'publish', get_post_status( $f['ada'] ) );
+		$this->assertContains( $f['ada'], $this->speaker_ids( $f['first'] ) );
+	}
+
+	public function test_a_stale_page_is_refused_before_anything_happens(): void {
+		$f = $this->fixture();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$json = $this->post_delete( array( 'law_speaker_id' => (string) $f['ada'], '_wpnonce' => 'not-a-nonce' ) );
+
+		$this->assertFalse( $json['success'] );
+		$this->assertStringContainsString( 'reload the page', $json['data']['message'] );
+		$this->assertSame( 'publish', get_post_status( $f['ada'] ) );
+	}
+
+	/** Two tabs, or two committee members: the second delete says so rather than failing oddly. */
+	public function test_deleting_a_record_already_deleted_says_so(): void {
+		$f = $this->fixture();
+		wp_set_current_user( $this->make_committee_user() );
+		wp_trash_post( $f['ada'] );
+
+		$json = $this->post_delete( array( 'law_speaker_id' => (string) $f['ada'], '_wpnonce' => wp_create_nonce( 'law_speaker_delete' ) ) );
+
+		$this->assertFalse( $json['success'] );
+		$this->assertSame( 'That speaker could not be found. They may already have been deleted.', $json['data']['message'] );
+		$this->assertCount( 1, $this->log_actions( $f['first'], 'speaker_removed' ), 'No second removal logged.' );
+	}
+
+	/** Only a speaker can be deleted here: an event ID posted in its place is refused. */
+	public function test_a_post_that_is_not_a_speaker_is_refused(): void {
+		$f = $this->fixture();
+		wp_set_current_user( $this->make_committee_user() );
+
+		$json = $this->post_delete( array( 'law_speaker_id' => (string) $f['first'], '_wpnonce' => wp_create_nonce( 'law_speaker_delete' ) ) );
+
+		$this->assertFalse( $json['success'] );
+		$this->assertSame( 'publish', get_post_status( $f['first'] ) );
+	}
+
+	/** A save from an edit view left open in another tab writes nothing to a deleted record. */
+	public function test_a_save_aimed_at_a_deleted_record_is_refused(): void {
+		$f = $this->fixture();
+		wp_set_current_user( $this->make_committee_user() );
+		wp_trash_post( $f['ada'] );
+
+		$json = $this->post_delete(
+			array(
+				'action'         => 'law_speaker_manage',
+				'law_speaker_id' => (string) $f['ada'],
+				'_wpnonce'       => wp_create_nonce( 'law_speaker_manage' ),
+				'first_name'     => 'Stale',
+				'last_name'      => 'Edit',
+			),
+			'law_speakers_dashboard_save_handler'
+		);
+
+		$this->assertFalse( $json['success'] );
+		$this->assertSame( 'That speaker could not be found. They may already have been deleted.', $json['data']['message'] );
+		$this->assertSame( 'Ada Deletespeaker', get_post_field( 'post_title', $f['ada'] ), 'The name was not rewritten.' );
+	}
+
+	/** Both refusals and the success send the committee to the list, never back to the record. */
+	public function test_the_way_back_drops_the_record_and_keeps_the_filters(): void {
+		$_REQUEST['_wp_http_referer'] = '/law/account/dashboard/speakers/?law_speaker=42&law_event=7&law_notice=speaker-saved&law_speaker_error=1';
+
+		$this->assertSame(
+			'/law/account/dashboard/speakers/?law_event=7&law_notice=speaker-not-found',
+			law_speakers_dashboard_list_return( 'speaker-not-found' )
+		);
 	}
 }
