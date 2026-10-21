@@ -52,6 +52,10 @@ foreach ( $law_sdel_appearances as $law_sdel_appearance ) {
 	}
 }
 
+// The name is escaped where it goes into the copy: the modal passes copy
+// through wp_kses_post() so a caller can link something, which would render a
+// tag typed into a wp-admin title instead of printing it.
+//
 // The lead is the paragraph booking-form.js replaces with the outcome, so
 // everything that stops being true once the delete has happened lives in it;
 // the restore note goes under the list, where it stays true afterwards.
@@ -64,7 +68,7 @@ if ( $law_sdel_count ) {
 			$law_sdel_count,
 			'law'
 		),
-		$law_sdel_name,
+		esc_html( $law_sdel_name ),
 		number_format_i18n( $law_sdel_count )
 	);
 	if ( $law_sdel_live ) {
@@ -78,7 +82,7 @@ if ( $law_sdel_count ) {
 	);
 } else {
 	/* translators: %s: speaker's name. */
-	$law_sdel_lead  = sprintf( __( '%s is not on any event, so deleting the record changes nothing else.', 'law' ), $law_sdel_name );
+	$law_sdel_lead  = sprintf( __( '%s is not on any event, so deleting the record changes nothing else.', 'law' ), esc_html( $law_sdel_name ) );
 	$law_sdel_after = __( 'If this was a mistake, an administrator can restore the record from the wp-admin trash.', 'law' );
 }
 ?>
