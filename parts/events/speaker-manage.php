@@ -71,6 +71,8 @@ get_template_part( 'parts/layout/back-link', null, array(
 	<div class="law-form-notice is-error" role="alert"><?php esc_html_e( 'Sorry, managing speakers is for the committee.', 'law' ); ?></div>
 <?php elseif ( 'rate-limited' === $law_sm_notice ) : ?>
 	<div class="law-form-notice is-error" role="alert"><?php esc_html_e( 'Too many changes in a short time; please wait a moment and try again.', 'law' ); ?></div>
+<?php elseif ( 'speaker-delete-failed' === $law_sm_notice ) : ?>
+	<div class="law-form-notice is-error" role="alert"><?php esc_html_e( 'Sorry, that speaker could not be deleted. Please try again.', 'law' ); ?></div>
 <?php endif; ?>
 
 <?php if ( $law_sm_errors ) : ?>
@@ -248,5 +250,21 @@ get_template_part( 'parts/layout/back-link', null, array(
 				<a class="button hollow" href="<?php echo esc_url( law_speakers_dashboard_url() ); ?>"><?php esc_html_e( 'Cancel', 'law' ); ?></a>
 			</p>
 		</form>
+
+		<?php
+		// Its own form, straight after the edit form's buttons so it reads as
+		// part of that row: forms cannot nest, and a delete must not post the
+		// edits above it with it.
+		get_template_part(
+			'parts/events/speaker-delete',
+			null,
+			array(
+				'speaker_id'  => $law_sm_id,
+				'name'        => $law_sm_speaker->post_title,
+				'appearances' => $law_sm_appearances,
+				'opener'      => 'text',
+			)
+		);
+		?>
 	</div>
 </div>
