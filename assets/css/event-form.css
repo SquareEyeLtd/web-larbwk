@@ -962,6 +962,13 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 .law-speakers-table th.law-speakers-table__actions,
 .law-speakers-table td.law-speakers-table__actions { max-width: none; white-space: nowrap; min-width: 0; }
 .law-speakers-table__actions .button { margin: 0; }
+/* Delete is a one-button form beside the Edit link; inline, so the two share
+   the cell's one line. */
+.law-speakers-table__actions .law-speaker-delete { display: inline-block; margin: 0 0 0 .35rem; }
+/* The edit view's Delete is its own form after the light edit form, so it
+   never inherits the light tokens and its text button fell back to the pale
+   hero red, nearly invisible on white. The section nav's fix, applied here. */
+.law-speaker-delete { --law-form-destructive: #b32d2e; --law-form-destructive-soft: #b32d2e; }
 
 /* The editor. One fieldset per event, visibly separated so it is obvious
    which fields belong to which event — the whole point of the screen. */
