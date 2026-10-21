@@ -333,15 +333,62 @@ function law_speakers_dashboard_export_rows( array $filters ) {
 
 /* The edit view ______________________________________________________________ */
 
-/** The speaker the edit view was asked for, or 0 for the list. */
+/**
+ * The speaker the edit view was asked for, or 0 for the list. A trashed record
+ * is refused like a missing one: it has been deleted here, so the address it
+ * was deleted from falls back to the list rather than reopening it.
+ */
 function law_speakers_dashboard_requested_speaker() {
 	$speaker_id = absint( $_GET['law_speaker'] ?? 0 );
 	if ( ! $speaker_id ) {
 		return 0;
 	}
-	$post = get_post( $speaker_id );
 
-	return ( $post && LAW_SPEAKER_CPT === $post->post_type ) ? (int) $post->ID : 0;
+	return law_speakers_dashboard_speaker( $speaker_id ) ? $speaker_id : 0;
+}
+
+/**
+ * A live speaker record by ID, or null: the one check the edit view, the save
+ * handler and the delete handler share, so none of them can write to a record
+ * that has already gone to the trash from another tab.
+ *
+ * @param int $speaker_id Speaker post ID.
+ */
+function law_speakers_dashboard_speaker( $speaker_id ) {
+	$post = $speaker_id ? get_post( (int) $speaker_id ) : null;
+
+	return ( $post && LAW_SPEAKER_CPT === $post->post_type && 'trash' !== $post->post_status ) ? $post : null;
+}
+
+/**
+ * Where a request about a record that has gone sends the committee: the list
+ * the press came from, filters kept, minus law_speaker (and the one-off flags),
+ * with a notice. From the edit view that is the plain list; leaving law_speaker
+ * in would reopen the editor on a reload if the record were later restored.
+ *
+ * @param string $notice law_notice value.
+ */
+function law_speakers_dashboard_list_return( $notice ) {
+	$back = wp_get_referer() ?: law_speakers_dashboard_url();
+	$back = remove_query_arg( array( 'law_speaker', 'law_notice', 'law_speaker_error', 'law_partial' ), $back );
+
+	return add_query_arg( 'law_notice', $notice, $back );
+}
+
+/**
+ * Refuse a save or a delete aimed at a record that is missing or already in
+ * the trash (another tab, or another committee member, got there first).
+ * Never returns.
+ *
+ * @param bool   $is_ajax From law_events_guard_post().
+ * @param string $message What the dialog or the fetch layer prints.
+ */
+function law_speakers_dashboard_refuse_missing( $is_ajax, $message ) {
+	if ( $is_ajax ) {
+		wp_send_json_error( array( 'message' => $message ), 404 );
+	}
+	wp_safe_redirect( law_speakers_dashboard_list_return( 'speaker-not-found' ) );
+	exit;
 }
 
 /** The dashboard URL, optionally addressing one speaker. */
@@ -483,10 +530,9 @@ function law_speakers_dashboard_save_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, managing speakers is for the committee.', 'status' => 403 ), 'speaker-denied' );
 	}
 
-	$speaker_id = absint( $_POST['law_speaker_id'] ?? 0 );
-	$speaker    = $speaker_id ? get_post( $speaker_id ) : null;
-	if ( ! $speaker || LAW_SPEAKER_CPT !== $speaker->post_type ) {
-		law_events_respond( $is_ajax, false, array( 'message' => 'That speaker could not be found.', 'status' => 404 ), 'speaker-not-found' );
+	$speaker = law_speakers_dashboard_speaker( absint( $_POST['law_speaker_id'] ?? 0 ) );
+	if ( ! $speaker ) {
+		law_speakers_dashboard_refuse_missing( $is_ajax, 'That speaker could not be found. They may already have been deleted.' );
 	}
 	$speaker_id = (int) $speaker->ID;
 
@@ -647,6 +693,69 @@ function law_speakers_dashboard_save_handler() {
 	);
 }
 
+/* The delete handler _________________________________________________________ */
+
+/**
+ * POST admin-post.php?action=law_speaker_delete — Delete on a Manage Speakers
+ * row or on the edit view, behind a confirm dialog that names every event the
+ * speaker is on (parts/events/speaker-delete.php).
+ *
+ * The record goes to the trash, as a committee-deleted event does. Taking the
+ * speaker off those events is not done here: it hangs off wp_trash_post
+ * (law_speaker_detach() in speakers.php), so wp-admin's own Trash link does
+ * exactly the same, and a restore from the wp-admin trash puts them back.
+ */
+add_action( 'admin_post_law_speaker_delete', 'law_speakers_dashboard_delete_handler' );
+add_action( 'admin_post_nopriv_law_speaker_delete', 'law_events_nopriv_json' );
+
+function law_speakers_dashboard_delete_handler() {
+	// The editor's rate surface: deleting is part of the same tidying session.
+	$is_ajax = law_events_guard_post(
+		'law_speaker_delete',
+		array(
+			'rate'            => array( 'speaker_manage', 30, 600 ),
+			'honeypot_json'   => array( 'message' => 'Deleted.' ),
+			'honeypot_notice' => 'speaker-deleted',
+		)
+	);
+
+	if ( ! law_user_is_committee() ) {
+		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, managing speakers is for the committee.', 'status' => 403 ), 'speaker-denied' );
+	}
+
+	$speaker = law_speakers_dashboard_speaker( absint( $_POST['law_speaker_id'] ?? 0 ) );
+	if ( ! $speaker ) {
+		law_speakers_dashboard_refuse_missing( $is_ajax, 'That speaker could not be found. They may already have been deleted.' );
+	}
+
+	// Counted before the trash, which is what empties them. The same list the
+	// dialog showed, so the confirmation agrees with what the committee read.
+	$events = count( law_speakers_dashboard_appearances( (int) $speaker->ID ) );
+	$name   = $speaker->post_title;
+
+	if ( ! wp_trash_post( (int) $speaker->ID ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, that speaker could not be deleted. Please try again.', 'status' => 500 ), 'speaker-delete-failed' );
+	}
+
+	// Back to the list the press came from, filters and all. From the edit view
+	// that means dropping law_speaker, whose record has just gone.
+	$back = law_speakers_dashboard_list_return( 'speaker-deleted' );
+
+	if ( $is_ajax ) {
+		wp_send_json_success(
+			array(
+				'title'    => 'Speaker deleted',
+				'message'  => $events
+					? sprintf( _n( '%1$s has been deleted and taken off %2$s event.', '%1$s has been deleted and taken off %2$s events.', $events, 'law' ), $name, number_format_i18n( $events ) )
+					: sprintf( '%s has been deleted.', $name ),
+				'redirect' => $back,
+			)
+		);
+	}
+	wp_safe_redirect( $back );
+	exit;
+}
+
 /* AJAX partial _______________________________________________________________ */
 
 /**
@@ -751,4 +860,9 @@ add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_script( 'law-pdfmake', get_theme_file_uri( 'assets/js/vendor/pdfmake.min.js' ), array(), $mtime( 'assets/js/vendor/pdfmake.min.js' ), true );
 	wp_enqueue_script( 'law-pdfmake-fonts', get_theme_file_uri( 'assets/js/vendor/vfs_fonts.js' ), array( 'law-pdfmake' ), $mtime( 'assets/js/vendor/vfs_fonts.js' ), true );
 	wp_enqueue_script( 'law-export-buttons', get_theme_file_uri( 'assets/js/export-buttons.js' ), array( 'law-pdfmake-fonts' ), $mtime( 'assets/js/export-buttons.js' ), true );
+	// The shared fetch layer behind every Delete (a .law-booking-form behind a
+	// confirm dialog), as on the submitters list: the dialog reports the
+	// outcome before the page reloads, and a plain POST still works without it.
+	law_modal_enqueue();
+	wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
 } );

@@ -744,7 +744,9 @@ deliberately typed 0 still waives the fee, and the help text says so).
   quick edit can neither resurrect a cancelled booking nor seat a waitlisted
   one; the `wp_untrash_post_status` filter likewise restores a booking to its
   pre-trash status, constrained to the keys of `law_booking_statuses()`
-  (anything else restores as cancelled, the safe side).
+  (anything else restores as cancelled, the safe side). Since 21 October 2026
+  it restores a `law_speaker` to `publish` too: core's default is `draft`, and
+  a draft speaker is missing from Manage Speakers and from its own profile.
 - `law_event_ui_actions()`: the five actions the two committee UIs offer
   (approve, send_back, reject, mark_paid, cancel), the shared list both the
   dashboard handler and the wp-admin event screen check a posted action
@@ -1945,6 +1947,48 @@ then follows the link that appears and writes that event's confirmation.
   files under itself rather than sorting above everybody on an empty surname.
 - `law_event_session_ids()`, `law_event_session_rows()`: an event's sessions
   (child `law_session` posts) and their rows.
+- **Removing a speaker record** (21 October 2026). A record is referenced by
+  ID from the `_law_speakers` rows of every event and session it appears at,
+  and until this date trashing one (wp-admin's Trash link was the only way)
+  left every row behind: `law_speaker_card()` reads a trashed post like any
+  other, so the event page kept printing the person with a profile link that
+  404s, and once the trash was emptied a flagship session naming them failed
+  its own validation. Now the
+  work hangs off WordPress's hooks rather than off any button, so every route
+  behaves the same:
+  - `wp_trash_post` runs `law_speaker_detach()`: `law_speaker_holder_ids()`
+    finds every event and session in **any** status, trash included (an event
+    restored later must not name a record that has gone; uncapped, because a
+    capped scan would leave rows behind), and each loses that speaker's rows
+    through `law_event_update_meta()`, which deletes the meta when the last row
+    goes. Everybody else's rows stay, in order. What was removed is kept on the
+    trashed record as `LAW_SPEAKER_DETACHED_META` (`_law_speaker_detached`,
+    post ID => rows; plain post meta outside the schema, since no schema type
+    describes it and only the restore reads it).
+  - `untrashed_post` runs `law_speaker_reattach()` with those rows, skipping a
+    post that has gone and one that already names the person again
+    (`law_speaker_rows_name_person()`: the same record, or another with the
+    same email or normalised name). That case is real: while the record sat in
+    the trash, `law_speaker_find_existing()` never matched it, so a host
+    re-adding the person made a new record, and restoring the old row beside it
+    would print them twice.
+  - `before_delete_post` detaches again, which finds nothing for a record that
+    went through the trash and does the whole job for one deleted outright (or
+    trashed before the hooks existed).
+  - `law_speaker_after_rows_changed()` recomputes a flagship whose session
+    changed (its own rows are the sessions' union) and flushes the appearance
+    maps; `law_speaker_log_rows_change()` writes one `speaker_removed` /
+    `speaker_restored` activity-log line per **event** (a session's change is
+    logged on its event, once). Tests: `tests/SpeakerDeleteTest.php` (21):
+    the hooks (trash, restore, the re-added-person skip, trashed and draft
+    holders, duplicate rows, emptying the trash, an event deleted meanwhile,
+    the flagship union), the dialog's wording for none, one and several events
+    under an event filter, the escaped name, and the handler's AJAX answers
+    (committee, not committee, a stale nonce, a record already deleted, an ID
+    that is not a speaker), the save handler refusing a deleted record, and the
+    way back to the list. The handler tests drive its real JSON branch by
+    filtering `wp_doing_ajax` on and swapping `wp_die_ajax_handler` for an
+    exception, the first suite here to do so.
 
 ### `speakers-dashboard.php`: the committee's Manage Speakers dashboard (9 September 2026)
 
@@ -2095,10 +2139,42 @@ then follows the link that appears and writes that event's confirmation.
   screen). Cells that must stay on one line — `.law-dashboard__row-actions`,
   the waitlist position, the flagship tick — opt out there. pdfmake loads
   footer-side for committee only.
-- **Out of scope, deliberately**: creating a speaker here, deleting one, and
-  merging duplicates. Merging needs its own rules for the appearance rows on
-  both sides, and duplicates are the predictable next request now that the
-  whole list is visible.
+- **Delete** (21 October 2026, Denis): a Delete beside Edit on every row and
+  a quieter "Delete this speaker" text button under the edit view's Save, the
+  email editors' Reset treatment (the rarest action on the screen and the only
+  one that throws work away). Both are `parts/events/speaker-delete.php`, a
+  one-button `.law-booking-form` behind the shared confirm dialog, whose list
+  names **every** event the speaker is on with its date and status (the row's
+  own appearance list is filtered by the event and year filters, so the
+  partial is handed the unfiltered `law_speakers_dashboard_appearances()`),
+  says that the per-event details go with them, warns when any of those events
+  is already public, and says under the list that an administrator can
+  restore the record from the wp-admin trash, which puts the appearances back.
+  The name is escaped where it enters that copy, because the modal passes copy
+  through `wp_kses_post()` and an administrator can type a tag into a wp-admin
+  title.
+  The handler, `law_speakers_dashboard_delete_handler()`
+  (`admin_post_law_speaker_delete`, the `speaker_manage` rate surface),
+  checks committee, refuses a missing or already-trashed record, and calls
+  `wp_trash_post()`: taking the speaker off the events is the trash hook's job
+  (`speakers.php` above), so wp-admin's Trash link does exactly the same. It
+  answers over fetch with the outcome (booking-form.js writes it into the
+  dialog before reloading) or redirects, and either way lands on the list the
+  press came from with its filters, minus `law_speaker`; the list prints the
+  `speaker-deleted` notice and its failure siblings. A trashed record is now
+  refused by `law_speakers_dashboard_speaker()`, which the edit view's
+  resolver, the save handler and the delete handler all share, so a stale tab
+  can neither reopen nor write to it. Both handlers refuse such a record
+  through `law_speakers_dashboard_refuse_missing()`, which, like the success
+  path, returns to the list via `law_speakers_dashboard_list_return()` rather
+  than to the referring edit view, so the address carries no `law_speaker`
+  that a later restore would reopen on a reload. booking-form.js is enqueued on the
+  template for this. Without JS the opener is a plain submit with no dialog,
+  as the committee's Delete event already is.
+- **Out of scope, deliberately**: creating a speaker here, and merging
+  duplicates. Merging needs its own rules for the appearance rows on both
+  sides, and duplicates are the predictable next request now that the whole
+  list is visible.
 - **Security review** (9 September 2026, security-specialist): no critical or
   high findings in the new code. The two notes acted on are the export rate
   limit above and an explicit `is_array()` check on the `_FILES` batch shape in
@@ -5587,7 +5663,11 @@ These predate the rebuild and now branch on `law_events_source()`.
   button that closes the dialog and scrolls to the control that selector
   names), and `autoopen`, which marks the dialog `data-law-modal-autoopen` so
   `law-modal.js` opens it as the page loads — for a dialog that reports what
-  just happened rather than confirming what is about to.
+  just happened rather than confirming what is about to. `after` (21 October
+  2026, for Delete speaker) takes paragraphs like `copy` but prints them under
+  the list, as `.law-modal__copy--after`; the lead stays the first
+  `.law-modal__copy`, which is the one booking-form.js overwrites with the
+  outcome.
 - **Calendar parts** (`parts/`): `calendar-body.php` (the shared list/single
   view; its optional caller variables, set before the `require` —
   `$law_cal_show_status` for committee mode, `$law_cal_hero_title` for the
@@ -10035,6 +10115,91 @@ Touched: `functions/events/submitters-dashboard.php` (new),
 `functions/events/submission-form.php`, `functions/setup-account-pages.php`,
 `functions/events/migration/runner.php`, and the tests
 `tests/EventSubmittersDashboardTest.php` (new), `tests/HeaderNavTest.php`.
+
+## The committee can delete a speaker (21 October 2026)
+
+**The ask** (Denis): a Delete beside Edit on Manage Speakers and on the
+speaker's edit view, with a confirmation that tells the committee which events
+the speaker is on, and the speaker taken off those events rather than left
+dangling.
+
+**What was wrong before.** Deleting was deliberately out of scope when the
+dashboard was built, so the only route was wp-admin's Trash link, and that left
+the speaker's ID on every `_law_speakers` row that named it. A trashed post
+still reads as a speaker to `law_speaker_card()`, so the event page went on
+printing the person, linked to a profile that 404s; once the trash was emptied
+a flagship session naming them could not be saved ("speaker #N no longer
+exists"); and an untrash brought
+the record back as a core `draft`, missing from Manage Speakers and from its
+profile. None of this had happened on the local copy (no trashed speakers, no
+dangling rows), but nothing stopped it.
+
+**What it does now.** Delete moves the record to the trash, as the committee's
+Delete event does, and the trash hook takes the speaker off every event and
+session in any status, keeping what it took on the record. Restoring from the
+wp-admin trash puts the rows back (skipping any event that has since been given
+the same person under a new record) and restores the record as published. The
+work hangs off the trash and delete hooks rather than the button, so wp-admin's
+Trash and permanent Delete behave identically. Each event gets an activity-log
+line either way. Details under `speakers.php` and `speakers-dashboard.php`
+above.
+
+**Known edges.** A host with the event form open when the committee deletes a
+speaker puts that person back on their next save, under a new record: the form
+honours a posted speaker ID only for a speaker the event still holds and falls
+back to match-or-create otherwise, and match-or-create never matches a trashed
+record. That is the host's intent winning, and it is visible on the event. The photos themselves stay in the media
+library; only the rows that pointed at them go.
+
+**Verified in a browser** on 21 October 2026 on the local site, signed in as a
+throwaway committee member, against throwaway fixtures (a speaker on a Confirmed
+and a Proposed event and one of the Confirmed event's sessions, a speaker on no
+event, and a bystander on the same event): the dialog names both events with
+date and status, warns that the Confirmed one is public, and Keep the speaker
+leaves everything alone; Delete opens its dialog on a table swapped in by the
+keyword filter rather than submitting; deleting from the edit view reports
+"…taken off 2 events." in the dialog and lands on the list with the notice;
+the old `?law_speaker=` address then shows the list; deleting from a filtered
+list keeps the filter. The database afterwards: the speaker gone from both
+events and the session, the bystander's rows intact, one log line per event,
+the rows kept on the trashed record; `wp_untrash_post()` (what wp-admin's
+Restore calls) brought the record back published and the rows back on all
+three. No console errors. Two things the run caught were fixed: the edit view's
+text button sat outside the light form and drew in the pale hero red (the
+tokens are now set on `.law-speaker-delete`), and the restore note said "these
+events" for one event.
+
+**A second round** the same day, on fresh fixtures (a committee member, a
+subscriber, seven speakers, two events, a session, and a speaker added to the
+real local flagship's session): the subscriber gets only "This dashboard is for
+the LAW committee."; with the list filtered to one event the dialog still names
+both and the filter survives the delete; a second dialog after a dismissed
+first deletes only its own speaker; the public event page drops the speaker
+and their profile answers 404; the event's activity log carries the line; a
+keyboard alone reaches Delete, the focus stays trapped in the dialog, Escape
+returns it to the button and Enter deletes; with JavaScript disabled the
+button posts straight through to the list and its notice; the flagship page
+drops the speaker and its rows came back byte-identical to before the test;
+wp-admin's own Trash and Restore, as a committee member, take the speaker off
+and put them back. A save from an edit view left open in another tab after
+the delete wrote nothing (the job title typed there never landed) but returned
+to an address still carrying `law_speaker`, which is what
+`law_speakers_dashboard_refuse_missing()` above fixed. The dialog's name was
+also escaped (an administrator can type a tag into a wp-admin title), and the
+suite grew to 21 tests, including the handlers' JSON answers.
+
+**Found, not fixed:** at phone width with the WordPress admin bar showing
+(committee members get it), the shared modal's × sits under the admin bar and
+cannot be pressed (`.law-modal` is `z-index: 10050`, `#wpadminbar` 99999). The
+dialog's own Keep/Cancel button still closes it. It affects every
+`parts/layout/modal.php` dialog, not this one, so it belongs in its own change.
+
+Touched: `functions/events/speakers.php`,
+`functions/events/speakers-dashboard.php`, `functions/events/workflow.php`,
+`parts/events/speaker-delete.php` (new), `parts/events/speakers-dashboard-list.php`,
+`parts/events/speaker-manage.php`, `parts/layout/modal.php`,
+`templates/account-speakers-dashboard.php`, `assets/css/event-form.css`, and
+`tests/SpeakerDeleteTest.php` (new).
 
 ---
 

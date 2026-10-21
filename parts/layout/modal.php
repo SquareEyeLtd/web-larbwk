@@ -22,6 +22,10 @@
  *   ),                                     // (law-modal.js resolves it, and
  *                                          // flattens a line whose control is
  *                                          // not on the page to plain text).
+ *   'after'   => 'One paragraph.',         // Optional, like 'copy' but under
+ *                                          // the list: the line that closes
+ *                                          // the thought the list belongs to
+ *                                          // (Delete speaker's restore note).
  *   'field'   => array(                    // Optional; omit for a plain
  *     'name'     => 'law_note',            // confirmation with no input.
  *     'label'    => 'What needs changing?',
@@ -85,6 +89,9 @@ $law_modal_copy = $args['copy'] ?? array();
 $law_modal_copy = is_array( $law_modal_copy ) ? $law_modal_copy : array( $law_modal_copy );
 
 $law_modal_list = isset( $args['list'] ) && is_array( $args['list'] ) ? $args['list'] : array();
+
+$law_modal_after = $args['after'] ?? array();
+$law_modal_after = is_array( $law_modal_after ) ? $law_modal_after : array( $law_modal_after );
 
 $law_modal_close = isset( $args['close'] ) && '' !== trim( (string) $args['close'] ) ? trim( (string) $args['close'] ) : 'Cancel';
 
@@ -188,6 +195,16 @@ if ( $law_modal_field ) {
 				?>
 			</ul>
 		<?php endif; ?>
+		<?php
+		// A modifier class as well as the shared one: booking-form.js writes the
+		// outcome into the FIRST .law-modal__copy, which must stay the lead.
+		foreach ( $law_modal_after as $law_modal_paragraph ) {
+			if ( '' === trim( (string) $law_modal_paragraph ) ) {
+				continue;
+			}
+			echo "\t\t" . '<p class="law-modal__copy law-modal__copy--after">' . wp_kses_post( (string) $law_modal_paragraph ) . "</p>\n";
+		}
+		?>
 		<?php if ( $law_modal_field ) : ?>
 			<?php
 			// The control ships disabled and law-modal.js enables it only while
