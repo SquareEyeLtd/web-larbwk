@@ -2124,6 +2124,13 @@
   object-position: center top;
 }
 
+/* The tint is the initials' backdrop. Behind a photo it shows through any
+   transparency, so a round cut-out PNG sat on a pale square. */
+.law-cal-speakers__photo:has(img),
+.law-timeline-section--panel .law-cal-speakers__photo:has(img) {
+  background: none;
+}
+
 .law-cal-speakers__initials {
   color: rgba(41, 36, 89, 0.5);
   font-family: poppins, sans-serif;

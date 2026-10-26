@@ -254,6 +254,13 @@
 	background: rgba(38, 30, 91, 0.1);
 }
 
+/* The tint is the initials' backdrop. Behind a photo it shows through any
+   transparency, so a round cut-out PNG sat on a pale square. Covers the archive
+   card and, through its shared class, the profile page. */
+.law-speakers__photo:has(img) {
+	background: none;
+}
+
 .law-speaker__photo .law-speakers__initials {
 	font-size: 4rem;
 }
