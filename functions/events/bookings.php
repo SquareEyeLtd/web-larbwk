@@ -577,11 +577,17 @@ function law_booking_party( $event_id, $user_id, $status = 'publish' ) {
 	return array_values( $party );
 }
 
-/** Active colleague bookings this booker holds on the event (the cap count). */
-function law_booking_colleague_count( $event_id, $booker_id ) {
+/**
+ * Active colleague bookings this booker holds on the event (the cap count).
+ *
+ * @param string|string[] $status Confirmed places by default (the hosted cap);
+ *                                the free receptions count every holding state
+ *                                (law_reception_on_behalf_free_cap()).
+ */
+function law_booking_colleague_count( $event_id, $booker_id, $status = 'publish' ) {
 	$booker_id = (int) $booker_id;
 	$count     = 0;
-	foreach ( law_booking_party( $event_id, $booker_id ) as $booking ) {
+	foreach ( law_booking_party( $event_id, $booker_id, $status ) as $booking ) {
 		if ( (int) $booking->post_author !== $booker_id ) {
 			$count++;
 		}
@@ -589,13 +595,14 @@ function law_booking_colleague_count( $event_id, $booker_id ) {
 	return $count;
 }
 
-/** Did this attendee book themselves (rather than being brought by someone)? */
+/**
+ * Did this attendee book themselves (rather than being brought by someone)?
+ * The inverse of law_booking_is_on_behalf(), so the two can never disagree
+ * about a booking with no _law_booked_by recorded.
+ */
 function law_booking_is_self_booked( $booking ) {
 	$booking = get_post( $booking );
-	if ( ! $booking ) {
-		return true;
-	}
-	return (int) law_event_meta( $booking->ID, '_law_booked_by' ) === (int) $booking->post_author;
+	return ! $booking || ! law_booking_is_on_behalf( $booking );
 }
 
 /**
@@ -608,8 +615,118 @@ function law_booking_invited_by_label( $booking ) {
 	if ( ! $booking || law_booking_is_self_booked( $booking ) ) {
 		return '';
 	}
-	$user = get_user_by( 'id', (int) law_event_meta( $booking->ID, '_law_booked_by' ) );
-	return $user ? $user->display_name : __( 'a former user', 'law' );
+	return law_booking_booked_by_name( $booking );
+}
+
+/**
+ * The whole tag for a place somebody else booked: "Invited by X" on a hosted
+ * event, where a colleague brought them, and "Booked and paid for by X" on a
+ * paid one (BOOK_ON_BEHALF.md §3.8); '' when they booked it themselves. ONE
+ * wording decision for every list, panel and card that shows it.
+ */
+function law_booking_booked_by_label( $booking ) {
+	$name = law_booking_invited_by_label( $booking );
+	if ( '' === $name ) {
+		return '';
+	}
+	if ( 'hosted' === law_booking_kind( $booking ) ) {
+		/* translators: %s: the name of whoever booked the place. */
+		return sprintf( __( 'Invited by %s', 'law' ), $name );
+	}
+	// "Paid for" only once it is: before then nobody has (design review).
+	return sprintf(
+		/* translators: %s: the name of whoever booked the place. */
+		law_booking_is_paid_for( $booking ) ? __( 'Booked and paid for by %s', 'law' ) : __( 'Booked by %s', 'law' ),
+		$name
+	);
+}
+
+/** Has money actually been taken for this place? */
+function law_booking_is_paid_for( $booking ) {
+	$booking = get_post( $booking );
+	return $booking && in_array( (string) law_event_meta( $booking->ID, '_law_payment_status' ), array( 'paid', 'refunded' ), true )
+		&& (int) law_booking_price( $booking->ID )['gross'] > 0;
+}
+
+/* Booker, payer, attendee (BOOK_ON_BEHALF.md §3.1) ___________________________
+ *
+ * Three people can stand behind one booking. The ATTENDEE holds the place and
+ * is always post_author. The BOOKER made the booking and manages it: on a paid
+ * place booked for someone else (a PA registering a partner) that is somebody
+ * else, recorded in _law_booked_by. The PAYER is whose card and invoice the
+ * money is: the booker, except on a flagship place substituted since it was
+ * paid, where the money stayed with the first holder (_law_substituted_from).
+ *
+ * Management follows the booker and the attendee; money follows the payer.
+ * On every self-booked place the three are one person, so nothing written
+ * before booking on behalf existed reads any differently.
+ */
+
+/** Who booked and manages this place: _law_booked_by, else the attendee. */
+function law_booking_booker_id( $booking ) {
+	$booking = get_post( $booking );
+	if ( ! $booking ) {
+		return 0;
+	}
+	$booker = (int) law_event_meta( $booking->ID, '_law_booked_by' );
+	return $booker ? $booker : (int) $booking->post_author;
+}
+
+/** Whether the place was booked by someone other than the person holding it. */
+function law_booking_is_on_behalf( $booking ) {
+	$booking = get_post( $booking );
+	return $booking && law_booking_booker_id( $booking ) !== (int) $booking->post_author;
+}
+
+/**
+ * Whose money paid for this place.
+ *
+ * _law_substituted_from first: a substitution moves the place and leaves the
+ * money where it was, and since 26 October 2026 it records the payer there
+ * (not merely the outgoing holder), so an on-behalf place substituted later
+ * still names the PA who paid rather than the partner who never did.
+ */
+function law_booking_payer_id( $booking ) {
+	$booking = get_post( $booking );
+	if ( ! $booking ) {
+		return 0;
+	}
+	$from = (int) law_event_meta( $booking->ID, '_law_substituted_from' );
+	return $from ? $from : law_booking_booker_id( $booking );
+}
+
+/**
+ * This user's relation to a booking: 'attendee' (it is their place), 'booker'
+ * (they booked it for someone else), or '' (neither).
+ *
+ * @param int|WP_Post $booking The booking.
+ * @param int         $user_id 0 for the current user.
+ */
+function law_booking_user_role( $booking, $user_id = 0 ) {
+	$booking = get_post( $booking );
+	$user_id = (int) $user_id ? (int) $user_id : get_current_user_id();
+	if ( ! $booking || $user_id < 1 ) {
+		return '';
+	}
+	if ( (int) $booking->post_author === $user_id ) {
+		return 'attendee';
+	}
+	return law_booking_booker_id( $booking ) === $user_id ? 'booker' : '';
+}
+
+/**
+ * May this user take the money actions on a booking (continue to payment,
+ * change the card, retry)? Only the booker: on a self-booked place that is the
+ * attendee, on a place booked for someone else it is the person paying.
+ *
+ * The BOOKER, not law_booking_payer_id(): they differ only on a place
+ * transferred after it was paid, where every money action is refused anyway
+ * (the setup, charge and retry guards on _law_substituted_at).
+ */
+function law_booking_user_manages_payment( $booking, $user_id = 0 ) {
+	$booking = get_post( $booking );
+	$user_id = (int) $user_id ? (int) $user_id : get_current_user_id();
+	return $booking && $user_id > 0 && law_booking_booker_id( $booking ) === $user_id;
 }
 
 /**
@@ -640,16 +757,16 @@ function law_booking_attendee_email( $booking ) {
  * May this person be shown the payment facts on this booking — the payment
  * method, the Stripe invoice and its PDF?
  *
- * Normally yes: the author of a booking is the person who paid for it. The
- * exception is a place that has been SUBSTITUTED (law_flagship_substitute()),
- * where the money deliberately did not move. The invoice belongs to the person
- * who bought the ticket, the hosted Stripe page carries their name, billing
- * address and card last four, and the new delegate is a different person who
- * would otherwise find all of it one click from My bookings.
+ * Only to the PAYER (law_booking_payer_id()). On a self-booked place that is
+ * the person holding it, so nothing changes for them. It is somebody else in
+ * two cases. A place SUBSTITUTED since it was paid (law_flagship_substitute()),
+ * where the money deliberately did not move: the invoice, the name and billing
+ * address on the hosted Stripe page and the card's last four are the buyer's,
+ * and the new delegate would otherwise find all of it one click from My
+ * bookings. And a place BOOKED FOR SOMEONE ELSE (BOOK_ON_BEHALF.md), where the
+ * PA paid and the partner holds the place.
  *
- * So the rule is the payer's, not the holder's: only the delegate named in
- * _law_substituted_from still sees them. In practice they no longer reach the
- * page at all, because it is gated on post_author — which is exactly why their
+ * A substituted payer no longer reaches the page at all, which is why their
  * copy of the transfer email carries the invoice link instead.
  *
  * The committee's own surfaces (the Flagship bookings dashboard, the exports
@@ -660,11 +777,9 @@ function law_booking_attendee_email( $booking ) {
  * @param int $user_id    Whose view; 0 for the current user.
  */
 function law_booking_payment_facts_visible( $booking_id, $user_id = 0 ) {
-	$booking_id  = (int) $booking_id;
-	$user_id     = (int) $user_id ? (int) $user_id : get_current_user_id();
-	$substituted = (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	$user_id = (int) $user_id ? (int) $user_id : get_current_user_id();
 
-	return ! $substituted || $substituted === $user_id;
+	return $user_id > 0 && law_booking_payer_id( (int) $booking_id ) === $user_id;
 }
 
 /**
@@ -872,7 +987,10 @@ function law_booking_update_card_handler( $action = 'law_booking_update_card' ) 
 		law_events_respond(
 			$is_ajax,
 			false,
-			array( 'message' => $url->get_error_message(), 'status' => 502 ),
+			law_booking_refusal_payload(
+				$url,
+				__( 'Sorry, we could not open the payment page just now. Please try again shortly, or contact LAW if it keeps happening.', 'law' )
+			),
 			'reception' === $kind ? 'reception-checkout-failed' : 'flagship-failed'
 		);
 	}
@@ -890,11 +1008,15 @@ function law_booking_update_card_handler( $action = 'law_booking_update_card' ) 
 }
 
 /**
- * Load a PRICED booking this user owns, or respond and exit.
+ * Load a PRICED booking whose payment this user manages, or respond and exit.
  *
  * The IDOR rule the whole module follows: load the booking, check its post
  * type, derive the event from post_parent, and only then check who is asking.
  * Nothing trusts an event ID out of the request.
+ *
+ * "Manages payment" is the booker (law_booking_user_manages_payment()): the
+ * attendee on a self-booked place, the PA on a place booked for someone else.
+ * The partner holding such a place sees the payment controls disabled.
  *
  * @param bool     $is_ajax  From law_events_guard_post().
  * @param string[] $statuses Statuses the action is legal in; empty = any.
@@ -907,14 +1029,30 @@ function law_booking_require_own_priced_booking( $is_ajax, array $statuses = arr
 	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type || 'hosted' === law_booking_kind( $booking ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking could not be found.', 'law' ), 'status' => 404 ), 'booking-failed' );
 	}
-	if ( (int) $booking->post_author !== get_current_user_id() ) {
-		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking belongs to someone else.', 'law' ), 'status' => 403 ), 'booking-failed' );
+	if ( ! law_booking_user_manages_payment( $booking ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => law_booking_payment_refusal( $booking ), 'status' => 403 ), 'booking-failed' );
 	}
 	if ( $statuses && ! in_array( $booking->post_status, $statuses, true ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking cannot be changed now.', 'law' ), 'status' => 409 ), 'booking-failed' );
 	}
 
 	return $booking;
+}
+
+/**
+ * Why this user may not take a payment action on a booking: the partner on a
+ * place booked for them is told who manages it, anybody else that it is not
+ * theirs.
+ */
+function law_booking_payment_refusal( $booking ) {
+	if ( 'attendee' !== law_booking_user_role( $booking ) ) {
+		return __( 'That booking belongs to someone else.', 'law' );
+	}
+	return sprintf(
+		/* translators: %s: the name of the person who booked and pays for the place. */
+		__( '%s manages payment for this place.', 'law' ),
+		law_booking_booked_by_name( $booking )
+	);
 }
 
 /** The next booking number (Booking #N), starting at 1. */
@@ -1796,6 +1934,21 @@ function law_booking_clean_additional_rows( array $rows ) {
 		if ( '' === $job_title ) {
 			return new WP_Error( 'law_booking_invalid_row', sprintf( 'Please give a job title for %s.', $name ), array( 'row' => $i, 'field' => 'job_title' ) );
 		}
+		// These three are printed into emails sent to the address typed beside
+		// them, and onto a Stripe invoice line: a web address typed as a name
+		// would arrive as a live link in a LAW email (make_clickable()), and
+		// nothing limited their length (security review, 26 October 2026).
+		foreach ( array( 'name' => $name, 'organisation' => $organisation, 'job_title' => $job_title ) as $law_field => $law_value ) {
+			if ( mb_strlen( $law_value ) > 100 || preg_match( '#://|www\.|@#i', $law_value ) ) {
+				return new WP_Error(
+					'law_booking_invalid_row',
+					'name' === $law_field
+						? sprintf( 'Please give the name of attendee %d as words only, up to 100 characters.', count( $clean ) + 1 )
+						: sprintf( 'Please give the %1$s for %2$s as words only, up to 100 characters.', 'organisation' === $law_field ? 'organisation' : 'job title', $name ),
+					array( 'row' => $i, 'field' => $law_field )
+				);
+			}
+		}
 		$clean[] = array(
 			'user_id'      => 0,
 			'name'         => $name,
@@ -2063,14 +2216,16 @@ function law_booking_person_from_profile( $user_id, array $answers = array() ) {
  * law_flagship_add_complimentary() and the loop inside law_booking_create(),
  * and they had already drifted over which meta they wrote first.
  *
- * @param int    $event_id law_event post ID.
- * @param int    $user_id  The attendee (becomes post_author).
- * @param string $status   Booking post status.
- * @param array  $person   law_booking_attendee()-shaped row.
- * @param array  $meta     key => value, written through law_event_update_meta().
+ * @param int    $event_id  law_event post ID.
+ * @param int    $user_id   The attendee (becomes post_author).
+ * @param string $status    Booking post status.
+ * @param array  $person    law_booking_attendee()-shaped row.
+ * @param array  $meta      key => value, written through law_event_update_meta().
+ * @param int    $booked_by Who booked it, when that is not the attendee (a
+ *                          paid place booked for someone else); 0 = themselves.
  * @return int|WP_Error The booking post ID.
  */
-function law_booking_insert( $event_id, $user_id, $status, array $person, array $meta = array() ) {
+function law_booking_insert( $event_id, $user_id, $status, array $person, array $meta = array(), $booked_by = 0 ) {
 	$numbers    = law_bookings_next_numbers( 1 );
 	$booking_id = wp_insert_post(
 		wp_slash(
@@ -2092,12 +2247,591 @@ function law_booking_insert( $event_id, $user_id, $status, array $person, array 
 	$booking_id = (int) $booking_id;
 
 	law_event_update_meta( $booking_id, '_law_booking_number', $numbers[0] );
-	law_booking_write_attendee( $booking_id, $person, (int) $user_id );
+	law_booking_write_attendee( $booking_id, $person, (int) $booked_by ? (int) $booked_by : (int) $user_id );
 	foreach ( $meta as $key => $value ) {
 		law_event_update_meta( $booking_id, $key, $value );
 	}
 
 	return $booking_id;
+}
+
+/* A paid place for someone else (BOOK_ON_BEHALF.md §3.3) ______________________
+ *
+ * The flagship application and the reception checkout and waitlist each ask
+ * "Who is this place for? Myself / Someone else". The answer is read and
+ * resolved here, once, for all three:
+ *
+ *   law_booking_paid_choice_from_request()  reads and validates the form;
+ *   law_booking_run_for_party()             matches or creates the attendee's
+ *                                           account, runs the engine, and
+ *                                           takes the account back out if the
+ *                                           engine refused;
+ *   law_booking_paid_party_after_insert()   what an engine does once the
+ *                                           booking exists.
+ *
+ * The engines receive the resolved party as $input['party'] and otherwise
+ * behave exactly as before; 'self' is the old path, untouched.
+ */
+
+/**
+ * On a user account created by booking on their behalf: they have not yet set
+ * a password. While it is set, every email the attendee gets carries a fresh
+ * set-password link, because the place is often confirmed weeks after it was
+ * booked and a reset key lasts a day.
+ */
+const LAW_INVITATION_PENDING_META = '_law_invitation_pending';
+
+// The theme's set-password page ends in core's reset_password() (auth.php),
+// which is also what the forgot-password route uses, so this catches both.
+add_action(
+	'after_password_reset',
+	function ( $user ) {
+		if ( $user instanceof WP_User ) {
+			delete_user_meta( $user->ID, LAW_INVITATION_PENDING_META );
+		}
+	}
+);
+// And on any sign-in at all: somebody who signs in has a password, however
+// it was set (an administrator can set one on the wp-admin user screen).
+add_action(
+	'wp_login',
+	function ( $login, $user ) {
+		if ( $user instanceof WP_User ) {
+			delete_user_meta( $user->ID, LAW_INVITATION_PENDING_META );
+		}
+	},
+	10,
+	2
+);
+
+/**
+ * Who a paid booking is for, read from the request. Writes nothing.
+ *
+ * 'self' unless the form said 'other'. For 'other' the attendee's identity
+ * comes from law_attendees[0] (the shared attendee-details part's names, so
+ * law_booking_clean_additional_rows() cleans it and booking-form.js marks its
+ * errors in place), and their country, accessibility and dietary answers from
+ * the flat profile fields every on-behalf form posts. Every refusal names the
+ * field it is about.
+ *
+ * @param int   $booker_id The signed-in user.
+ * @param array $post      The unslashed request.
+ * @return array{for:string,row?:array,profile?:array}|WP_Error
+ */
+function law_booking_paid_choice_from_request( $booker_id, array $post ) {
+	if ( 'other' !== sanitize_key( (string) ( $post['law_for'] ?? 'self' ) ) ) {
+		return array( 'for' => 'self' );
+	}
+
+	$attendees = (array) ( $post['law_attendees'] ?? array() );
+	$rows      = law_booking_clean_additional_rows( array( (array) ( $attendees[0] ?? array() ) ) );
+	if ( is_wp_error( $rows ) ) {
+		return $rows;
+	}
+	if ( ! $rows ) {
+		return new WP_Error(
+			'law_booking_invalid_row',
+			__( 'Please give the full name of the person you are booking for.', 'law' ),
+			array( 'row' => 0, 'field' => 'name' )
+		);
+	}
+	$row = $rows[0];
+
+	$booker = get_user_by( 'id', (int) $booker_id );
+	if ( $booker && strtolower( $booker->user_email ) === strtolower( $row['email'] ) ) {
+		return new WP_Error(
+			'law_booking_own_email',
+			__( 'That is your own email address. Choose Myself to book your own place.', 'law' ),
+			array( 'row' => 0, 'field' => 'email' )
+		);
+	}
+
+	$profile = law_registration_clean_attendee_profile( $post );
+	$valid   = law_registration_validate_attendee_profile( $profile, true );
+	if ( is_wp_error( $valid ) ) {
+		// The shared validator speaks to the person filling in their own
+		// profile; this is about somebody else's.
+		$message = 'country' === ( $valid->get_error_data()['field'] ?? '' )
+			? __( 'Please choose their country of residence.', 'law' )
+			: $valid->get_error_message();
+		return new WP_Error( $valid->get_error_code(), $message, $valid->get_error_data() );
+	}
+
+	return array( 'for' => 'other', 'row' => $row, 'profile' => $profile );
+}
+
+/**
+ * Keep what a refused no-JS submission said about who the place was for, so
+ * the inline form can put it back: the choice, the four details and the
+ * profile answers, and which field the refusal was about. One store for both
+ * paid flows; the flagship and the reception keep their own messages as they
+ * always have.
+ */
+function law_booking_store_paid_choice_state( WP_Error $error, $event_id ) {
+	$user_id = get_current_user_id();
+	if ( ! $user_id ) {
+		return;
+	}
+	// Keyed by EVENT as well, so a refusal on the flagship never prefills a
+	// reception's form, with somebody's accessibility answers in it.
+	$key = 'law_paid_choice_state_' . $user_id . '_' . (int) $event_id;
+	$post = wp_unslash( $_POST );
+	$rows = (array) ( $post['law_attendees'] ?? array() );
+	$row  = (array) ( $rows[0] ?? array() );
+	$data = $error->get_error_data();
+
+	$values = array();
+	foreach ( array( 'name', 'email', 'organisation', 'job_title' ) as $field ) {
+		$values[ $field ] = sanitize_text_field( (string) ( $row[ $field ] ?? '' ) );
+	}
+	set_transient(
+		$key,
+		array(
+			'for'     => 'other' === sanitize_key( (string) ( $post['law_for'] ?? '' ) ) ? 'other' : 'self',
+			'values'  => $values,
+			'profile' => law_registration_clean_attendee_profile( $post ),
+			'field'   => is_array( $data ) ? sanitize_key( (string) ( $data['field'] ?? '' ) ) : '',
+		),
+		10 * MINUTE_IN_SECONDS
+	);
+}
+
+/** Read it back for one event, once; empty when there is none. */
+function law_booking_paid_choice_state( $event_id ) {
+	$key   = 'law_paid_choice_state_' . get_current_user_id() . '_' . (int) $event_id;
+	$state = get_transient( $key );
+	if ( ! is_array( $state ) ) {
+		return array();
+	}
+	delete_transient( $key );
+	return $state;
+}
+
+/**
+ * A booking's attendee as law_profile_values() shapes them, from the BOOKING
+ * alone: the four details typed when it was made and the answers stored with
+ * it. What the person who booked somebody else is shown (BOOK_ON_BEHALF.md
+ * §3.6), never the attendee's live profile.
+ *
+ * @return array
+ */
+function law_booking_snapshot_values( $booking ) {
+	$booking  = get_post( $booking );
+	$person   = law_booking_attendee( $booking );
+	$answers  = $booking ? (array) law_event_meta( $booking->ID, '_law_attendee_profile' ) : array();
+
+	return array(
+		'email'               => $person['email'],
+		'organisation'        => $person['organisation'],
+		'job_title'           => $person['job_title'],
+		'country'             => (string) ( $answers['country'] ?? '' ),
+		'accessibility'       => (array) ( $answers['accessibility'] ?? array() ),
+		'accessibility_other' => (string) ( $answers['accessibility_other'] ?? '' ),
+		'dietary'             => (array) ( $answers['dietary'] ?? array() ),
+		'dietary_other'       => (string) ( $answers['dietary_other'] ?? '' ),
+	);
+}
+
+/**
+ * The profile values the committee's lists and exports print for a booking's
+ * attendee: their account's own answers, LIVE as ever, with any blank filled
+ * from the answers stored on the booking by whoever booked it for them
+ * (BOOK_ON_BEHALF.md A3). Those answers are never written into an account
+ * that existed before the booking, so this is where they are read back.
+ * Self-booked places store none, and read exactly as before.
+ *
+ * @return array law_profile_values() shape.
+ */
+function law_booking_profile_values( $booking ) {
+	$booking = get_post( $booking );
+	$profile = $booking ? law_profile_values( (int) $booking->post_author ) : array();
+	$stored  = $booking ? (array) law_event_meta( $booking->ID, '_law_attendee_profile' ) : array();
+	foreach ( $stored as $key => $value ) {
+		if ( empty( $profile[ $key ] ) && ! empty( $value ) ) {
+			$profile[ $key ] = $value;
+		}
+	}
+	return $profile;
+}
+
+/** The account that booked a place, or null when it has gone. */
+function law_booking_booker( $booking ) {
+	$user = get_user_by( 'id', law_booking_booker_id( $booking ) );
+	return $user instanceof WP_User ? $user : null;
+}
+
+/** The name of whoever booked a place; a deleted account still gets a truthful label. */
+function law_booking_booked_by_name( $booking ) {
+	$user = law_booking_booker( $booking );
+	return $user ? $user->display_name : __( 'a former user', 'law' );
+}
+
+/** Their email, beside the name: the committee's address for questions about the money. */
+function law_booking_booked_by_email( $booking ) {
+	$user = law_booking_booker( $booking );
+	return $user ? $user->user_email : '';
+}
+
+/** "Name (email)", or the name alone when there is no email, for lines that say whose a place is. */
+function law_booking_attendee_who( $booking ) {
+	$person = law_booking_attendee( $booking );
+	return '' !== $person['email'] ? sprintf( '%1$s (%2$s)', $person['name'], $person['email'] ) : $person['name'];
+}
+
+/**
+ * One email's copy for the person who booked a place for someone else:
+ * addressed to them by name, without the calendar file (it is not their
+ * diary), under a line saying whose place it is. Null when that account has
+ * gone or has no usable address. ONE builder for the routing, the
+ * cancellation copy and the substitution copy, which had three.
+ *
+ * @param array  $extra law_events_send()'s $extra for the email.
+ * @param string $lead  The line above the body.
+ * @return array|null
+ */
+function law_booking_booker_copy( $booking, array $extra, $lead ) {
+	$booker = law_booking_booker( $booking );
+	if ( ! $booker || ! is_email( $booker->user_email ) ) {
+		return null;
+	}
+	unset( $extra['attachments'] );
+	$extra['to']                            = array( $booker->user_email );
+	$extra['to_attendee']                   = true;
+	$extra['placeholders']                  = (array) ( $extra['placeholders'] ?? array() );
+	$extra['placeholders']['attendee_name'] = $booker->display_name;
+	$extra['lead']                          = (string) $lead;
+	return $extra;
+}
+
+/**
+ * One line saying whose place this is, when the person reading did not book
+ * it for themselves; '' otherwise.
+ */
+function law_booking_for_line( $booking ) {
+	$booking = get_post( $booking );
+	if ( ! $booking || ! law_booking_is_on_behalf( $booking ) ) {
+		return '';
+	}
+	// The booker only. The attendee is told who pays in the payment facts
+	// (law_booking_payer_note()) and beside any payment control, and a third
+	// telling was one too many (design review).
+	if ( 'booker' === law_booking_user_role( $booking ) ) {
+		/* translators: %s: attendee name. */
+		return sprintf( __( 'For %s.', 'law' ), law_booking_attendee( $booking )['name'] );
+	}
+	return '';
+}
+
+/**
+ * Why the payment facts are not shown to the person reading: somebody else
+ * paid. One sentence for both reasons, which had two verbatim copies
+ * (booking-payment-facts.php and flagship-manage-application.php): a place
+ * transferred to them, or one somebody booked for them.
+ */
+function law_booking_payer_note( $booking ) {
+	$booking = get_post( $booking );
+	if ( ! $booking ) {
+		return '';
+	}
+	if ( (int) law_event_meta( $booking->ID, '_law_substituted_from' ) ) {
+		// Named where we have a name: "the person who paid for it" answers
+		// none of the question a delegate has, which is who to ask for a
+		// receipt for their expenses.
+		$payer = (string) law_event_meta( $booking->ID, '_law_substituted_from_name' );
+		return '' !== $payer
+			? sprintf(
+				/* translators: %s: the delegate who bought the place. */
+				__( 'This place was transferred to you from %s, who bought it. They hold the VAT receipt, so please ask them if you need a copy.', 'law' ),
+				$payer
+			)
+			: __( 'This place was transferred to you. The VAT receipt is held by the person who bought it.', 'law' );
+	}
+	if ( law_booking_is_paid_for( $booking ) ) {
+		return sprintf(
+			/* translators: %s: the name of whoever booked and paid for the place. */
+			__( 'Booked and paid for by %s, who holds the VAT receipt.', 'law' ),
+			law_booking_booked_by_name( $booking )
+		);
+	}
+	// A free reception, or a code that covered the whole price: no payment
+	// for anybody to manage.
+	if ( law_booking_price( $booking->ID )['free'] ) {
+		return sprintf(
+			/* translators: %s: the name of whoever booked the place. */
+			__( 'Booked by %s. There is nothing to pay.', 'law' ),
+			law_booking_booked_by_name( $booking )
+		);
+	}
+	return sprintf(
+		/* translators: %s: the name of whoever booked the place. */
+		__( 'Booked by %s, who manages the payment.', 'law' ),
+		law_booking_booked_by_name( $booking )
+	);
+}
+
+/**
+ * The line under the details whoever books someone in fills for them. One
+ * copy: it was written out three times (the bookings list, the flagship's
+ * complimentary place and its substitution).
+ */
+function law_booking_attendee_details_note() {
+	return __( 'Whatever they told you. They can change any of this themselves from their profile.', 'law' );
+}
+
+/**
+ * The refusal for somebody who already holds a place, worded so that it does
+ * not say so (BOOK_ON_BEHALF.md A8): "X already has a place" would let any
+ * member find out who has registered for the flagship by typing emails.
+ */
+function law_booking_attendee_taken_error() {
+	return new WP_Error(
+		'law_booking_duplicate',
+		__( "We can't register this person for this event. If they already have a place, they'll find it under My bookings.", 'law' ),
+		array( 'row' => 0, 'field' => 'email' )
+	);
+}
+
+/**
+ * Is the person a place is being booked for free to take one? The duplicate
+ * guard, answered with the generic refusal above.
+ *
+ * @param array $person name / email / user_id (0 before their account exists).
+ * @return true|WP_Error
+ */
+function law_booking_guard_attendee_free( $event_id, array $person, array $statuses ) {
+	$dup = law_booking_guard_duplicates( $event_id, array( $person ), $statuses );
+	return is_wp_error( $dup ) ? law_booking_attendee_taken_error() : true;
+}
+
+/**
+ * Resolve the party, run the engine, and undo a new account if it refused.
+ *
+ * For 'self' this only calls the engine. For 'other' it refuses first, BY
+ * EMAIL, if the person already holds a place (so a refusal never creates an
+ * account), then matches or creates their account BEFORE the engine takes the
+ * event lock (password hashing is slow), marks a created one as having an
+ * invitation outstanding, and hands the engine the party.
+ *
+ * The undo deletes only an account this request created AND that authors no
+ * booking at all. law_booking_delete_created_users() deletes unconditionally,
+ * and deleting a user cancels their bookings under 'account_deleted', which
+ * skips the paid guard: so if a second request matched the new account and
+ * booked onto it in the meantime, an unconditional delete would cancel that
+ * booking. An account left holding a released hold stays, harmlessly; its
+ * owner was never emailed.
+ *
+ * @param int      $booker_id The signed-in user.
+ * @param int      $event_id  The event being booked.
+ * @param array    $choice    law_booking_paid_choice_from_request().
+ * @param string[] $statuses  The statuses that hold a place, for the early check.
+ * @param callable $engine    fn( ?array $party ): array|WP_Error.
+ * @return array|WP_Error What the engine returned.
+ */
+function law_booking_run_for_party( $booker_id, $event_id, array $choice, array $statuses, callable $engine ) {
+	if ( 'other' !== ( $choice['for'] ?? 'self' ) ) {
+		return $engine( null );
+	}
+
+	$booker_id = (int) $booker_id;
+	$event_id  = (int) $event_id;
+	$row       = (array) $choice['row'];
+
+	// One unfinished booking for somebody else at a time (security review,
+	// 26 October 2026). Without it one account could hold every place at a
+	// reception by abandoning Stripe pages, each hold lasting forty minutes,
+	// or park a named person's place behind an application with no card. A
+	// PA booking several partners finishes each before starting the next.
+	if ( law_booking_unfinished_on_behalf( $booker_id ) ) {
+		return new WP_Error(
+			'law_booking_on_behalf_unfinished',
+			__( 'Please finish paying for the place you have already started booking for someone else, or let it lapse, before booking another.', 'law' )
+		);
+	}
+
+	$free = law_booking_guard_attendee_free( $event_id, array( 'user_id' => 0 ) + $row, $statuses );
+	if ( is_wp_error( $free ) ) {
+		return $free;
+	}
+
+	$resolved = law_booking_resolve_attendee_user( $row, $event_id, $booker_id );
+	if ( is_wp_error( $resolved ) ) {
+		// The detail is in the event's log (law_booking_resolve_attendee_user());
+		// the raw wp_insert_user() message could say that a LOGIN already
+		// exists, which is something about another person's account.
+		return new WP_Error(
+			$resolved->get_error_code(),
+			__( 'We could not set up an account for that email address. Please check it, or contact LAW if it keeps happening.', 'law' ),
+			array( 'row' => 0, 'field' => 'email' )
+		);
+	}
+	$attendee_id = (int) $resolved['user_id'];
+	if ( $resolved['created'] ) {
+		update_user_meta( $attendee_id, LAW_INVITATION_PENDING_META, 1 );
+	}
+
+	$party = array(
+		'booker_id'   => $booker_id,
+		'attendee_id' => $attendee_id,
+		'created'     => (bool) $resolved['created'],
+		'profile'     => (array) $choice['profile'],
+		// The snapshot is what the booker typed, not the attendee's profile:
+		// the booking records what was asked for.
+		'person'      => array(
+			'user_id'      => $attendee_id,
+			'name'         => $row['name'],
+			'email'        => $row['email'],
+			'organisation' => $row['organisation'],
+			'job_title'    => $row['job_title'],
+		),
+	);
+
+	$result = $engine( $party );
+	if ( is_wp_error( $result ) && $party['created'] ) {
+		law_booking_forget_unclaimed_attendee( $attendee_id, $booker_id, $event_id );
+	}
+
+	return $result;
+}
+
+/**
+ * Does this booker have a booking for somebody else that is still unfinished:
+ * a reception place held while they pay, or a registration or waitlist entry
+ * still waiting for its payment details?
+ */
+function law_booking_unfinished_on_behalf( $booker_id ) {
+	$booker_id = (int) $booker_id;
+	if ( $booker_id < 1 ) {
+		return false;
+	}
+	// Only the statuses that can be unfinished, so hosted colleagues or old
+	// cancelled bookings cannot push a held place out of the window looked
+	// at (DRY review, 26 October 2026). Meta comes in with the posts.
+	$candidates = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_status'    => array( 'law-pending-payment', 'law-applied', 'law-waitlisted' ),
+			'author__not_in' => array( $booker_id ),
+			'meta_key'       => '_law_booked_by', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+			'meta_value'     => $booker_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+			'posts_per_page' => 200,
+			'no_found_rows'  => true,
+		)
+	);
+	foreach ( $candidates as $booking ) {
+		if ( 'hosted' === law_booking_kind( $booking ) ) {
+			continue;
+		}
+		if ( 'law-pending-payment' === $booking->post_status ) {
+			return true;
+		}
+		if ( in_array( $booking->post_status, array( 'law-applied', 'law-waitlisted' ), true )
+			&& 'pending_setup' === (string) law_event_meta( $booking->ID, '_law_payment_status' ) ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Take back an account created when somebody booked for its owner, if that
+ * owner never came to have anything there: they have not set a password, and
+ * every booking they author was booked by this booker and has been cancelled
+ * (a refused submission, a Stripe page that failed or lapsed, a registration
+ * that never got its card). The owner was never emailed in any of those
+ * cases, so the account was only ever the booker's typing, with the booker's
+ * answers on it.
+ *
+ * Never an account with a live booking, one somebody else booked onto, or one
+ * whose owner has signed in: deleting a user cancels their bookings under
+ * 'account_deleted', which skips the paid guard, so a careless delete would
+ * cancel a real place.
+ *
+ * @return bool Whether the account was deleted.
+ */
+function law_booking_forget_unclaimed_attendee( $attendee_id, $booker_id, $event_id ) {
+	$attendee_id = (int) $attendee_id;
+	if ( $attendee_id < 1 || ! get_user_meta( $attendee_id, LAW_INVITATION_PENDING_META, true ) ) {
+		return false;
+	}
+	$authored = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_status'    => array_keys( get_post_stati() ),
+			'author'         => $attendee_id,
+			'posts_per_page' => 20,
+			'no_found_rows'  => true,
+		)
+	);
+	foreach ( $authored as $booking ) {
+		if ( 'law-cancelled' !== $booking->post_status || law_booking_booker_id( $booking ) !== (int) $booker_id ) {
+			return false;
+		}
+	}
+	law_booking_delete_created_users( array( $attendee_id => true ), (int) $event_id, (int) $booker_id );
+	return true;
+}
+
+/**
+ * Whether a party an engine was handed is a real one for this booker. The
+ * engines take $input['party'] from their handler, never from the request,
+ * but a party naming a different booker is refused rather than trusted.
+ *
+ * @return array|null|WP_Error The party, null for 'self'.
+ */
+function law_booking_paid_party_from_input( $booker_id, array $input ) {
+	$party = $input['party'] ?? null;
+	if ( null === $party ) {
+		return null;
+	}
+	if ( ! is_array( $party ) || (int) ( $party['booker_id'] ?? 0 ) !== (int) $booker_id || (int) ( $party['attendee_id'] ?? 0 ) < 1 ) {
+		return new WP_Error( 'law_booking_party_invalid', __( 'Something went wrong with that booking. Please try again.', 'law' ) );
+	}
+	return $party;
+}
+
+/**
+ * The duplicate check an engine runs, before and under its lock: the
+ * booker's own wording for 'self', the generic refusal for 'other'.
+ *
+ * @return true|WP_Error
+ */
+function law_booking_guard_paid_duplicates( $event_id, array $person, ?array $party, array $statuses ) {
+	return $party
+		? law_booking_guard_attendee_free( $event_id, $person, $statuses )
+		: law_booking_guard_duplicates( $event_id, array( $person ), $statuses );
+}
+
+/**
+ * What an engine does once a booking for someone else exists: the answers the
+ * booker typed go onto the attendee's account only if this booking created
+ * it (BOOK_ON_BEHALF.md A3; they are on the booking either way, as
+ * _law_attendee_profile), and the event's log says who booked for whom.
+ */
+function law_booking_paid_party_after_insert( ?array $party, $booking_id, $event_id ) {
+	if ( ! $party ) {
+		return;
+	}
+	if ( $party['created'] ) {
+		law_booking_apply_attendee_profile( (int) $party['attendee_id'], (array) $party['profile'], true, (int) $event_id, (int) $party['booker_id'] );
+	}
+	$booker = get_user_by( 'id', (int) $party['booker_id'] );
+	law_event_log(
+		(int) $event_id,
+		sprintf(
+			'Booking #%1$d is for %2$s, booked by %3$s.',
+			(int) law_event_meta( (int) $booking_id, '_law_booking_number' ),
+			$party['person']['name'],
+			$booker ? $booker->display_name : '#' . (int) $party['booker_id']
+		),
+		array(
+			'source'   => 'bookings',
+			'action'   => 'booked_on_behalf',
+			'booking'  => (int) $booking_id,
+			'booker'   => (int) $party['booker_id'],
+			'attendee' => (int) $party['attendee_id'],
+		),
+		array( 'user_id' => (int) $party['booker_id'] )
+	);
 }
 
 /**
@@ -2320,6 +3054,10 @@ function law_booking_email_extra( $booking_id ) {
 
 	return array(
 		'to'           => $person['email'],
+		// Read by law_booking_route_paid_email(), which sends a place booked
+		// for someone else to the person who paid for it. Senders that pass
+		// only ['placeholders'] on (the committee's copies) never carry it.
+		'booking_id'   => $booking_id,
 		'placeholders' => array_merge(
 			law_booking_email_placeholders( $booking_id ),
 			array(
@@ -2354,6 +3092,291 @@ function law_booking_email_extra( $booking_id ) {
 			)
 		),
 	);
+}
+
+/* Emails about a place booked for someone else (BOOK_ON_BEHALF.md §3.7) _____ */
+
+/**
+ * The placeholders that describe somebody's money: the card, the invoice, the
+ * amounts and the code. Blanked whenever the person reading did not pay, so a
+ * stored template that still names one of them by hand cannot hand the
+ * payer's Stripe invoice (their name, billing address and card) to someone
+ * who paid nothing. One list for the substitution and booking on behalf.
+ *
+ * @return string[]
+ */
+/** Blank every payer tag in an email's placeholders, for a reader who did not pay. */
+function law_booking_blank_payer_tags( array $placeholders ) {
+	foreach ( law_booking_payer_tags() as $tag ) {
+		$placeholders[ $tag ] = '';
+	}
+	return $placeholders;
+}
+
+function law_booking_payer_tags() {
+	return array( 'invoice_link', 'invoice_url', 'price', 'price_vat', 'price_total', 'payment_method', 'card_label', 'update_payment_link', 'discount_note', 'payment_error' );
+}
+
+/**
+ * Route a delegate email about a PAID place booked for someone else to the
+ * person who booked and paid for it.
+ *
+ * Every user_flagship_* and user_reception_* template is written to whoever
+ * paid ("your saved payment method", "you paid"), so for a place booked on
+ * behalf it goes to the booker: addressed to them by name, without the
+ * calendar invitation (it is not their diary), and with a line the sender
+ * adds above the body saying whose place it is. The attendee's own emails are
+ * separate and explicit (law_booking_notify_on_behalf()) and say so with
+ * 'to_attendee'.
+ *
+ * A booker whose account has gone gets nothing rather than a fall-back to the
+ * attendee, who must never receive somebody else's payment details: the send
+ * is logged as having no recipient.
+ *
+ * @param string $slug  The template.
+ * @param array  $extra law_events_send()'s $extra; 'booking_id' marks a
+ *                      booking email (law_booking_email_extra()).
+ * @return array
+ */
+function law_booking_route_paid_email( $slug, array $extra ) {
+	$booking_id = (int) ( $extra['booking_id'] ?? 0 );
+	if ( ! $booking_id || ! empty( $extra['to_attendee'] ) ) {
+		return $extra;
+	}
+	$slug = (string) $slug;
+	if ( ( 0 !== strpos( $slug, 'user_flagship_' ) && 0 !== strpos( $slug, 'user_reception_' ) )
+		|| 'user_flagship_place_transferred' === $slug ) {
+		return $extra;
+	}
+	$booking = get_post( $booking_id );
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type || ! law_booking_is_on_behalf( $booking ) ) {
+		return $extra;
+	}
+
+	$copy = law_booking_booker_copy( $booking, $extra, law_booking_payer_lead( $slug, $booking, (string) ( $extra['lead_actor'] ?? '' ) ) );
+	if ( null === $copy ) {
+		unset( $extra['attachments'] );
+		$extra['to'] = array( '' );
+		return $extra;
+	}
+	return $copy;
+}
+
+/**
+ * The line above a booker's copy: whose place it is, and whether that person
+ * has been told too.
+ *
+ * @param string $actor 'attendee' when the attendee did the thing being
+ *                      reported (withdrew their own registration).
+ */
+function law_booking_payer_lead( $slug, $booking, $actor = '' ) {
+	$who = law_booking_attendee_who( $booking );
+
+	if ( 'attendee' === $actor ) {
+		/* translators: %s: the attendee's name and email. */
+		return sprintf( __( '%s has withdrawn the registration you made for them.', 'law' ), $who );
+	}
+
+	/* translators: %s: the attendee's name and email. */
+	$lead = sprintf( __( 'You booked this place for %s.', 'law' ), $who );
+
+	$confirmed = array( 'user_flagship_approved', 'user_flagship_approved_free', 'user_reception_confirmed', 'user_reception_confirmed_free', 'user_reception_promoted_paid', 'user_reception_promoted_free' );
+	$told      = array( 'user_flagship_applied', 'user_flagship_applied_late', 'user_flagship_applied_free', 'user_flagship_applied_free_late', 'user_reception_waitlist_joined', 'user_reception_waitlist_joined_free', 'user_flagship_declined', 'user_flagship_withdrawn' );
+	if ( in_array( $slug, $confirmed, true ) ) {
+		$lead .= ' ' . __( 'We have sent them their own confirmation, with the calendar invitation.', 'law' );
+	} elseif ( in_array( $slug, $told, true ) ) {
+		$lead .= ' ' . __( 'We have let them know too.', 'law' );
+	}
+
+	return $lead;
+}
+
+/**
+ * The line above a committee email about a place booked for someone else,
+ * naming who booked it; '' for everyone else.
+ */
+function law_booking_committee_lead( $booking_id ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking || ! law_booking_is_on_behalf( $booking ) ) {
+		return '';
+	}
+	$person = law_booking_attendee( $booking );
+	$email  = law_booking_booked_by_email( $booking );
+	return sprintf(
+		/* translators: 1: attendee, 2: booker, 3: booker's email. */
+		law_booking_is_paid_for( $booking )
+			? __( 'This place is for %1$s. It was booked and paid for by %2$s (%3$s).', 'law' )
+			: __( 'This place is for %1$s. It was booked by %2$s (%3$s).', 'law' ),
+		$person['name'],
+		law_booking_booked_by_name( $booking ),
+		'' !== $email ? $email : '-'
+	);
+}
+
+/**
+ * The set-password paragraph for an attendee whose account was created when
+ * somebody booked for them, for as long as they have not set one
+ * (LAW_INVITATION_PENDING_META), or the sign-in-as-usual line. A fresh link
+ * every time, because a reset key lasts a day and a flagship decision can be
+ * weeks away.
+ */
+function law_booking_attendee_account_note( $booking ) {
+	$booking = get_post( $booking );
+	$user    = $booking ? get_user_by( 'id', (int) $booking->post_author ) : null;
+	if ( ! $user || ! get_user_meta( $user->ID, LAW_INVITATION_PENDING_META, true ) ) {
+		return law_booking_account_note( '' );
+	}
+	return law_booking_account_note( law_events_password_setup_link( $user, (int) $booking->post_parent, 'booking_attendee_error' ) );
+}
+
+/**
+ * Email the attendee of a paid place somebody else booked for them, at one of
+ * its moments. Does nothing for a self-booked place, whose holder already got
+ * the delegate email.
+ *
+ *   registered      a flagship registration is ready for the committee
+ *   waitlisted      a reception waitlist entry is ready
+ *   confirmed       the place is confirmed (with the calendar invitation)
+ *   declined        the committee declined the flagship registration
+ *   withdrawn       the booker withdrew it
+ *   withdrawn_self  the attendee withdrew it themselves
+ *   booker_gone     the booker's account was deleted before it was paid
+ *
+ * The flagship's confirmation is the standard user_flagship_approved with the
+ * payment facts blanked and "booked and paid for by" in their place, as a
+ * substitute receives it (Denis, 21 September 2026); every other moment is the
+ * single user_booking_on_behalf template.
+ *
+ * @param array $args placeholders: extra values merged in (the flagship's
+ *                    {included_receptions}).
+ * @return bool Whether an email was sent.
+ */
+function law_booking_notify_on_behalf( $booking_id, $moment, array $args = array() ) {
+	$booking = get_post( (int) $booking_id );
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type || ! law_booking_is_on_behalf( $booking ) ) {
+		return false;
+	}
+	$kind = law_booking_kind( $booking );
+	if ( 'hosted' === $kind ) {
+		return false;
+	}
+	$email = law_booking_attendee_email( $booking );
+	if ( '' === $email ) {
+		return false;
+	}
+
+	$event_id = (int) $booking->post_parent;
+	$person   = law_booking_attendee( $booking );
+	$by       = law_booking_booked_by_name( $booking );
+	$title    = get_the_title( $event_id );
+	$number   = (int) law_event_meta( $booking->ID, '_law_booking_number' );
+
+	$extra                = law_booking_email_extra( $booking->ID );
+	$extra['to']          = array( $email );
+	$extra['to_attendee'] = true;
+	$extra['placeholders'] = law_booking_blank_payer_tags( $extra['placeholders'] );
+	$extra['placeholders'] = array_merge(
+		$extra['placeholders'],
+		array(
+			'attendee_name' => $person['name'],
+			'invited_by'    => $by,
+			'account_note'  => law_booking_attendee_account_note( $booking ),
+		),
+		(array) ( $args['placeholders'] ?? array() )
+	);
+
+	if ( 'confirmed' === $moment && 'flagship' === $kind ) {
+		$extra['placeholders']['payment_note'] = sprintf(
+			/* translators: %s: the booker's name. */
+			__( '%s booked and paid for this place for you, so there is nothing for you to pay.', 'law' ),
+			$by
+		);
+		return (bool) law_booking_send_with_ics( 'user_flagship_approved', $event_id, $extra );
+	}
+
+	$paid   = (int) law_booking_price( $booking->ID )['gross'] > 0;
+	$status = law_booking_on_behalf_status( $moment, $kind, $by, $title, $number, $paid );
+	if ( ! $status ) {
+		return false;
+	}
+	$note = $status['note'];
+	// The committee's own words to the delegate, when they gave any: the
+	// person who registered them reads them on their copy, so the delegate
+	// should too (security review, 26 October 2026).
+	if ( 'declined' === $moment ) {
+		$reason = trim( (string) law_event_meta( $booking->ID, '_law_decline_reason' ) );
+		if ( '' !== $reason ) {
+			$note .= "\n\n" . $reason;
+		}
+	}
+	$extra['placeholders']['status_note'] = $note;
+
+	return 'confirmed' === $moment
+		? (bool) law_booking_send_with_ics( 'user_booking_on_behalf', $event_id, $extra )
+		: (bool) law_events_send( 'user_booking_on_behalf', $event_id, $extra );
+}
+
+/**
+ * The opening paragraph of user_booking_on_behalf for one moment, resolved
+ * (strtr() makes one pass, so it cannot carry tags). The subject line is the
+ * template's own, which the client can edit on the Emails screen.
+ *
+ * @return array{note:string}|null Null for a moment that has no wording.
+ */
+function law_booking_on_behalf_status( $moment, $kind, $by, $title, $number, $paid = true ) {
+	$flagship = 'flagship' === $kind;
+	switch ( $moment ) {
+		case 'registered':
+			return array(
+				/* translators: 1: booker, 2: event title, 3: registration number. */
+				'note'  => sprintf( __( '%1$s has registered you for %2$s (registration #%3$d). Places are allocated by the LAW committee, so the registration now goes to them for review, and we will email you as soon as they have decided.', 'law' ), $by, $title, $number ),
+			);
+		case 'waitlisted':
+			return array(
+				/* translators: 1: booker, 2: event title, 3: booking number. */
+				'note'  => sprintf( __( '%1$s has put you on the waitlist for %2$s (booking #%3$d), because it is fully booked. If a place opens up it is confirmed for you automatically, and we will email you.', 'law' ), $by, $title, $number ),
+			);
+		case 'confirmed':
+			return array(
+				/* translators: 1: booker, 2: event title, 3: booking number. */
+				'note'  => sprintf(
+					$paid
+						? __( '%1$s has booked and paid for a place for you at %2$s (booking #%3$d), so there is nothing for you to pay. A calendar invitation is attached.', 'law' )
+						: __( '%1$s has booked a place for you at %2$s (booking #%3$d). There is nothing to pay. A calendar invitation is attached.', 'law' ),
+					$by,
+					$title,
+					$number
+				),
+			);
+		case 'declined':
+			return array(
+				/* translators: 1: event title, 2: registration number, 3: booker. */
+				'note'  => sprintf( __( 'We are sorry to say that the committee is not able to offer you a place at %1$s this year (registration #%2$d). %3$s, who registered you, has been told.', 'law' ), $title, $number, $by ),
+			);
+		case 'withdrawn':
+			return array(
+				/* translators: 1: booker, 2: event title, 3: registration number. */
+				'note'  => sprintf(
+					$flagship
+						? __( '%1$s, who registered you for %2$s, has withdrawn the registration (registration #%3$d), so you are no longer registered.', 'law' )
+						: __( '%1$s, who booked your place at %2$s, has cancelled it (booking #%3$d), so you are no longer booked.', 'law' ),
+					$by,
+					$title,
+					$number
+				),
+			);
+		case 'booker_gone':
+			return array(
+				/* translators: 1: event title, 2: registration number. */
+				'note'  => sprintf( __( 'The registration made for you for %1$s (booking #%2$d) has been withdrawn, because the account of the person who made it has been closed. Nothing has been charged. You can register yourself from the event page while registration is open.', 'law' ), $title, $number ),
+			);
+		case 'withdrawn_self':
+			return array(
+				/* translators: 1: event title, 2: registration number, 3: booker. */
+				'note'  => sprintf( __( 'This confirms that you have withdrawn your registration for %1$s (registration #%2$d). %3$s, who registered you, has been told.', 'law' ), $title, $number, $by ),
+			);
+	}
+	return null;
 }
 
 /**
@@ -3257,21 +4280,38 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	$email = law_booking_attendee_email( $booking );
 	if ( isset( $slugs[ $context ] ) && '' !== $email ) {
 		$host = get_user_by( 'id', (int) get_post_field( 'post_author', $event_id ) );
-		law_events_send(
-			$slugs[ $context ],
-			$event_id,
-			array(
-				'to'           => array( $email ),
-				'placeholders' => array_merge(
-					law_booking_email_placeholders( $booking->ID ),
-					array(
-						'attendee_name'  => $person['name'],
-						'removal_reason' => $reason,
-						'host_email'     => $host ? $host->user_email : '',
-					)
-				),
-			)
+		$args = array(
+			'to'           => array( $email ),
+			'placeholders' => array_merge(
+				law_booking_email_placeholders( $booking->ID ),
+				array(
+					'attendee_name'  => $person['name'],
+					'removal_reason' => $reason,
+					'host_email'     => $host ? $host->user_email : '',
+				)
+			),
 		);
+		law_events_send( $slugs[ $context ], $event_id, $args );
+
+		// A PAID place somebody booked for the attendee: whoever booked and
+		// paid hears too, unless they are the one who cancelled it
+		// (BOOK_ON_BEHALF.md §3.7). The same template, addressed to them, with
+		// a line saying whose place it was.
+		if ( 'booker' !== $context && 'hosted' !== law_booking_kind( $booking ) && law_booking_is_on_behalf( $booking ) ) {
+			$who  = law_booking_attendee_who( $booking );
+			$copy = law_booking_booker_copy(
+				$booking,
+				$args,
+				'self' === $context
+					/* translators: %s: the attendee's name and email. */
+					? sprintf( __( '%s has cancelled the place you booked for them.', 'law' ), $who )
+					/* translators: %s: the attendee's name and email. */
+					: sprintf( __( 'This is about the place you booked for %s, who has been emailed too.', 'law' ), $who )
+			);
+			if ( $copy ) {
+				law_events_send( $slugs[ $context ], $event_id, $copy );
+			}
+		}
 	}
 
 	// The committee cancelling a place somebody PAID for is a refund decision
@@ -3694,6 +4734,13 @@ function law_booking_cancel_handler() {
 	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to cancel this booking.', 'status' => 403 ), 'booking-failed' );
 	}
+	// A flagship registration leaves through law_flagship_withdraw(), which
+	// voids the invoice and sends the flagship's own email. This hosted path
+	// would do neither, and once a place can be booked for someone else its
+	// booker passes the check below.
+	if ( law_flagship_booking_is( $booking ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => 'Withdraw this registration from its own page instead.', 'status' => 409 ), 'booking-failed' );
+	}
 	$is_self   = (int) $booking->post_author === (int) $user->ID;
 	$is_booker = (int) law_event_meta( $booking->ID, '_law_booked_by' ) === (int) $user->ID;
 	if ( ! $is_self && ! $is_booker ) {
@@ -3741,7 +4788,9 @@ function law_booking_cancel_party_handler() {
 	$event_id = absint( $_POST['event_id'] ?? 0 );
 	$user     = wp_get_current_user();
 	$party    = law_booking_party( $event_id, (int) $user->ID, law_booking_holding_statuses() );
-	if ( ! $party ) {
+	// Never on the flagship: each registration there is withdrawn on its own,
+	// through law_flagship_withdraw() (see law_booking_cancel_handler()).
+	if ( ! $party || law_flagship_is( $event_id ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to cancel these bookings.', 'status' => 403 ), 'booking-failed' );
 	}
 
@@ -3862,6 +4911,28 @@ function law_booking_error_payload( WP_Error $error ) {
 		$payload += array_intersect_key( $data, array( 'row' => 1, 'field' => 1 ) );
 	}
 	return $payload;
+}
+
+/**
+ * What a refused payment step may SAY to the person who asked for it.
+ *
+ * Most refusals are the delegate's to act on and are quoted verbatim: "that
+ * code has expired", "please accept the terms", "the price changed". A
+ * CONFIGURATION error is not — "no Stripe tax rate ID is configured in Events →
+ * Settings" tells somebody trying to buy a drink where our admin menu is, and
+ * "No such customer: 'cus_…'" tells them nothing at all. They get $plain
+ * instead; the detail stays in the activity log, which is where somebody who
+ * can fix it is looking.
+ *
+ * @param string $plain What to say instead, in the words of the step refused.
+ * @return array The law_events_respond() payload.
+ */
+function law_booking_refusal_payload( WP_Error $error, $plain ) {
+	if ( ! law_booking_is_configuration_error( $error ) ) {
+		return law_booking_error_payload( $error );
+	}
+
+	return array( 'message' => (string) $plain );
 }
 
 /**
@@ -3996,7 +5067,7 @@ function law_booking_export_rows( $event_id ) {
 	foreach ( $bookings as $booking ) {
 		$person  = law_booking_attendee( $booking );
 		$user    = get_user_by( 'id', (int) $booking->post_author );
-		$profile = $user ? law_profile_values( (int) $user->ID ) : array();
+		$profile = $user ? law_booking_profile_values( $booking ) : array();
 
 		// The linked account's name wins; the snapshot splits on the first space.
 		if ( $user && ( $user->first_name || $user->last_name ) ) {
@@ -4146,6 +5217,13 @@ add_action(
  * left to email) and the freed places are offered to the waitlist. Bookings
  * they made FOR OTHER PEOPLE are left alone — those places belong to the
  * colleagues, who simply lose the person who arranged them.
+ *
+ * Except an UNPAID paid place booked for someone else (BOOK_ON_BEHALF.md A7,
+ * Denis: "only unpaid bookings"): its payment method and its invoice are the
+ * deleted person's, and an approval or a promotion would go on to charge
+ * somebody who no longer has an account. Those are withdrawn, and the
+ * attendee is told if they had been told about it at all. Paid places are
+ * left alone, as above.
  */
 add_action(
 	'deleted_user',
@@ -4157,8 +5235,68 @@ add_action(
 			}
 			law_booking_cancel( (int) $booking->ID, 0, 'account_deleted' );
 		}
+		law_booking_withdraw_unpaid_made_by( (int) $user_id );
 	}
 );
+
+/**
+ * Withdraw the unpaid paid places a deleted account had booked for other
+ * people (see the deleted_user hook above).
+ *
+ * Each goes through its own flow's exit, so the invoice is voided and the
+ * payment method detached as they would be for any withdrawal, with that
+ * flow's own emails held back (the person they would go to has gone); the
+ * attendee is then told once, in words that say why.
+ *
+ * An entry with nothing to pay (a free reception's waitlist, or a code that
+ * covered the whole price) stays: it is not unpaid, and nothing about it
+ * needed the booker's card.
+ */
+function law_booking_withdraw_unpaid_made_by( $user_id ) {
+	$unpaid = array( 'law-applied', 'law-payment-failed', 'law-waitlisted', 'law-pending-payment' );
+	foreach ( law_user_bookings_made_ids( (int) $user_id ) as $booking_id ) {
+		$booking = get_post( $booking_id );
+		if ( ! $booking || ! in_array( $booking->post_status, $unpaid, true ) ) {
+			continue;
+		}
+		$kind = law_booking_kind( $booking );
+		$pay  = (string) law_event_meta( $booking->ID, '_law_payment_status' );
+		if ( 'hosted' === $kind || 'no_charge' === $pay ) {
+			continue;
+		}
+		// Told already only once the booking was real: a card saved
+		// (law_booking_notify_on_behalf()'s moments).
+		$told = in_array( $pay, array( 'ready', 'failed', 'action_required' ), true )
+			|| 'law-payment-failed' === $booking->post_status;
+
+		law_events_without_emails(
+			'withdrawal after the booker\'s account was deleted',
+			function () use ( $booking, $kind ) {
+				if ( 'flagship' === $kind ) {
+					law_flagship_withdraw( (int) $booking->ID, 0 );
+				} elseif ( 'law-pending-payment' === $booking->post_status && function_exists( 'law_reception_release_hold' ) ) {
+					law_reception_release_hold( (int) $booking->ID, 'account_deleted' );
+				} else {
+					law_booking_cancel( (int) $booking->ID, 0, 'account_deleted' );
+				}
+			}
+		);
+
+		law_event_log(
+			(int) $booking->post_parent,
+			sprintf(
+				'Booking #%d withdrawn: it was booked for %s by an account that has been deleted, and had not been paid for.',
+				(int) law_event_meta( $booking->ID, '_law_booking_number' ),
+				law_booking_attendee( $booking )['name']
+			),
+			array( 'source' => 'bookings', 'action' => 'booker_deleted', 'booking' => (int) $booking->ID ),
+			array( 'user_id' => 0 )
+		);
+		if ( $told ) {
+			law_booking_notify_on_behalf( (int) $booking->ID, 'booker_gone' );
+		}
+	}
+}
 
 /**
  * An EVENT trashed or hard-deleted outside the workflow (wp-admin bulk

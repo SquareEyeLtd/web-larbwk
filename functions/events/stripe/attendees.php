@@ -36,9 +36,15 @@ if ( ! defined( 'ABSPATH' ) ) {
  * stranger's record would attach a delegate's card to somebody else's
  * customer. This searches only customers we ourselves bound to a user.
  *
+ * @param int    $user_id   The WordPress user.
+ * @param string $replacing A customer ID Stripe has said it no longer has
+ *                          (law_stripe_is_missing_customer()). If it is still
+ *                          the stored one, a new customer is created in its
+ *                          place; if the store has already moved on, another
+ *                          request got there first and its replacement is used.
  * @return string|WP_Error Customer ID.
  */
-function law_stripe_user_customer_id( $user_id ) {
+function law_stripe_user_customer_id( $user_id, $replacing = '' ) {
 	$user_id = (int) $user_id;
 	$user    = $user_id ? get_user_by( 'id', $user_id ) : null;
 	if ( ! $user ) {
@@ -46,7 +52,7 @@ function law_stripe_user_customer_id( $user_id ) {
 	}
 
 	$stored = (string) get_user_meta( $user_id, '_law_stripe_customer_id', true );
-	if ( '' !== $stored ) {
+	if ( '' !== $stored && $stored !== (string) $replacing ) {
 		return $stored;
 	}
 
@@ -65,8 +71,14 @@ function law_stripe_user_customer_id( $user_id ) {
 	}
 
 	// A stable idempotency key on the user, so a double-submitted application
-	// cannot leave two customers behind for the same person.
-	$customer = law_stripe_request( 'POST', '/v1/customers', $body, 'law-attendee-cust-' . $user_id );
+	// cannot leave two customers behind for the same person. A replacement
+	// keys on the customer it replaces as well: within Stripe's 24 hours the
+	// plain key would only replay the customer that has just gone missing.
+	$idempotency_key = 'law-attendee-cust-' . $user_id;
+	if ( '' !== (string) $replacing ) {
+		$idempotency_key .= '-after-' . $replacing;
+	}
+	$customer = law_stripe_request( 'POST', '/v1/customers', $body, $idempotency_key );
 	if ( is_wp_error( $customer ) ) {
 		return $customer;
 	}
@@ -81,8 +93,77 @@ function law_stripe_user_customer_id( $user_id ) {
 }
 
 /**
+ * Did Stripe refuse this because the customer on the request no longer exists?
+ *
+ * It was deleted in the Stripe dashboard, or it was created under the other
+ * key: a live customer sent with a test key is "No such customer" too, which
+ * is how staging found this (26 October 2026), its database copied from
+ * production and its keys switched to test.
+ *
+ * @param mixed $result A law_stripe_request() result.
+ */
+function law_stripe_is_missing_customer( $result ) {
+	if ( ! is_wp_error( $result ) ) {
+		return false;
+	}
+	$data   = $result->get_error_data();
+	$stripe = is_array( $data ) && is_array( $data['stripe'] ?? null ) ? $data['stripe'] : array();
+
+	return 'resource_missing' === (string) ( $stripe['code'] ?? '' ) && 'customer' === (string) ( $stripe['param'] ?? '' );
+}
+
+/**
+ * POST to Stripe on the booking payer's customer, and if Stripe no longer has
+ * that customer, give the payer a new one and send once more.
+ *
+ * For the two Checkout sessions, where nothing else hangs off the old
+ * customer: the delegate is about to enter their details afresh on Stripe's
+ * page. The off-session charge cannot recover this way, because the saved
+ * payment method went with the customer (law_stripe_charge_booking()).
+ *
+ * @param WP_Post  $booking The booking being paid for.
+ * @param string   $path    e.g. '/v1/checkout/sessions'.
+ * @param array    $body    Request params, naming the customer in 'customer'.
+ * @param callable $key     fn(): string, the idempotency key. Called for each
+ *                          send, because Stripe refuses a key sent again with
+ *                          a different customer.
+ * @return array|WP_Error As law_stripe_request().
+ */
+function law_stripe_post_for_payer( WP_Post $booking, $path, array $body, callable $key ) {
+	$result = law_stripe_request( 'POST', $path, $body, $key() );
+	if ( ! law_stripe_is_missing_customer( $result ) ) {
+		return $result;
+	}
+
+	$gone        = (string) $body['customer'];
+	$customer_id = law_stripe_user_customer_id( law_booking_payer_id( $booking ), $gone );
+	if ( is_wp_error( $customer_id ) ) {
+		return $customer_id;
+	}
+	law_event_update_meta( $booking->ID, '_law_stripe_customer_id', $customer_id );
+	law_event_log(
+		(int) $booking->post_parent,
+		sprintf(
+			'Stripe no longer has customer %1$s, the payer on booking #%2$d, so a new customer %3$s was created for them.',
+			$gone,
+			law_event_meta( $booking->ID, '_law_booking_number' ),
+			$customer_id
+		),
+		array( 'source' => 'stripe', 'action' => 'customer_replaced', 'booking' => (int) $booking->ID, 'customer' => $customer_id, 'replaced' => $gone )
+	);
+
+	$body['customer'] = $customer_id;
+	return law_stripe_request( 'POST', $path, $body, $key() );
+}
+
+/**
  * The metadata block on every attendee object, so a webhook can resolve it
  * back to the booking without a lookup table.
+ *
+ * law_user_id is the PAYER, whose customer the object sits on; on a place
+ * booked for someone else that is not the person holding it, who is named in
+ * law_attendee_user_id (BOOK_ON_BEHALF.md §3.5). Nothing reads either today:
+ * they are there for whoever traces a payment in the Stripe dashboard.
  */
 function law_stripe_booking_metadata( $booking_id ) {
 	$booking = get_post( (int) $booking_id );
@@ -95,7 +176,8 @@ function law_stripe_booking_metadata( $booking_id ) {
 			'law_booking_id'     => (string) $booking->ID,
 			'law_booking_number' => (string) law_event_meta( $booking->ID, '_law_booking_number' ),
 			'law_event_id'       => (string) $booking->post_parent,
-			'law_user_id'        => (string) $booking->post_author,
+			'law_user_id'          => (string) law_booking_payer_id( $booking ),
+			'law_attendee_user_id' => (string) $booking->post_author,
 		)
 	);
 }
@@ -136,21 +218,24 @@ function law_stripe_create_setup_session( $booking_id, $reason = 'apply' ) {
 	$reason     = in_array( $reason, array( 'apply', 'replace', 'retry', 'waitlist' ), true ) ? $reason : 'apply';
 
 	// A booking whose delegate was substituted after it was paid for must never
-	// reach this, because the line below OVERWRITES _law_stripe_customer_id
-	// with the current author's customer — destroying the record of who
-	// actually paid, and pointing a future charge at somebody who never
-	// consented to one. Nothing routes here today (the card form is hidden on a
+	// reach this: it would save a new card against a ticket already paid for,
+	// pointing a future charge at a payment nobody now attending consented to.
+	// (The customer lookup below follows the payer, so it no longer swaps the
+	// record of who paid for the new holder's, as it did when it read the
+	// author; the rule stands regardless.) Nothing routes here today (the card form is hidden on a
 	// confirmed place and law_flagship_retry_charge() needs a failed payment),
 	// but that is an accident of two status checks rather than a stated rule,
 	// so this states it (21 September 2026).
-	if ( (int) law_event_meta( $booking_id, '_law_substituted_from' ) ) {
+	if ( (int) law_event_meta( $booking_id, '_law_substituted_from' ) || '' !== (string) law_event_meta( $booking_id, '_law_substituted_at' ) ) {
 		return new WP_Error(
 			'law_booking_substituted_paid',
 			'This place has been transferred to a different delegate, so no new payment details can be attached to it.'
 		);
 	}
 
-	$customer_id = law_stripe_user_customer_id( (int) $booking->post_author );
+	// The payer's customer, not the attendee's: on a place booked for someone
+	// else the card being saved is the booker's (BOOK_ON_BEHALF.md §3.5).
+	$customer_id = law_stripe_user_customer_id( law_booking_payer_id( $booking ) );
 	if ( is_wp_error( $customer_id ) ) {
 		return $customer_id;
 	}
@@ -174,17 +259,18 @@ function law_stripe_create_setup_session( $booking_id, $reason = 'apply' ) {
 		'setup_intent_data'          => array( 'metadata' => $metadata ),
 	);
 
-	// A fresh attempt number per session, so replacing a method is a new
-	// idempotency key rather than a replay of the first one, which Stripe
-	// would answer with the original (now used) session.
-	$attempt = (int) get_post_meta( $booking_id, '_law_stripe_setup_attempt', true ) + 1;
-	update_post_meta( $booking_id, '_law_stripe_setup_attempt', $attempt );
-
-	$session = law_stripe_request(
-		'POST',
+	$session = law_stripe_post_for_payer(
+		$booking,
 		'/v1/checkout/sessions',
 		$body,
-		sprintf( 'law-setup-%d-a%d', $booking_id, $attempt )
+		function () use ( $booking_id ) {
+			// A fresh attempt number per session, so replacing a method is a
+			// new idempotency key rather than a replay of the first one, which
+			// Stripe would answer with the original (now used) session.
+			$attempt = (int) get_post_meta( $booking_id, '_law_stripe_setup_attempt', true ) + 1;
+			update_post_meta( $booking_id, '_law_stripe_setup_attempt', $attempt );
+			return sprintf( 'law-setup-%d-a%d', $booking_id, $attempt );
+		}
 	);
 	if ( is_wp_error( $session ) ) {
 		law_event_log(
@@ -274,7 +360,9 @@ function law_stripe_create_checkout_session( $booking_id ) {
 		);
 	}
 
-	$customer_id = law_stripe_user_customer_id( (int) $booking->post_author );
+	// The payer pays, and is who Stripe writes the billing name and address
+	// back onto (customer_update below).
+	$customer_id = law_stripe_user_customer_id( law_booking_payer_id( $booking ) );
 	if ( is_wp_error( $customer_id ) ) {
 		return $customer_id;
 	}
@@ -338,17 +426,18 @@ function law_stripe_create_checkout_session( $booking_id ) {
 		),
 	);
 
-	// A fresh attempt number per session, so opening a second one after the
-	// first expired is a new idempotency key rather than a replay Stripe would
-	// answer with the original (now dead) session.
-	$attempt = (int) get_post_meta( $booking_id, '_law_stripe_attempt', true ) + 1;
-	update_post_meta( $booking_id, '_law_stripe_attempt', $attempt );
-
-	$session = law_stripe_request(
-		'POST',
+	$session = law_stripe_post_for_payer(
+		$booking,
 		'/v1/checkout/sessions',
 		$body,
-		sprintf( 'law-co-%d-a%d', $booking_id, $attempt )
+		function () use ( $booking_id ) {
+			// A fresh attempt number per session, so opening a second one
+			// after the first expired is a new idempotency key rather than a
+			// replay Stripe would answer with the original (now dead) session.
+			$attempt = (int) get_post_meta( $booking_id, '_law_stripe_attempt', true ) + 1;
+			update_post_meta( $booking_id, '_law_stripe_attempt', $attempt );
+			return sprintf( 'law-co-%d-a%d', $booking_id, $attempt );
+		}
 	);
 	if ( is_wp_error( $session ) ) {
 		law_event_log(
@@ -781,16 +870,16 @@ function law_stripe_charge_booking( $booking_id ) {
 
 	// A booking whose delegate was SUBSTITUTED must never be charged, and this
 	// is the choke point rather than the three callers, which is where the
-	// guard first went. Two things go wrong at once here: the customer lookup
-	// below overwrites _law_stripe_customer_id with the CURRENT author's
-	// customer, destroying the record of who actually paid, and
-	// _law_stripe_payment_method_id is still the ORIGINAL delegate's card — so
+	// guard first went. When it was written the customer lookup below read the
+	// CURRENT author and destroyed the record of who paid; it follows the payer
+	// now (law_booking_payer_id()), but _law_stripe_payment_method_id is still
+	// the ORIGINAL delegate's card — so
 	// a charge would take money from somebody who is no longer attending, for a
 	// ticket already paid for, and book it against a third party's Stripe
 	// customer. Every present caller is closed by a status check, but those are
 	// three checks in three files and none of them says this; stating it once
 	// here makes every future caller safe by construction (21 September 2026).
-	if ( (int) law_event_meta( $booking_id, '_law_substituted_from' ) ) {
+	if ( (int) law_event_meta( $booking_id, '_law_substituted_from' ) || '' !== (string) law_event_meta( $booking_id, '_law_substituted_at' ) ) {
 		return new WP_Error(
 			'law_booking_substituted',
 			'This place has been transferred to a different delegate. The payment details on it belong to the person who bought it and must not be charged.'
@@ -808,7 +897,9 @@ function law_stripe_charge_booking( $booking_id ) {
 		);
 	}
 
-	$customer_id = law_stripe_user_customer_id( (int) $booking->post_author );
+	// The payer's customer, which is where the saved method is attached: the
+	// booker on a place booked for someone else.
+	$customer_id = law_stripe_user_customer_id( law_booking_payer_id( $booking ) );
 	if ( is_wp_error( $customer_id ) ) {
 		return $customer_id;
 	}
@@ -910,6 +1001,18 @@ function law_stripe_charge_booking( $booking_id ) {
 		),
 		$idem( 'inv' )
 	);
+	// The payer's customer has gone from Stripe and the saved method went with
+	// it, so there is nothing left to charge. Deliberately NOT a configuration
+	// error, which would stop with the booking untouched and an admin alerted:
+	// no admin can put a delegate's card back. Only the delegate can, by
+	// adding their details again, and that opens a new customer on the way
+	// (law_stripe_post_for_payer()).
+	if ( law_stripe_is_missing_customer( $invoice ) ) {
+		return new WP_Error(
+			'law_stripe_customer_missing',
+			'The payment details saved for this place are no longer held by our payment provider. Please add them again.'
+		);
+	}
 	if ( is_wp_error( $invoice ) ) {
 		return $invoice;
 	}
@@ -960,6 +1063,16 @@ function law_stripe_booking_line_description( $booking_id, array $price ) {
 		$ts = strtotime( $start );
 		if ( $ts ) {
 			$title .= ', ' . wp_date( 'j F Y', $ts );
+		}
+	}
+
+	// A PA paying for two partners would otherwise get two identical invoices,
+	// and Stripe's page is their last chance to notice they left "Myself"
+	// selected (BOOK_ON_BEHALF.md §3.5).
+	if ( $booking && law_booking_is_on_behalf( $booking ) ) {
+		$for = trim( (string) law_event_meta( $booking->ID, '_law_attendee_name' ) );
+		if ( '' !== $for ) {
+			$title .= ', for ' . $for;
 		}
 	}
 

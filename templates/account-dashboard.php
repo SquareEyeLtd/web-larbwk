@@ -656,6 +656,23 @@ $law_email_mode = $law_detail
 						</div>
 					<?php endif; ?>
 
+					<?php
+					// Only on an event that would wear the sponsored fill, or one
+					// already switched off (so it can be switched back). Elsewhere it
+					// would be a box with nothing to act on. The saver writes it under
+					// law_flags_present regardless: an unrendered box is always an
+					// unticked one here, so that write is a no-op.
+					$law_no_sponsor_highlight = (bool) law_event_meta( $law_id, '_law_no_sponsor_highlight' );
+					?>
+					<?php if ( $law_no_sponsor_highlight || law_events_post_qualifies_as_sponsored( $law_id ) ) : ?>
+						<div class="law-form-field">
+							<div class="law-choices">
+								<label><input type="checkbox" name="law_no_sponsor_highlight" value="1" <?php checked( $law_no_sponsor_highlight ); ?>> Don&rsquo;t highlight as sponsored</label>
+							</div>
+							<small>Shows this event as a plain row on the programme, without the orange sponsor fill.</small>
+						</div>
+					<?php endif; ?>
+
 					<input type="hidden" name="law_orgs_present" value="1">
 					<p class="law-form-field"><label for="law-dash-orgs">Linked organisations (sponsor highlighting)</label>
 						<select id="law-dash-orgs" name="law_organisation_ids[]" multiple size="5">

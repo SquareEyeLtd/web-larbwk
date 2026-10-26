@@ -62,9 +62,9 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 									<span class="law-form-error" role="alert"><?php echo esc_html( $law_profile_errors['current_password'][0] ); ?></span>
 								<?php endif; ?></p>
 							<p class="law-form-field law-choices">
-								<label><input type="checkbox" name="change_password" value="1" data-law-toggle="password-fields" <?php checked( ! empty( $law_profile_values['change_password'] ) ); ?>> Change password?</label>
+								<label><input type="checkbox" name="change_password" value="1" data-law-toggles="law-password-fields" <?php checked( ! empty( $law_profile_values['change_password'] ) ); ?>> Change password?</label>
 							</p>
-							<div class="law-password-fields" hidden>
+							<div class="law-password-fields" id="law-password-fields" data-law-toggle-disable hidden>
 								<div class="law-row-grid">
 									<p class="law-form-field"><label for="law-prof-pass">New password (<?php echo esc_html( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?> characters minimum)</label>
 										<input type="password" id="law-prof-pass" name="password" minlength="<?php echo esc_attr( (string) LAW_AUTH_MIN_PASSWORD_LENGTH ); ?>" autocomplete="new-password" data-law-strength></p>
@@ -87,16 +87,7 @@ $law_profile_notice = sanitize_key( $_GET['law_notice'] ?? '' );
 						</p>
 					</form>
 
-					<script>
-					(function () {
-						var toggle = document.querySelector('[data-law-toggle="password-fields"]');
-						var fields = document.querySelector('.law-password-fields');
-						if (toggle && fields) {
-							fields.hidden = !toggle.checked;
-							toggle.addEventListener('change', function () { fields.hidden = !toggle.checked; });
-						}
-					})();
-					</script>
+					<?php // The password block's show/hide is assets/js/law-toggles.js (data-law-toggles above). ?>
 
 				<?php endif; ?>
 			</div>

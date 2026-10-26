@@ -297,6 +297,25 @@ function law_events_email_registry() {
 			'subject' => 'You have been booked onto {event_title}',
 			'body'    => "Dear {attendee_name},\n\n{invited_by} has booked a place for you at {event_title}, part of London Arbitration Week. Your booking number is #{booking_number}.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile, so the organisers can look after you on the day: {profile_link}\n\nThe booking is yours: it is listed under My bookings, where you can cancel it if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
 		),
+		/*
+		 * The attendee's side of a PAID place somebody else booked for them
+		 * (BOOK_ON_BEHALF.md §3.7): registered for the flagship, queued for a
+		 * reception, the place confirmed, or the registration ended. ONE
+		 * template for every moment, the house rule, with the moment's own
+		 * opening paragraph in {status_note}, built already resolved by
+		 * law_booking_notify_on_behalf(); the subject and the rest of the body
+		 * are the client's to edit like any other. The flagship approval is
+		 * the exception: the attendee gets the standard confirmation, as a
+		 * substitute does (Denis, 21 September 2026).
+		 */
+		'user_booking_on_behalf' => array(
+			'name'    => 'Email to attendee > a place booked for them by someone else',
+			'trigger' => 'someone registers, books or queues for a flagship or reception place for them, or that registration ends',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'About your place at {event_title}',
+			'body'    => "Dear {attendee_name},\n\n{status_note}\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nYou can see this place under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile, so the organisers can look after you on the day: {profile_link}\n\nIf you were not expecting this, please contact the events committee.",
+		),
 		'user_booking_rejected' => array(
 			'name'    => 'Email to attendee > booking cancelled by the committee',
 			'trigger' => 'the committee cancels an attendee\'s booking',
@@ -591,7 +610,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your ticket for {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_declined' => array(
 			'name'    => 'Email to delegate > flagship registration declined',
@@ -1153,13 +1172,21 @@ function law_events_email_with_signoff( $body ) {
  * @param array  $placeholders tag => value, from law_events_email_placeholders().
  * @return string Safe HTML for wp_mail().
  */
-function law_events_email_render_body( $body, array $placeholders ) {
+function law_events_email_render_body( $body, array $placeholders, $lead = '' ) {
 	// The sign-off goes on first, so it is substituted, autop'd and made
 	// clickable with the rest of the message. This is the one place it is
 	// added, which is why a customised body and a per-event override carry it
 	// without either screen having to remember to.
 	$body = law_events_email_with_signoff( $body );
 	$body = strtr( $body, array_map( 'esc_html', $placeholders ) );
+
+	// A line the SENDER adds above the body (who a booking is for, on the
+	// booker's copy), so a template the client has edited still carries it.
+	// After the swap and escaped on its own, so a name somebody typed as
+	// "{invoice_link}" prints as those characters rather than expanding.
+	if ( '' !== trim( (string) $lead ) ) {
+		$body = esc_html( (string) $lead ) . "\n\n" . $body;
+	}
 
 	// law_rich_text_render() is wpautop + the allowlist again: it turns a
 	// plain-text body's blank lines into paragraphs exactly as before, leaves
@@ -1584,6 +1611,10 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		// {account_note}, {discount_note} and {party_note}.
 		'{payment_note}'          => '',
 		'{receipt_note}'          => '',
+		// A paid place booked for someone else (BOOK_ON_BEHALF.md §3.7): the
+		// moment's own opening paragraph on the attendee's single template,
+		// built already resolved by law_booking_notify_on_behalf().
+		'{status_note}'           => '',
 		'{flagship_bookings_link}' => function_exists( 'law_flagship_bookings_url' ) ? law_flagship_bookings_url() : '',
 		'{bookings_link}'     => law_account_url( 'my_bookings' ),
 		'{profile_link}'      => home_url( '/account/profile/' ),
@@ -1733,6 +1764,13 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 		return false;
 	}
 
+	// A money or status email about a paid place booked for someone else goes
+	// to the booker, who paid (BOOK_ON_BEHALF.md §3.7). Decided here, once,
+	// so no send site can forget it.
+	if ( function_exists( 'law_booking_route_paid_email' ) ) {
+		$extra = law_booking_route_paid_email( $slug, $extra );
+	}
+
 	$recipients = law_events_email_recipients( $definition, $event_id, $extra );
 	$test_mode  = law_events_test_mode_address();
 	if ( ! $recipients ) {
@@ -1756,7 +1794,7 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 	// The subject is a mail header, not HTML: its values go in raw, or a
 	// "Smith & Jones" event would arrive with "&amp;" in the subject line.
 	$subject      = strtr( (string) $definition['subject'], $placeholders );
-	$body         = law_events_email_render_body( (string) $definition['body'], $placeholders );
+	$body         = law_events_email_render_body( (string) $definition['body'], $placeholders, (string) ( $extra['lead'] ?? '' ) );
 
 	// Optional file attachments (the bookings .ics calendar invites). wp_mail
 	// is synchronous, so a caller may delete its temp file right after this

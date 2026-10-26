@@ -26,6 +26,18 @@ if ( ! $law_fc_id ) {
 }
 $law_fc_label = (string) ( $args['label'] ?? __( 'Update payment method', 'law' ) );
 $law_fc_class = (string) ( $args['class'] ?? 'button second' );
+
+// The payment method is the booker's. The attendee of a place somebody else
+// booked for them sees the control DISABLED, with who can use it (house rule:
+// disable, don't hide; BOOK_ON_BEHALF.md A4). Decided here, once, for every
+// screen that offers it.
+if ( ! law_booking_user_manages_payment( $law_fc_id ) ) :
+	?>
+	<button type="button" class="<?php echo esc_attr( $law_fc_class ); ?>" disabled aria-describedby="<?php echo esc_attr( 'law-pay-why-' . $law_fc_id ); ?>"><?php echo esc_html( $law_fc_label ); ?></button>
+	<span class="law-form-hint" id="<?php echo esc_attr( 'law-pay-why-' . $law_fc_id ); ?>"><?php echo esc_html( law_booking_payment_refusal( $law_fc_id ) ); ?></span>
+	<?php
+	return;
+endif;
 ?>
 <form class="law-booking-form law-flagship-card-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 	<input type="hidden" name="action" value="law_booking_update_card">

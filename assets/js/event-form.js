@@ -154,46 +154,10 @@
 		});
 	}
 
-	/* Conditional fields: a checkbox or radio with data-law-toggles shows/hides
-	   the element with that id (the sector "please specify" inputs, the "Other"
-	   accessibility and dietary boxes). Hiding clears the value so an answer
-	   that no longer applies cannot be saved. The venue details block used to
-	   ride on this too, behind a data-law-toggles-keep opt-out that spared its
-	   three fields from being cleared; it is unconditional markup since
-	   17 September 2026, and the opt-out went with it. */
-	document.querySelectorAll('[data-law-toggles]').forEach(function (box) {
-		var target = document.getElementById(box.getAttribute('data-law-toggles'));
-		if (!target) { return; }
-		var sync = function () {
-			target.hidden = !box.checked;
-			if (target.hidden) {
-				var field = target.querySelector('input');
-				if (field) { field.value = ''; }
-			}
-		};
-		box.addEventListener('change', sync);
-		/* A radio fires 'change' only when it becomes checked, never when a
-		   sibling takes the selection, so watch the whole group to hide again. */
-		if (box.type === 'radio' && box.name) {
-			Array.prototype.forEach.call(document.getElementsByName(box.name), function (sib) {
-				if (sib !== box) { sib.addEventListener('change', sync); }
-			});
-		}
-	});
-
-	/* The same idea from the other end: an element carrying data-law-toggle-for
-	   names the checkbox that reveals it (the committee dashboard's override
-	   amount). The wrapper's initial hidden state is rendered server-side, so
-	   this only has to keep it in step from here on. The value is deliberately
-	   never cleared: the field must keep posting even while hidden, because the
-	   committee handler keys off isset( $_POST['law_fee_override_amount'] ). */
-	document.querySelectorAll('[data-law-toggle-for]').forEach(function (target) {
-		var box = document.getElementById(target.getAttribute('data-law-toggle-for'));
-		if (!box) { return; }
-		var sync = function () { target.hidden = !box.checked; };
-		box.addEventListener('change', sync);
-		sync();
-	});
+	/* Conditional fields (data-law-toggles, data-law-toggle-for) live in
+	   assets/js/law-toggles.js since 26 October 2026: one delegated copy for
+	   the whole site, which also reaches dialogs fetched after page load and
+	   rows cloned after it. This script depends on it. */
 
 	/* Photo upload: reject a file the server would reject anyway BEFORE it is
 	   uploaded, then reveal a Clear button once a valid file is chosen, and

@@ -106,37 +106,23 @@ $law_bl_register_modal = 'law-booking-register';
  */
 $law_bl_register_fields = function ( $law_bl_prefix, $law_bl_show_other = false ) use ( $law_bl_form_state, $law_bl_typed, $law_bl_is_committee ) {
 	?>
-	<div class="law-rows" data-law-booking-rows="law_attendees" data-law-max="1">
-		<div class="law-row">
-			<div class="law-row-grid law-row-grid--attendee">
-				<?php
-				$law_bl_fields = array(
-					'name'         => array( __( 'Full name *', 'law' ), 'text' ),
-					'email'        => array( __( 'Email *', 'law' ), 'email' ),
-					'organisation' => array( __( 'Organisation *', 'law' ), 'text' ),
-					'job_title'    => array( __( 'Job title *', 'law' ), 'text' ),
-				);
-				foreach ( $law_bl_fields as $law_bl_key => $law_bl_field ) :
-					$law_bl_invalid = 0 === (int) $law_bl_form_state['row'] && $law_bl_form_state['field'] === $law_bl_key;
-					?>
-					<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off" aria-required="true" name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
-				<?php endforeach; ?>
-			</div>
-		</div>
-	</div>
 	<?php
-	// Country, accessibility and dietary, exactly as registration asks for
-	// them: the table's own columns read these live from the attendee's
-	// profile, and somebody booked in by phone has nobody else to fill them in.
+	// The four attendee fields plus country, accessibility and dietary,
+	// exactly as registration asks for them: the table's own columns read
+	// these live from the attendee's profile, and somebody booked in by phone
+	// has nobody else to fill them in. One shared part with the flagship's
+	// committee dialogs and the paid booking dialogs.
 	get_template_part(
-		'parts/events/attendee-profile-fields',
+		'parts/events/attendee-details-fields',
 		null,
 		array(
 			'id_prefix'        => $law_bl_prefix,
-			'values'           => (array) ( $law_bl_form_state['profile'] ?? array() ),
+			'values'           => (array) $law_bl_typed,
+			'invalid'          => 0 === (int) $law_bl_form_state['row'] ? (string) $law_bl_form_state['field'] : '',
+			'profile'          => (array) ( $law_bl_form_state['profile'] ?? array() ),
 			'show_other'       => $law_bl_show_other,
 			'country_required' => true,
-			'note'             => __( 'Whatever they told you. They can change any of this themselves from their profile.', 'law' ),
+			'note'             => law_booking_attendee_details_note(),
 		)
 	);
 	?>
@@ -205,7 +191,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				$law_bl_number     = (int) law_event_meta( $law_bl_booking->ID, '_law_booking_number' );
 				$law_bl_person     = law_booking_attendee( $law_bl_booking );
 				$law_bl_invited_by = law_booking_invited_by_label( $law_bl_booking );
-				$law_bl_profile    = law_profile_values( (int) $law_bl_booking->post_author );
+				$law_bl_profile    = law_booking_profile_values( $law_bl_booking );
 				$law_bl_access     = law_booking_profile_requirements( $law_bl_profile, 'accessibility' );
 				$law_bl_diet       = law_booking_profile_requirements( $law_bl_profile, 'dietary' );
 				$law_bl_modal      = 'law-modal-reject-' . $law_bl_booking->ID;
@@ -253,7 +239,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					</td>
 					<td><strong><?php echo esc_html( $law_bl_person['name'] ); ?></strong><?php
 						if ( '' !== $law_bl_invited_by ) {
-							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( sprintf( __( 'Invited by %s', 'law' ), $law_bl_invited_by ) ) . '</span>';
+							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( law_booking_booked_by_label( $law_bl_booking ) ) . '</span>';
 						}
 						if ( law_event_meta( $law_bl_booking->ID, '_law_is_press' ) ) {
 							echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';

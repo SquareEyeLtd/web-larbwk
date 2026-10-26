@@ -112,17 +112,24 @@ get_header();
 										// only the states that offer something new -- a
 										// place for someone who booked colleagues but not
 										// themselves.
-										'booking'    => 'action',
+										// A card for a place booked for someone else
+										// gets no booking control: the booker holds no
+										// place there, so the control would offer
+										// Register on every such card.
+										'booking'    => '' !== ( $law_bk_item['for'] ?? '' ) ? false : 'action',
 										'badge'      => law_booking_card_badge( $law_bk_item['status'] ),
 										'meta_lines' => array_filter( array(
+											// A paid place booked for someone else is its own card
+											// (law_account_bookings()), saying whose it is.
+											'' !== ( $law_bk_item['for'] ?? '' )
+												? sprintf( __( 'For %s', 'law' ), $law_bk_item['for'] )
+												: '',
 											// One booking per attendee: their own place, and
 											// separately the colleagues they brought here.
-											$law_bk_item['own']
-												? sprintf( __( 'Booking #%d', 'law' ), (int) law_event_meta( $law_bk_item['own']->ID, '_law_booking_number' ) )
+											$law_bk_item['own'] || '' !== ( $law_bk_item['for'] ?? '' )
+												? sprintf( __( 'Booking #%d', 'law' ), (int) ( $law_bk_item['number'] ?? 0 ) )
 												: '',
-											$law_bk_item['own'] && '' !== $law_bk_item['invited_by']
-												? sprintf( __( 'Invited by %s', 'law' ), $law_bk_item['invited_by'] )
-												: '',
+											$law_bk_item['own'] ? law_booking_booked_by_label( $law_bk_item['own'] ) : '',
 											$law_bk_item['colleagues']
 												? sprintf(
 													_n( '+ %d colleague booked by you', '+ %d colleagues booked by you', count( $law_bk_item['colleagues'] ), 'law' ),

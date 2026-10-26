@@ -1553,6 +1553,11 @@ add_action( 'wp_enqueue_scripts', function () {
 			|| ( is_page_template( 'templates/account-dashboard.php' ) && ! empty( $_GET['law_edit'] ) ) ) {
 			$deps[] = 'heartbeat';
 		}
+		// The show/hide behind data-law-toggles moved to a shared script.
+		if ( ! wp_script_is( 'law-toggles', 'registered' ) ) {
+			law_modal_register_assets();
+		}
+		$deps[] = 'law-toggles';
 		wp_enqueue_script( 'law-event-form', get_theme_file_uri( 'assets/js/event-form.js' ), $deps, filemtime( get_theme_file_path( 'assets/js/event-form.js' ) ), true );
 		// The limits the browser-side pre-check enforces, from the same helpers
 		// as the validator and the help text, so the three can never disagree.

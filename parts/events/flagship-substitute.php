@@ -82,54 +82,22 @@ $law_fsub_sentence = static function ( $number, $name, $email ) {
 $law_fsub_fields = static function ( $law_fsub_prefix, $law_fsub_show_other = false, $law_fsub_press = false ) {
 	?>
 	<?php
-	// Labels WRAP their inputs rather than using for/id. The same fields can be
-	// printed twice on this page and ids would collide — which silently breaks
-	// both labels, not one. Same vocabulary as
-	// parts/events/flagship-add-attendee.php.
-	?>
-	<div class="law-row-grid">
-		<p class="law-form-field">
-			<label>
-				<?php esc_html_e( 'Full name *', 'law' ); ?>
-				<input type="text" name="name" data-law-field="name" aria-required="true">
-			</label>
-		</p>
-		<p class="law-form-field">
-			<label>
-				<?php esc_html_e( 'Email *', 'law' ); ?>
-				<input type="email" name="email" data-law-field="email" aria-required="true">
-			</label>
-			<span class="law-form-hint"><?php esc_html_e( 'An account is created if they do not have one, with a link to set their password in the same email as their ticket.', 'law' ); ?></span>
-		</p>
-	</div>
-
-	<div class="law-row-grid">
-		<p class="law-form-field">
-			<label>
-				<?php esc_html_e( 'Organisation', 'law' ); ?>
-				<input type="text" name="organisation" data-law-field="organisation">
-			</label>
-		</p>
-		<p class="law-form-field">
-			<label>
-				<?php esc_html_e( 'Job title', 'law' ); ?>
-				<input type="text" name="job_title" data-law-field="job_title">
-			</label>
-		</p>
-	</div>
-
-	<?php
-	// Country, accessibility and dietary, the same set registration collects
-	// (Denis, 11 September 2026). The delegate list and the exports read these
-	// live from the attendee's profile, and a substitute sent by a firm at the
-	// last minute has never filled a registration form in.
+	// Who the substitute is, plus country, accessibility and dietary, the set
+	// registration collects (Denis, 11 September 2026): the delegate list and
+	// the exports read these live from the attendee's profile, and a
+	// substitute sent by a firm at the last minute has never filled a
+	// registration form in. Flat names, which this dialog's handler and
+	// flagship-substitute.js (by data-law-field) read.
 	get_template_part(
-		'parts/events/attendee-profile-fields',
+		'parts/events/attendee-details-fields',
 		null,
 		array(
-			'id_prefix'  => $law_fsub_prefix,
-			'show_other' => $law_fsub_show_other,
-			'note'       => __( 'Whatever they told you. They can change any of this themselves from their profile.', 'law' ),
+			'id_prefix'    => $law_fsub_prefix,
+			'name_pattern' => '%s',
+			'org_required' => false,
+			'email_hint'   => __( 'An account is created if they do not have one, with a link to set their password in the same email as their ticket.', 'law' ),
+			'show_other'   => $law_fsub_show_other,
+			'note'         => law_booking_attendee_details_note(),
 		)
 	);
 	?>

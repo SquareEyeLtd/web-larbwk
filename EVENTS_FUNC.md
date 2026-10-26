@@ -715,8 +715,10 @@ deliberately typed 0 still waives the fee, and the help text says so).
   `check_admin_referer`, the `law_website_url` honeypot (pretend success, the
   payload supplied per handler), and the rate limit — returning `$is_ajax`.
 - `law_events_respond( $is_ajax, $ok, $payload, $notice )`: the JSON-versus-
-  redirect-with-notice tail; `law_events_nopriv_json()`: the named signed-out
-  answer for `admin_post_nopriv_*` registrations.
+  redirect-with-notice tail. It never sends a 5xx, because Cloudflare
+  replaces a 502 or 504 body with its own page and the message is lost (26
+  October 2026). `law_events_nopriv_json()`: the named signed-out answer for
+  `admin_post_nopriv_*` registrations.
 - The six older handlers (comments, withdraw, committee, export, submission,
   registration) predate these and still carry the sequence inline; they
   migrate opportunistically.
@@ -2968,9 +2970,12 @@ of "the server was right and the screen was not":
   plain static, so a request that creates or renames an organisation does not
   read a stale map. Used by the dashboard detail view, the export and the
   activity log.
-- `law_events_post_is_sponsored()`: the sponsored flag (sponsor tier, a
-  sponsor-category organisation, or a repeat approved/confirmed host this year)
-  — parity with the legacy calendar logic. On the front end it now shows as the
+- `law_events_post_is_sponsored()`: the sponsored flag. False when the
+  committee has ticked "Don't highlight as sponsored"
+  (`_law_no_sponsor_highlight`), otherwise whatever
+  `law_events_post_qualifies_as_sponsored()` says: sponsor tier, a
+  sponsor-category organisation, or a repeat approved/confirmed host this year,
+  parity with the legacy calendar logic. On the front end it now shows as the
   orange fill and border of a sponsored programme card
   (`.law-event-card--sponsored`); the old "Sponsored" pill was removed on
   11 September 2026 in favour of the stronger surface treatment.
@@ -4061,7 +4066,8 @@ they stay the same length.
   date & time slots, Confirmed slot, Event status, Payment status, Submitted
   (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Host
   organisation(s), Linked organisations (`law_event_organisation_names()`,
-  `; `-joined), Sponsored (`law_events_post_is_sponsored()`, `Yes` or blank),
+  `; `-joined), Sponsored (`law_events_post_qualifies_as_sponsored()`, `Yes` or blank, so the
+  "Don't highlight as sponsored" box does not blank it),
   External, External booking URL, Session agenda, Event fee,
   Discounted fee, Venue capacity, Tickets available, Bookings, Awaiting
   payment, Places left, Venue. (This list had drifted: it still named a "Run by
@@ -4177,7 +4183,9 @@ they stay the same length.
     system; it is wrong for an attendee, whose WordPress email is verified and
     who has no such history, because adopting would attach a delegate's card
     to somebody else's record. This searches only customers we ourselves bound
-    to a user.
+    to a user. A stored customer Stripe no longer has is replaced on the fly
+    by `law_stripe_post_for_payer()` (see "A Stripe customer that has gone
+    missing", 26 October 2026).
   - `law_stripe_create_setup_session()` opens Stripe **Checkout in `setup`
     mode**: the hosted page saves a card without charging it, with 3DS handled
     there and PCI scope never reaching LAW. One function serves all four
@@ -5940,7 +5948,8 @@ These predate the rebuild and now branch on `law_events_source()`.
   submission is not AJAX, because a form with no Apply button was rendered at
   the list price and comparing it against the discounted total refused every
   no-JS redemption (fixed 15 September 2026). No colleague repeater: one place per checkout,
-  self only. A reception priced at 0 is FREE, not closed (Denis, 16 September
+  for the buyer or, since 26 October 2026, for someone else they name ("Booking a
+  paid place for someone else" at the end). A reception priced at 0 is FREE, not closed (Denis, 16 September
   2026): the dialog then shows no price block, no discount code field and no
   Stripe line, and its summary says "Free to attend." beside the places left —
   a £0.00 receipt and a code field on nothing were the two things that read as
@@ -10325,6 +10334,379 @@ Touched: `functions/events/speakers.php`, `parts/events/speaker-card.php`
 (comment), `templates/account-dashboard.php`, `assets/css/calendar.css`,
 `assets/css/speakers.css`, `tests/SpeakerPrefillTest.php`,
 `tests/ReferenceAndMigrationTest.php`.
+
+## A Stripe customer that has gone missing (26 October 2026)
+
+**What happened.** Staging's `wp-config.php` held the LIVE Stripe keys, so a
+test card on staging reached live Checkout. Once the keys were switched to
+test, "Add payment details" on a flagship registration failed every time with
+"Sorry, that change could not be made. Please reload the page and try again."
+Two faults sat behind that one line.
+
+**Stripe's reason never reached the page.** The card handler answered with
+HTTP 502, and Cloudflare, in front of staging and production, swaps the body
+of an origin 502 or 504 for its own error page. booking-form.js could not
+parse that as JSON and fell back to its generic catch message.
+`law_events_respond()` now never sends a 5xx: anything from 500 up goes out
+as 400, which is the helper's own default for a refusal. The JS reads only
+`success`, so nothing else changes. With the message now arriving, the card
+handler and the reception "Continue to payment" handler (which also quoted
+Stripe verbatim under a 502) run through the new
+`law_booking_refusal_payload( $error, $plain )`: a configuration error
+(`law_booking_is_configuration_error()`) is replaced with one plain line,
+and anything the delegate can act on is still quoted. The Stripe wording
+stays in the activity log. `law_reception_refusal_payload()` now delegates to
+it with its own wording.
+
+**A stored customer was trusted without question.**
+`law_stripe_user_customer_id()` caches the customer in user meta, and
+staging's database (copied from production) held live customer IDs, which a
+test key answers with "No such customer". A customer deleted in the Stripe
+dashboard on production fails the same way. Now:
+
+- `law_stripe_is_missing_customer()` recognises Stripe's answer
+  (`resource_missing` on param `customer`).
+- `law_stripe_post_for_payer()` wraps both Checkout session POSTs
+  (`law_stripe_create_setup_session()` and
+  `law_stripe_create_checkout_session()`). On that answer it gives the payer a
+  new customer, logs `customer_replaced` with both IDs, and sends once more.
+  The idempotency key is built per send, so the retry takes the next attempt
+  number, because Stripe refuses a key reused with a different customer.
+  It retries once only.
+- `law_stripe_user_customer_id( $user_id, $replacing )` creates the
+  replacement. It keys the customer POST on `-after-{old id}`, because the
+  plain key would replay the missing customer within Stripe's 24 hours. If
+  the stored ID has already moved on (a concurrent request replaced it
+  first), it returns that one instead.
+- `law_stripe_charge_booking()` cannot recover the same way, because the
+  saved payment method went with the customer. When creating the invoice hits
+  a missing customer, it returns `law_stripe_customer_missing` ("The payment
+  details saved for this place are no longer held by our payment provider.
+  Please add them again."). That is deliberately not a configuration error,
+  so the booking goes to payment-failed and the delegate is asked for their
+  details again, which opens a new customer on the way. A configuration error
+  would leave the place untouched and alert an admin who cannot put a card
+  back.
+
+**Verified** by `tests/StripeMissingCustomerTest.php`: both sessions recover
+under fresh keys, only a missing customer is retried and only once, an
+already-replaced customer is reused, the charge hands the fix to the
+delegate, and the refusal payload wording.
+
+Touched: `functions/events/request.php`, `functions/events/bookings.php`,
+`functions/events/receptions.php`, `functions/events/stripe/attendees.php`,
+`tests/StripeMissingCustomerTest.php`.
+
+---
+
+## Booking a paid place for someone else (26 October 2026)
+
+**The ask** (Denis): a secretary or PA books and pays for a paid place for
+their boss, and keeps managing it. The flagship and the receptions only; hosted
+events already take colleagues. The design contract is **BOOK_ON_BEHALF.md**
+(theme root), which records the decisions Denis settled (D1 to D8, A1 to A8)
+and the UX, design-reuse and backend reviews folded into it.
+
+**What was true before.** Both paid flows were self-service by design: the
+flagship "always themselves" and the receptions "one place per checkout, self
+only". Every money path keyed on `post_author`: the Stripe customer, the saved
+card, the invoice, every `user_flagship_*` / `user_reception_*` email, and every
+ownership check on the paid handlers and return URLs.
+
+**The model.** The attendee is still `post_author`; whoever booked is
+`_law_booked_by`. Three helpers in `bookings.php` decide everything else:
+
+- `law_booking_booker_id()`: `_law_booked_by`, else the attendee. Manages.
+- `law_booking_payer_id()`: `_law_substituted_from`, else the booker. Pays.
+- `law_booking_user_role( $booking, $user )`: 'attendee', 'booker' or ''.
+  `law_booking_user_manages_payment()` is the booker only;
+  `law_booking_is_on_behalf()` is booker ≠ attendee.
+
+On every self-booked place the three are one person, so nothing written before
+this reads differently, and the full suite proved it before any UI existed.
+
+**The seam** (`bookings.php`, "A paid place for someone else"):
+`law_booking_paid_choice_from_request()` reads `law_for` and
+`law_attendees[0][…]` plus the flat profile fields (all errors carry a field;
+the booker's own email is refused); `law_booking_run_for_party()` refuses an
+attendee who already holds a place BY EMAIL before creating anything, matches
+or creates their account before the engine's lock, marks a created one
+`_law_invitation_pending` (cleared by core's `after_password_reset`), runs the
+engine with `$input['party']`, and deletes an account it created only if that
+account authors no booking at all (the old unconditional delete could cancel a
+booking another request had just made, through `account_deleted`).
+`law_flagship_apply()`, `law_reception_checkout()` and
+`law_reception_waitlist_join()` take the party; `law_booking_insert()` gained
+`$booked_by`. The typed answers are stored on the booking as
+`_law_attendee_profile` (new `attendee_profile` meta type) and written to the
+account only when this booking created it (A3); `law_booking_profile_values()`
+fills a profile's blanks from them for the committee's lists and exports.
+
+**Refusals that do not tell.** An attendee who already has a place gets
+`law_booking_attendee_taken_error()` ("We can't register this person…") rather
+than "X already has a place" (A8); buying a reception for someone whose
+confirmed flagship place includes it is refused conditionally
+(`law_reception_guard_not_included()`, A6).
+
+**Stripe.** Setup session, checkout session and off-session charge resolve the
+customer from the payer; metadata `law_user_id` is the payer and
+`law_attendee_user_id` the attendee; the invoice line reads "…, for Jane
+Smith" on a place booked for someone else. No new webhook events.
+
+**Permissions.** The three `require_own` loaders and the two Stripe return
+handlers use the roles: payment actions are the booker's, withdrawing a pending
+flagship registration and leaving a waitlist are open to both (A5).
+`law_booking_cancel_handler()` and the cancel-all handler now refuse flagship
+bookings (they bypassed `law_flagship_withdraw()`, so no invoice void).
+`law_booking_payment_facts_visible()` is the payer only.
+
+**Emails** (`law_booking_route_paid_email()`, called once in
+`law_events_send()`): every `user_flagship_*` / `user_reception_*` email about
+a place booked for someone else goes to the booker, addressed to them, without
+the calendar file, under a line the SENDER adds (`law_events_email_render_body()`
+gained a `lead`, escaped after the placeholder swap so a typed `{tag}` prints
+literally), so templates the client has edited carry it too. The attendee's
+own emails are explicit (`law_booking_notify_on_behalf()`): one new template,
+`user_booking_on_behalf` (registry now 80), with `{status_title}` and
+`{status_note}` for registered, waitlisted, confirmed (reception), declined,
+withdrawn, withdrawn by themselves, and booker deleted; the flagship approval
+is the standard `user_flagship_approved` with the payer tags blanked
+(`law_booking_payer_tags()`, shared with substitution) and "booked and paid for
+by", as a substitute receives it (D7). The attendee is emailed only once the
+booking is real (card saved, or nothing to pay). Committee emails gain a
+"booked and paid for by" lead.
+
+**Screens.** `parts/events/booking-for-someone.php` (the radio and the revealed
+details, after the summary in both paid dialogs; Myself disabled when the
+viewer already holds a place) and `parts/events/attendee-details-fields.php`
+(the four identity fields plus the profile part, now the ONE copy used by the
+committee's Register an attendee, the flagship's add-attendee and substitution
+dialogs as well). Neutral copy in both dialogs; neutral accessibility labels on
+every on-behalf form (`law_registration_accessibility_choices( true )`; the
+registration form keeps its own). The flagship manage view admits the booker
+(snapshot only, via `law_booking_snapshot_values()`, never the live profile)
+and words itself for either reader; the card form disables itself for the
+attendee with who manages payment; the reception manage view is per booking;
+My bookings gives each paid place booked for someone its own card; both event
+panels keep Register beside a holder's own link; post-Stripe notices name the
+attendee for the booker; the flagship dashboard shows "Booked and paid for by"
+and its export a Booked by column. The no-JS inline forms sit on a white card
+(they were navy on navy).
+
+**Front-end utilities.** `assets/js/law-toggles.js` is the one delegated
+`data-law-toggles` / `data-law-toggle-for` implementation (from event-form.js
+and the profile page's inline script), with `data-law-toggle-disable` for
+blocks whose controls must be disabled while hidden and `lawToggles.sync()`
+for fetched dialogs; `law_booking_form_enqueue()` replaced eight hand-written
+enqueues; `markFlatField()` finds fields by `data-law-field` and sets
+`aria-invalid`.
+
+**Substitution** of a place booked for someone else keeps `_law_booked_by` and
+writes none of the `_law_substituted_from*` keys (the payer is already
+recorded); the receipt note goes only to whoever paid
+(`law_booking_payer_id()`), and the booker gets a copy of the transfer note.
+
+**A7.** Deleting a booker withdraws their UNPAID paid bookings for others
+through each flow's own exit, emails held back, and tells the attendee once.
+
+**Deviations from the spec, deliberate.** No `required` attributes (the house
+pattern is `aria-required`, so refusals show in the modal); errors come back
+one at a time. A6's refusal is conditional, like A8. Known limits: a delegate
+whose flagship includes a reception sees only "Add" until they hold that place;
+the included-receptions banner stays the viewer's own.
+
+**Separately.** The flagship test fixture's price switch moved to 2099: the real
+switch passed on 17 October 2026 and turned nine tests red that were not about
+it.
+
+**The review round** (three conformance passes, one of them executing the
+handlers against the local site, and a security review; same day):
+
+- **Volume.** `law_booking_unfinished_on_behalf()`: one unfinished booking for
+  someone else per booker (a held reception place, or a registration or
+  waitlist entry still waiting for its card), so one account cannot hold a
+  reception's places by abandoning Stripe pages. A reception that costs
+  nothing was booked for oneself only; superseded the same day (see "Free
+  receptions too" below).
+- **Accounts left behind.** `law_booking_forget_unclaimed_attendee()` deletes an
+  account the site created for somebody who never set a password when every
+  booking it authors was booked by this booker and is cancelled: a refused
+  engine run, a released reception hold (`law_reception_release_hold()`) and
+  an abandoned flagship registration (the 48-hour sweep). Never an account
+  with a live booking or one somebody else booked onto. `_law_invitation_pending`
+  is now also cleared on `wp_login`.
+- **Nothing that tells.** A6 returns `law_booking_attendee_taken_error()` word
+  for word; an account-creation failure is reported generically (the raw
+  `wp_insert_user()` message could reveal a login); the reception is checked
+  before the seam writes anything against the posted event ID; the card
+  decline reason is the payer's (masked, and in `law_booking_payer_tags()`).
+- **Typed details** may not contain a web address or `@`, or run past 100
+  characters (`law_booking_clean_additional_rows()`, shared with hosted
+  colleagues): they are printed into emails sent to the typed address.
+- **The booker hears** when a paid place they booked is cancelled by the
+  attendee, the committee or the event (`law_booking_cancel()`), with a lead
+  line; the attendee hears a decline's reason too.
+- **One label**, `law_booking_booked_by_label()` ("Invited by" on hosted,
+  "Booked and paid for by" on paid), and one name, `law_booking_booked_by_name()`,
+  for every list, panel, card and email.
+- **Substitution** of a place booked for someone else writes the outgoing
+  attendee's NAME and email (for the committee's record) but never the payer
+  ID, replaces the stored answers with the new delegate's (they were printing
+  the previous attendee's accessibility needs against the new one), and names
+  the real buyer in the new delegate's email; the three "never charge a
+  transferred place" guards key on `_law_substituted_at` as well.
+- **Toggles**: a sync never hides a block holding a value or an error (the
+  sector "please specify" boxes with a stored answer were vanishing while
+  still posting). The white card restores navy outline buttons (Apply and Sign
+  in had gone white on white). The profile password block disables both
+  fields while closed.
+- **Smaller**: the attendee template's subject is "About your place at
+  {event_title}" (editable; `{status_title}` is gone); the attendee sees a
+  disabled payment control on a pending registration; both panels name the
+  people booked for and link to them; the post-Stripe notice says only "This
+  place is for X."; the saved no-JS choice is keyed by event; the complimentary
+  place's promised set-password link is sent (`{account_note}` in
+  `user_flagship_complimentary`).
+
+**The second review round** (a designer, a DRY and scalability review, and a
+WCAG 2.2 AA audit with a browser; same day):
+
+- **A bug.** The no-JS choice state was stored under a transient called
+  `job_title`, shared by everybody: the store's key was reused as a loop
+  variable. Fixed and tested.
+- **Helpers.** `law_booking_booker()`, `law_booking_booker_copy()` (the ONE
+  builder of a booker's email copy: the routing, the cancellation copy and the
+  substitution copy), `law_booking_attendee_who()`,
+  `law_booking_blank_payer_tags()`, `law_booking_is_paid_for()`;
+  `law_booking_is_self_booked()` is now the inverse of
+  `law_booking_is_on_behalf()`; the unfinished-booking check queries only the
+  statuses that can be unfinished; the flagship dashboard primes the bookers.
+- **Wording.** "Booked by X" until a place is paid for, "Booked and paid for by
+  X" after, and the payer note likewise; the "for" line is the booker's only
+  ("For Jane Smith."), the attendee being told who pays in the payment facts.
+- **Panels.** Beside Register, the holder's own link is the secondary button
+  (one orange button per panel); Register beside Manage on a reception; the
+  attendee of a place being paid for by somebody
+  else gets an inert "Continue to payment" with who is paying, and the
+  flagship's own link reads "View my registration" for them; both panels word
+  "booked for someone, no place yourself" the same way; a "For X" card on My
+  bookings carries no booking control.
+- **Look.** The attendee row is flat (`.law-row--bare`); the payer hint is
+  readable on the white manage pages (`.law-booking-manage` hint token); a
+  disabled `.law-linkish` reads as disabled everywhere; the panel's big button
+  size applies to its action slot only; links on the white card look like
+  links; the flagship dialog's errors and "conference full" line sit above the
+  choice again.
+- **Accessibility.** A refusal is rendered beside its field and tied to it with
+  `aria-describedby`, and the red edge survives focus; closing a dialog clears
+  the marks; light forms use the darker orange (#b35f00) for the radio and
+  checkbox accent and the focus ring (the brand orange is 2.8:1 on white); a
+  24px target per choice on light forms; Accessibility and Dietary are named
+  groups and their "Other" fields have distinct labels; `aria-required` where
+  an asterisk shows; the hint for a disabled Myself and for a disabled payment
+  control is tied to the control. Left for Denis, as older and site-wide: the
+  light form's field borders (about 1.7:1), the orange terms link in the
+  dialogs and the white-on-orange buttons (both 2.8:1).
+
+**Free receptions too** (Denis, same day: "It should be for free receptions as
+well!"):
+
+- The reception dialog asks who the place is for whatever it costs, and the
+  event panel offers Register beside Manage on a free reception too.
+- `law_reception_on_behalf_free_cap()` replaces the refusal: one booker holds
+  at most `law_booking_max_additional()` (three, the hosted colleague cap)
+  places for others at a reception that costs nothing, counted over every
+  holding state through `law_booking_colleague_count()`'s new `$status`
+  argument. Checked in `law_reception_run_for_party()` before an account is
+  created, and in both engines. A priced reception has no cap: each place is
+  paid for.
+- `law_booking_payer_note()` reads "Booked by X. There is nothing to pay." for
+  a place with nothing to pay; `law_booking_committee_lead()` says "booked by"
+  until money has been taken.
+- `law_booking_withdraw_unpaid_made_by()` (A7) leaves a `no_charge` entry
+  alone: nothing about it was unpaid or needed the booker's card. This covers a
+  100% code too.
+- The cap is shown before anything is typed (Denis): `booking-for-someone.php`
+  takes `others_full`, the cap's message, and shows Someone else disabled with
+  it, the details closed and disabled. With the booker's own place held too,
+  both choices and the dialog's submit are disabled, and the event panel shows
+  Register disabled (`law_booking_inert_button()`) beside Manage with the same
+  sentence. The message is worded as a limit reached ("You've booked places for
+  3 other people here, which is the most allowed.") so the refusal, the hint
+  and the panel share it. `law_booking_resolve_state()` now carries `user_id`.
+- The activity log names the booker on a reception booked for someone else
+  ("started by Pat Assistant for Jane Partner"), and the Emails screen lists
+  `user_booking_on_behalf` without "paid".
+
+**Verified** with `tests/BookOnBehalfTest.php` (54) and the full suite (1322,
+green), and a browser pass of the free reception flows at 1280px and 375px
+(before the cap was shown up front).
+
+Touched: `functions/events/bookings.php`, `functions/events/meta.php`,
+`functions/events/flagship-bookings.php`, `functions/events/receptions.php`,
+`functions/events/waitlist.php`, `functions/events/notifications.php`,
+`functions/events/registration.php`, `functions/events/stripe/attendees.php`,
+`functions/events/flagship-bookings-dashboard.php`,
+`functions/events/bookings-dashboard.php`, `functions/events/submission-form.php`,
+`functions/events/*-dashboard.php` (enqueue), `functions/account-bookings.php`,
+`functions/account-flagship.php`, `functions/modal.php`,
+`parts/events/booking-for-someone.php` (new),
+`parts/events/attendee-details-fields.php` (new),
+`parts/events/flagship-apply-modal.php`, `parts/events/reception-checkout-modal.php`,
+`parts/events/flagship-manage-application.php`, `parts/events/booking-manage.php`,
+`parts/events/booking-payment-facts.php`, `parts/events/flagship-card-form.php`,
+`parts/events/booking-list.php`, `parts/events/flagship-add-attendee.php`,
+`parts/events/flagship-substitute.php`, `parts/events/flagship-bookings-list.php`,
+`parts/events/attendee-profile-fields.php`, `templates/account-bookings.php`,
+`templates/account-profile.php`, `assets/js/law-toggles.js` (new),
+`assets/js/booking-form.js`, `assets/js/event-form.js`, `assets/css/calendar.css`,
+`tests/BookOnBehalfTest.php` (new), `tests/FlagshipPaymentsTest.php`,
+`tests/FlagshipSubstituteTest.php`.
+
+## A sponsor can opt out of the highlight (26 October 2026)
+
+**Asked for:** an event on the sponsor fee tier whose sponsor does not want it
+shown as sponsored; a checkbox after Override booking confirmation (Denis,
+26 October 2026).
+
+**What the committee sees.** "Don't highlight as sponsored", with one line of
+help ("Shows this event as a plain row on the programme, without the orange
+sponsor fill."), under Override booking confirmation on the Committee controls
+panel, and the same box at the foot of the wp-admin Event flags box. Ticked, the
+event loses the `#fdeedd` fill and orange edge on the programme, which reads
+`law_events_post_is_sponsored()`. **The export is untouched**: its Sponsored
+column reads `law_events_post_qualifies_as_sponsored()`, so an opted-out
+sponsor event still exports as Yes. The box hides the highlight; it does not
+change whether the event is sponsored (Denis, 26 October 2026).
+
+**It wins over all three routes, not only the tier.** Asked for on a
+sponsor-tier event, but the highlight can equally come from a linked
+sponsor-category organisation or the repeat-host count. A switch that cancelled
+only the tier would leave a sponsor-tier event with a gold organisation linked
+still orange, which reads as a broken box.
+
+**Shown only where it acts.** The box renders when
+`law_events_post_qualifies_as_sponsored()` (the old rule, split out of
+`law_events_post_is_sponsored()` unchanged) says yes, or when the flag is
+already on, so it can always be unticked. Both savers write it unconditionally
+under the existing `law_flags_present` sentinel and nonce gate: a box that was
+not rendered is always an unticked one on an event whose flag is off, so that
+write deletes nothing that exists and logs nothing. Changes are logged by
+`law_event_log_flag_change()` ("Sponsor highlight turned off: this event shows
+as a plain row on the programme." / "Sponsor highlight turned back on.").
+
+**Not in the content transfer bundle**, like `_law_disabled`: a local committee
+decision about the live site.
+
+**Tests.** Three cases in `tests/EventFlagsTest.php`: the opt-out beats a sponsor
+tier on the programme while the event still qualifies and still exports as
+Sponsored, it beats the repeat-host route too, and
+the log writes one line each way and nothing for an unchanged save.
+
+Touched: `functions/events/meta.php`, `functions/events/source.php`,
+`functions/events/workflow.php`, `functions/events/committee.php`,
+`functions/events/admin/event-screen.php`, `functions/events/export.php`,
+`templates/account-dashboard.php`, `tests/EventFlagsTest.php`.
 
 ---
 

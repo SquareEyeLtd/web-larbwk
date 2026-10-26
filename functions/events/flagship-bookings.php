@@ -196,9 +196,15 @@ function law_flagship_places() {
  * card page, or straight back to their booking when a 100% code means there is
  * nothing to charge.
  *
- * @param int   $user_id The delegate (always themselves; there is no applying
- *                       on behalf of colleagues — spec §5.1).
- * @param array $input   answers, consent, terms.
+ * Since 26 October 2026 the place can be for someone else (BOOK_ON_BEHALF.md):
+ * $input['party'], resolved by law_booking_run_for_party(), names the attendee
+ * and the snapshot to freeze. The booker still saves the card and pays; the
+ * attendee holds the place. One application per PERSON still holds, so a
+ * booker can have their own and register any number of others.
+ *
+ * @param int   $user_id The booker: the delegate themselves, or whoever is
+ *                       registering someone else.
+ * @param array $input   answers, consent, terms, and party when on behalf.
  * @return array{booking:int,redirect:string}|WP_Error
  */
 function law_flagship_apply( $user_id, array $input ) {
@@ -208,6 +214,10 @@ function law_flagship_apply( $user_id, array $input ) {
 
 	if ( ! $user ) {
 		return new WP_Error( 'law_flagship_no_user', 'You need to be signed in to register.' );
+	}
+	$party = law_booking_paid_party_from_input( $user_id, $input );
+	if ( is_wp_error( $party ) ) {
+		return $party;
 	}
 	$open = law_flagship_guard_open( $event_id );
 	if ( is_wp_error( $open ) ) {
@@ -228,11 +238,13 @@ function law_flagship_apply( $user_id, array $input ) {
 		);
 	}
 
-	$person = law_flagship_person_from_input( $user_id, $input );
+	$person = $party ? $party['person'] : law_flagship_person_from_input( $user_id, $input );
 
 	// The profile IS the application, so it has to carry what the committee
 	// reviews on. The dialog checks the same list and links to the profile;
-	// this is the guard that holds, including for a hand-made POST.
+	// this is the guard that holds, including for a hand-made POST. On a
+	// registration for someone else it is still the BOOKER's: they pay, and
+	// Stripe needs a name to bill.
 	$missing = law_flagship_profile_gaps( $user_id );
 	if ( $missing ) {
 		return new WP_Error(
@@ -246,7 +258,7 @@ function law_flagship_apply( $user_id, array $input ) {
 
 	// Fast-fail before the lock and before Stripe: a refused application must
 	// never leave a customer or a half-written booking behind.
-	$dup = law_booking_guard_duplicates( $event_id, array( $person ), law_booking_holding_statuses() );
+	$dup = law_booking_guard_paid_duplicates( $event_id, $person, $party, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
 		return $dup;
 	}
@@ -303,7 +315,7 @@ function law_flagship_apply( $user_id, array $input ) {
 	$locked = law_booking_lock( $event_id );
 
 	// Re-check under the lock: two tabs, two applications.
-	$dup = law_booking_guard_duplicates( $event_id, array( $person ), law_booking_holding_statuses() );
+	$dup = law_booking_guard_paid_duplicates( $event_id, $person, $party, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
 		if ( $locked ) {
 			law_booking_unlock( $event_id );
@@ -373,8 +385,18 @@ function law_flagship_apply( $user_id, array $input ) {
 	if ( $receptions ) {
 		$meta['_law_reception_choices'] = $receptions;
 	}
+	if ( $party ) {
+		$meta['_law_attendee_profile'] = $party['profile'];
+	}
 
-	$booking_id = law_booking_insert( $event_id, $user_id, 'law-applied', $person, $meta );
+	$booking_id = law_booking_insert(
+		$event_id,
+		$party ? (int) $party['attendee_id'] : $user_id,
+		'law-applied',
+		$person,
+		$meta,
+		$user_id
+	);
 	if ( is_wp_error( $booking_id ) ) {
 		if ( $quote['discount_id'] ) {
 			law_discount_release( $quote['discount_id'] );
@@ -393,6 +415,7 @@ function law_flagship_apply( $user_id, array $input ) {
 
 	// Everything slow happens after the lock: Stripe and the emails, so one
 	// delegate is never queued behind another's network.
+	law_booking_paid_party_after_insert( $party, $booking_id, $event_id );
 	if ( $quote['discount_id'] ) {
 		law_discount_log( $quote['discount_id'], $booking_id, 'claimed' );
 	}
@@ -484,7 +507,9 @@ function law_flagship_guard_open( $event_id = 0 ) {
  * What the committee needs on a profile before somebody can apply, and what
  * is missing from this one.
  *
- * The application form collects nothing (Denis, 10 September 2026), so the
+ * The application form collects nothing about a delegate registering
+ * themselves (Denis, 10 September 2026; a registration for someone else
+ * arrives with its own snapshot, law_booking_run_for_party()), so the
  * profile IS the application. That makes an incomplete profile a real dead
  * end rather than a validation message: there is no field on the dialog to
  * fix it in, so the dialog links to the profile instead, and this is the one
@@ -662,7 +687,17 @@ function law_flagship_mark_ready( $booking_id, $delegate_email = 'user_flagship_
 
 	$extra = law_flagship_email_extra( $booking_id );
 	law_events_send( law_flagship_applied_email( $booking, (string) $delegate_email ), $event_id, $extra );
-	law_events_send( 'committee_flagship_application', $event_id, array( 'placeholders' => $extra['placeholders'] ) );
+	law_events_send(
+		'committee_flagship_application',
+		$event_id,
+		array(
+			'placeholders' => $extra['placeholders'],
+			'lead'         => law_booking_committee_lead( $booking_id ),
+		)
+	);
+	// The attendee of a registration made for them hears now, when it is real
+	// (card saved, or nothing to pay), and never from an abandoned Stripe page.
+	law_booking_notify_on_behalf( $booking_id, 'registered' );
 
 	return true;
 }
@@ -1117,6 +1152,15 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 		'code'          => 'user_flagship_approved_free',
 	);
 	law_booking_send_with_ics( $templates[ $how ] ?? 'user_flagship_approved', $event_id, $extra );
+
+	// On a registration made for someone else the email above went to the
+	// person who paid; the attendee gets their own confirmation and calendar
+	// invitation, with nothing about the money (BOOK_ON_BEHALF.md §3.7).
+	law_booking_notify_on_behalf(
+		$booking_id,
+		'confirmed',
+		array( 'placeholders' => array( 'included_receptions' => (string) ( $extra['placeholders']['included_receptions'] ?? '' ) ) )
+	);
 }
 
 /** The activity-log sentence for one approval, in its own words per outcome. */
@@ -1205,6 +1249,7 @@ function law_flagship_decline( $booking_id, $actor_id, $reason = '' ) {
 	);
 
 	law_events_send( 'user_flagship_declined', $event_id, law_flagship_email_extra( $booking_id ) );
+	law_booking_notify_on_behalf( $booking_id, 'declined' );
 
 	return true;
 }
@@ -1256,14 +1301,29 @@ function law_flagship_withdraw( $booking_id, $actor_id ) {
 	law_stripe_detach_payment_method( $booking_id, $actor_id );
 	law_stripe_void_booking_invoice( $booking_id, $actor_id );
 
+	// Since a place can be booked for someone else, either the delegate or the
+	// person who registered them may withdraw it (BOOK_ON_BEHALF.md A5), and
+	// the log and both emails say which.
+	$by_attendee = (int) $actor_id === (int) $booking->post_author || ! law_booking_is_on_behalf( $booking );
 	law_event_log(
 		$event_id,
-		sprintf( 'Flagship registration #%d withdrawn by the delegate.', law_event_meta( $booking_id, '_law_booking_number' ) ),
+		sprintf(
+			'Flagship registration #%1$d withdrawn by %2$s.',
+			law_event_meta( $booking_id, '_law_booking_number' ),
+			// Actor 0 is the system: the deleted-booker clean-up
+			// (law_booking_withdraw_unpaid_made_by()) logs its own reason.
+			! (int) $actor_id ? 'the system' : ( $by_attendee ? 'the delegate' : 'the person who registered them' )
+		),
 		array( 'source' => 'flagship', 'action' => 'flagship_withdrawn', 'booking' => $booking_id ),
 		array( 'user_id' => (int) $actor_id )
 	);
 
-	law_events_send( 'user_flagship_withdrawn', $event_id, law_flagship_email_extra( $booking_id ) );
+	$extra = law_flagship_email_extra( $booking_id );
+	if ( $by_attendee ) {
+		$extra['lead_actor'] = 'attendee';
+	}
+	law_events_send( 'user_flagship_withdrawn', $event_id, $extra );
+	law_booking_notify_on_behalf( $booking_id, $by_attendee ? 'withdrawn_self' : 'withdrawn' );
 
 	return true;
 }
@@ -1351,7 +1411,9 @@ function law_flagship_cancel_confirmed( $booking_id, $actor_id ) {
 					// Not "They": on a transferred place the delegate in the
 					// row paid nothing, and this is the line somebody reads
 					// before sending money back.
-					(string) law_event_meta( $booking_id, '_law_substituted_from_name' ) ?: 'The delegate',
+					law_booking_is_on_behalf( $booking_id )
+						? law_booking_booked_by_name( $booking_id )
+						: ( (string) law_event_meta( $booking_id, '_law_substituted_from_name' ) ?: 'The delegate' ),
 					law_events_format_pence( (int) $price['gross'] )
 				)
 				: 'There was nothing to refund.'
@@ -1510,7 +1572,10 @@ function law_flagship_retry_charge( $booking_id, $actor_id = 0 ) {
 	// is no longer attending, for a ticket already paid for. Unreachable while
 	// a substitution requires a confirmed place, and stated anyway so it stays
 	// unreachable (21 September 2026).
-	if ( (int) law_event_meta( (int) $booking->ID, '_law_substituted_from' ) ) {
+	// Keyed on the transfer having happened at all (_law_substituted_at), not
+	// only on a recorded payer: a place booked for someone else and then
+	// transferred records no payer ID, and must be refused just the same.
+	if ( (int) law_event_meta( (int) $booking->ID, '_law_substituted_from' ) || '' !== (string) law_event_meta( (int) $booking->ID, '_law_substituted_at' ) ) {
 		return new WP_Error(
 			'law_flagship_substituted',
 			'This place has been transferred to a different delegate, so the payment details saved against it belong to somebody else and must not be charged.'
@@ -1713,6 +1778,14 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	if ( $law_fc_result ) {
 		$law_fc_extra['placeholders']['included_receptions'] = law_reception_choices_note( $law_fc_result );
 	}
+	// The set-password link the dialog promises, in THIS email rather than a
+	// welcome of its own (the "one welcome email, not two" rule), through the
+	// same resolved paragraph the on-behalf bookings use. It was promised and
+	// never sent until 26 October 2026.
+	$law_fc_user = ! empty( $resolved['created'] ) ? get_user_by( 'id', (int) $user_id ) : null;
+	$law_fc_link = $law_fc_user ? law_events_password_setup_link( $law_fc_user, $event_id, 'flagship_complimentary_error' ) : '';
+	$law_fc_extra['placeholders']['set_password_link'] = $law_fc_link;
+	$law_fc_extra['placeholders']['account_note']      = law_booking_account_note( $law_fc_link );
 	law_booking_send_with_ics( 'user_flagship_complimentary', $event_id, $law_fc_extra );
 
 	return $booking_id;
@@ -2200,7 +2273,15 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	 * moved, which hides a receipt from the person who paid until somebody
 	 * notices. Wrong in the harmless direction.
 	 */
-	$law_fs_first = ! (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	// A place booked for someone else (BOOK_ON_BEHALF.md §3.9) records its
+	// payer already: the booker, in _law_booked_by, who stays the booker
+	// through a substitution. So none of the "who paid" keys below are written
+	// for it, the payer reads on as the booker (law_booking_payer_id()), and
+	// the person handing the place on, who paid nothing, is never taken for
+	// the payer.
+	$law_fs_on_behalf = law_booking_is_on_behalf( $booking_id );
+	$law_fs_booker    = law_booking_booker_id( $booking_id );
+	$law_fs_first     = ! $law_fs_on_behalf && ! (int) law_event_meta( $booking_id, '_law_substituted_from' );
 	// WHO PAID, not who held it last. Written once and never again: a second
 	// transfer would otherwise name the FIRST substitute, somebody who paid
 	// nothing, and everything downstream reads these as the payer. Rewriting
@@ -2215,6 +2296,15 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 		law_event_update_meta( $booking_id, '_law_substituted_from_name', $from_name );
 		law_event_update_meta( $booking_id, '_law_substituted_from_email', $from_email );
 	}
+	// On a place booked for someone else the NAME and email still go in, on the
+	// first hop, so the committee's list, export and wp-admin row say whose it
+	// was; the ID does not, because the ID is what every reader takes to mean
+	// "the payer" (law_booking_payer_id()), and the attendee never paid.
+	$law_fs_name_first = $law_fs_on_behalf && '' === (string) law_event_meta( $booking_id, '_law_substituted_from_name' );
+	if ( $law_fs_name_first ) {
+		law_event_update_meta( $booking_id, '_law_substituted_from_name', $from_name );
+		law_event_update_meta( $booking_id, '_law_substituted_from_email', $from_email );
+	}
 	// These two DO move: they are about the most recent transfer, not the money.
 	law_event_update_meta( $booking_id, '_law_substituted_at', gmdate( 'Y-m-d H:i' ) );
 	law_event_update_meta( $booking_id, '_law_substituted_by', $actor_id );
@@ -2224,7 +2314,7 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 		// Nothing moved, so take the marker back off — but only the part this
 		// call added, or a re-substitution that fails here would erase the
 		// original payer recorded by the one before it.
-		if ( $law_fs_first ) {
+		if ( $law_fs_first || $law_fs_name_first ) {
 			delete_post_meta( $booking_id, '_law_substituted_from' );
 			delete_post_meta( $booking_id, '_law_substituted_from_name' );
 			delete_post_meta( $booking_id, '_law_substituted_from_email' );
@@ -2240,7 +2330,18 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	// _law_is_press unless it is passed, so a press pass on the ticket would
 	// vanish silently. It is a property of the seat, so it is carried over
 	// unless the dialog says otherwise.
-	law_booking_write_attendee( $booking_id, $person, $user_id, ! empty( $row['press'] ) );
+	//
+	// The booker moves with the seat on a self-booked place (the new holder is
+	// now the one managing it) and stays put on one booked for someone else.
+	law_booking_write_attendee( $booking_id, $person, $law_fs_on_behalf ? $law_fs_booker : $user_id, ! empty( $row['press'] ) );
+	// The answers stored on a place booked for someone else were the PREVIOUS
+	// attendee's: left there, law_booking_profile_values() would print their
+	// accessibility and dietary needs against the new delegate in the
+	// committee's lists, the exports and the caterer's numbers. The dialog's
+	// answers for the new delegate replace them (empty deletes the key).
+	if ( $law_fs_on_behalf ) {
+		law_event_update_meta( $booking_id, '_law_attendee_profile', $profile );
+	}
 
 	// NO law_event_recount_attendees(). One seat out is one seat in, so the
 	// headcount is unchanged and a recount would only re-arm the capacity
@@ -2271,9 +2372,13 @@ function law_flagship_substitute( $booking_id, array $row, $actor_id ) {
 	// Named against whoever actually PAID, which on a re-substitution is not
 	// the person handing it on.
 	$law_fs_payer_id   = (int) law_event_meta( $booking_id, '_law_substituted_from' );
-	$law_fs_payer_name = ( ! $law_fs_payer_id || $law_fs_payer_id === $from_user_id )
-		? $from_name
-		: (string) law_event_meta( $booking_id, '_law_substituted_from_name' );
+	if ( $law_fs_on_behalf ) {
+		$law_fs_payer_name = law_booking_booked_by_name( $booking_id );
+	} else {
+		$law_fs_payer_name = ( ! $law_fs_payer_id || $law_fs_payer_id === $from_user_id )
+			? $from_name
+			: (string) law_event_meta( $booking_id, '_law_substituted_from_name' );
+	}
 	$money_note = 'paid' === $payment && (int) $price['gross'] > 0
 		? sprintf(
 			'The money has not moved: the Stripe invoice, the charge and the VAT receipt for %s stay with %s, who has been emailed the link to them.',
@@ -2382,14 +2487,26 @@ function law_flagship_send_substitution_emails( $booking_id, $event_id, array $p
 	$to_extra['placeholders']['attendee_name']          = $person['name'];
 	$to_extra['placeholders']['previous_attendee_name'] = $from['name'];
 	$to_extra['placeholders']['included_receptions']    = $note;
-	$to_extra['placeholders']['payment_note']           = law_flagship_payment_note( $booking_id, true, $from['name'] );
+	// Named against whoever BOUGHT it, never simply the person handing it on:
+	// the PA on a place booked for someone else, and the first holder on a
+	// place that has been passed on more than once.
+	$to_extra['placeholders']['payment_note'] = law_booking_is_on_behalf( $booking_id )
+		? sprintf(
+			/* translators: %s: who booked and paid for the place. */
+			__( 'This place has been transferred to you. %s booked and paid for it, so there is nothing for you to pay, and the VAT receipt stays with them.', 'law' ),
+			law_booking_booked_by_name( $booking_id )
+		)
+		: law_flagship_payment_note( $booking_id, true, (string) law_event_meta( $booking_id, '_law_substituted_from_name' ) ?: $from['name'] );
 
 	// Every fact about somebody else's money, emptied. law_flagship_email_extra()
 	// supplies all of them for every flagship email, and each one describes the
 	// person who paid rather than the person reading.
-	foreach ( array( 'invoice_link', 'invoice_url', 'price', 'price_vat', 'price_total', 'payment_method', 'card_label', 'update_payment_link', 'discount_note' ) as $law_fs_payer_tag ) {
-		$to_extra['placeholders'][ $law_fs_payer_tag ] = '';
-	}
+	$to_extra['placeholders'] = law_booking_blank_payer_tags( $to_extra['placeholders'] );
+	// To the new holder, always: on a place booked for someone else this
+	// template would otherwise be routed to the person who paid
+	// (law_booking_route_paid_email()).
+	$to_extra['to']          = array( (string) $person['email'] );
+	$to_extra['to_attendee'] = true;
 
 	// A brand-new account gets its set-password link in THIS email rather than
 	// a welcome of its own — the "one welcome email, not two" rule of
@@ -2419,14 +2536,39 @@ function law_flagship_send_substitution_emails( $booking_id, $event_id, array $p
 	$from_extra['to'] = array( $from['email'] );
 	$from_extra['placeholders']['attendee_name']   = $from['name'];
 	$from_extra['placeholders']['substitute_name'] = $person['name'];
-	// Only the FIRST holder paid. On a re-substitution the person handing the
-	// place on inherited it, so they get no receipt wording and no invoice link.
-	$law_fs_payer = (int) law_event_meta( $booking_id, '_law_substituted_from' );
+	// Receipt wording and the invoice link only for whoever actually PAID
+	// (law_booking_payer_id(), read after the swap, still names them): the
+	// first holder of a self-booked place, never a substitute handing it on,
+	// and never the attendee of a place somebody else booked and paid for.
+	$law_fs_payer = law_booking_payer_id( $booking_id );
 	$from_extra['placeholders']['receipt_note'] = law_flagship_receipt_note(
 		$booking_id,
-		! $law_fs_payer || $law_fs_payer === (int) $from['user_id']
+		$law_fs_payer === (int) $from['user_id']
 	);
 	law_events_send( 'user_flagship_place_transferred', $event_id, $from_extra );
+
+	// A place booked for someone else: the person who booked and paid hears
+	// too, with the receipt, since the money stays theirs (BOOK_ON_BEHALF.md
+	// §3.9). The explicit 'to' and the lead stand in for the routing that
+	// sends every other flagship email their way.
+	if ( law_booking_is_on_behalf( $booking_id ) && law_booking_booker_id( $booking_id ) !== (int) $from['user_id'] ) {
+		$booker_extra = law_flagship_email_extra( $booking_id );
+		$booker_extra['placeholders']['substitute_name'] = $person['name'];
+		$booker_extra['placeholders']['receipt_note']    = law_flagship_receipt_note( $booking_id, true );
+		$booker_extra = law_booking_booker_copy(
+			$booking_id,
+			$booker_extra,
+			sprintf(
+				/* translators: 1: who held it, 2: who holds it now. */
+				__( 'You booked this place for %1$s. The committee has transferred it to %2$s, and has emailed both of them.', 'law' ),
+				$from['name'],
+				$person['name']
+			)
+		);
+		if ( $booker_extra ) {
+			law_events_send( 'user_flagship_place_transferred', $event_id, $booker_extra );
+		}
+	}
 
 	return true;
 }
@@ -2641,7 +2783,12 @@ function law_flagship_receipt_note( $booking_id, $paid_by_them = true ) {
  * event ID out of the request.
  */
 
-/** Load a booking this user may act on as its owner, or respond and exit. */
+/**
+ * Load a registration this user may act on as its holder or as whoever booked
+ * it for them, or respond and exit. Only withdrawing uses it, and withdrawing
+ * is open to both (BOOK_ON_BEHALF.md A5); the money actions go through
+ * law_booking_require_own_priced_booking(), which is the booker's alone.
+ */
 function law_flagship_require_own_booking( $is_ajax, array $statuses = array() ) {
 	$booking_id = absint( $_POST['booking_id'] ?? 0 );
 	$booking    = $booking_id ? get_post( $booking_id ) : null;
@@ -2649,7 +2796,7 @@ function law_flagship_require_own_booking( $is_ajax, array $statuses = array() )
 	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'That registration could not be found.', 'status' => 404 ), 'flagship-failed' );
 	}
-	if ( (int) $booking->post_author !== get_current_user_id() ) {
+	if ( '' === law_booking_user_role( $booking ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'That registration belongs to someone else.', 'status' => 403 ), 'flagship-denied' );
 	}
 	if ( $statuses && ! in_array( $booking->post_status, $statuses, true ) ) {
@@ -2695,11 +2842,25 @@ function law_flagship_apply_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Please sign in to register.', 'status' => 401 ), 'flagship-denied' );
 	}
 
+	// Myself or someone else (BOOK_ON_BEHALF.md §3.3): read, then run through
+	// the shared seam, which resolves the attendee's account and takes a new
+	// one back out if the registration is refused.
+	$booker = get_current_user_id();
 	$input  = law_flagship_input_from_request();
-	$result = law_flagship_apply( get_current_user_id(), $input );
+	$choice = law_booking_paid_choice_from_request( $booker, wp_unslash( $_POST ) );
+	$result = is_wp_error( $choice )
+		? $choice
+		: law_booking_run_for_party(
+			$booker,
+			law_flagship_event_id(),
+			$choice,
+			law_booking_holding_statuses(),
+			fn( $party ) => law_flagship_apply( $booker, $input + array( 'party' => $party ) )
+		);
 
 	if ( is_wp_error( $result ) ) {
 		law_flagship_store_form_state( $result, $input );
+		law_booking_store_paid_choice_state( $result, law_flagship_event_id() );
 		law_events_respond( $is_ajax, false, law_booking_error_payload( $result ), 'flagship-failed' );
 	}
 
@@ -3308,8 +3469,7 @@ function law_flagship_handle_setup_return() {
 	if ( isset( $_GET['law_setup'] ) && 'cancelled' === $_GET['law_setup'] && is_user_logged_in() ) {
 		$cancelled = absint( $_GET['law_booking'] ?? 0 );
 		$kind      = $cancelled ? law_booking_kind( $cancelled ) : 'hosted';
-		if ( $cancelled && 'hosted' !== $kind
-			&& (int) get_post_field( 'post_author', $cancelled ) === get_current_user_id() ) {
+		if ( $cancelled && 'hosted' !== $kind && law_booking_user_manages_payment( $cancelled ) ) {
 			wp_safe_redirect(
 				add_query_arg(
 					'law_notice',
@@ -3332,7 +3492,9 @@ function law_flagship_handle_setup_return() {
 	if ( 'hosted' === $kind ) {
 		return;
 	}
-	if ( (int) $booking->post_author !== get_current_user_id() ) {
+	// Whoever went to Stripe: the booker, who on a place booked for someone
+	// else is not the person holding it.
+	if ( ! law_booking_user_manages_payment( $booking ) ) {
 		return;
 	}
 
@@ -3427,6 +3589,12 @@ function law_flagship_run_daily() {
 			array( 'source' => 'flagship', 'action' => 'flagship_abandoned', 'booking' => (int) $post->ID ),
 			array( 'user_id' => 0 )
 		);
+		// A registration somebody made for another person and never finished:
+		// the account it created for them goes too, if they never came to
+		// have anything else (BOOK_ON_BEHALF.md; security review).
+		if ( law_booking_is_on_behalf( $post ) ) {
+			law_booking_forget_unclaimed_attendee( (int) $post->post_author, law_booking_booker_id( $post ), $event_id );
+		}
 	}
 
 	foreach ( law_flagship_applications( array( 'status' => 'law-payment-failed' ) ) as $post ) {

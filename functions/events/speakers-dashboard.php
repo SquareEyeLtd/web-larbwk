@@ -864,5 +864,5 @@ add_action( 'wp_enqueue_scripts', function () {
 	// confirm dialog), as on the submitters list: the dialog reports the
 	// outcome before the page reloads, and a plain POST still works without it.
 	law_modal_enqueue();
-	wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+	law_booking_form_enqueue();
 } );
