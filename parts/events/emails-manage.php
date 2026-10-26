@@ -179,10 +179,16 @@ get_template_part(
 				// Send test renders what is on screen and saves nothing, so the
 				// wording can be read in a real inbox before anybody commits to
 				// it. The draft survives the reload.
+				//
+				// It opens a dialog asking where to send it (Denis, 26 October
+				// 2026), prefilled with the editor's own address. Without
+				// JavaScript the dialog cannot open, so the button posts on its
+				// own and the handler sends to the editor, as it always did.
 				?>
 				<button type="submit" class="button second" name="law_email_test" value="1"
+					data-law-modal-open="law-modal-email-test"
 					data-law-busy="<?php esc_attr_e( 'Sending…', 'law' ); ?>">
-					<?php esc_html_e( 'Send a test to me', 'law' ); ?>
+					<?php esc_html_e( 'Send test email', 'law' ); ?>
 				</button>
 				<?php if ( $law_em_committee_audience ) : ?>
 					<?php
@@ -227,6 +233,33 @@ get_template_part(
 			// Outside the buttons paragraph, inside the form: the dialog is a <div>
 			// (a <p> may not contain one) and its submit has to post the rest of
 			// the form with it.
+			get_template_part(
+				'parts/layout/modal',
+				null,
+				array(
+					'id'      => 'law-modal-email-test',
+					'title'   => __( 'Send a test email', 'law' ),
+					// The first copy paragraph is where booking-form.js writes the
+					// outcome, so the dialog needs one.
+					'copy'    => __( 'The tags are filled in with sample details, and nothing is saved.', 'law' ),
+					'field'   => array(
+						'name'     => 'law_email_test_to',
+						'label'    => __( 'Email address', 'law' ),
+						'type'     => 'email',
+						'required' => true,
+						'error'    => __( 'Please enter an email address.', 'law' ),
+						'value'    => wp_get_current_user()->user_email,
+					),
+					'confirm' => array(
+						'label' => __( 'Send test', 'law' ),
+						'name'  => 'law_email_test',
+						'value' => '1',
+						'class' => 'button orange',
+						'busy'  => __( 'Sending…', 'law' ),
+					),
+				)
+			);
+
 			if ( $law_em_customised ) {
 				get_template_part(
 					'parts/layout/modal',

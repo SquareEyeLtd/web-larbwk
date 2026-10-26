@@ -127,10 +127,20 @@ function law_events_emails_edit_screen( $slug ) {
 						<p class="description">Bold, italics, lists, headings and links are kept; anything else is dropped when you save, and the site-wide email wrapper adds the branding. Available tags:<br>
 						<code><?php echo esc_html( implode( ' ', $tags ) ); ?></code></p>
 					</td></tr>
+				<?php
+				// Where "Send test email" goes (Denis, 26 October 2026), the
+				// front-end screen's dialog as a plain field: wp-admin has no
+				// dialog component. Text rather than type="email", because a
+				// half-typed address in an email input would block Save email
+				// as well.
+				?>
+				<tr><th scope="row"><label for="law-email-test-to">Send a test to</label></th>
+					<td><input type="text" inputmode="email" id="law-email-test-to" name="test_to" class="regular-text" value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>" autocomplete="email">
+					<p class="description">The tags are filled in with sample details, and nothing is saved.</p></td></tr>
 			</table>
 			<p>
 				<?php submit_button( 'Save email', 'primary', 'save', false ); ?>
-				<?php submit_button( 'Send test to me', 'secondary', 'send_test', false ); ?>
+				<?php submit_button( 'Send test email', 'secondary', 'send_test', false ); ?>
 				<?php
 				// Only on the notifications the committee itself receives, the
 				// same rule as the front-end screen's "Send a test to committee"
@@ -194,13 +204,33 @@ function law_events_emails_handle_post( $slug ) {
 			return;
 		}
 
+		// The same budget as the front-end screen's tests, so the two screens
+		// are one allowance rather than two.
+		if ( ! law_events_rate_limit_ok( 'email_test', get_current_user_id(), 20, 600 ) ) {
+			echo '<div class="notice notice-error"><p>Too many test emails in a short time; please wait a moment and try again.</p></div>';
+			return;
+		}
+
+		// Refused, as on the front end, when sanitising would change it into
+		// a different address that somebody else may own.
+		$test_to = '';
+		if ( ! $to_committee ) {
+			$raw     = wp_unslash( $_POST['test_to'] ?? '' );
+			$raw     = is_scalar( $raw ) ? trim( (string) $raw ) : '';
+			$test_to = sanitize_email( $raw );
+			if ( $test_to !== $raw || ! is_email( $test_to ) ) {
+				echo '<div class="notice notice-error"><p>Please enter a valid email address to send the test to.</p></div>';
+				return;
+			}
+		}
+
 		$test = $to_committee
 			? law_events_email_send_test_committee( $override )
-			: law_events_email_send_test( $override );
-		$went_to = $to_committee ? 'the committee (' . implode( ', ', $test['emails'] ) . ')' : $test['email'];
+			: law_events_email_send_test_to( $override, array( $test_to ) );
+		$went_to = $to_committee ? 'the committee (' . implode( ', ', $test['emails'] ) . ')' : implode( ', ', $test['emails'] );
 
 		echo $test['sent']
-			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $went_to ) . ( $test['event_id'] ? ' using event "' . esc_html( $test['event_title'] ) . '"' : ' (no events exist yet, placeholders were blank)' ) . '. Nothing was saved: use Save email to keep these values.</p></div>'
+			? '<div class="notice notice-success"><p>Test sent to ' . esc_html( $went_to ) . ', with sample details in place of the tags. Nothing was saved: use Save email to keep these values.</p></div>'
 			: '<div class="notice notice-error"><p>Send failed.</p></div>';
 		return;
 	}

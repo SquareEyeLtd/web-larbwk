@@ -89,14 +89,20 @@
 .law-modal .law-form-field label small { display: block; line-height: 1.4; }
 /* The textarea sits on a white dialog, not the purple form, so it takes dark
    text on a bordered pale field: the hero form's borderless white control would
-   disappear against the dialog. */
-.law-modal textarea {
+   disappear against the dialog. The email input the component gained on
+   26 October 2026 (the Emails screen's Send test email dialog) shares it. */
+.law-modal textarea,
+.law-modal input[type="email"] {
 	width: 100%; box-sizing: border-box; margin: 0; padding: .6rem .75rem;
 	background: #fff; color: #1a1a3d; border: 1px solid #e3e3ec; border-radius: 0;
 	font-family: inherit; font-size: 1rem; line-height: 1.5; box-shadow: none;
 }
-.law-modal textarea:hover { border-color: rgba(239, 125, 5, .55); }
-.law-modal textarea:focus { outline: 2px solid #ef7d05; outline-offset: 1px; border-color: #e3e3ec; background: #fff; box-shadow: none; }
+/* Foundation gives a text input a fixed height, which clips the padding above. */
+.law-modal input[type="email"] { height: auto; }
+.law-modal textarea:hover,
+.law-modal input[type="email"]:hover { border-color: rgba(239, 125, 5, .55); }
+.law-modal textarea:focus,
+.law-modal input[type="email"]:focus { outline: 2px solid #ef7d05; outline-offset: 1px; border-color: #e3e3ec; background: #fff; box-shadow: none; }
 /* The select the component gained on 15 September 2026 (the flagship's Ticket
    type dialog) takes the textarea's treatment above, for the same reason and
    with the same numbers: dark text on a bordered pale field, because the
@@ -180,7 +186,11 @@ body.law-modal-open { overflow: hidden; }
    would otherwise put the resting grey back the moment the field is focused,
    which is exactly when the message appears. */
 .law-modal .law-form-field:has(> .law-form-error) textarea,
-.law-modal .law-form-field:has(> .law-form-error) textarea:focus { border: 2px solid #b32d2e; }
+.law-modal .law-form-field:has(> .law-form-error) textarea:focus,
+.law-modal .law-form-field:has(> .law-form-error) input[type="email"],
+.law-modal .law-form-field:has(> .law-form-error) input[type="email"]:focus,
+.law-modal .law-form-field.is-invalid input[type="email"],
+.law-modal .law-form-field.is-invalid input[type="email"]:focus { border: 2px solid #b32d2e; }
 @media screen and (max-width: 39.9375em) {
 	/* Near full width with a small inset, and pinned to the top so a tall dialog
 	   opens where the eye already is. */

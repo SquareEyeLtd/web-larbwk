@@ -30,7 +30,8 @@
  *     'name'     => 'law_note',            // confirmation with no input.
  *     'label'    => 'What needs changing?',
  *     'help'     => 'Small print under the label.',
- *     'type'     => 'textarea',            // Or 'select'. Default 'textarea'.
+ *     'type'     => 'textarea',            // Or 'select' or 'email'. Default
+ *                                          // 'textarea'.
  *     'rows'     => 4,                     // Default 4. Textarea only.
  *     'options'  => array( 'a' => 'A' ),   // Required for 'select'.
  *     'placeholder' => 'Not set',          // The select's blank first option.
@@ -118,7 +119,11 @@ if ( $law_modal_field ) {
 		// name, same disabled-until-open behaviour, same aria-required — so
 		// law-modal.js needed no change at all. Anything but 'select' is the
 		// textarea this component started as.
-		'type'        => isset( $law_modal_field['type'] ) && 'select' === $law_modal_field['type'] ? 'select' : 'textarea',
+		//
+		// 'email' followed on 26 October 2026 for the Emails screen's "Send
+		// test email" dialog, on the same terms: one input, the same name and
+		// disabled-until-open rules.
+		'type'        => isset( $law_modal_field['type'] ) && in_array( $law_modal_field['type'], array( 'select', 'email' ), true ) ? $law_modal_field['type'] : 'textarea',
 		'rows'        => isset( $law_modal_field['rows'] ) ? max( 1, (int) $law_modal_field['rows'] ) : 4,
 		'options'     => isset( $law_modal_field['options'] ) && is_array( $law_modal_field['options'] ) ? $law_modal_field['options'] : array(),
 		'placeholder' => isset( $law_modal_field['placeholder'] ) ? trim( (string) $law_modal_field['placeholder'] ) : '',
@@ -224,6 +229,8 @@ if ( $law_modal_field ) {
 							<option value="<?php echo esc_attr( (string) $law_modal_option ); ?>" <?php selected( $law_modal_field['value'], (string) $law_modal_option ); ?>><?php echo esc_html( (string) $law_modal_option_label ); ?></option>
 						<?php endforeach; ?>
 					</select>
+				<?php elseif ( 'email' === $law_modal_field['type'] ) : ?>
+					<input type="email" id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" value="<?php echo esc_attr( $law_modal_field['value'] ); ?>" autocomplete="email" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled>
 				<?php else : ?>
 					<textarea id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" rows="<?php echo esc_attr( (string) $law_modal_field['rows'] ); ?>" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled><?php echo esc_textarea( $law_modal_field['value'] ); ?></textarea>
 				<?php endif; ?>
