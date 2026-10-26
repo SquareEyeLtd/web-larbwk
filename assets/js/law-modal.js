@@ -320,9 +320,16 @@
 		if (button) {
 			var modal = button.closest('.law-modal');
 			var input = modal ? fields(modal)[0] : null;
-			if (!input || input.getAttribute('aria-required') !== 'true' || input.value.trim()) { return; }
-			event.preventDefault();
+			if (!input || input.getAttribute('aria-required') !== 'true') { return; }
 			var field = input.closest('.law-form-field');
+			if (input.value.trim()) {
+				/* Filled in since the last press, so the message no longer
+				   applies and must not sit under the field while it sends. */
+				var stale = field ? field.querySelector('.law-form-error') : null;
+				if (stale) { stale.remove(); }
+				return;
+			}
+			event.preventDefault();
 			if (field && !field.querySelector('.law-form-error')) {
 				var error = document.createElement('span');
 				error.className = 'law-form-error';
