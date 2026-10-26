@@ -300,6 +300,6 @@ add_action(
 		// No pdfmake and no export-buttons.js either, because this screen has
 		// no export and must not serve ~3MB of PDF library to show three rows.
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		law_booking_form_enqueue();
 	}
 );

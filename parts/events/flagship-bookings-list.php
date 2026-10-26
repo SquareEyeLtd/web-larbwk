@@ -378,8 +378,10 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 								// fully discounted place is transferable too,
 								// and the old line asserted "who paid" about
 								// somebody who had paid nothing.
+								// Not on a place booked for someone else: there the
+								// receipt is with whoever booked it, named below.
 								echo esc_html(
-									$law_fbl_row['gross_pence'] > 0 && 'paid' === $law_fbl_row['payment']
+									$law_fbl_row['gross_pence'] > 0 && 'paid' === $law_fbl_row['payment'] && '' === $law_fbl_row['booked_by']
 										? sprintf(
 											/* translators: %s: the delegate who gave the place up. */
 											__( 'Replaced %s, who holds the receipt', 'law' ),
@@ -392,6 +394,16 @@ $law_fbl_decision_form = static function ( array $row, $decision ) use ( $law_fb
 										)
 								);
 								?>
+							</span>
+						<?php endif; ?>
+						<?php
+						// A PA who registered a partner (BOOK_ON_BEHALF.md §3.8):
+						// the person paying, and so the one to write to about
+						// the money.
+						?>
+						<?php if ( '' !== $law_fbl_row['booked_by'] ) : ?>
+							<span class="law-booking-table__sub">
+								<?php echo esc_html( law_booking_booked_by_label( $law_fbl_row['id'] ) . ( '' !== $law_fbl_row['booked_by_email'] ? ' (' . $law_fbl_row['booked_by_email'] . ')' : '' ) ); ?>
 							</span>
 						<?php endif; ?>
 					</td>

@@ -13,14 +13,17 @@
  * Three states inside: logged out, a profile too incomplete to register with,
  * and the consent step.
  *
- * **It collects nothing.** Denis, 10 September 2026: everything the committee
+ * **It collects nothing about the person registering themselves.** Denis,
+ * 10 September 2026: everything the committee
  * reviews a delegate on — name, organisation, job title, country, dietary
  * and access requirements — is already on their profile, and asking for it
  * again is friction, a second copy to drift, and a longer form between
  * someone and a decision they have already made. So the registration reads
  * from the profile, and this dialog is the consent step and nothing else.
  * If the profile is missing what the committee needs, it says so and links
- * there rather than quietly accepting a nameless registration.
+ * there rather than quietly accepting a nameless registration. A registration
+ * for SOMEONE ELSE does collect that person's details (booking-for-someone.php,
+ * BOOK_ON_BEHALF.md): there is no profile of theirs to read from.
  *
  * Unlike the hosted-event booking form there is no colleague repeater: one
  * registration per person (EVENTS_4.2_SPECS.md §5.1), so that the committee
@@ -87,7 +90,7 @@ $law_fa_missing = is_user_logged_in() ? law_flagship_profile_gaps( get_current_u
 ob_start();
 if ( ! is_user_logged_in() ) :
 	?>
-	<p class="law-modal__copy"><?php esc_html_e( 'You need an account to register for a place at the conference. It only takes a minute, and you will come straight back here.', 'law' ); ?></p>
+	<p class="law-modal__copy"><?php esc_html_e( 'You need an account to register for a place at the conference, for yourself or someone else. It only takes a minute, and you will come straight back here.', 'law' ); ?></p>
 	<p class="law-modal__actions law-booking-auth">
 		<a class="button second" href="<?php echo esc_url( wp_login_url( $law_fa_permalink ) ); ?>"><?php esc_html_e( 'Sign in', 'law' ); ?></a>
 		<a class="button orange" href="<?php echo esc_url( add_query_arg( array( 'redirect_to' => $law_fa_permalink ), home_url( '/register/' ) ) ); ?>"><?php esc_html_e( 'Create an account', 'law' ); ?></a>
@@ -160,9 +163,8 @@ else :
 			<?php endif; ?>
 		</div>
 
-
 		<?php if ( $law_fa_places['full'] ) : ?>
-			<p class="law-booking-substate"><?php esc_html_e( 'The conference is currently full, so your registration joins the queue for a place.', 'law' ); ?></p>
+			<p class="law-booking-substate"><?php esc_html_e( 'The conference is currently full, so the registration joins the queue for a place.', 'law' ); ?></p>
 		<?php endif; ?>
 
 		<?php if ( $law_fa_errors ) : ?>
@@ -172,6 +174,30 @@ else :
 				<?php endforeach; ?>
 			</div>
 		<?php endif; ?>
+
+		<?php
+		// Myself or someone else (BOOK_ON_BEHALF.md §3.2), straight after what
+		// is being registered for: the answer changes what the rest of the form
+		// is about. A delegate who already has a registration can still
+		// register somebody else; their own choice is shown disabled.
+		$law_fa_holds     = (bool) law_flagship_application_for_user( get_current_user_id() );
+		$law_fa_for_state = 'inline' === $law_fa_ctx ? law_booking_paid_choice_state( $law_fa_id ) : array();
+		// Starting on Someone else: the receptions below must not show the
+		// viewer's own places as already held (booking-form.js does the same
+		// when the choice changes).
+		$law_fa_for_other = $law_fa_holds || 'other' === ( $law_fa_for_state['for'] ?? '' );
+		get_template_part(
+			'parts/events/booking-for-someone',
+			null,
+			array(
+				'context'     => $law_fa_ctx,
+				'id_prefix'   => 'law-fa-for-' . $law_fa_ctx,
+				'holds_place' => $law_fa_holds,
+				'state'       => $law_fa_for_state,
+			)
+		);
+		?>
+
 
 		<?php
 		// The receptions a confirmed place includes (RECEPTIONS.md §7.1). Asked
@@ -187,7 +213,7 @@ else :
 		<?php if ( $law_fa_receptions ) : ?>
 			<fieldset class="law-flagship-receptions law-booking-fieldset">
 				<legend><?php esc_html_e( 'Included receptions', 'law' ); ?></legend>
-				<p class="law-form-hint"><?php esc_html_e( 'Included at no cost with your place. Tick the ones you would like to attend; you can add them later from My bookings.', 'law' ); ?></p>
+				<p class="law-form-hint"><?php esc_html_e( 'Included at no cost with the place. Tick the ones to attend; they can also be added later from My bookings.', 'law' ); ?></p>
 				<?php foreach ( $law_fa_receptions as $law_fa_reception ) : ?>
 					<?php
 					// A reception this delegate ALREADY holds a place at is ticked and
@@ -196,6 +222,7 @@ else :
 					// and the engine skips a place somebody already has rather than
 					// granting a second (Denis, 14 September 2026).
 					$law_fa_held = law_booking_user_booking_for_event( get_current_user_id(), $law_fa_reception, law_booking_holding_statuses() );
+					$law_fa_mine = $law_fa_held instanceof WP_Post && ! $law_fa_for_other;
 					$law_fa_tag  = '';
 					if ( $law_fa_held instanceof WP_Post ) {
 						// "You already have a place", not "Already booked": the
@@ -207,17 +234,24 @@ else :
 					}
 					$law_fa_when = law_reception_when_label( $law_fa_reception );
 					?>
+					<?php
+					// data-law-held: these describe the VIEWER's own places, so
+					// booking-form.js frees the box (and hides the tag) when the
+					// registration is for someone else; the grant skips any
+					// reception the attendee already holds.
+					?>
 					<p class="law-form-field">
 						<label>
 							<input type="checkbox" name="law_flagship_apply[receptions][]" value="<?php echo esc_attr( (string) $law_fa_reception ); ?>"
-								<?php checked( $law_fa_held instanceof WP_Post ); ?>
-								<?php disabled( $law_fa_held instanceof WP_Post ); ?>>
+								<?php echo $law_fa_held instanceof WP_Post ? 'data-law-held' : ''; ?>
+								<?php checked( $law_fa_mine ); ?>
+								<?php disabled( $law_fa_mine ); ?>>
 							<strong><?php echo esc_html( get_the_title( $law_fa_reception ) ); ?></strong>
 							<?php if ( '' !== $law_fa_when ) : ?>
 								<span class="law-form-hint"><?php echo esc_html( $law_fa_when ); ?></span>
 							<?php endif; ?>
 							<?php if ( '' !== $law_fa_tag ) : ?>
-								<span class="law-modal__tag"><?php echo esc_html( $law_fa_tag ); ?></span>
+								<span class="law-modal__tag" data-law-held-tag<?php echo $law_fa_mine ? '' : ' hidden'; ?>><?php echo esc_html( $law_fa_tag ); ?></span>
 							<?php endif; ?>
 						</label>
 					</p>
@@ -288,7 +322,7 @@ else :
 		// third time here made the paragraph harder to read, not clearer.
 		?>
 		<p class="law-booking-note" data-law-stripe-note<?php echo $law_fa_quote['free'] ? ' hidden' : ''; ?>>
-			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves your registration we take the payment and confirm your ticket; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
+			<?php esc_html_e( 'The next step is our payment provider, Stripe, where you choose how you would like to pay. Your payment details are saved but NOT charged. If the committee approves the registration we take the payment and confirm the ticket; if not, we delete your payment details and you pay nothing.', 'law' ); ?>
 		</p>
 
 		<?php
@@ -297,7 +331,7 @@ else :
 		// rewrite it along with the figures. Left alone it would still promise
 		// a charge of £660 on a registration a code had taken to nothing,
 		// which is worse than no consent at all.
-		$law_fa_consent_default = __( 'I agree to my payment details being saved securely and charged %s if my registration is approved. *', 'law' );
+		$law_fa_consent_default = __( 'I agree to my payment details being saved securely and charged %s if the registration is approved. *', 'law' );
 		$law_fa_consent_free    = __( 'I understand my discount code covers the whole price, so there is nothing to pay and no payment details are needed. *', 'law' );
 		?>
 		<p class="law-form-field">
@@ -346,9 +380,9 @@ else :
 				data-law-modal-busy="<?php echo esc_attr( $law_fa_quote['free'] ? __( 'Submitting…', 'law' ) : __( 'Taking you to Stripe…', 'law' ) ); ?>"
 				data-law-submit-default="<?php esc_attr_e( 'Continue to payment details', 'law' ); ?>"
 				data-law-submit-busy-default="<?php esc_attr_e( 'Taking you to Stripe…', 'law' ); ?>"
-				data-law-submit-free="<?php esc_attr_e( 'Submit my registration', 'law' ); ?>"
+				data-law-submit-free="<?php esc_attr_e( 'Submit registration', 'law' ); ?>"
 				data-law-submit-busy-free="<?php esc_attr_e( 'Submitting…', 'law' ); ?>">
-				<?php echo esc_html( $law_fa_quote['free'] ? __( 'Submit my registration', 'law' ) : __( 'Continue to payment details', 'law' ) ); ?>
+				<?php echo esc_html( $law_fa_quote['free'] ? __( 'Submit registration', 'law' ) : __( 'Continue to payment details', 'law' ) ); ?>
 			</button>
 		</p>
 	</form>

@@ -62,6 +62,14 @@ $law_bm_party = law_booking_party($law_bm_event_id, (int) $law_bm_user->ID, law_
 if (! $law_bm_party && $law_bm_cancelled) {
     $law_bm_party = [ $law_bm_booking ]; // Show the cancelled row rather than an empty page.
 }
+// A reception place is one checkout and one payment, so its page is about THAT
+// booking alone: somebody holding their own place and one bought for a partner
+// has two bookings with two payments, and the paid flag, the payment facts and
+// "Continue to payment" below all describe the booking addressed
+// (BOOK_ON_BEHALF.md §3.8).
+if ($law_bm_reception) {
+    $law_bm_party = [ $law_bm_booking ];
+}
 $law_bm_own = null;
 foreach ($law_bm_party as $law_bm_entry) {
     if ((int) $law_bm_entry->post_author === (int) $law_bm_user->ID) {
@@ -69,7 +77,7 @@ foreach ($law_bm_party as $law_bm_entry) {
         break;
     }
 }
-$law_bm_colleagues = count($law_bm_party) - ($law_bm_own ? 1 : 0);
+$law_bm_colleagues = $law_bm_reception ? 0 : count($law_bm_party) - ($law_bm_own ? 1 : 0);
 $law_bm_waitlisted = $law_bm_own && 'law-waitlisted' === $law_bm_own->post_status;
 $law_bm_invited_by = $law_bm_own ? law_booking_invited_by_label($law_bm_own) : '';
 
@@ -101,7 +109,7 @@ $law_bm_venue = (string) law_event_meta($law_bm_event_id, '_law_venue');
 <div class="grid-x grid-padding-x">
 	<div class="large-8 cell">
 
-		<?php law_booking_notice_render(); ?>
+		<?php law_booking_notice_render($law_bm_id); ?>
 
 		<h2 class="law-booking-manage__title">
 			<?php
@@ -125,6 +133,13 @@ $law_bm_venue = (string) law_event_meta($law_bm_event_id, '_law_venue');
 			<?php if ('' !== $law_bm_when) : ?><br><?php echo esc_html($law_bm_when); ?><?php endif; ?>
 			<?php if ('' !== $law_bm_venue) : ?><br><?php echo esc_html($law_bm_venue); ?><?php endif; ?>
 		</p>
+		<?php
+        // Whose place this is, on a paid place booked for someone else.
+        $law_bm_for_line = $law_bm_reception ? law_booking_for_line($law_bm_booking) : '';
+?>
+		<?php if ('' !== $law_bm_for_line) : ?>
+			<p class="law-booking-substate"><?php echo esc_html($law_bm_for_line); ?></p>
+		<?php endif; ?>
 
 		<?php if ($law_bm_reception) : ?>
 			<?php
@@ -136,17 +151,23 @@ get_template_part('parts/events/booking-payment-facts', null, [ 'booking_id' => 
 			<?php if ('law-pending-payment' === $law_bm_booking->post_status
 		        && 'processing' !== (string) law_event_meta($law_bm_id, '_law_payment_status')) : ?>
 				<p class="law-booking-manage__action">
-					<?php echo law_reception_continue_button($law_bm_id); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.?>
+					<?php if (law_booking_user_manages_payment($law_bm_booking)) : ?>
+						<?php echo law_reception_continue_button($law_bm_id); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built escaped.?>
+					<?php else : ?>
+						<?php // Shown, disabled, with who can use it (BOOK_ON_BEHALF.md A4).?>
+						<button type="button" class="button orange" disabled aria-describedby="law-continue-why-<?php echo esc_attr((string) $law_bm_id); ?>"><?php esc_html_e('Continue to payment', 'law'); ?></button>
+						<span class="law-form-hint" id="law-continue-why-<?php echo esc_attr((string) $law_bm_id); ?>"><?php echo esc_html(law_booking_payment_refusal($law_bm_booking)); ?></span>
+					<?php endif; ?>
 				</p>
 			<?php endif; ?>
 		<?php elseif ($law_bm_waitlisted) : ?>
 			<p class="law-booking-state"><?php esc_html_e("You're on the waitlist for this event.", 'law'); ?></p>
 			<p class="law-booking-substate"><?php esc_html_e("We'll email you as soon as a place opens up, and your booking is confirmed automatically.", 'law'); ?></p>
 		<?php elseif ('' !== $law_bm_invited_by) : ?>
-			<p class="law-booking-substate"><?php echo esc_html(sprintf(__('Invited by %s.', 'law'), $law_bm_invited_by)); ?></p>
+			<p class="law-booking-substate"><?php echo esc_html(law_booking_booked_by_label($law_bm_own) . '.'); ?></p>
 		<?php endif; ?>
 
-		<h3 class="law-booking-manage__subtitle"><?php echo esc_html($law_bm_colleagues ? __('Who is coming', 'law') : __('Your place', 'law')); ?></h3>
+		<h3 class="law-booking-manage__subtitle"><?php echo esc_html($law_bm_colleagues ? __('Who is coming', 'law') : ('booker' === law_booking_user_role($law_bm_booking) ? __('Their place', 'law') : __('Your place', 'law'))); ?></h3>
 		<ul class="law-dashboard__people law-booking-manage__people">
 			<?php foreach ($law_bm_party as $law_bm_entry) :
 			    $law_bm_entry_id   = (int) $law_bm_entry->ID;

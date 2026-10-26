@@ -140,6 +140,17 @@
 		modal.querySelectorAll('.law-form-error, .law-modal__error').forEach(function (error) {
 			error.remove();
 		});
+		/* The marks that went with them, or a dialog opened again announces
+		   its fields as invalid with nothing saying why (WCAG 4.1.2). */
+		modal.querySelectorAll('[aria-invalid="true"]').forEach(function (field) {
+			field.removeAttribute('aria-invalid');
+			if ((field.getAttribute('aria-describedby') || '').indexOf('law-field-error-') === 0) {
+				field.removeAttribute('aria-describedby');
+			}
+		});
+		modal.querySelectorAll('.is-invalid').forEach(function (node) {
+			node.classList.remove('is-invalid');
+		});
 		modal.hidden = true;
 		document.body.classList.remove('law-modal-open');
 		/* document.contains: the opener may have been thrown away while the

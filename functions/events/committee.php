@@ -866,10 +866,12 @@ function law_committee_action_handler() {
 			// switches below it, because the panel renders all three together and
 			// an unticked box posts nothing.
 			'_law_disabled'      => (int) law_event_meta( $event_id, '_law_disabled' ),
+			'_law_no_sponsor_highlight' => (int) law_event_meta( $event_id, '_law_no_sponsor_highlight' ),
 		);
 		law_event_update_meta( $event_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 		law_event_update_meta( $event_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 		law_event_update_meta( $event_id, '_law_disabled', ! empty( $_POST['law_disabled'] ) );
+		law_event_update_meta( $event_id, '_law_no_sponsor_highlight', ! empty( $_POST['law_no_sponsor_highlight'] ) );
 
 		// The confirmation override, only for an event that can carry one. The
 		// panel hides the box otherwise, and writing the key regardless would

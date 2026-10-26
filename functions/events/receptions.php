@@ -727,9 +727,10 @@ function law_reception_costs_nothing( $event_id ) {
 /**
  * Buy one place at a reception: hold it, then send the delegate to Stripe.
  *
- * ONE PLACE PER CHECKOUT, self only (Denis, 14 September 2026). Colleagues buy
- * their own, which is why there is no repeater here and no party to unwind if
- * a payment fails half way.
+ * ONE PLACE PER CHECKOUT (Denis, 14 September 2026): no repeater here and no
+ * party to unwind if a payment fails half way. Since 26 October 2026 that one
+ * place may be for someone else the buyer names (BOOK_ON_BEHALF.md), still
+ * one place and one payment.
  *
  * The order of operations is the whole design:
  *
@@ -742,8 +743,14 @@ function law_reception_costs_nothing( $event_id ) {
  *   4. Stripe is called AFTER the unlock, because a 30-second network call
  *      must never queue the next buyer behind it.
  *
- * @param int   $user_id The delegate (always themselves).
- * @param array $input   event_id, code, applied_code, terms, price_shown.
+ * One place per checkout still, but since 26 October 2026 it can be for
+ * someone else (BOOK_ON_BEHALF.md): $input['party'] names the attendee, and
+ * the booker pays.
+ *
+ * @param int   $user_id The booker: the delegate themselves, or whoever is
+ *                       buying the place for someone else.
+ * @param array $input   event_id, code, applied_code, terms, price_shown, and
+ *                       party when on behalf.
  * @return array{booking:int,redirect:string}|WP_Error
  */
 function law_reception_checkout( $user_id, array $input ) {
@@ -753,6 +760,10 @@ function law_reception_checkout( $user_id, array $input ) {
 
 	if ( ! $user ) {
 		return new WP_Error( 'law_reception_no_user', __( 'You need to be signed in to book a place.', 'law' ) );
+	}
+	$party = law_booking_paid_party_from_input( $user_id, $input );
+	if ( is_wp_error( $party ) ) {
+		return $party;
 	}
 	$open = law_reception_guard_open( $event_id );
 	if ( is_wp_error( $open ) ) {
@@ -793,6 +804,12 @@ function law_reception_checkout( $user_id, array $input ) {
 	if ( is_wp_error( $quote ) ) {
 		return $quote;
 	}
+	if ( $party ) {
+		$cap = law_reception_on_behalf_free_cap( $user_id, $event_id );
+		if ( is_wp_error( $cap ) ) {
+			return $cap;
+		}
+	}
 
 	// Without JavaScript the form was rendered at the LIST price and the code
 	// was typed straight into it, so the gross it posts is the list gross.
@@ -825,13 +842,17 @@ function law_reception_checkout( $user_id, array $input ) {
 		);
 	}
 
-	$person = law_booking_person_from_profile( $user_id );
+	$person = $party ? $party['person'] : law_booking_person_from_profile( $user_id );
 
 	// Fast-fail before the lock and before Stripe: a refused booking must
 	// never leave a customer or half a hold behind.
-	$dup = law_booking_guard_duplicates( $event_id, array( $person ), law_booking_holding_statuses() );
+	$dup = law_booking_guard_paid_duplicates( $event_id, $person, $party, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
 		return $dup;
+	}
+	$included = law_reception_guard_not_included( $event_id, $party );
+	if ( is_wp_error( $included ) ) {
+		return $included;
 	}
 
 	if ( ! law_booking_lock( $event_id ) ) {
@@ -854,7 +875,7 @@ function law_reception_checkout( $user_id, array $input ) {
 	if ( is_wp_error( $capacity ) ) {
 		return $unlock( $capacity );
 	}
-	$dup = law_booking_guard_duplicates( $event_id, array( $person ), law_booking_holding_statuses() );
+	$dup = law_booking_guard_paid_duplicates( $event_id, $person, $party, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
 		return $unlock( $dup );
 	}
@@ -889,8 +910,18 @@ function law_reception_checkout( $user_id, array $input ) {
 		$meta['_law_discount_code']  = $quote['code'];
 		$meta['_law_discount_pence'] = $quote['discount'];
 	}
+	if ( $party ) {
+		$meta['_law_attendee_profile'] = $party['profile'];
+	}
 
-	$booking_id = law_booking_insert( $event_id, $user_id, 'law-pending-payment', $person, $meta );
+	$booking_id = law_booking_insert(
+		$event_id,
+		$party ? (int) $party['attendee_id'] : $user_id,
+		'law-pending-payment',
+		$person,
+		$meta,
+		$user_id
+	);
 	if ( is_wp_error( $booking_id ) ) {
 		if ( $quote['discount_id'] ) {
 			law_discount_release( $quote['discount_id'] );
@@ -904,6 +935,7 @@ function law_reception_checkout( $user_id, array $input ) {
 
 	// Everything slow happens after the lock: Stripe and the emails, so one
 	// buyer is never queued behind another's network.
+	law_booking_paid_party_after_insert( $party, $booking_id, $event_id );
 	if ( $quote['discount_id'] ) {
 		law_discount_log( $quote['discount_id'], $booking_id, 'claimed' );
 	}
@@ -912,7 +944,8 @@ function law_reception_checkout( $user_id, array $input ) {
 		sprintf(
 			'Reception booking #%d started by %s: %s%s.',
 			(int) law_event_meta( $booking_id, '_law_booking_number' ),
-			$person['name'],
+			// The booker started it, not the person it is for.
+			$party ? $user->display_name . ' for ' . $person['name'] : $person['name'],
 			law_events_format_pence( $quote['gross'] ),
 			$quote['discount'] > 0
 				? sprintf( ' after %s off with code %s', law_events_format_pence( $quote['discount'] ), $quote['code'] )
@@ -1274,7 +1307,17 @@ function law_reception_maybe_send_confirmation( $booking_id, $force = false ) {
 		? array( 'user_reception_confirmed_free', 'committee_reception_booking_free' )
 		: array( 'user_reception_confirmed', 'committee_reception_booking' );
 	law_booking_send_with_ics( $slugs[0], $event_id, $extra );
-	law_events_send( $slugs[1], $event_id, array( 'placeholders' => $extra['placeholders'] ) );
+	law_events_send(
+		$slugs[1],
+		$event_id,
+		array(
+			'placeholders' => $extra['placeholders'],
+			'lead'         => law_booking_committee_lead( $booking_id ),
+		)
+	);
+	// A place bought for someone else: the email above went to the buyer, and
+	// the attendee gets their own confirmation (BOOK_ON_BEHALF.md §3.7).
+	law_booking_notify_on_behalf( $booking_id, 'confirmed' );
 
 	return true;
 }
@@ -1512,6 +1555,14 @@ function law_reception_release_hold( $booking_id, $why = 'expired' ) {
 		array( 'user_id' => 0 )
 	);
 
+	// A place somebody was buying for another person and never paid for: the
+	// account it created for them goes too, if they never came to have
+	// anything else (BOOK_ON_BEHALF.md; security review).
+	$released = get_post( $booking_id );
+	if ( $released && law_booking_is_on_behalf( $released ) ) {
+		law_booking_forget_unclaimed_attendee( (int) $released->post_author, law_booking_booker_id( $released ), $event_id );
+	}
+
 	// A place just opened: offer it to whoever is waiting.
 	law_waitlist_process( $event_id, 'reception_hold_released' );
 
@@ -1553,6 +1604,32 @@ function law_reception_holds_place( $user_id, $event_id ) {
 	$existing = law_booking_user_booking_for_event( (int) $user_id, (int) $event_id, law_booking_holding_statuses() );
 
 	return $existing instanceof WP_Post;
+}
+
+/**
+ * Refuse to sell a place to someone whose confirmed flagship place already
+ * includes this reception, which would have the booker pay for something the
+ * attendee holds for free (BOOK_ON_BEHALF.md A6).
+ *
+ * Only for a place booked for someone else: a delegate booking for themselves
+ * is shown their free route by the dialog server instead. The refusal IS
+ * law_booking_attendee_taken_error(), so it says nothing a refusal for an
+ * existing place would not.
+ *
+ * @return true|WP_Error
+ */
+function law_reception_guard_not_included( $event_id, ?array $party ) {
+	if ( ! $party || ! in_array( (int) $event_id, law_reception_included_ids(), true ) ) {
+		return true;
+	}
+	if ( ! law_reception_confirmed_flagship( (int) $party['attendee_id'] ) ) {
+		return true;
+	}
+
+	// The same refusal, word for word, as somebody who already holds a place
+	// (A8): a reply of its own, however conditionally worded, would itself say
+	// that this person holds a confirmed flagship place.
+	return law_booking_attendee_taken_error();
 }
 
 /**
@@ -1854,6 +1931,8 @@ function law_reception_mark_waitlist_ready( $booking_id, $state = 'ready' ) {
 		$event_id,
 		law_booking_email_extra( $booking_id )
 	);
+	// The attendee of an entry made for them hears once it is real.
+	law_booking_notify_on_behalf( $booking_id, 'waitlisted' );
 
 	// The first time a queue forms on this reception, the committee hears:
 	// their cue to consider releasing more places.
@@ -2015,8 +2094,12 @@ add_filter(
  * and when. The price is snapshotted at JOIN, so the delegate is charged the
  * figure they agreed to even if the list price has moved since.
  *
- * @param int   $user_id The delegate.
- * @param array $input   event_id, code, applied_code, consent, terms, price_shown.
+ * The entry can be for someone else (BOOK_ON_BEHALF.md): $input['party'] names
+ * the attendee, and the method saved and later charged is the booker's.
+ *
+ * @param int   $user_id The booker: the delegate, or whoever queues for them.
+ * @param array $input   event_id, code, applied_code, consent, terms,
+ *                       price_shown, and party when on behalf.
  * @return array{booking:int,redirect:string}|WP_Error
  */
 function law_reception_waitlist_join( $user_id, array $input ) {
@@ -2026,6 +2109,10 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 
 	if ( ! $user ) {
 		return new WP_Error( 'law_reception_no_user', __( 'You need to be signed in to join the waitlist.', 'law' ) );
+	}
+	$party = law_booking_paid_party_from_input( $user_id, $input );
+	if ( is_wp_error( $party ) ) {
+		return $party;
 	}
 	$open = law_reception_guard_open( $event_id );
 	if ( is_wp_error( $open ) ) {
@@ -2072,6 +2159,12 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 	if ( is_wp_error( $quote ) ) {
 		return $quote;
 	}
+	if ( $party ) {
+		$cap = law_reception_on_behalf_free_cap( $user_id, $event_id );
+		if ( is_wp_error( $cap ) ) {
+			return $cap;
+		}
+	}
 	// Without JavaScript the form was rendered at the LIST price and the code
 	// was typed straight into it, so the gross it posts is the list gross.
 	// Comparing that against the DISCOUNTED gross refused every no-JS
@@ -2101,10 +2194,14 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 		);
 	}
 
-	$person = law_booking_person_from_profile( $user_id );
-	$dup    = law_booking_guard_duplicates( $event_id, array( $person ), law_booking_holding_statuses() );
+	$person = $party ? $party['person'] : law_booking_person_from_profile( $user_id );
+	$dup    = law_booking_guard_paid_duplicates( $event_id, $person, $party, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
 		return $dup;
+	}
+	$included = law_reception_guard_not_included( $event_id, $party );
+	if ( is_wp_error( $included ) ) {
+		return $included;
 	}
 
 	if ( ! law_booking_lock( $event_id ) ) {
@@ -2120,7 +2217,7 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 	if ( is_wp_error( $seats ) ) {
 		return $unlock( $seats );
 	}
-	$dup = law_booking_guard_duplicates( $event_id, array( $person ), law_booking_holding_statuses() );
+	$dup = law_booking_guard_paid_duplicates( $event_id, $person, $party, law_booking_holding_statuses() );
 	if ( is_wp_error( $dup ) ) {
 		return $unlock( $dup );
 	}
@@ -2157,7 +2254,18 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 		$meta['_law_discount_pence'] = $quote['discount'];
 	}
 
-	$booking_id = law_booking_insert( $event_id, $user_id, 'law-waitlisted', $person, $meta );
+	if ( $party ) {
+		$meta['_law_attendee_profile'] = $party['profile'];
+	}
+
+	$booking_id = law_booking_insert(
+		$event_id,
+		$party ? (int) $party['attendee_id'] : $user_id,
+		'law-waitlisted',
+		$person,
+		$meta,
+		$user_id
+	);
 	if ( is_wp_error( $booking_id ) ) {
 		if ( $quote['discount_id'] ) {
 			law_discount_release( $quote['discount_id'] );
@@ -2168,6 +2276,7 @@ function law_reception_waitlist_join( $user_id, array $input ) {
 
 	law_event_recount_attendees( $event_id );
 	law_booking_unlock( $event_id );
+	law_booking_paid_party_after_insert( $party, $booking_id, $event_id );
 
 	if ( $quote['discount_id'] ) {
 		law_discount_log( $quote['discount_id'], $booking_id, 'claimed' );
@@ -2277,6 +2386,7 @@ function law_reception_charge_promoted( $event_id, array $promoted, $source = 'a
 			law_reception_claim_promotion_email( $booking_id );
 			law_reception_mark_paid( $booking_id, array(), '', 0 );
 			law_booking_send_with_ics( 'user_reception_promoted_free', (int) $event_id, law_booking_email_extra( $booking_id ) );
+			law_booking_notify_on_behalf( $booking_id, 'confirmed' );
 			continue;
 		}
 
@@ -2310,6 +2420,7 @@ function law_reception_charge_promoted( $event_id, array $promoted, $source = 'a
 				law_reception_claim_promotion_email( $booking_id );
 				law_reception_mark_paid( $booking_id, $invoice, '', 0 );
 				law_booking_send_with_ics( 'user_reception_promoted_paid', (int) $event_id, law_booking_email_extra( $booking_id ) );
+				law_booking_notify_on_behalf( $booking_id, 'confirmed' );
 				continue;
 			}
 			if ( 'processing' === $status ) {
@@ -2471,7 +2582,11 @@ function law_reception_retry_charge( $booking_id, $actor_id = 0 ) {
  * a booking ID out of the request without that.
  */
 
-/** Load a reception booking this user owns, or respond and exit. */
+/**
+ * Load a reception booking whose payment this user manages, or respond and
+ * exit. Only "Continue to payment" uses it, which is the booker's alone
+ * (law_booking_user_manages_payment()).
+ */
 function law_reception_require_own_booking( $is_ajax, array $statuses = array() ) {
 	$booking_id = absint( $_POST['booking_id'] ?? 0 );
 	$booking    = $booking_id ? get_post( $booking_id ) : null;
@@ -2479,8 +2594,8 @@ function law_reception_require_own_booking( $is_ajax, array $statuses = array() 
 	if ( ! $booking || ! law_reception_booking_is( $booking ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking could not be found.', 'law' ), 'status' => 404 ), 'booking-failed' );
 	}
-	if ( (int) $booking->post_author !== get_current_user_id() ) {
-		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking belongs to someone else.', 'law' ), 'status' => 403 ), 'booking-failed' );
+	if ( ! law_booking_user_manages_payment( $booking ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => law_booking_payment_refusal( $booking ), 'status' => 403 ), 'booking-failed' );
 	}
 	if ( $statuses && ! in_array( $booking->post_status, $statuses, true ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => __( 'That booking cannot be changed now.', 'law' ), 'status' => 409 ), 'booking-failed' );
@@ -2490,25 +2605,74 @@ function law_reception_require_own_booking( $is_ajax, array $statuses = array() 
 }
 
 /**
- * What a refused submission may SAY to the person who made it.
- *
- * Most refusals here are the delegate's to act on and are quoted verbatim:
- * "that code has expired", "please accept the terms", "the price changed". A
- * CONFIGURATION error is not — "no Stripe tax rate ID is configured in Events →
- * Settings" tells somebody trying to buy a drink where our admin menu
- * is, and that our payment setup is currently broken. The detail stays in the
- * activity log, which is where somebody who can fix it is looking.
+ * What a refused reception submission may SAY to the person who made it:
+ * law_booking_refusal_payload() in a reception's words.
  *
  * @return array The law_events_respond() payload.
  */
 function law_reception_refusal_payload( WP_Error $error ) {
-	if ( ! law_booking_is_configuration_error( $error ) ) {
-		return law_booking_error_payload( $error );
-	}
+	return law_booking_refusal_payload(
+		$error,
+		__( 'Sorry, this booking could not be started just now. Please try again shortly, or contact LAW if it keeps happening.', 'law' )
+	);
+}
 
-	return array(
-		'message' => __( 'Sorry, this booking could not be started just now. Please try again shortly, or contact LAW if it keeps happening.', 'law' ),
-		'status'  => 502,
+/**
+ * Read who a reception place is for and run one of the two engines through
+ * the shared seam: the checkout and the waitlist ask the same question, so
+ * they read it the same way.
+ *
+ * @param callable $engine fn( ?array $party ): array|WP_Error.
+ * @return array|WP_Error
+ */
+function law_reception_run_for_party( $booker_id, array $input, callable $engine ) {
+	$choice = law_booking_paid_choice_from_request( (int) $booker_id, wp_unslash( $_POST ) );
+	if ( is_wp_error( $choice ) ) {
+		return $choice;
+	}
+	if ( 'other' === $choice['for'] ) {
+		// The reception is checked BEFORE the seam creates an account or writes
+		// a log line against the posted event_id, which is only an integer out
+		// of the request until law_reception_guard_open() has looked at it.
+		$open = law_reception_guard_open( (int) $input['event_id'] );
+		if ( is_wp_error( $open ) ) {
+			return $open;
+		}
+		$cap = law_reception_on_behalf_free_cap( (int) $booker_id, (int) $input['event_id'] );
+		if ( is_wp_error( $cap ) ) {
+			return $cap;
+		}
+	}
+	return law_booking_run_for_party( (int) $booker_id, (int) $input['event_id'], $choice, law_booking_holding_statuses(), $engine );
+}
+
+/**
+ * How many places one person may hold for other people at a reception that
+ * costs nothing: as many as they could bring colleagues to a hosted event
+ * (law_booking_max_additional()). With no payment standing behind those
+ * places, an uncapped "someone else" would let one account take every place
+ * and have the site email any address it typed (security review,
+ * 26 October 2026). A priced reception has no cap: each place is paid for.
+ *
+ * Free receptions were self-only at first; Denis widened booking for someone
+ * else to them the same day. The message is worded as a limit reached, because
+ * the dialog and the event panel show it BEFORE anybody types, beside the
+ * choice it greys out; the engines' refusal is the guard that holds.
+ *
+ * @return true|WP_Error
+ */
+function law_reception_on_behalf_free_cap( $booker_id, $event_id ) {
+	if ( ! law_reception_costs_nothing( (int) $event_id )
+		|| law_booking_colleague_count( (int) $event_id, (int) $booker_id, law_booking_holding_statuses() ) < law_booking_max_additional() ) {
+		return true;
+	}
+	return new WP_Error(
+		'law_booking_on_behalf_cap',
+		sprintf(
+			/* translators: %d: the most places one person may book for others. */
+			_n( "You've booked a place for %d other person here, which is the most allowed.", "You've booked places for %d other people here, which is the most allowed.", law_booking_max_additional(), 'law' ),
+			law_booking_max_additional()
+		)
 	);
 }
 
@@ -2570,8 +2734,14 @@ function law_reception_checkout_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => __( 'Please sign in to book a place.', 'law' ), 'status' => 401 ), 'booking-failed' );
 	}
 
+	// Myself or someone else, through the shared seam (BOOK_ON_BEHALF.md §3.3).
+	$booker = get_current_user_id();
 	$input  = law_reception_input_from_request();
-	$result = law_reception_checkout( get_current_user_id(), $input );
+	$result = law_reception_run_for_party(
+		$booker,
+		$input,
+		fn( $party ) => law_reception_checkout( $booker, $input + array( 'party' => $party ) )
+	);
 
 	if ( is_wp_error( $result ) ) {
 		law_booking_log_refusal( $input['event_id'], 0, $result, get_current_user_id(), 'receptions' );
@@ -2582,6 +2752,7 @@ function law_reception_checkout_handler() {
 		// transient and the notice reads it back (law_reception_form_state()).
 		$payload = law_reception_refusal_payload( $result );
 		law_reception_store_form_state( new WP_Error( $result->get_error_code(), (string) $payload['message'] ) );
+		law_booking_store_paid_choice_state( $result, (int) $input['event_id'] );
 		law_events_respond( $is_ajax, false, $payload, 'reception-checkout-failed' );
 	}
 
@@ -2619,7 +2790,7 @@ function law_reception_continue_handler() {
 	$url     = law_reception_continue( (int) $booking->ID, get_current_user_id() );
 
 	if ( is_wp_error( $url ) ) {
-		law_events_respond( $is_ajax, false, array( 'message' => $url->get_error_message(), 'status' => 502 ), 'reception-checkout-failed' );
+		law_events_respond( $is_ajax, false, law_reception_refusal_payload( $url ), 'reception-checkout-failed' );
 	}
 
 	law_events_respond(
@@ -2653,13 +2824,19 @@ function law_reception_waitlist_join_handler() {
 		law_events_respond( $is_ajax, false, array( 'message' => __( 'Please sign in to join the waitlist.', 'law' ), 'status' => 401 ), 'booking-failed' );
 	}
 
+	$booker = get_current_user_id();
 	$input  = law_reception_input_from_request();
-	$result = law_reception_waitlist_join( get_current_user_id(), $input );
+	$result = law_reception_run_for_party(
+		$booker,
+		$input,
+		fn( $party ) => law_reception_waitlist_join( $booker, $input + array( 'party' => $party ) )
+	);
 
 	if ( is_wp_error( $result ) ) {
 		law_booking_log_refusal( $input['event_id'], 0, $result, get_current_user_id(), 'receptions' );
 		$payload = law_reception_refusal_payload( $result );
 		law_reception_store_form_state( new WP_Error( $result->get_error_code(), (string) $payload['message'] ) );
+		law_booking_store_paid_choice_state( $result, (int) $input['event_id'] );
 		law_events_respond( $is_ajax, false, $payload, 'reception-checkout-failed' );
 	}
 
@@ -2771,7 +2948,9 @@ function law_reception_handle_checkout_return() {
 	if ( ! $booking || ! law_reception_booking_is( $booking ) ) {
 		return;
 	}
-	if ( (int) $booking->post_author !== get_current_user_id() ) {
+	// The booker paid, and on a place booked for someone else that is not the
+	// person holding it.
+	if ( ! law_booking_user_manages_payment( $booking ) ) {
 		return;
 	}
 
@@ -3082,6 +3261,7 @@ function law_reception_reconcile_orphan( $booking_id ) {
 	if ( 'paid' === $status ) {
 		law_reception_mark_paid( $booking_id, $invoice, '', 0 );
 		law_booking_send_with_ics( 'user_reception_promoted_paid', $event_id, law_booking_email_extra( $booking_id ) );
+		law_booking_notify_on_behalf( $booking_id, 'confirmed' );
 		return true;
 	}
 	if ( in_array( $status, array( 'void', 'uncollectible' ), true ) ) {

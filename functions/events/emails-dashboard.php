@@ -394,7 +394,7 @@ add_action(
 		// The shared fetch layer: the editor is a .law-booking-form, so it
 		// submits in the background and falls back to a plain POST without it.
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		law_booking_form_enqueue();
 		// The WYSIWYG behind the body field, only on the editor view: TinyMCE is
 		// a couple of hundred kilobytes and the list has no rich field on it.
 		if ( '' !== law_emails_dashboard_requested() ) {

@@ -479,7 +479,7 @@ add_action(
 		// and the per-row Remove buttons are .law-booking-form, so they submit
 		// in the background and fall back to a plain POST without it.
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		law_booking_form_enqueue();
 		wp_enqueue_script( 'law-submitter-search', get_theme_file_uri( 'assets/js/submitter-search.js' ), array( 'law-modal' ), $mtime( 'assets/js/submitter-search.js' ), true );
 		wp_localize_script(
 			'law-submitter-search',

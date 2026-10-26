@@ -112,6 +112,26 @@
 
 	initRepeaters();
 
+	/* 2a. "Who is this place for?" on the paid dialogs (BOOK_ON_BEHALF.md).
+	   The show and hide is law-toggles.js; what is left here is the flagship's
+	   included receptions, whose ticked-and-disabled boxes describe the
+	   VIEWER's own places. Booking for someone else frees them, and Myself puts
+	   them back as they were. The server's grant skips any reception the
+	   attendee already holds, so nothing here has to know who that is. */
+	document.addEventListener('change', function (event) {
+		var radio = event.target;
+		if (!(radio instanceof HTMLInputElement) || radio.type !== 'radio' || radio.name !== 'law_for' || !radio.form) { return; }
+		var other = radio.form.querySelector('input[name="law_for"][value="other"]');
+		var forOther = !!(other && other.checked);
+		radio.form.querySelectorAll('input[data-law-held]').forEach(function (box) {
+			box.disabled = !forOther;
+			box.checked = !forOther;
+		});
+		radio.form.querySelectorAll('[data-law-held-tag]').forEach(function (tag) {
+			tag.hidden = forOther;
+		});
+	});
+
 	/* 2b. The booking dialog for an event CARD, fetched on click.
 
 	   Cards carry a Register button but no dialog: the programme renders the
@@ -200,6 +220,7 @@
 	function showDialog(html, button) {
 		var host = bookHost();
 		host.innerHTML = html; // Replaces the previous pair; only one is ever live.
+		if (window.lawToggles) { window.lawToggles.sync(host); }
 		if (window.lawModal && window.lawModal.initAll) { window.lawModal.initAll(host); }
 		initRepeaters(host);
 		var dialog = host.querySelector('.law-modal[id]');
@@ -397,6 +418,30 @@
 		form.querySelectorAll('label.is-invalid, .law-form-field.is-invalid').forEach(function (node) {
 			node.classList.remove('is-invalid');
 		});
+		form.querySelectorAll('[aria-invalid="true"]').forEach(function (node) {
+			node.removeAttribute('aria-invalid');
+		});
+		form.querySelectorAll('[data-law-field-error]').forEach(function (node) {
+			var input = form.querySelector('[aria-describedby="' + node.id + '"]');
+			if (input) { input.removeAttribute('aria-describedby'); }
+			node.remove();
+		});
+	}
+
+	/* The refusal, beside the field it is about and tied to it (WCAG 3.3.1,
+	   1.3.1): the alert above the buttons can sit a screen below the field the
+	   focus moves to, and a field marked invalid with nothing saying why tells
+	   a screen reader user nothing. */
+	function describeField(input, message) {
+		if (!message) { return; }
+		var note = document.createElement('span');
+		note.className = 'law-form-error';
+		note.id = 'law-field-error-' + Math.random().toString(36).slice(2, 9);
+		note.setAttribute('data-law-field-error', '');
+		note.textContent = message;
+		var owner = input.closest('.law-form-field') || input.parentNode;
+		owner.appendChild(note);
+		input.setAttribute('aria-describedby', note.id);
 	}
 
 	function showError(form, scope, message) {
@@ -416,13 +461,20 @@
 		error.textContent = message;
 	}
 
-	function markField(form, rowIndex, field) {
+	function markField(form, rowIndex, field, message) {
 		var rows = form.querySelectorAll('[data-law-booking-rows] .law-row:not([data-law-booking-row-template])');
 		var row = rows[rowIndex];
 		var input = row ? row.querySelector('[name$="[' + field + ']"]') : null;
+		/* A single attendee outside any repeater: the "Someone else" details
+		   on the paid dialogs (parts/events/attendee-details-fields.php). */
+		if (!input) {
+			input = form.querySelector('[name="law_attendees[' + rowIndex + '][' + field + ']"]');
+		}
 		if (!input) { return; }
 		var label = input.closest('label');
 		if (label) { label.classList.add('is-invalid'); }
+		input.setAttribute('aria-invalid', 'true');
+		describeField(input, message);
 		input.focus();
 	}
 
@@ -431,11 +483,18 @@
 	   register-an-attendee dialogs collect). Those labels sit beside their input
 	   in a .law-form-field rather than wrapping it, so mark whichever of the two
 	   this field turns out to use. */
-	function markFlatField(form, field) {
-		var input = form.querySelector('[name="' + field + '"], [name="' + field + '[]"]');
+	function markFlatField(form, field, message) {
+		/* data-law-field first: the server names a field by what it means
+		   (law_consent), and the priced forms post it under a bracketed name
+		   (law_flagship_apply[consent]) that no name lookup would find, so
+		   the message showed and the box it was about was never marked. */
+		var input = form.querySelector('[data-law-field="' + field + '"]')
+			|| form.querySelector('[name="' + field + '"], [name="' + field + '[]"]');
 		if (!input) { return; }
 		var owner = input.closest('label') || input.closest('.law-form-field');
 		if (owner) { owner.classList.add('is-invalid'); }
+		input.setAttribute('aria-invalid', 'true');
+		describeField(input, message);
 		input.focus();
 	}
 
@@ -777,7 +836,7 @@
 				   strip -- so a rejected code refused SILENTLY and the delegate
 				   saw nothing at all (browser pass, 14 September 2026). */
 				showError(form, scopeFor(form), error && error.message ? error.message : 'We could not check that code. Please try again.');
-				if (error && error.field) { markFlatField(form, error.field); }
+				if (error && error.field) { markFlatField(form, error.field, error.message); }
 				throw error;
 			}
 		);
@@ -885,9 +944,9 @@
 						}
 						showError(form, scope, payload.message || 'Sorry, that change could not be made.');
 						if (typeof payload.row === 'number' && payload.field) {
-							markField(form, payload.row, payload.field);
+							markField(form, payload.row, payload.field, payload.message);
 						} else if (payload.field) {
-							markFlatField(form, payload.field);
+							markFlatField(form, payload.field, payload.message);
 						}
 						return;
 					}

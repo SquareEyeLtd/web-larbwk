@@ -79,7 +79,7 @@ $law_bd_rows    = $law_bd_data['rows'];
 					</td>
 					<td><strong><?php echo esc_html( $law_bd_row['name'] ); ?></strong><?php
 						if ( '' !== $law_bd_row['invited_by'] ) {
-							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( sprintf( __( 'Invited by %s', 'law' ), $law_bd_row['invited_by'] ) ) . '</span>';
+							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( $law_bd_row['invited_label'] ) . '</span>';
 						}
 						if ( $law_bd_row['is_press'] ) {
 							echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';

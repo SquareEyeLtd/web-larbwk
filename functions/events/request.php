@@ -141,7 +141,8 @@ function law_events_guard_post( $nonce_action, array $args = array() ) {
  * @param bool   $ok      Success or failure.
  * @param array  $payload JSON payload — success: title/message/redirect (and
  *                        anything else the caller's script reads); failure:
- *                        message, plus an optional 'status' HTTP code.
+ *                        message, plus an optional 'status' HTTP code, which
+ *                        is never sent as a 5xx (see below).
  * @param string $notice  law_notice value for the redirect path.
  */
 function law_events_respond( $is_ajax, $ok, array $payload, $notice ) {
@@ -151,6 +152,16 @@ function law_events_respond( $is_ajax, $ok, array $payload, $notice ) {
 		}
 		$status = (int) ( $payload['status'] ?? 400 );
 		unset( $payload['status'] );
+		// Never a 5xx. Cloudflare sits in front of staging and production and
+		// swaps the body of an origin 502 or 504 for its own error page, so
+		// the JSON never arrived and the script fell back to "Please reload
+		// the page and try again" in place of the reason (26 October 2026,
+		// a payment-details page Stripe had refused to open). A failure
+		// further up the line is still success: false; the status only has to
+		// get the message through.
+		if ( $status >= 500 ) {
+			$status = 400;
+		}
 		wp_send_json_error( $payload, $status );
 	}
 	law_events_redirect_back( array( 'law_notice' => $notice ) );

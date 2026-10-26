@@ -134,7 +134,13 @@
 .law-form-field.is-invalid input:focus, .law-form-field.is-invalid select:focus,
 .law-form-field.is-invalid textarea:focus,
 .law-form-field:has(> .law-form-error) input:focus, .law-form-field:has(> .law-form-error) select:focus,
-.law-form-field:has(> .law-form-error) textarea:focus { border-color: var(--law-form-error-accent); }
+.law-form-field:has(> .law-form-error) textarea:focus,
+label.is-invalid input:focus, label.is-invalid select:focus, label.is-invalid textarea:focus { border-color: var(--law-form-error-accent); }
+/* On a white surface the brand orange ring is about 2.8:1, under the 3:1 a
+   focus indicator needs (WCAG 1.4.11), and the focus rule above hides the
+   border: the darker orange the light forms' controls already use instead. */
+.law-event-form.law-event-form--light input:focus, .law-event-form.law-event-form--light select:focus,
+.law-event-form.law-event-form--light textarea:focus { outline-color: #b35f00; }
 /* Locked fields: a text input is rendered readonly and a select disabled (a
    readonly select isn't a thing), so both attributes have to paint the same
    grey. Foundation's own rules cover only some of these combinations. */
@@ -218,6 +224,17 @@
    selects a visible dropdown chevron so they don't read as text inputs. */
 .law-event-form input[type="checkbox"], .law-event-form input[type="radio"],
 .law-dashboard__controls input[type="checkbox"], .law-dashboard__controls input[type="radio"] { accent-color: #ef7d05; width: 1.1rem; height: 1.1rem; vertical-align: -.15rem; }
+/* On a white surface the brand orange is about 2.8:1, under the 3:1 a control
+   needs (WCAG 1.4.11): the darker orange the approve links already use there
+   (4.6:1). The dark-first forms keep the brand orange. */
+.law-event-form.law-event-form--light input[type="checkbox"], .law-event-form.law-event-form--light input[type="radio"] { accent-color: #b35f00; }
+/* A choice that cannot be made (Myself, when the viewer already holds a place)
+   reads as such, not at full strength beside the one that can. */
+.law-choices label:has(> input:disabled) { opacity: .6; cursor: not-allowed; }
+/* A 24px target per choice on the light dialogs (WCAG 2.5.8): the rows were
+   19px tall with 22px between them. The same treatment the dashboard
+   controls already have. */
+.law-event-form.law-event-form--light .law-choices label { padding: .2rem 0; margin: 0; }
 .law-event-form select {
 	-webkit-appearance: none; appearance: none;
 	background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='%231a1a3d' d='M0 0h12L6 8z'/%3E%3C/svg%3E") no-repeat right .7rem center;
@@ -322,6 +339,10 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 /* Each repeated row needs a visible boundary: at 8% tint it vanished against
    the hero photo, so a multi-speaker panel ran together. */
 .law-row { position: relative; background: var(--law-form-row-bg); border: 1px solid var(--law-form-row-border); padding: 1rem 2.5rem 1rem 1rem; margin-bottom: .8rem; }
+/* One attendee outside any repeater (attendee-details-fields.php): still a
+   .law-row, which booking-form.js walks to mark a refused field, but not a
+   box, and no room kept for a remove button that never renders. */
+.law-row.law-row--bare { background: none; border: 0; padding: 0; margin: 0; }
 .law-row-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem 1rem; }
 .law-row-grid--three { grid-template-columns: 1fr 1fr 1fr; }
 /* Repeater rows (speakers, sessions, additional owners, event contacts): their
@@ -450,6 +471,11 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
   cursor: pointer;
 }
 .law-linkish:hover, .law-linkish:focus { color: #ef7d05; }
+/* Disabled anywhere, not only in the flagship bulk bar: greyed, not underlined
+   and not a pointer, so a control shown to somebody who cannot use it (the
+   attendee of a place someone else pays for, BOOK_ON_BEHALF.md A4) does not
+   read as a link that simply refuses to work. */
+.law-linkish[disabled], .law-linkish[disabled]:hover, .law-linkish[disabled]:focus { color: #6d6d80; text-decoration: none; cursor: not-allowed; }
 /* Coloured by consequence, for the flagship rows: approve is the brand
    orange family, decline the same red the payment errors use.
 
@@ -1015,3 +1041,10 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
 /* The no-JS select in each cell: stacked, because a select and a button side
    by side in a 12rem column wrap into each other. */
 .law-ticket-type__open + noscript select { width: 100%; margin-bottom: .35rem; }
+
+/* The line beside a payment control shown to somebody who cannot use it, on
+   the white manage pages (BOOK_ON_BEHALF.md A4). The hint token is
+   dark-first, so outside a --light form it fell back to #d7d7ea, about 1.4:1
+   on white. */
+.law-booking-manage { --law-form-hint-colour: #55556e; }
+

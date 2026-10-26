@@ -98,11 +98,19 @@ function law_event_meta_schema() {
 		// invoice, its bookings and its place in the committee's own lists, and
 		// ticking the box back off puts it where it was. Cancelled is the
 		// status for an event that is not happening.
+		//
+		// _law_no_sponsor_highlight: the committee's opt-out from the sponsored
+		// highlight (Denis, 26 October 2026). law_events_post_is_sponsored()
+		// works the flag out from the fee tier, the linked organisations and the
+		// host's event count, and a sponsor can still ask for a plain row: this
+		// wins over all three routes on the programme. The export's Sponsored
+		// column ignores it, because the event is still sponsored.
 		'_law_is_external'          => 'flag',
 		'_law_external_url'         => 'url',
 		'_law_session_agenda'       => 'flag',
 		'_law_booking_override'     => 'booking_override',
 		'_law_disabled'             => 'flag',
+		'_law_no_sponsor_highlight' => 'flag',
 		// The flagship conference (functions/events/flagship.php). Exactly one
 		// law_event post carries _law_is_flagship; it is edited on the Flagship
 		// screen, its date is fixed (2 December by default) and its _law_start /
@@ -218,12 +226,17 @@ function law_session_meta_schema() {
  * law_booking meta schema (WAITLIST.md §A7). ONE BOOKING PER ATTENDEE: the
  * post's author is the attendee and these keys are their display snapshot as
  * entered at booking, plus who booked them. Dietary, accessibility and
- * country are never snapshotted — they read live from the attendee's profile.
+ * country read live from the attendee's profile; the one exception is a paid
+ * place booked for someone else, which keeps what was typed for them in
+ * _law_attendee_profile and fills the profile's blanks from it
+ * (law_booking_profile_values()).
  *
  * _law_booked_by is always set: the booker's user ID on a colleague's
- * booking, and the attendee's own ID when they booked themselves or a manager
- * registered them (a manager's own bookings list must never fill with people
- * they registered; who acted is in the activity log).
+ * booking or a paid place booked for someone else (where it is also who
+ * pays, BOOK_ON_BEHALF.md), and the attendee's own ID when they booked
+ * themselves or a manager registered them (a manager's own bookings list
+ * must never fill with people they registered; who acted is in the activity
+ * log).
  */
 function law_booking_meta_schema() {
 	return array(
@@ -246,6 +259,13 @@ function law_booking_meta_schema() {
 		// hosted-event booking.
 		'_law_application_at'         => 'datetime',
 		'_law_application_answers'    => 'answer_map',
+		// The country, accessibility and dietary answers typed by whoever
+		// booked this place for someone else (BOOK_ON_BEHALF.md A3). Kept on the
+		// booking, and written to the attendee's account only when that booking
+		// created the account, so nobody can write answers into a stranger's
+		// profile by typing their email. law_booking_profile_values() reads the
+		// account first and fills its blanks from here.
+		'_law_attendee_profile'       => 'attendee_profile',
 		// The price is snapshotted when the delegate saves their card, not read
 		// again at approval: they consented to a figure, so that is the figure
 		// charged, exactly as law_event_snapshot_fee() freezes a host fee.
@@ -534,6 +554,14 @@ function law_events_sanitize_value( $value, $type ) {
 				}
 			}
 			return $answers;
+		case 'attendee_profile':
+			// The registration form's own cleaner, so the stored values can
+			// never drift from what a profile holds; empty when nothing was
+			// answered, which law_event_update_meta() turns into a delete.
+			$profile = function_exists( 'law_registration_clean_attendee_profile' )
+				? law_registration_clean_attendee_profile( (array) $value )
+				: array();
+			return array_filter( $profile ) ? $profile : array();
 		case 'int_array':
 			return array_values( array_filter( array_map( 'absint', (array) $value ) ) );
 		case 'address':
@@ -717,7 +745,7 @@ function law_event_update_meta( $post_id, $key, $value ) {
 function law_event_meta( $post_id, $key ) {
 	$value = get_post_meta( $post_id, $key, true );
 	$type  = law_events_meta_type( $post_id, $key ) ?? 'text';
-	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows', 'answer_map' ), true ) ) {
+	if ( in_array( $type, array( 'text_array', 'int_array', 'people_rows', 'speaker_rows', 'answer_map', 'attendee_profile' ), true ) ) {
 		return is_array( $value ) ? $value : array();
 	}
 	if ( in_array( $type, array( 'address', 'consent' ), true ) ) {
