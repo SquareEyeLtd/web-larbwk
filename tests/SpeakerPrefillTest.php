@@ -47,19 +47,19 @@ class SpeakerPrefillTest extends LAW_Test_Case {
 		$this->assertSame( 'Old Firm', $first['organisation'] );
 	}
 
-	public function test_prefill_falls_back_to_the_speaker_profile(): void {
+	public function test_prefill_never_offers_the_speaker_posts_own_biography(): void {
 		$speaker       = law_speaker_upsert( array( 'name' => 'Prefill Fallback Testspeaker', 'email' => 'prefill-fallback@example.test' ) );
 		$this->posts[] = $speaker;
 		wp_update_post( array( 'ID' => $speaker, 'post_content' => 'The profile biography.' ) );
 
 		$prefill = law_speaker_row_prefill( $speaker );
-		$this->assertSame( 'The profile biography.', $prefill['bio'], "With no appearance to copy, the speaker post's own biography is offered." );
+		$this->assertSame( '', $prefill['bio'], "The speaker post's own content is no fallback since 26 October 2026: it would carry a stale bio into a new row." );
 		$this->assertSame( '', $prefill['organisation'], 'There is no organisation on the speaker post to fall back to: it is per appearance.' );
 		$this->assertSame( '', $prefill['role'] );
 		$this->assertSame( 0, $prefill['photo_id'] );
 		$this->assertSame( '', $prefill['photo'] );
 
-		// An appearance beats the profile fallback.
+		// An appearance's biography is copied forward.
 		$event = $this->dated_event( 2 );
 		law_event_update_meta( $event, '_law_speakers', array( array( 'speaker_id' => $speaker, 'organisation' => 'Appearance Firm', 'bio' => 'The appearance biography.' ) ) );
 		law_speakers_flush_maps();
@@ -78,5 +78,24 @@ class SpeakerPrefillTest extends LAW_Test_Case {
 
 		$this->assertSame( 'Unconfirmed Firm', law_speaker_row_prefill( $speaker )['organisation'], 'The committee edits appearances long before an event is confirmed.' );
 		$this->assertSame( '', law_speaker_latest_appearance( $speaker )['organisation'], 'The confirmed-only default is unchanged.' );
+	}
+
+	/**
+	 * Domitille Baizeau's card kept printing "download CV from website" after
+	 * every bio on Manage Speakers was emptied: it came from the speaker post's
+	 * own content. A blank appearance bio now prints nothing, on the event and
+	 * on the profile.
+	 */
+	public function test_a_blank_appearance_bio_prints_nothing_anywhere(): void {
+		$speaker       = law_speaker_upsert( array( 'name' => 'Stale Bio Testspeaker', 'email' => 'stale-bio@example.test', 'bio' => 'download CV from website' ) );
+		$this->posts[] = $speaker;
+		$this->assertSame( 'download CV from website', trim( get_post_field( 'post_content', $speaker ) ), 'Fixture: the record carries the stale text.' );
+
+		$event = $this->dated_event( 1, 'publish' );
+		law_event_update_meta( $event, '_law_speakers', array( array( 'speaker_id' => $speaker, 'organisation' => 'Firm', 'bio' => '' ) ) );
+		law_speakers_confirmed_maps( true );
+
+		$this->assertSame( '', law_event_speaker_cards( $event )[0]['bio'] );
+		$this->assertSame( '', law_speaker_post_profile( $speaker, array( $event ) )['bio'] );
 	}
 }

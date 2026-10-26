@@ -502,7 +502,8 @@ function law_speaker_post_profile( $post_id, array $event_ids = array() ) {
 		'job_title'    => $seen['job_title'],
 		'url'          => (string) law_event_meta( $post->ID, '_law_website' ),
 		'photo'        => law_speaker_photo_url( $post->ID, $seen['photo_id'], 'medium' ),
-		'bio'          => '' !== $seen['bio'] ? $seen['bio'] : trim( $post->post_content ),
+		// The appearance's own, never the record's post_content: see law_speaker_card().
+		'bio'          => $seen['bio'],
 		'email'        => (string) law_event_meta( $post->ID, '_law_speaker_email' ),
 		'entry_ids'    => array( (int) $post->ID ),
 		'event_ids'    => array_map( 'intval', $event_ids ),
@@ -763,9 +764,11 @@ function law_speaker_latest_appearance( $speaker_id, ?array $statuses = null ) {
  * from the first draft save, and the appearance worth copying forward is often
  * on an event that has not been confirmed yet.
  *
- * The speaker post's own editor content and featured image are the last
- * resort, exactly as they are when an event renders a row that left those
- * fields blank (law_speaker_photo_url(), the single event view). There is no
+ * The speaker post's featured image is the photo's last resort, exactly as it
+ * is when an event renders a row that left the photo blank
+ * (law_speaker_photo_url(), the single event view). The biography has no such
+ * resort: the post's own content stopped standing in for a blank bio on
+ * 26 October 2026 (law_speaker_card()). There is no
  * organisation or job title on the speaker post to fall back to: those have
  * been per appearance since 4.1, and the old _law_organisation /
  * _law_job_title meta rows are inert (law_speaker_meta_schema()).
@@ -778,7 +781,7 @@ function law_speaker_row_prefill( $speaker_id ) {
 	$latest     = law_speaker_latest_appearance( $speaker_id, law_event_all_status_keys() );
 
 	$photo_id = (int) $latest['photo_id'] ?: (int) get_post_thumbnail_id( $speaker_id );
-	$bio      = '' !== $latest['bio'] ? $latest['bio'] : trim( (string) get_post_field( 'post_content', $speaker_id ) );
+	$bio      = $latest['bio'];
 
 	return array(
 		'role'         => (string) $latest['role'],
@@ -1041,7 +1044,8 @@ function law_event_speaker_cards( $event_id ) {
  * photo and biography come from the appearance row; any field the row leaves empty falls
  * through to $fallback_rows (the parent event's rows, for a session row the
  * committee added in wp-admin without details), then the photo falls back to
- * the speaker post's featured image and the biography to its editor content.
+ * the speaker post's featured image. The biography stops there: a blank one
+ * prints nothing.
  *
  * 'medium', not 'thumbnail': the single event view renders these at 5.5rem, so
  * a 150px hard-cropped thumbnail is soft on a retina screen. Note medium is
@@ -1092,7 +1096,12 @@ function law_speaker_card( $speaker_id, array $row = array(), array $fallback_ro
 		'url'          => function_exists( 'law_speaker_url' ) ? law_speaker_url( $post->ID ) : '',
 		'photo'        => law_speaker_photo_url( $post->ID, $photo_id, 'medium' ),
 		'photo_id'     => $photo_id,
-		'bio'          => '' !== $bio ? $bio : trim( $post->post_content ),
+		// This event's own, or none (Denis, 26 October 2026). The record's
+		// post_content used to stand in, and that is set once from the first bio
+		// any host typed, where nobody on Manage Speakers can see or clear it: a
+		// "download CV from website" kept printing after the committee had emptied
+		// every bio it could reach.
+		'bio'          => $bio,
 	);
 }
 
