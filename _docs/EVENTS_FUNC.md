@@ -1622,6 +1622,11 @@ then follows the link that appears and writes that event's confirmation.
   account links `{bookings_link}`, `{profile_link}` and `{submit_link}` (via
   `law_account_url( 'submit' )`) are set unconditionally, so the event-less
   registration emails resolve them.
+- `law_events_email_sample_placeholders()`: **the one place every tag's sample
+  value lives**, used by every test send in place of a real event. A new tag
+  in `law_events_email_placeholders()` needs its sample here in the same
+  change; `EmailsDashboardTest::test_every_tag_has_a_sample_value()` fails
+  until both lists name the same tags.
 - `law_events_email_recipients()`, `law_events_send()`: resolve recipients and
   send, logging the send (with recipients, and the test-mode address when one
   is in force) to the activity log. A £0 event splits to the "confirmed, free"
@@ -10707,6 +10712,73 @@ Touched: `functions/events/meta.php`, `functions/events/source.php`,
 `functions/events/workflow.php`, `functions/events/committee.php`,
 `functions/events/admin/event-screen.php`, `functions/events/export.php`,
 `templates/account-dashboard.php`, `tests/EventFlagsTest.php`.
+
+---
+
+## Send test email: any address, every tag filled (26 October 2026)
+
+**"Send a test to me" became "Send test email"**, which opens the shared
+dialog (`parts/layout/modal.php`) asking where to send it, prefilled with the
+editor's own address (Denis, 26 October 2026). The dialog's Send test button
+posts `law_email_test` with `law_email_test_to`, and the handler sends through
+`law_events_email_send_test_to()`. An address that is not one is refused
+against the field (`email-test-address`) rather than quietly sent to the
+editor, who would be waiting on the wrong inbox. Without JavaScript the dialog
+cannot open, so the button posts on its own with no address and the test goes
+to the editor, as it always did. The wp-admin screen has no dialog component,
+so it gets a "Send a test to" field above the buttons instead (a text input
+with `inputmode="email"`, because a half-typed address in a real email input
+would block Save email too). "Send a test to committee" is unchanged.
+
+**The shared dialog gained `'type' => 'email'`**, on the same terms as the
+select before it: one input, the same name and disabled-until-open rules, and
+the textarea's light-surface styling in `law-modal.css`. Separately,
+`law-modal.js` now removes its "please complete this field" message once the
+field has been filled and the button pressed again; it used to sit under the
+field through the whole send.
+
+**Every tag is filled with sample details.** Tests used to resolve against the
+most recent event, which left every tag a send call supplies itself
+(`{attendee_name}`, `{price}`, `{payment_note}` and some forty more) blank. It
+also put a real host's name, email address and invoice link in front of
+whoever the test went to, which stopped being acceptable once that address
+became something the editor types. `law_events_email_sample_placeholders()` in
+`notifications.php` now holds a sample for every tag: one invented event, host
+and delegate, `example.com` addresses, values written the way the code that
+really fills each tag writes them, and the real site-wide links read from
+`law_events_email_placeholders()` itself. Event- and invoice-specific links
+point at the page they would sit under (the programme, the dashboards, My
+bookings) rather than at a 404. The two retired tags, `{user_roles}` and
+`{registered_by}`, stay empty because every real email prints nothing for them
+either.
+
+**Keeping it whole.** Any new tag needs a sample in that function in the same
+change, and `EmailsDashboardTest::test_every_tag_has_a_sample_value()` fails
+until it has one (or while a sample outlives its tag). The send-test return
+shape lost `event_id` and `event_title`, which only the wp-admin notice read.
+
+**Security review, same day.** An address `sanitize_email()` would change is
+refused on both screens rather than sent to: it collapses `a@b.com, c@d.com`
+into `a@b.comcd.com`, a mailbox somebody else may own. The wp-admin test send
+now spends the same `email_test` budget (20 per 10 minutes) as the front end.
+The site-wide links moved into `law_events_email_site_links()`, which both
+`law_events_email_placeholders()` and the samples read, so the samples no
+longer call the full builder with no event (which falls back to whatever post
+and latest comment are lying around). Open, for Denis to decide: any
+committee-level account can now send draft wording to any address, at up to
+20 per 10 minutes, with no record kept.
+
+Verified through Mailpit (`user_flagship_approved` and `host_waitlist_promoted`
+arrive with every tag filled) and in the browser at desktop and phone widths:
+the dialog opens focused and prefilled, catches an empty field, shows the
+server's refusal of `someone@nodot`, and reports the send in place.
+
+Touched: `functions/events/notifications.php`,
+`functions/events/emails-dashboard.php`,
+`functions/events/admin/emails-screen.php`, `parts/events/emails-manage.php`,
+`parts/layout/modal.php`, `templates/account-dashboard-emails.php`,
+`assets/css/law-modal.css`, `assets/js/law-modal.js`,
+`tests/EmailsDashboardTest.php`.
 
 ---
 

@@ -10,7 +10,7 @@
  * 2026). Both screens read law_events_email_registry() and write through the
  * shared helpers in notifications.php — law_events_email_override_from_input(),
  * law_events_email_save_override(), law_events_email_reset_override() and
- * law_events_email_send_test() — so neither owns the data and the two cannot
+ * law_events_email_send_test_to() — so neither owns the data and the two cannot
  * drift.
  *
  * Two deliberate differences from the wp-admin screen:
@@ -21,7 +21,7 @@
  *    on manage_options there and stays gated on manage_options, so a committee
  *    member cannot switch it on from the front end. What they do get is the
  *    warning below, and only while it is actually on, because an editor
- *    pressing "Send test to me" needs to know why the message arrived
+ *    pressing "Send test email" needs to know why the message arrived
  *    somewhere else.
  *
  * 2. The body uses the module's own editor (functions/events/rich-text.php),
@@ -114,7 +114,7 @@ function law_emails_dashboard_rows() {
  * discounts dashboards use: written by the handler, read ONCE by the view and
  * deleted, so a later visit is not haunted by an old edit.
  *
- * Here it does two things the wp-admin screen does not. "Send a test to me"
+ * Here it does two things the wp-admin screen does not. "Send test email"
  * renders the values AS TYPED and saves nothing, so without this the redirect
  * back would throw away the very draft the editor was testing; and a refused
  * save comes back with the typed values rather than the stored ones.
@@ -252,12 +252,13 @@ function law_email_manage_handler() {
 	// can be read in a real inbox before anybody commits to it. The draft rides
 	// a one-shot transient so the redirect does not throw it away.
 	//
-	// Two of them: to whoever is editing, and — on the notifications the
-	// committee itself receives — to the whole committee address list, which is
-	// the audience whose inbox the wording is actually being written for
-	// (Denis, 22 September 2026). Both share the rate budget: the committee one
-	// is the more expensive of the two, so it must not have a budget of its own
-	// to spend.
+	// Two of them: to the address typed into the "Send test email" dialog
+	// (Denis, 26 October 2026), and — on the notifications the committee itself
+	// receives — to the whole committee address list, which is the audience
+	// whose inbox the wording is actually being written for (Denis,
+	// 22 September 2026). Both share the rate budget: the committee one is the
+	// more expensive of the two, so it must not have a budget of its own to
+	// spend.
 	$test_to_committee = ! empty( $_POST['law_email_test_committee'] );
 
 	if ( ! empty( $_POST['law_email_test'] ) || $test_to_committee ) {
@@ -281,9 +282,41 @@ function law_email_manage_handler() {
 			law_events_respond( $is_ajax, false, array( 'message' => 'There are no committee addresses in the events settings, so there was nobody to send the test to. Note that the real notification is not reaching anyone either.', 'status' => 400 ), 'email-test-no-committee' );
 		}
 
-		$test = $test_to_committee
-			? law_events_email_send_test_committee( $override )
-			: law_events_email_send_test( $override );
+		// The address from the dialog. Absent only without JavaScript, where the
+		// dialog cannot open and the button posts on its own: that test goes to
+		// whoever is editing, which is what the button did before it had a
+		// dialog. Present but unusable is refused rather than quietly sent to
+		// the editor instead, because they would be waiting on the wrong inbox.
+		//
+		// Refused too when sanitize_email() would change it: it collapses
+		// "a@b.com, c@d.com" into a@b.comcd.com, a mailbox somebody else may
+		// own, and the draft would go there (security review, 26 October 2026).
+		$test_to = '';
+		if ( ! $test_to_committee && isset( $_POST['law_email_test_to'] ) ) {
+			$raw     = wp_unslash( $_POST['law_email_test_to'] );
+			$raw     = is_scalar( $raw ) ? trim( (string) $raw ) : '';
+			$test_to = sanitize_email( $raw );
+			if ( $test_to !== $raw || ! is_email( $test_to ) ) {
+				law_events_respond(
+					$is_ajax,
+					false,
+					array(
+						'message' => 'Please enter a valid email address to send the test to.',
+						'field'   => 'law_email_test_to',
+						'status'  => 400,
+					),
+					'email-test-address'
+				);
+			}
+		}
+
+		if ( $test_to_committee ) {
+			$test = law_events_email_send_test_committee( $override );
+		} elseif ( '' !== $test_to ) {
+			$test = law_events_email_send_test_to( $override, array( $test_to ) );
+		} else {
+			$test = law_events_email_send_test( $override );
+		}
 
 		if ( ! $test['sent'] ) {
 			law_events_respond( $is_ajax, false, array( 'message' => 'The test email could not be sent. Please try again.', 'status' => 500 ), 'email-test-failed' );
@@ -294,7 +327,7 @@ function law_email_manage_handler() {
 		$diverted = law_events_test_mode_address();
 		$went_to  = $test_to_committee
 			? sprintf( 'the committee (%s)', implode( ', ', $test['emails'] ) )
-			: $test['email'];
+			: implode( ', ', $test['emails'] );
 
 		law_events_respond(
 			$is_ajax,
@@ -302,7 +335,7 @@ function law_email_manage_handler() {
 			array(
 				'title'    => 'Test email sent',
 				'message'  => '' !== $diverted
-					? sprintf( 'Test mode is on, so the test went to %1$s rather than to %2$s. Nothing was saved: use Save changes to keep this wording.', $diverted, $test_to_committee ? 'the committee' : 'you' )
+					? sprintf( 'Test mode is on, so the test went to %1$s rather than to %2$s. Nothing was saved: use Save changes to keep this wording.', $diverted, $test_to_committee ? 'the committee' : implode( ', ', $test['emails'] ) )
 					: sprintf( 'A test has been sent to %s. Nothing was saved: use Save changes to keep this wording.', $went_to ),
 				'redirect' => law_emails_dashboard_url( $slug ),
 			),
