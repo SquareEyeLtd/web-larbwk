@@ -98,6 +98,7 @@ require_once __DIR__ . '/migration/reconcile-payments.php';
 require_once __DIR__ . '/migration/repair-nbsp.php';
 require_once __DIR__ . '/migration/repair-signoff.php';
 require_once __DIR__ . '/migration/backfill-session-agenda.php';
+require_once __DIR__ . '/migration/merge-speakers.php';
 require_once __DIR__ . '/migration/fetch-speaker-photos.php';
 require_once __DIR__ . '/migration/content-transfer.php';
 // The confirmed-slot comparison (/wp-admin/?test-events-confirmed-slots). After

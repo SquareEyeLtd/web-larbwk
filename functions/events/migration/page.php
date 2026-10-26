@@ -207,6 +207,8 @@ function law_migration_admin_page() {
 
 		<?php law_events_backfill_agenda_panel(); ?>
 
+		<?php law_events_merge_speakers_panel(); ?>
+
 		<?php law_events_photo_fetch_panel(); ?>
 
 		<?php law_content_transfer_panel(); ?>

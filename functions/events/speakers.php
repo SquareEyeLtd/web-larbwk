@@ -115,8 +115,9 @@ function law_speaker_role_heading( $role ) {
  * into one shared, publicly-displayed profile that then carries the wrong
  * email. The fallback still exists for the sources that have no email at all —
  * the legacy List field 48 rows the migration reads, which pass '' here.
- * A duplicate record is a nuisance the committee can merge on the Manage
- * Speakers screen; a wrong merge silently rewrites a real person's profile.
+ * A duplicate record is a nuisance an administrator can merge on LAW →
+ * Migration (migration/merge-speakers.php); a wrong merge silently rewrites a
+ * real person's profile.
  *
  * @param string $email Email (may be empty).
  * @param string $name  Full display name.
