@@ -1989,6 +1989,12 @@ then follows the link that appears and writes that event's confirmation.
     way back to the list. The handler tests drive its real JSON branch by
     filtering `wp_doing_ajax` on and swapping `wp_die_ajax_handler` for an
     exception, the first suite here to do so.
+- **Merging two records** (26 October 2026) is the other way a record leaves
+  the list: an administrator's helper on LAW → Migration
+  (`migration/merge-speakers.php`, described under Migration below) moves one
+  speaker's rows onto another and trashes the emptied record. It reuses
+  `law_speaker_holder_ids()` and `law_speaker_after_rows_changed()`, and runs
+  before the trash, so the trash hook above finds nothing left to detach.
 
 ### `speakers-dashboard.php`: the committee's Manage Speakers dashboard (9 September 2026)
 
@@ -3198,9 +3204,10 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   speaker dedupe key: with it blank `law_speaker_find_existing()` falls back to
   matching on the name, and a second "John Smith" would be silently attached to
   the first one's shared, publicly displayed profile. The reasoning is set out
-  at `functions/events/speakers.php:110-121`, and the merge tool that comment
-  offers as the remedy for a duplicate (EVENTS_4.2_SPECS.md §3.5) is not built
-  yet. Both names stay required for a different reason:
+  at `functions/events/speakers.php:110-122`, and the remedy that comment
+  offers for a duplicate (EVENTS_4.2_SPECS.md §3.5) is the administrator's
+  "Merge two speakers" panel on LAW → Migration (`migration/merge-speakers.php`,
+  26 October 2026). Both names stay required for a different reason:
   `law_events_form_save_speakers()` drops a row whose joined name is empty, so
   a nameless row would vanish rather than be reported back to the host.
   Before 8 September 2026 this save hard-coded `role => ''`, so a role the
@@ -4441,7 +4448,7 @@ they stay the same length.
   live in `notifications.php` and are shared with the committee's front-end
   Manage emails screen (`emails-dashboard.php`).
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/content-transfer.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/merge-speakers.php`, `migration/content-transfer.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -4774,6 +4781,20 @@ they stay the same length.
   17 September 2026: 47 values held one, three of them in runs — the worst
   being the 21 in "Hot Topics in Energy and Mining Arbitration" that started
   this.
+- **`merge-speakers.php`** (26 October 2026): "Merge two speakers". An
+  administrator picks the main speaker (kept) and the speaker to merge into it
+  from two selects labelled with name, email, record ID and event count, then
+  "Preview merge" (`law_events_merge_speakers_plan()`, writes nothing) and
+  "Merge #B into #A" (`law_events_merge_speakers_apply()`, which re-reads the
+  plan). The apply re-points the second speaker's `_law_speakers` rows on every
+  event and session in any status at the main speaker with their per-event
+  details intact, drops a row where the post already names the main speaker,
+  logs `speaker_merged` once per event, moves the legacy entry IDs (migration
+  map and `_law_gf_entry_ids`) and `law_year` terms across, adds the second
+  speaker's slug to the main speaker's `_wp_old_slug` (core 301s the old
+  address), stamps `_law_speaker_merged_into` and trashes the second record.
+  The main speaker's own record is never written. See "Two speakers can be
+  merged (26 October 2026)" at the end.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
@@ -10200,6 +10221,64 @@ Touched: `functions/events/speakers.php`,
 `parts/events/speaker-manage.php`, `parts/layout/modal.php`,
 `templates/account-speakers-dashboard.php`, `assets/css/event-form.css`, and
 `tests/SpeakerDeleteTest.php` (new).
+
+---
+
+## Two speakers can be merged (26 October 2026)
+
+**The ask** (Denis, after the client found the same person twice on Manage
+Speakers on production): an administrator's helper that merges two speakers,
+picked by hand. First the main speaker, then the speaker merged into it; the
+second speaker's events go to the first, and the first speaker's name,
+biography and everything else stay as they are. Picked by hand, not detected,
+because a typo can sit in the name as easily as in the email. Asked whether
+the moved events should keep their own per-event details or take the main
+speaker's, Denis chose to keep their own.
+
+**How the duplicate arose.** Sylvia Tonova, on the local copy: the same host
+entered her twice in form 8 (Event > speaker) on 9 September 2026, entry 1406
+as `sylvia.tonova@` and entry 1426 as `sylvia.tonva@`. Two different emails
+rightly made two records (#5877, #5879) at migration. On production both now
+show the same address, so the typo was corrected after the migration, and the
+wp-admin speaker screen (`admin/speaker-screen.php`) writes the email with no
+clash check, unlike the upsert and Manage Speakers. That gap is still open.
+
+**What it does now.** A "Merge two speakers" panel on LAW → Migration,
+admin-only (`manage_options`), dry run first. Details under `merge-speakers.php`
+in the Migration section above. In short: rows move with their details, a
+post never ends up naming the main speaker twice, one `speaker_merged` line
+per event, legacy entry addresses, years and the old `/speakers/<slug>/`
+address follow the main speaker, and the second record goes to the trash
+stamped `_law_speaker_merged_into`.
+
+**Known edges.**
+- **Merge where the duplicate lives.** The content transfer never deletes, so
+  a merge done on staging leaves production's duplicate in place; production's
+  events in the bundle would follow the email the main speaker keeps.
+- **A restore is not an undo.** Restoring the merged record from the trash
+  brings back an empty profile; the rows stay on the main speaker, because the
+  trash hook found none to keep.
+- **Older activity-log lines** still name the merged record's ID in their
+  context; they are history and are left alone.
+
+**Verified** with `tests/SpeakerMergeTest.php` (14): rows and session rows
+moving with role, organisation, job title, photo and bio; an event naming both
+keeping the main row; two rows of the second speaker collapsing to one; the
+main record byte-identical; the trash, the stamp and the old-slug lookup core's
+redirect makes; a restore putting nothing back; legacy entry IDs through the
+map and the meta fallback; year terms; one log line per event with its session
+folded in; the flagship union; the refusals; and the panel's preview (writes
+nothing), merge and error notice. Then locally on the real pair (#5879 into
+#5877): one Sylvia on both events, the activity-log line on the moved event,
+and `/speakers/sylvia-tonova-2/` answering 301 to `/speakers/sylvia-tonova/`.
+The full suite's only failures were nine in `FlagshipPaymentsTest`, which read
+the flagship price "now" and started failing once the late price took over;
+nothing here touches them.
+
+Touched: `functions/events/migration/merge-speakers.php` (new),
+`functions/events/_load.php`, `functions/events/migration/page.php`,
+`functions/events/speakers.php` (comment only), and
+`tests/SpeakerMergeTest.php` (new).
 
 ---
 
