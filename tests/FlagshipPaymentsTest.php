@@ -45,7 +45,12 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 					'_law_end'                        => '2026-12-02 17:00',
 					'_law_flagship_price_pence'       => 55000,
 					'_law_flagship_price_late_pence'  => 60000,
-					'_law_flagship_price_switch'      => '2026-10-17 00:00',
+					// Far in the future, so "now" reads the early price whatever
+					// day the suite runs. The real 2026 switch passed on
+					// 17 October 2026 and turned nine tests red that were never
+					// about the switch; the ones that ARE pass it explicitly
+					// (QuoteTest does the same).
+					'_law_flagship_price_switch'      => '2099-10-17 00:00',
 					'_law_tickets_available'          => 2,
 				),
 				$meta
@@ -139,7 +144,7 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 	 * cheaper place for an hour into the 17th (Denis, 10 September 2026).
 	 */
 	public function test_the_price_switches_at_midnight_london_not_utc(): void {
-		$event_id = $this->make_flagship();
+		$event_id = $this->make_flagship( array( '_law_flagship_price_switch' => '2026-10-17 00:00' ) );
 		$at       = fn( string $local ) => ( new DateTimeImmutable( $local, wp_timezone() ) )->getTimestamp();
 
 		$this->assertSame( 55000, law_flagship_price_pence( $at( '2026-10-16 23:59' ), $event_id ), 'The last minute of the 16th is still the early price.' );
@@ -157,7 +162,7 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 	 * group somebody is in is decided by when they registered.
 	 */
 	public function test_the_acknowledgement_is_chosen_by_the_price_cutover(): void {
-		$event_id = $this->make_flagship();
+		$event_id = $this->make_flagship( array( '_law_flagship_price_switch' => '2026-10-17 00:00' ) );
 
 		$booking = fn( string $local ) => $this->make_flagship_booking( $event_id, $local );
 
@@ -230,7 +235,7 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 
 	/** An unset late price falls back to its OWN default, never to the early one. */
 	public function test_an_unconfigured_late_price_does_not_keep_charging_the_early_one(): void {
-		$event_id = $this->make_flagship();
+		$event_id = $this->make_flagship( array( '_law_flagship_price_switch' => '2026-10-17 00:00' ) );
 		delete_post_meta( $event_id, '_law_flagship_price_late_pence' );
 		$after = ( new DateTimeImmutable( '2026-10-20 09:00', wp_timezone() ) )->getTimestamp();
 
@@ -1330,15 +1335,19 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 			// what it costs. The code field is in the same bordered box as the
 			// included receptions, so the dialog reads as a stack of
 			// one-subject groups.
+			//
+			// Since 26 October 2026 two boxes come first: "Who is this place
+			// for?" and the details it reveals (BOOK_ON_BEHALF.md §3.2).
 			$this->assertSame(
-				2,
+				4,
 				substr_count( $html, 'law-booking-fieldset' ),
-				$context . ': the receptions and the code are both boxed.'
+				$context . ': who it is for, their details, the receptions and the code are all boxed.'
 			);
 			$this->assertTrue(
-				strpos( $html, 'law-flagship-receptions' ) < strpos( $html, 'law-booking-price' )
+				strpos( $html, 'law-booking-for' ) < strpos( $html, 'law-flagship-receptions' )
+					&& strpos( $html, 'law-flagship-receptions' ) < strpos( $html, 'law-booking-price' )
 					&& strpos( $html, 'law-booking-price' ) < strpos( $html, 'law_flagship_apply[code]' ),
-				$context . ': included receptions, then the price, then the code.'
+				$context . ': who it is for, then the included receptions, then the price, then the code.'
 			);
 			$this->assertStringContainsString( 'data-law-quote-event="' . $event_id . '"', $html, $context . ': the quote hook.' );
 			$this->assertStringContainsString( 'law_flagship_apply[code]', $html, $context . ': the code field.' );

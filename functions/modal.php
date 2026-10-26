@@ -26,8 +26,14 @@ function law_modal_register_assets() {
 	// stale on every edit and serving cached CSS elsewhere in the theme.
 	wp_register_style( 'law-modal', get_theme_file_uri( 'assets/css/law-modal.css' ), array(), filemtime( get_theme_file_path( 'assets/css/law-modal.css' ) ) );
 	wp_register_script( 'law-modal', get_theme_file_uri( 'assets/js/law-modal.js' ), array(), filemtime( get_theme_file_path( 'assets/js/law-modal.js' ) ), true );
+	// The site-wide show/hide behind data-law-toggles (assets/js/law-toggles.js),
+	// a dependency of both form scripts so neither page type can be without it.
+	wp_register_script( 'law-toggles', get_theme_file_uri( 'assets/js/law-toggles.js' ), array(), filemtime( get_theme_file_path( 'assets/js/law-toggles.js' ) ), true );
+	wp_register_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal', 'law-toggles' ), filemtime( get_theme_file_path( 'assets/js/booking-form.js' ) ), true );
 }
-add_action( 'wp_enqueue_scripts', 'law_modal_register_assets' );
+// Priority 5: registered before any page's own enqueue at the default 10, so
+// an enqueue by handle always finds it.
+add_action( 'wp_enqueue_scripts', 'law_modal_register_assets', 5 );
 
 /**
  * Enqueue the modal assets. Safe to call as often as you like: WordPress
@@ -36,4 +42,17 @@ add_action( 'wp_enqueue_scripts', 'law_modal_register_assets' );
 function law_modal_enqueue() {
 	wp_enqueue_style( 'law-modal' );
 	wp_enqueue_script( 'law-modal' );
+}
+
+/**
+ * Enqueue the booking fetch layer (assets/js/booking-form.js) with the modal
+ * it drives and the toggles it relies on. It was enqueued by hand, path and
+ * all, on eight screens; this is the one way in now.
+ */
+function law_booking_form_enqueue() {
+	if ( ! wp_script_is( 'law-booking-form', 'registered' ) ) {
+		law_modal_register_assets();
+	}
+	law_modal_enqueue();
+	wp_enqueue_script( 'law-booking-form' );
 }

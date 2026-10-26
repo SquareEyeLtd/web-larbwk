@@ -108,7 +108,21 @@ function law_registration_write_intent( $user_id, array $intents ) {
  * fields, ACF field 435 (Accessibility) and every existing user's meta all
  * use them; storing labels would orphan existing selections.
  */
-function law_registration_accessibility_choices() {
+function law_registration_accessibility_choices( $neutral = false ) {
+	// The same stored values either way. The first-person labels are the
+	// registration form's own (and the legacy form's); somebody filling the
+	// answers in for another person (attendee-profile-fields.php) reads the
+	// neutral ones, because "I require captions" is not true of the person
+	// ticking it (BOOK_ON_BEHALF.md §3.2).
+	if ( $neutral ) {
+		return array(
+			'Captions'      => 'Captions',
+			'Sign language' => 'A sign language interpreter',
+			'Animal / PCA'  => 'Accompanied by a service animal or Personal Care Assistant',
+			'Wheelchair'    => 'Wheelchair access',
+			'Other'         => 'Other',
+		);
+	}
 	return array(
 		'Captions'      => 'I require captions',
 		'Sign language' => 'I require a sign language interpreter',

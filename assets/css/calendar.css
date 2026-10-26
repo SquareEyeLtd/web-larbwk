@@ -2684,21 +2684,25 @@
 /* .law-booking-inline (the no-JS ?law_book=1 form) is already flex-basis: 100%
    in its own rule above, so it fills the panel without help.
 
-   Its INK does need help. That form is built from the dialog's own parts, and
-   law-modal.css paints .law-modal__copy #1a1a3d for a white dialog. Rendered
-   inside this filled panel that is near-black on navy: the "You need an account
-   to book places…" paragraph was unreadable (reported 11 September 2026). Every
-   piece the form writes straight onto the panel inherits the panel's ink
-   instead. The inputs below are unaffected: they sit on their own white fields,
-   which set their own colour. */
-.law-event-details .law-booking-panel .law-booking-inline,
-.law-event-details .law-booking-panel .law-booking-inline .law-cal-acc__heading,
-.law-event-details .law-booking-panel .law-booking-inline .law-modal__copy,
-.law-event-details .law-booking-panel .law-booking-inline .law-booking-summary,
-.law-event-details .law-booking-panel .law-booking-inline .law-booking-summary strong,
-.law-event-details .law-booking-panel .law-booking-inline .law-booking-note,
-.law-event-details .law-booking-panel .law-booking-inline .law-booking-substate {
-  color: inherit;
+   It sits on a WHITE CARD of its own, as the dialog it stands in for does.
+   The form is built from the dialog's parts, and every one of them is inked
+   for a white surface: the copy (law-modal.css), but also the labels, the
+   choice labels, the legends and the hints the light form sets. Recolouring
+   the copy alone (11 September 2026) left the rest navy on navy, which the
+   priced forms' consent, terms and code fields, and the "Someone else"
+   details (BOOK_ON_BEHALF.md §3.10), all hit. A card fixes every piece at
+   once and keeps the inline form identical to the dialog. */
+.law-event-details .law-booking-panel .law-booking-inline {
+  padding: 1.25rem 1.5rem;
+  background: #fff;
+  color: #1a1a3d;
+}
+
+/* .law-cal a strips link colour and underline for the programme's cards;
+   the terms link in the card is a link and has to look like one. */
+.law-event-details .law-booking-panel .law-booking-inline a:not(.button) {
+  color: #292459;
+  text-decoration: underline;
 }
 
 /* Tone modifiers set the wash and the ink, nothing else. */
@@ -2725,7 +2729,10 @@
 /* The panel's call to action. The theme's base .button is 0.8rem with 1rem of
    side padding, which is right in a card's action row and too quiet for the
    one thing this panel exists to offer (Denis, 11 September 2026). */
-.law-event-details .law-booking-panel .button {
+/* The action slot's button only: inside the no-JS form's white card the
+   dialog's own button sizes apply, or the discount code's Apply grew to 3rem
+   and stretched the field beside it. */
+.law-event-details .law-booking-panel__action .button {
   padding: 1rem 2.25rem 0.85rem;
   font-size: 0.95rem;
 }
@@ -2784,6 +2791,21 @@
 .law-event-details .law-booking-panel .button.second:focus {
   background: #fff;
   color: #292459;
+}
+
+/* ...except on the no-JS form's white card (above), where that white outline
+   would vanish: the discount code's Apply and the signed-out Sign in went
+   white on white. Back to the dialog's own navy outline there. */
+.law-event-details .law-booking-panel .law-booking-inline .button.second {
+  background: #fff;
+  border-color: #292459;
+  color: #292459;
+}
+
+.law-event-details .law-booking-panel .law-booking-inline .button.second:hover,
+.law-event-details .law-booking-panel .law-booking-inline .button.second:focus {
+  background: #292459;
+  color: #fff;
 }
 
 /* 1.4rem matches .law-cal-acc__heading, the page's h2 size, so inside the box it
@@ -2957,13 +2979,8 @@
   margin: 0 0 .5rem;
 }
 
-/* Disabled until something is ticked. Greyed and not underlined, so it does
-   not read as a link that simply refuses to work. */
-.law-flagship-bookings__bulk-actions .law-linkish[disabled] {
-  color: #6d6d80;
-  text-decoration: none;
-  cursor: default;
-}
+/* Disabled until something is ticked: the shared .law-linkish[disabled] rule
+   in event-form.css, which since 26 October 2026 covers every page. */
 
 /* No column wider than 12rem (Denis, 10 September 2026). This started here
    and now lives on .law-dashboard__table in event-form.css, so every

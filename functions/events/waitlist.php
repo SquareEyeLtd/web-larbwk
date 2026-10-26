@@ -564,6 +564,9 @@ function law_waitlist_mark_blocked( $entry, WP_Error $error, $source, $first = n
 		$event_id,
 		array(
 			'to'           => array( $email ),
+			// So the payment-method wording goes to whoever pays, when a
+			// reception entry was made for someone else (BOOK_ON_BEHALF.md).
+			'booking_id'   => (int) $entry->ID,
 			'placeholders' => array_merge(
 				law_booking_email_placeholders( $entry->ID ),
 				array( 'attendee_name' => $person['name'], 'blocked_reason' => $error->get_error_message() )
