@@ -1762,9 +1762,10 @@ then follows the link that appears and writes that event's confirmation.
   submitted for it. The old `_law_organisation`/`_law_job_title` speaker meta is
   off the schema (stale rows are inert); the sanitiser reads a pre-change
   `organisation_override` as `organisation`, and `bio` takes the textarea
-  sanitiser so a biography keeps its line breaks. A row that leaves the
-  biography or photo blank falls back to the speaker post's editor content and
-  featured image at read time. Both are optional on the host form, and since
+  sanitiser so a biography keeps its line breaks. A row that leaves the photo
+  blank falls back to the speaker post's featured image at read time; a blank
+  biography prints nothing (since 26 October 2026, see "A blank biography
+  prints nothing" at the end). Both are optional on the host form, and since
   15 September 2026 so are the organisation and the job title — see the Speakers
   fieldset under `law_events_form_save()`. The committee event detail
   (`templates/account-dashboard.php`) prints each of the three lines only when it
@@ -1833,8 +1834,9 @@ then follows the link that appears and writes that event's confirmation.
   committee most likely wants again. `law_speaker_row_prefill()` wraps it for
   the picker: **every** status (a speaker record exists from the first draft
   save, and the appearance worth copying forward is often on an event that is
-  not confirmed yet), with the speaker post's editor content and featured image
-  as the last resort, and the photo's thumbnail URL alongside the ID so the row
+  not confirmed yet), with the speaker post's featured image as the photo's
+  last resort (never its editor content as a biography, since 26 October 2026),
+  and the photo's thumbnail URL alongside the ID so the row
   can show it without a second request. There is no organisation or job title
   on the speaker post to fall back to: those have been per appearance since 4.1
   and the old `_law_organisation` / `_law_job_title` meta rows are inert.
@@ -4767,7 +4769,8 @@ they stay the same length.
 - **`repair-nbsp.php`** (17 September 2026) — the one-off sweep for rich text
   stored before `law_rich_text_normalise_spaces()` existed. It reads all four
   places rich text is kept: `post_content` on `law_event`, on `law_session`
-  and on `law_speaker` (the fallback biography), and the per-appearance
+  and on `law_speaker` (the record's biography, which no screen prints since
+  26 October 2026), and the per-appearance
   biographies in an event's `_law_speakers` rows. Every affected value is
   listed with the offending text shown in context, each row can be unticked,
   and a change to an event or one of its sessions lands in that event's
@@ -10279,6 +10282,49 @@ Touched: `functions/events/migration/merge-speakers.php` (new),
 `functions/events/_load.php`, `functions/events/migration/page.php`,
 `functions/events/speakers.php` (comment only), and
 `tests/SpeakerMergeTest.php` (new).
+
+---
+
+## A blank biography prints nothing (26 October 2026)
+
+**The ask** (Denis, from the client): Domitille Baizeau's card on the David D.
+Caron Praelium kept printing "download CV from website" after the committee
+had emptied every biography Manage Speakers showed for her.
+
+**What was wrong before.** A blank appearance bio fell back to the speaker
+post's own `post_content`. That is written once, by `law_speaker_upsert()`,
+from the first bio any host typed for the person, and no front-end screen
+shows or edits it, so the committee could see the text but not reach it.
+Four readers used it: `law_speaker_card()` (event cards, session rows and the
+SEO description), `law_speaker_post_profile()` (the profile page and archive),
+`law_speaker_row_prefill()` (which copied it into a new row) and the committee
+event detail in `templates/account-dashboard.php`, which printed the record's
+content and never the event's own bio at all.
+
+**What it does now.** All four read the appearance only: a blank bio prints
+nothing. The dashboard detail now shows the card's bio, the event's own. The
+upsert still writes `post_content` and nothing reads it, so the data is kept
+and the change is a read-side one; the wp-admin speaker editor's content box
+no longer affects any page. On the local copy no Confirmed event's card relied
+on the fallback (0 of 130 rows), so nothing visible changed here; production
+may differ.
+
+**The photo tint went with it** (same day). The pale navy square behind a
+speaker photo is the initials placeholder's backdrop, and it showed through a
+transparent PNG (a round cut-out sat on a tinted square). `:has(img)` clears
+it on the event cards, the committee timeline panel
+(`assets/css/calendar.css`), the archive card and the profile
+(`assets/css/speakers.css`).
+
+**Verified** by `tests/SpeakerPrefillTest.php`
+(`test_a_blank_appearance_bio_prints_nothing_anywhere`, and the prefill test
+now expects no biography) and `tests/ReferenceAndMigrationTest.php` (an empty
+row prints no biography).
+
+Touched: `functions/events/speakers.php`, `parts/events/speaker-card.php`
+(comment), `templates/account-dashboard.php`, `assets/css/calendar.css`,
+`assets/css/speakers.css`, `tests/SpeakerPrefillTest.php`,
+`tests/ReferenceAndMigrationTest.php`.
 
 ---
 

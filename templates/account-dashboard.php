@@ -302,14 +302,14 @@ $law_email_mode = $law_detail
 					<?php if ( $law_speaker_rows ) : ?>
 						<ul class="law-dashboard__people">
 							<?php foreach ( $law_speaker_rows as $law_row ) :
-								// Role, organisation, job title and photo are this event's own (the appearance row).
+								// Role, organisation, job title, photo and biography are this event's own (the appearance row).
 								$law_card = law_speaker_card( (int) ( $law_row['speaker_id'] ?? 0 ), (array) $law_row );
 								if ( ! $law_card ) {
 									continue;
 								}
 								$law_speaker = get_post( $law_card['id'] );
 								$law_sp_web  = (string) law_event_meta( $law_speaker->ID, '_law_website' );
-								$law_sp_bio  = trim( (string) $law_speaker->post_content );
+								$law_sp_bio  = $law_card['bio'];
 								// Every one of these is optional now: the job title and the
 								// organisation since 15 September 2026, and the email on the
 								// 173 speakers the migration brought in from the legacy List
