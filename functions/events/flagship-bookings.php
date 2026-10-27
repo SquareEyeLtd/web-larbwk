@@ -1145,7 +1145,7 @@ function law_flagship_confirm( $booking_id, $actor_id, $how, $stripe_event_id = 
 	$extra = law_flagship_email_extra( $booking_id );
 	$extra['placeholders']['payment_note'] = law_flagship_payment_note( $booking_id );
 	if ( $receptions ) {
-		$extra['placeholders']['included_receptions'] = law_reception_choices_note( $receptions );
+		$extra['placeholders']['included_receptions'] = law_reception_included_email_note( $receptions );
 	}
 	$templates = array(
 		'complimentary' => 'user_flagship_complimentary',
@@ -1776,7 +1776,7 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 
 	$law_fc_extra = law_flagship_email_extra( $booking_id );
 	if ( $law_fc_result ) {
-		$law_fc_extra['placeholders']['included_receptions'] = law_reception_choices_note( $law_fc_result );
+		$law_fc_extra['placeholders']['included_receptions'] = law_reception_included_email_note( $law_fc_result );
 	}
 	// The set-password link the dialog promises, in THIS email rather than a
 	// welcome of its own (the "one welcome email, not two" rule), through the
@@ -2682,10 +2682,9 @@ function law_flagship_payment_note( $booking_id, $transferred = false, $from_nam
 	}
 
 	$price = law_booking_price( $booking_id );
-	// The approval is the news, and it moved in here when the body's opening
-	// line had to serve a transfer as well. It is first because it is what the
-	// delegate has been waiting to read.
-	$lines = array( __( 'Your registration has been approved by the committee.', 'law' ) );
+	// No "approved by the committee" line: the subject and the confirmation
+	// sentence already say it (Denis, 27 October 2026).
+	$lines = array();
 
 	if ( (int) $price['gross'] > 0 ) {
 		$lines[] = sprintf(

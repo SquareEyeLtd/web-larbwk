@@ -1776,8 +1776,9 @@ function law_reception_grant_choices( $flagship_booking_id, array $reception_ids
 }
 
 /**
- * The sentence the flagship's approval email and the notices use: what was
- * added, and what the delegate already had.
+ * The sentence the My bookings notice uses: what was added, and what the
+ * delegate already had. The confirmation emails have their own wording,
+ * law_reception_included_email_note().
  *
  * @param array $result law_reception_grant_choices().
  */
@@ -1799,6 +1800,62 @@ function law_reception_choices_note( array $result ) {
 	}
 
 	return implode( ' ', $lines );
+}
+
+/**
+ * {included_receptions} in the flagship confirmation emails: every included
+ * reception the delegate will be at, earliest first, with its day and venue.
+ *
+ * Granted and already held alike, since either way they are joining us; one
+ * that could not be granted is left out rather than promised.
+ *
+ * @param array $result law_reception_grant_choices().
+ */
+function law_reception_included_email_note( array $result ) {
+	$held       = (array) ( $result['granted'] ?? array() ) + (array) ( $result['skipped'] ?? array() );
+	$receptions = array();
+	foreach ( array_intersect( law_reception_ids(), array_keys( $held ) ) as $reception_id ) {
+		$start        = (string) law_event_meta( $reception_id, '_law_start' );
+		$receptions[] = array(
+			'title' => $held[ $reception_id ],
+			'date'  => '' !== $start ? date_i18n( 'l j F', strtotime( $start ) ) : '',
+			'venue' => (string) law_event_meta( $reception_id, '_law_venue' ),
+		);
+	}
+
+	return law_reception_joining_note( $receptions );
+}
+
+/**
+ * The paragraph itself, from plain rows, so the test email's sample can use it
+ * without real receptions. A bulleted line per reception rather than bold
+ * names: tag values are escaped as text, so markup cannot ride in one.
+ *
+ * @param array $receptions Rows of title, date ("Monday 30 November") and venue.
+ */
+function law_reception_joining_note( array $receptions ) {
+	$lines = array();
+	foreach ( $receptions as $reception ) {
+		$title = trim( (string) $reception['title'] );
+		// "The Opening reception", but never "The The Lord Mayor's reception".
+		/* translators: %s: a reception's name. */
+		$line = preg_match( '/^the\s/i', $title ) ? $title : sprintf( __( 'The %s', 'law' ), $title );
+		if ( '' !== $reception['date'] ) {
+			/* translators: %s: a day, e.g. Monday 30 November. */
+			$line .= sprintf( __( ' on %s', 'law' ), $reception['date'] );
+		}
+		if ( '' !== $reception['venue'] ) {
+			/* translators: %s: a venue. */
+			$line .= sprintf( __( ' at %s', 'law' ), $reception['venue'] );
+		}
+		$lines[] = '• ' . $line;
+	}
+	if ( ! $lines ) {
+		return '';
+	}
+
+	return __( 'As part of your ticket package, you are invited to attend the official LAW receptions. According to your registration, you will be joining us at:', 'law' )
+		. "\n\n" . implode( "\n", $lines ) . '.';
 }
 
 /**
