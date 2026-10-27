@@ -567,16 +567,15 @@ function law_events_email_registry() {
 		 *
 		 * The opening line lost "has been approved" in the same change: an
 		 * approval is one of the two ways to arrive here now, and the subject
-		 * already says the thing they need to read first. The approval itself
-		 * did not disappear; it is the first sentence of {payment_note} on that
-		 * path.
+		 * already says the thing they need to read first. It sat at the top of
+		 * {payment_note} on that path until 27 October 2026, when Denis took it
+		 * out altogether.
 		 *
 		 * {payment_note} sits FIRST, above the event details, because on the
 		 * transfer path it is the only thing explaining why this email exists.
 		 * A lawyer who never registered, opening "Your ticket is confirmed"
 		 * followed by four paragraphs of date, time and venue, reads it as a
-		 * mistake or a phishing attempt. It serves the approval equally well
-		 * there, since its first line is the approval.
+		 * mistake or a phishing attempt.
 		 *
 		 * {account_note} arrived with the same change and is EMPTY on an
 		 * approval, where the delegate self-evidently has an account already:
@@ -1816,7 +1815,12 @@ function law_events_email_sample_placeholders() {
 		'{price}'                  => '£295.00',
 		'{price_vat}'              => '£59.00',
 		'{discount_note}'          => 'Discount code SAMPLE10: £29.50 off.',
-		'{included_receptions}'    => law_reception_choices_note( array( 'granted' => array( 'Opening reception', 'Closing drinks' ) ) ),
+		'{included_receptions}'    => law_reception_joining_note(
+			array(
+				array( 'title' => 'Opening reception', 'date' => 'Monday 30 November', 'venue' => 'St Paul\'s Cathedral' ),
+				array( 'title' => 'Flagship reception', 'date' => 'Wednesday 2 December', 'venue' => 'Guildhall' ),
+			)
+		),
 		'{price_total}'            => '£354.00',
 		'{invoice_link}'           => $bookings,
 		'{decline_reason}'         => 'Places at this year\'s conference are now fully allocated.',
@@ -1830,7 +1834,6 @@ function law_events_email_sample_placeholders() {
 		'{payment_note}'           => implode(
 			"\n\n",
 			array(
-				'Your registration has been approved by the committee.',
 				'We have taken £354.00 from your saved payment method (' . $card . '), which is £295.00 plus £59.00 VAT.',
 				'Your VAT invoice is here, and you can download it at any time: ' . $bookings,
 			)
