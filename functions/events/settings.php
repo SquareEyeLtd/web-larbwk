@@ -440,6 +440,388 @@ function law_event_apply_slot_label( $event_id, $slot_label ) {
 	}
 }
 
+/* Writing the slot list ____________________________________________________ */
+
+/*
+ * One write path for the slot list, shared by the committee's Manage time
+ * slots screen (functions/events/slots-dashboard.php) and the textarea on
+ * Events → Settings, so the two cannot come to mean different things: both
+ * sort the same way, and both refuse to delete, rename or re-time a slot an
+ * event holds (Denis, 27 October 2026). Retiring is the one change a held
+ * slot accepts.
+ *
+ * Why a held slot is frozen. An event stores its slot as the LABEL
+ * (_law_slot_label, _law_preferred_slots), and the datetimes the programme,
+ * the timeline view and the calendar invites read (_law_start, _law_end) are
+ * written from the slot only when the event itself is saved. Renaming a held
+ * slot would leave every holder pointing at a label that no longer exists,
+ * which the committee dashboard renders as "Slot not confirmed" and the next
+ * save turns into blank datetimes; re-timing one would leave the programme
+ * showing the old time. A different time is a different slot: retire the old
+ * one and add the new one.
+ */
+
+/**
+ * Every event that holds each slot, keyed by law_events_slot_label_key().
+ *
+ * "Holds" means either the confirmed slot or one of the host's preferred
+ * slots: both are a choice an event has made, and deleting the slot under
+ * either would leave a label pointing at nothing. Every status counts, drafts
+ * and rejected events included, because each can come back; only the bin and
+ * WordPress's own auto-drafts are left out.
+ *
+ * Direct SQL rather than a WP_Query per slot: one pass over two meta keys,
+ * matched loosely in PHP, because stored labels still carry the two legacy
+ * punctuations (see law_events_slot_label_key()).
+ *
+ * @return array<string,array{confirmed:int[],preferred:int[]}>
+ */
+function law_events_slot_usage() {
+	global $wpdb;
+
+	$rows = $wpdb->get_results(
+		$wpdb->prepare(
+			"SELECT pm.post_id, pm.meta_key, pm.meta_value
+			FROM {$wpdb->postmeta} pm
+			INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+			WHERE p.post_type = %s
+				AND p.post_status NOT IN ( 'trash', 'auto-draft' )
+				AND pm.meta_key IN ( '_law_slot_label', '_law_preferred_slots' )",
+			LAW_EVENT_CPT
+		)
+	);
+
+	$usage = array();
+	foreach ( (array) $rows as $row ) {
+		$bucket = '_law_slot_label' === $row->meta_key ? 'confirmed' : 'preferred';
+		$labels = 'confirmed' === $bucket ? array( $row->meta_value ) : (array) maybe_unserialize( $row->meta_value );
+		foreach ( $labels as $label ) {
+			$key = law_events_slot_label_key( is_scalar( $label ) ? (string) $label : '' );
+			if ( '' === $key ) {
+				continue;
+			}
+			$usage[ $key ] = $usage[ $key ] ?? array( 'confirmed' => array(), 'preferred' => array() );
+			$usage[ $key ][ $bucket ][] = (int) $row->post_id;
+		}
+	}
+
+	foreach ( $usage as $key => $buckets ) {
+		$usage[ $key ]['confirmed'] = array_values( array_unique( $buckets['confirmed'] ) );
+		$usage[ $key ]['preferred'] = array_values( array_unique( $buckets['preferred'] ) );
+	}
+
+	return $usage;
+}
+
+/**
+ * How many distinct events hold one slot, confirmed or preferred.
+ *
+ * @param array $usage law_events_slot_usage().
+ * @param string $label The slot's label.
+ * @return int
+ */
+function law_events_slot_usage_count( array $usage, $label ) {
+	$entry = $usage[ law_events_slot_label_key( $label ) ] ?? null;
+	if ( ! $entry ) {
+		return 0;
+	}
+	return count( array_unique( array_merge( $entry['confirmed'], $entry['preferred'] ) ) );
+}
+
+/**
+ * The slot list in the one order every surface shows it: date, then start,
+ * then end, earliest first (Denis, 27 October 2026). An empty end means "from
+ * the start time onwards", so it sorts after every slot that has an end at the
+ * same start. The label settles a full tie, so a save never shuffles two
+ * identical-looking slots between page loads.
+ *
+ * @param array $slots Slot rows (label, date, start, end, ...).
+ * @return array
+ */
+function law_events_sort_slots( array $slots ) {
+	usort(
+		$slots,
+		function ( $a, $b ) {
+			$sort_key = function ( $slot ) {
+				return array(
+					(string) ( $slot['date'] ?? '' ),
+					(string) ( $slot['start'] ?? '' ),
+					'' === (string) ( $slot['end'] ?? '' ) ? '99:99' : (string) $slot['end'],
+					strtolower( (string) ( $slot['label'] ?? '' ) ),
+				);
+			};
+			return $sort_key( $a ) <=> $sort_key( $b );
+		}
+	);
+	return array_values( $slots );
+}
+
+/**
+ * A fingerprint of the stored slot list, posted with the Manage time slots
+ * form so a save made from a page opened before somebody else's save is
+ * refused rather than quietly putting back what they changed.
+ *
+ * @return string
+ */
+function law_events_slots_version() {
+	return md5( wp_json_encode( array_values( (array) law_events_setting( 'slots', array() ) ) ) );
+}
+
+/**
+ * Clean posted rows into the shape law_events_save_slots() takes.
+ *
+ * Each row keeps the index it was posted under, which is the index in its
+ * input names, so a refusal can point at the exact control. `original` is the
+ * label the row had when the page was drawn, empty on a row added since: it
+ * is how a rename is told apart from a deletion plus an addition. A wholly
+ * blank NEW row is dropped rather than refused, since there is nothing in it
+ * to lose; a blank row that used to be a slot is kept, so the validator can
+ * say what is missing.
+ *
+ * @param array $posted slots[<index>][label|date|start|end|retired|original].
+ * @return array<int,array{index:int,label:string,date:string,start:string,end:string,retired:bool,original:string}>
+ */
+function law_events_slots_from_input( $posted ) {
+	$rows = array();
+	foreach ( is_array( $posted ) ? $posted : array() as $index => $row ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+		// is_scalar before the cast: slots[0][label][]=x arrives as an array.
+		$text  = function ( $key ) use ( $row ) {
+			$value = $row[ $key ] ?? '';
+			return is_scalar( $value ) ? sanitize_text_field( (string) $value ) : '';
+		};
+		$clean = array(
+			'index'    => (int) $index,
+			'label'    => $text( 'label' ),
+			'date'     => $text( 'date' ),
+			'start'    => $text( 'start' ),
+			'end'      => $text( 'end' ),
+			'retired'  => ! empty( $row['retired'] ),
+			'original' => $text( 'original' ),
+		);
+		if ( '' === $clean['original'] && '' === $clean['label'] . $clean['date'] . $clean['start'] . $clean['end'] ) {
+			continue;
+		}
+		$rows[] = $clean;
+	}
+	return $rows;
+}
+
+/**
+ * Check rows from law_events_slots_from_input().
+ *
+ * The messages name the row by its position on the screen, because they are
+ * read in a list (the failed-save dialog, the notice above the table) away
+ * from the row itself. A row marked `locked` (a held slot, unchanged) is only
+ * counted for duplicate labels: its fields cannot be edited, so refusing them
+ * would block every save for good.
+ *
+ * @param array $rows Cleaned rows.
+ * @return array<string,string[]> Keyed by the offending input's name.
+ */
+function law_events_validate_slots( array $rows ) {
+	$errors = array();
+	$seen   = array();
+
+	foreach ( array_values( $rows ) as $position => $row ) {
+		$name   = 'slots[' . (int) $row['index'] . ']';
+		$number = $position + 1;
+
+		if ( '' === $row['label'] ) {
+			/* translators: %d: the row's position in the table. */
+			$errors[ $name . '[label]' ] = array( sprintf( __( 'Row %d needs a label.', 'law' ), $number ) );
+		} else {
+			$key = law_events_slot_label_key( $row['label'] );
+			if ( isset( $seen[ $key ] ) ) {
+				/* translators: 1: this row's position, 2: the earlier row with the same label. */
+				$errors[ $name . '[label]' ] = array( sprintf( __( 'Row %1$d has the same label as row %2$d. Every slot needs a label of its own.', 'law' ), $number, $seen[ $key ] ) );
+			} else {
+				$seen[ $key ] = $number;
+			}
+		}
+
+		if ( ! empty( $row['locked'] ) ) {
+			continue;
+		}
+
+		$date = DateTime::createFromFormat( '!Y-m-d', $row['date'] );
+		if ( '' === $row['date'] ) {
+			/* translators: %d: the row's position in the table. */
+			$errors[ $name . '[date]' ] = array( sprintf( __( 'Row %d needs a date.', 'law' ), $number ) );
+		} elseif ( ! $date || $date->format( 'Y-m-d' ) !== $row['date'] ) {
+			/* translators: %d: the row's position in the table. */
+			$errors[ $name . '[date]' ] = array( sprintf( __( 'Row %d has a date that is not a real date.', 'law' ), $number ) );
+		}
+
+		$time = '/^([01]\d|2[0-3]):[0-5]\d$/';
+		if ( '' === $row['start'] ) {
+			/* translators: %d: the row's position in the table. */
+			$errors[ $name . '[start]' ] = array( sprintf( __( 'Row %d needs a start time.', 'law' ), $number ) );
+		} elseif ( ! preg_match( $time, $row['start'] ) ) {
+			/* translators: %d: the row's position in the table. */
+			$errors[ $name . '[start]' ] = array( sprintf( __( 'Row %d has a start time that is not a real time.', 'law' ), $number ) );
+		}
+
+		if ( '' !== $row['end'] ) {
+			if ( ! preg_match( $time, $row['end'] ) ) {
+				/* translators: %d: the row's position in the table. */
+				$errors[ $name . '[end]' ] = array( sprintf( __( 'Row %d has an end time that is not a real time.', 'law' ), $number ) );
+			} elseif ( preg_match( $time, $row['start'] ) && $row['end'] <= $row['start'] ) {
+				// Later than the start, not equal to it (Denis, 27 October 2026).
+				/* translators: %d: the row's position in the table. */
+				$errors[ $name . '[end]' ] = array( sprintf( __( 'Row %d: the end time must be later than the start time. Leave it empty if the slot runs on from its start.', 'law' ), $number ) );
+			}
+		}
+	}
+
+	return $errors;
+}
+
+/**
+ * Save the slot list: validate, refuse any change to a slot an event holds
+ * other than retiring it, sort, store.
+ *
+ * A row is matched to the stored slot it came from by its `original` label
+ * first and then, for a row that has none (the Settings textarea, or a row
+ * added on the screen with a label that already exists), by its label. Any
+ * stored slot left unmatched is a deletion.
+ *
+ * Both refusals put the slot back as it is stored rather than refuse the save
+ * outright, so whatever else was changed survives the round trip: a changed
+ * held row is reported against its label, and a deleted held slot comes back
+ * at the bottom of the list. The screen locks those fields and disables the
+ * delete control, so on it this only happens to a page that went stale while
+ * an event chose the slot.
+ *
+ * @param array       $rows    law_events_slots_from_input() rows.
+ * @param string|null $version law_events_slots_version() as the page saw it;
+ *                             null skips the check (the Settings textarea).
+ * @return array{saved:int}|WP_Error The error carries `errors` (keyed by input
+ *         name) and `restored` (the rows put back after a refused deletion)
+ *         in its data.
+ */
+function law_events_save_slots( array $rows, $version = null ) {
+	if ( null !== $version && (string) $version !== law_events_slots_version() ) {
+		return new WP_Error(
+			'law_slots_stale',
+			__( 'Somebody else changed the time slots after you opened this page, so nothing was saved. The list below is the current one: please make your change again.', 'law' )
+		);
+	}
+
+	$stored = array_values( law_events_slots( true ) );
+	$usage  = law_events_slot_usage();
+
+	// Match rows to stored slots: by original label, then by label.
+	$claimed = array();
+	$rows    = array_values( $rows );
+	foreach ( array( 'original', 'label' ) as $by ) {
+		foreach ( $rows as $i => $row ) {
+			if ( isset( $rows[ $i ]['stored'] ) || '' === $row[ $by ] ) {
+				continue;
+			}
+			foreach ( $stored as $s => $slot ) {
+				if ( ! isset( $claimed[ $s ] ) && law_events_slot_label_key( $slot['label'] ) === law_events_slot_label_key( $row[ $by ] ) ) {
+					$claimed[ $s ]         = true;
+					$rows[ $i ]['stored'] = $slot;
+					break;
+				}
+			}
+		}
+	}
+
+	// A held slot: its label, date and times must be exactly as stored.
+	$held_errors = array();
+	foreach ( $rows as $i => $row ) {
+		if ( empty( $row['stored'] ) ) {
+			continue;
+		}
+		$holders = law_events_slot_usage_count( $usage, $row['stored']['label'] );
+		if ( ! $holders ) {
+			continue;
+		}
+		$rows[ $i ]['locked'] = true;
+		foreach ( array( 'label', 'date', 'start', 'end' ) as $field ) {
+			if ( $row[ $field ] !== $row['stored'][ $field ] ) {
+				$held_errors[ 'slots[' . (int) $row['index'] . '][label]' ] = array(
+					sprintf(
+						/* translators: 1: slot label, 2: number of events. */
+						_n(
+							'"%1$s" is held by %2$d event, so its label, date and times cannot be changed. It has been put back as it was: retire it and add a new slot instead.',
+							'"%1$s" is held by %2$d events, so its label, date and times cannot be changed. It has been put back as it was: retire it and add a new slot instead.',
+							$holders,
+							'law'
+						),
+						$row['stored']['label'],
+						$holders
+					),
+				);
+				break;
+			}
+		}
+	}
+
+	$errors   = law_events_validate_slots( $rows ) + $held_errors;
+	$restored = array();
+	$next     = $rows ? max( wp_list_pluck( $rows, 'index' ) ) + 1 : 0;
+	foreach ( $stored as $s => $slot ) {
+		if ( isset( $claimed[ $s ] ) ) {
+			continue;
+		}
+		$holders = law_events_slot_usage_count( $usage, $slot['label'] );
+		if ( ! $holders ) {
+			continue;
+		}
+		$restored[] = array(
+			'index'    => $next,
+			'label'    => $slot['label'],
+			'date'     => $slot['date'],
+			'start'    => $slot['start'],
+			'end'      => $slot['end'],
+			'retired'  => $slot['retired'],
+			'original' => $slot['label'],
+		);
+		$errors[ 'slots[' . $next . '][label]' ] = array(
+			sprintf(
+				/* translators: 1: slot label, 2: number of events. */
+				_n(
+					'"%1$s" is held by %2$d event, so it cannot be deleted. It has been put back at the bottom of the list: retire it instead.',
+					'"%1$s" is held by %2$d events, so it cannot be deleted. It has been put back at the bottom of the list: retire it instead.',
+					$holders,
+					'law'
+				),
+				$slot['label'],
+				$holders
+			),
+		);
+		$next++;
+	}
+
+	if ( $errors ) {
+		return new WP_Error(
+			'law_slots_invalid',
+			__( 'The time slots were not saved.', 'law' ),
+			array( 'errors' => $errors, 'restored' => $restored )
+		);
+	}
+
+	$slots = array();
+	foreach ( $rows as $row ) {
+		$slots[] = array(
+			'label'   => $row['label'],
+			'date'    => $row['date'],
+			'start'   => $row['start'],
+			'end'     => $row['end'],
+			'retired' => $row['retired'],
+		);
+	}
+
+	law_events_update_settings( array( 'slots' => law_events_sort_slots( $slots ) ) );
+
+	return array( 'saved' => count( $slots ) );
+}
+
 /** Committee recipient emails, filtered to valid addresses. */
 /**
  * The ATTENDEE registration terms, for anyone booking or applying for a place.
@@ -553,8 +935,18 @@ function law_events_settings_page() {
 
 	if ( isset( $_POST['law_events_settings_nonce'] ) ) {
 		check_admin_referer( 'law_events_settings', 'law_events_settings_nonce' );
-		law_events_settings_save();
+		$slots_result = law_events_settings_save();
 		echo '<div class="notice notice-success"><p>Settings saved.</p></div>';
+		// The slot list goes through the same saver as Manage time slots, so it
+		// can be refused on its own while everything else on the screen saves.
+		if ( is_wp_error( $slots_result ) ) {
+			$slot_errors = (array) ( $slots_result->get_error_data()['errors'] ?? array() );
+			echo '<div class="notice notice-error"><p>' . esc_html__( 'The slots were not changed:', 'law' ) . '</p><ul>';
+			foreach ( $slot_errors ? $slot_errors : array( array( $slots_result->get_error_message() ) ) as $slot_messages ) {
+				echo '<li>' . esc_html( (string) ( $slot_messages[0] ?? '' ) ) . '</li>';
+			}
+			echo '</ul></div>';
+		}
 	}
 
 	$s = law_events_settings();
@@ -634,21 +1026,21 @@ function law_events_settings_save() {
 		'speakers_archive_public' => ! empty( $_POST['speakers_archive_public'] ),
 	);
 
-	$slots = array();
+	// The slots are saved separately, below, through the shared saver.
+	$slot_rows = array();
 	foreach ( explode( "\n", (string) wp_unslash( $_POST['slots'] ?? '' ) ) as $line ) {
 		$parts = array_map( 'trim', explode( '|', $line ) );
 		if ( '' === ( $parts[0] ?? '' ) ) {
 			continue;
 		}
-		$slots[] = array(
-			'label'   => sanitize_text_field( $parts[0] ),
-			'date'    => sanitize_text_field( $parts[1] ?? '' ),
-			'start'   => sanitize_text_field( $parts[2] ?? '' ),
-			'end'     => sanitize_text_field( $parts[3] ?? '' ),
+		$slot_rows[] = array(
+			'label'   => $parts[0],
+			'date'    => $parts[1] ?? '',
+			'start'   => $parts[2] ?? '',
+			'end'     => $parts[3] ?? '',
 			'retired' => 'retired' === strtolower( $parts[4] ?? '' ),
 		);
 	}
-	$changes['slots'] = $slots;
 
 	$emails = array();
 	foreach ( explode( "\n", (string) wp_unslash( $_POST['committee_emails'] ?? '' ) ) as $line ) {
@@ -667,4 +1059,10 @@ function law_events_settings_save() {
 	$changes['fee_tiers'] = $tiers;
 
 	law_events_update_settings( $changes );
+
+	// Through the same saver as Manage time slots, so the textarea is no back
+	// door round its rules: the list is sorted, and a slot an event holds can
+	// only be retired. There are no original labels here, so a line is matched
+	// to its slot by label and an edited held label reads as a deletion.
+	return law_events_save_slots( law_events_slots_from_input( $slot_rows ) );
 }

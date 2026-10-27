@@ -3220,6 +3220,102 @@
   line-height: 1.5;
 }
 
+/* Manage time slots (templates/account-dashboard-slots.php) _________________ */
+
+.law-slots__key {
+  max-width: 48rem;
+  margin: 0 0 1.25rem 1.1rem;
+  color: #4a4a6a;
+  font-size: 0.95rem;
+}
+
+.law-slots__key li {
+  margin-bottom: 0.2rem;
+}
+
+/* The repeater's rows are table rows on this screen, so the card chrome
+   .law-row brings (tint, border, room for the corner remove button) comes off
+   and the table's own row rules draw them. */
+.law-slots__table .law-row {
+  position: static;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.law-slots__table td {
+  vertical-align: middle;
+}
+
+/* Wide enough for "Tue 1st Dec: 08:30–10:00" without the input clipping it;
+   the table's own 12rem cell cap is for text, not controls. */
+.law-slots__table td:first-child {
+  min-width: 17rem;
+  max-width: none;
+}
+
+.law-slots__table td:nth-child(2) {
+  min-width: 10.5rem;
+}
+
+.law-slots__table td:nth-child(3),
+.law-slots__table td:nth-child(4) {
+  min-width: 7.5rem;
+}
+
+.law-slots__field {
+  display: block;
+  margin: 0;
+}
+
+.law-slots__field.is-invalid input {
+  border: 2px solid var(--law-form-error-accent);
+}
+
+.law-slots__table .law-slots__retired {
+  text-align: center;
+}
+
+.law-slots__check {
+  display: inline-block;
+  margin: 0;
+  line-height: 1;
+}
+
+.law-slots__check input {
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  vertical-align: middle;
+}
+
+.law-slots__usage {
+  white-space: nowrap;
+  font-size: 0.875rem;
+  color: #4a4a6a;
+}
+
+.law-slots__usage span {
+  display: block;
+}
+
+.law-slots__table .law-row-remove {
+  position: static;
+  font-size: 1.5rem;
+}
+
+/* Disabled because an event holds the slot. Greyed rather than hidden, so the
+   column reads the same on every row and the reason is one hover away. */
+.law-slots__table .law-row-remove:disabled {
+  color: #9a9aae;
+  cursor: not-allowed;
+}
+
+.law-slots__add {
+  margin: 1rem 0 1.5rem;
+}
+
 /* Event submitters (templates/account-dashboard-submitters.php) _____________ */
 
 /* The Add opener sits above the table, on its own line, like the discount

@@ -38,6 +38,9 @@ require_once __DIR__ . '/notifications.php';
 // notifications.php, whose registry and shared save helpers it renders and
 // writes through.
 require_once __DIR__ . '/emails-dashboard.php';
+// The committee's slot list. Its save path lives in settings.php, which the
+// wp-admin Settings textarea writes through too.
+require_once __DIR__ . '/slots-dashboard.php';
 // The per-event booking confirmation. After the emails dashboard because it
 // reads the same registry through law_events_email(), and after notifications
 // because law_event_override_slug_map() lives there.

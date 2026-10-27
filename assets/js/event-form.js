@@ -31,6 +31,13 @@
 			row.querySelectorAll('[data-name]').forEach(function (field) {
 				field.name = field.getAttribute('data-name').replace('__i__', String(index));
 				field.removeAttribute('data-name');
+				/* A hidden empty required control stops the whole form
+				   submitting, so the template row says data-law-required and
+				   the copy becomes required here (Manage time slots). */
+				if (field.hasAttribute('data-law-required')) {
+					field.required = true;
+					field.removeAttribute('data-law-required');
+				}
 				if (field.type === 'checkbox' || field.type === 'radio') {
 					field.checked = false; // Its value is the choice itself; only the state resets.
 				} else if (field.tagName === 'SELECT') {

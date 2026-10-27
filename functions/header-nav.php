@@ -67,6 +67,7 @@ function law_account_paths() {
 		'discounts'   => 'account/dashboard/discounts',
 		'submitters'  => 'account/dashboard/submitters',
 		'emails'      => 'account/dashboard/emails',
+		'slots'       => 'account/dashboard/slots',
 		'events'      => 'account/events',
 		'my_bookings' => 'account/bookings',
 		'submit'      => 'account/events/submit',
@@ -459,6 +460,18 @@ function law_header_nav() {
 			'group'       => 'committee',
 			'icon'        => 'email',
 			'description' => __( 'Wording of every notification the module sends', 'law' ),
+		);
+		// Under Manage emails, by decision (Denis, 27 October 2026): like it,
+		// this is set-up for the week rather than something that happens
+		// during it. The dates and times hosts choose from
+		// (functions/events/slots-dashboard.php), so the slot list never needs
+		// wp-admin either.
+		$items[] = array(
+			'key'         => 'slots',
+			'label'       => __( 'Manage time slots', 'law' ),
+			'group'       => 'committee',
+			'icon'        => 'time',
+			'description' => __( 'The dates and times hosts can choose from', 'law' ),
 		);
 	}
 
