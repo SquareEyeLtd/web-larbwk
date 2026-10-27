@@ -61,10 +61,12 @@ class HeaderNavTest extends LAW_Test_Case {
 		// views, which are kept together (RECEPTIONS.md §0.4).
 		// 'submitters' sits beside 'discounts' for the same reason: both are
 		// settings the committee prepares rather than things that happen during
-		// the week. 'emails' is last: every item before it is something that
-		// happens during the week, and it is the wording the site sends about
-		// all of them.
-		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts', 'submitters', 'emails' );
+		// the week. 'emails' comes after them: every item before it is something
+		// that happens during the week, and it is the wording the site sends
+		// about all of them. 'slots' sits under it, by decision (Denis,
+		// 27 October 2026): the dates and times hosts choose from are set-up
+		// too.
+		$committee = array( 'dashboard', 'speakers', 'flagship', 'receptions', 'bookings', 'flagship_bookings', 'discounts', 'submitters', 'emails', 'slots' );
 
 		return array(
 			'subscriber, no events'   => array(
@@ -274,14 +276,15 @@ class HeaderNavTest extends LAW_Test_Case {
 		$this->assertSame( 'Flagship bookings', $items['flagship_bookings'] );
 
 		$this->assertSame( 'Manage emails', $items['emails'] );
+		$this->assertSame( 'Manage time slots', $items['slots'] );
 
 		$keys      = array_keys( $items );
-		$committee = array_values( array_intersect( $keys, array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'emails' ) ) );
+		$committee = array_values( array_intersect( $keys, array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'emails', 'slots' ) ) );
 
 		$this->assertSame(
-			array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'emails' ),
+			array( 'dashboard', 'speakers', 'flagship', 'bookings', 'flagship_bookings', 'discounts', 'emails', 'slots' ),
 			$committee,
-			'The management links keep their order, with the two bookings views adjacent and Manage emails last.'
+			'The management links keep their order, with the two bookings views adjacent and Manage time slots under Manage emails.'
 		);
 		$this->assertGreaterThan(
 			array_search( 'profile', $keys, true ),
