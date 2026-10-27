@@ -162,6 +162,34 @@ class ReceptionInclusionTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'already had', law_reception_choices_note( $result ) );
 	}
 
+	/**
+	 * The confirmation email names every reception they will be at, held
+	 * already or just granted, earliest first, with its day and venue
+	 * (Denis, 27 October 2026).
+	 */
+	public function test_the_email_lists_each_reception_with_its_day_and_venue(): void {
+		$later   = $this->make_reception( array( '_law_start' => '2026-12-02 18:30', '_law_venue' => 'Guildhall' ) );
+		$earlier = $this->make_reception( array( '_law_start' => '2026-11-30 18:30', '_law_venue' => 'St Paul\'s Cathedral' ) );
+		wp_update_post( array( 'ID' => $later, 'post_title' => 'Flagship Reception' ) );
+		wp_update_post( array( 'ID' => $earlier, 'post_title' => 'The Opening Reception' ) );
+
+		$note = law_reception_included_email_note(
+			array(
+				'granted' => array( $later => 'Flagship Reception' ),
+				'skipped' => array( $earlier => 'The Opening Reception' ),
+				'failed'  => array( 999999 => 'Never granted' ),
+			)
+		);
+
+		$this->assertSame(
+			"As part of your ticket package, you are invited to attend the official LAW receptions. According to your registration, you will be joining us at:\n\n"
+			. "• The Opening Reception on Monday 30 November at St Paul's Cathedral\n"
+			. '• The Flagship Reception on Wednesday 2 December at Guildhall.',
+			$note
+		);
+		$this->assertSame( '', law_reception_included_email_note( array( 'granted' => array(), 'skipped' => array() ) ) );
+	}
+
 	public function test_a_full_reception_is_over_booked_rather_than_refused(): void {
 		$this->make_flagship();
 		$reception = $this->make_reception( array( '_law_tickets_available' => 1 ) );

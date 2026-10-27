@@ -10864,6 +10864,39 @@ jump selector), `assets/js/event-form.js`, `assets/css/event-form.css`,
 `assets/css/calendar.css`, `tests/SlotsDashboardTest.php` (new),
 `tests/HeaderNavTest.php`, `tests/AccountHubTest.php`.
 
+## The ticket confirmation names the receptions (27 October 2026)
+
+Two wording changes to the flagship confirmation emails, both Denis's.
+
+**`{payment_note}` no longer says "Your registration has been approved by the
+committee."** The subject and the "Your ticket … is confirmed" line already
+say it. On a paid approval the note now opens with the charge sentence. The
+transfer wording is unchanged.
+
+**`{included_receptions}` lists every reception the delegate will be at.** It
+used to say "Opening reception and Closing drinks have been added to your
+bookings, at no cost." It now reads "As part of your ticket package, you are
+invited to attend the official LAW receptions. According to your registration,
+you will be joining us at:" followed by one bulleted line per reception, earliest
+first: "The Opening Reception on Monday 30 November at St Paul's Cathedral".
+Receptions they already held are listed with the ones just granted, since either
+way they are coming. One that could not be granted is left out. Built by
+`law_reception_included_email_note()` from the grant result, and the line
+itself by `law_reception_joining_note()`, which the test email's sample also
+uses. A reception title that already starts with "The" gets no second one. The
+names are not bold, because tag values are escaped as text before the body is
+rendered.
+
+It feeds all three confirmation templates (`user_flagship_approved`,
+`user_flagship_approved_free`, `user_flagship_complimentary`) and the attendee's
+copy on a place booked for someone else. The My bookings "Added to your
+bookings" notice keeps `law_reception_choices_note()` and its old wording, and a
+transferred ticket keeps `law_flagship_receptions_moved_note()`. Neither of
+those comes from a registration.
+
+Touched: `functions/events/receptions.php`, `functions/events/flagship-bookings.php`,
+`functions/events/notifications.php` (the sample), `tests/ReceptionInclusionTest.php`.
+
 ---
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
