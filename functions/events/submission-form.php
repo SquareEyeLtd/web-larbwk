@@ -1339,8 +1339,9 @@ function law_events_form_state() {
  *
  * The error codes are the field names the form posts, so the selector is
  * almost always the name itself; the [] form covers the checkbox groups
- * (preferred slots, sectors), and the speaker photos are keyed by their row
- * index because a row has no single name of its own. An unknown shape returns
+ * (preferred slots, sectors), the speaker photos are keyed by their row
+ * index because a row has no single name of its own, and a key that is itself
+ * a bracketed input name points at that input. An unknown shape returns
  * nothing at all, and the dialog prints that line as plain text.
  *
  * @param string $key Error code from law_events_form_save().
@@ -1351,6 +1352,12 @@ function law_events_form_error_selector( $key ) {
 
 	if ( preg_match( '/^speaker_photo_(\d+)$/', $key, $matches ) ) {
 		return '[name="speaker_photo[' . $matches[1] . ']"]';
+	}
+	// A repeater row's own control, keyed by its full input name
+	// (slots[3][label] on Manage time slots). Only word characters inside the
+	// brackets, so nothing posted can break out of the attribute selector.
+	if ( preg_match( '/^[a-z0-9_]+(?:\[[a-z0-9_]+\])+$/', $key ) ) {
+		return '[name="' . $key . '"]';
 	}
 	if ( ! preg_match( '/^[a-z0-9_]+$/', $key ) ) {
 		return '';
@@ -1530,6 +1537,7 @@ add_action( 'wp_enqueue_scripts', function () {
 		|| is_page_template( 'templates/account-dashboard-discounts.php' )
 		|| is_page_template( 'templates/account-dashboard-submitters.php' )
 		|| is_page_template( 'templates/account-dashboard-emails.php' )
+		|| is_page_template( 'templates/account-dashboard-slots.php' )
 		|| is_page_template( 'templates/account-dashboard-receptions.php' )
 		|| is_page_template( 'templates/account-events.php' )
 		|| is_page_template( 'templates/account-bookings.php' )

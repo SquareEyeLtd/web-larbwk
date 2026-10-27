@@ -80,7 +80,7 @@
 }
 .law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
 .law-event-form input[type="password"],
-.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select, .law-event-form textarea {
+.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form input[type="date"], .law-event-form select, .law-event-form textarea {
 	width: 100%; border: var(--law-form-input-border); border-radius: 0; padding: .6rem .75rem; background: #fff; color: #1a1a3d; margin: 0;
 	/* box-sizing so the padding and any error border are inside the stated
 	   height, not added to it. */
@@ -91,12 +91,14 @@
    with appearance:none sizes from its own shadow content, not from ours. */
 .law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
 .law-event-form input[type="password"],
-.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select:not([multiple]) {
+.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form input[type="date"], .law-event-form select:not([multiple]) {
 	height: var(--law-field-height);
 }
-/* Time inputs: WebKit doesn't vertically centre the value when a custom
-   line-height is forced, so normalise it. */
-.law-event-form input[type="time"] { line-height: normal; }
+/* Time and date inputs: WebKit doesn't vertically centre the value when a
+   custom line-height is forced, so normalise it. The date input joined the
+   shared rules on 27 October 2026 (Manage time slots puts one beside two time
+   inputs); before that it took Foundation's shorter box and grey glow. */
+.law-event-form input[type="time"], .law-event-form input[type="date"] { line-height: normal; }
 /* Every interaction state, stated once for all three control types, because
    Foundation styles them apart and the two drifted: a text input took auth.css's
    orange focus ring while a <select> and a <textarea> took Foundation's grey
@@ -107,7 +109,7 @@
    field it sits on. */
 .law-event-form input[type="text"], .law-event-form input[type="email"], .law-event-form input[type="url"],
 .law-event-form input[type="password"],
-.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form select,
+.law-event-form input[type="number"], .law-event-form input[type="time"], .law-event-form input[type="date"], .law-event-form select,
 .law-event-form textarea {
 	box-shadow: none; transition: outline-color .15s ease-in-out;
 }
@@ -116,7 +118,7 @@
 .law-event-form input[type="text"]:hover, .law-event-form input[type="email"]:hover,
 .law-event-form input[type="url"]:hover, .law-event-form input[type="password"]:hover,
 .law-event-form input[type="number"]:hover, .law-event-form input[type="time"]:hover,
-.law-event-form select:hover, .law-event-form textarea:hover {
+.law-event-form input[type="date"]:hover, .law-event-form select:hover, .law-event-form textarea:hover {
 	outline: 1px solid rgba(239, 125, 5, .55); outline-offset: 0;
 }
 /* Focus: the same orange ring at full strength, matching auth.css's sign-in
@@ -125,7 +127,7 @@
 .law-event-form input[type="text"]:focus, .law-event-form input[type="email"]:focus,
 .law-event-form input[type="url"]:focus, .law-event-form input[type="password"]:focus,
 .law-event-form input[type="number"]:focus, .law-event-form input[type="time"]:focus,
-.law-event-form select:focus, .law-event-form textarea:focus {
+.law-event-form input[type="date"]:focus, .law-event-form select:focus, .law-event-form textarea:focus {
 	outline: 2px solid #ef7d05; outline-offset: 1px;
 	border-color: transparent; background-color: #fff; box-shadow: none;
 }

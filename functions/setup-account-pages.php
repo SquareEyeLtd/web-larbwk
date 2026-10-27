@@ -72,6 +72,8 @@ function law_setup_account_pages() {
 		// The committee's front-end copy of the wp-admin Emails screen
 		// (functions/events/emails-dashboard.php).
 		$setup['account/dashboard/emails'] = 'templates/account-dashboard-emails.php';
+		// The committee's slot list (functions/events/slots-dashboard.php).
+		$setup['account/dashboard/slots'] = 'templates/account-dashboard-slots.php';
 		// The personal bookings page, split off My events (September 2026).
 		// CPT-only: law_account_bookings() returns nothing on the legacy
 		// source, so on a 'gf' environment this page would never have content.
@@ -161,6 +163,7 @@ function law_setup_account_pages() {
 	$report[] = 'ACCESS   /account/dashboard/discounts/ committee restriction: ' . law_setup_discounts_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/submitters/ committee restriction: ' . law_setup_submitters_dashboard_access();
 	$report[] = 'ACCESS   /account/dashboard/emails/ committee restriction: ' . law_setup_emails_dashboard_access();
+	$report[] = 'ACCESS   /account/dashboard/slots/ committee restriction: ' . law_setup_slots_dashboard_access();
 
 	// The flagship conference. A law_event post rather than a page, so a git
 	// deploy carries the code but not the record; this and the migration's step
@@ -539,6 +542,11 @@ function law_setup_submitters_dashboard_access() {
 /** Manage emails' Members restriction. */
 function law_setup_emails_dashboard_access() {
 	return law_setup_child_page_access( 'account/dashboard/emails' );
+}
+
+/** Manage time slots' Members restriction. */
+function law_setup_slots_dashboard_access() {
+	return law_setup_child_page_access( 'account/dashboard/slots' );
 }
 
 /**

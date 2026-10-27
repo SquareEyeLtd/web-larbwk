@@ -105,7 +105,29 @@ repair-references, backfill-session-agenda).
   `law_event_apply_slot_label()` all pass `true` and label the slot
   "(retired)", because a confirmed slot that vanished from the select would
   fall back to "Slot not confirmed" and blank the event's datetimes on the next
-  save. Deleting the line instead of retiring it breaks both.
+  save. Deleting the line instead of retiring it breaks both, which is why the
+  write path below refuses to delete a slot any event holds (27 October 2026).
+- **The slot write path** (27 October 2026), one for both editors — the
+  committee's Manage time slots screen (`slots-dashboard.php`) and the textarea
+  on this screen, which stays. `law_events_slots_from_input()` cleans posted
+  rows (keeping each row's posted index and its `original` label),
+  `law_events_validate_slots()` requires a label, a real Y-m-d date and an
+  HH:MM start, wants any end LATER than the start, and refuses two labels that
+  share a `law_events_slot_label_key()`, with messages that name the row by
+  position. `law_events_save_slots()` matches rows to stored slots by
+  `original` then by label and refuses any change but Retired to a slot that
+  `law_events_slot_usage()` says an event holds (confirmed or preferred, any
+  status outside the bin): no deletion, no new label, no new date or times
+  (Denis, 27 October 2026). An event stores the label and had its datetimes
+  written from the slot, so a rename would orphan the label and a re-time
+  would move the event the next time anyone saved it. Refused rows come back
+  as stored (a deleted one at the bottom). A held row is validated for
+  duplicate labels only, so a legacy row that breaks a rule cannot lock the
+  list. The list is stored through `law_events_sort_slots()` (date, start,
+  end, an empty end after any end at the same start, then label).
+  `law_events_slots_version()` is the fingerprint the screen posts so a stale
+  page is refused (the textarea passes `null` and skips it). The textarea's
+  refusals print as an admin notice and the rest of the settings still save.
 - `law_events_slot_label_key()`, `law_events_normalise_slot_label()`: a loose
   comparison key (entities decoded, en/em dashes folded to a hyphen, spaces
   around it dropped, whitespace collapsed, lower-cased) and the mapping of any
@@ -10779,6 +10801,68 @@ Touched: `functions/events/notifications.php`,
 `parts/layout/modal.php`, `templates/account-dashboard-emails.php`,
 `assets/css/law-modal.css`, `assets/js/law-modal.js`,
 `tests/EmailsDashboardTest.php`.
+
+---
+
+## Manage time slots on the front end (27 October 2026)
+
+The slot list was a pipe-separated textarea on Events → Settings, out of reach
+of a member holding only `events_committee`. It now has a committee screen at
+`/account/dashboard/slots/`, "Manage time slots", under Manage emails in the
+top bar and the account hub (Denis, 27 October 2026), with the clock glyph.
+
+**A table repeater.** One row per slot: label, date, start, end, retired, the
+events holding it ("9 confirmed / 36 preferred") and a delete control. It is
+`event-form.js`'s repeater drawn as `<tr class="law-row">` rows, so "Add a
+slot" appends at the bottom; the save sorts the list. Label, date and start
+are `required`; the template row carries `data-law-required` instead, because
+a hidden empty required control blocks the whole form, and the repeater's
+clone step now turns that into `required` on the copy. A key above the table
+says what retired and no end time mean, and that a held slot is locked. A held
+row is drawn with its label, date and times `readonly` and its delete button
+disabled, so Retired is the one thing that can change on it.
+
+**One write path.** Both editors save through `law_events_save_slots()` in
+`settings.php` (see that section). Events → Settings keeps its textarea
+(Denis, 27 October 2026); it obeys the same rules. Nothing is logged: a change
+the screen can make reaches no event.
+
+**Save and failure.** A plain POST to `admin_post_law_slots_manage` on the
+standard guard (nonce, honeypot, a `slots_manage` rate surface of 30 per 10
+minutes, committee check), then a redirect. A refused save comes back through
+a one-shot transient with every row as typed (plus any held slot it tried to
+delete, put back at the bottom), each bad control marked `is-invalid` and
+described by its line in the error notice, and the shared failed-save dialog
+open (`law_events_form_error_modal()`). `law_events_form_error_selector()`
+learned bracketed input names (`slots[3][end]`) so its jump lines reach a row's
+control. A save from a page opened before somebody else's save is refused as
+stale and redraws the current list rather than the typed one, which would
+otherwise put the other change back.
+
+**Date inputs joined the shared control rules** in `event-form.css`. They had
+been left on Foundation's shorter box and grey glow, which showed as soon as a
+date sat beside the two time inputs. The flagship, reception and external-event
+forms' date boxes now match the inputs beside them.
+
+Provisioned both ways (`law_migration_page_map()` and `?setup-account-pages`,
+which also copies the dashboard's Members restriction). Verified in the browser
+at desktop and phone widths: 18 rows with 13 held, add-then-empty save blocked
+by the browser, a new earliest slot sorted to the top, a refused save with
+the dialog open and its jump line focusing the field, an unheld slot deleted.
+Two reversals the same day, both Denis's: the end-after-start rule was taken
+out and put back, and the first build's carry-through (a renamed or re-timed
+held slot rewrote its events' labels and datetimes) gave way to locking held
+slots altogether.
+
+Touched: `functions/events/slots-dashboard.php` (new),
+`templates/account-dashboard-slots.php` (new), `parts/events/slots-manage.php`
+(new), `functions/events/settings.php` (the write path; the textarea routed
+through it), `functions/events/_load.php`, `functions/header-nav.php`,
+`functions/setup-account-pages.php`, `functions/events/migration/runner.php`,
+`functions/enqueue.php`, `functions/events/submission-form.php` (assets and the
+jump selector), `assets/js/event-form.js`, `assets/css/event-form.css`,
+`assets/css/calendar.css`, `tests/SlotsDashboardTest.php` (new),
+`tests/HeaderNavTest.php`, `tests/AccountHubTest.php`.
 
 ---
 
