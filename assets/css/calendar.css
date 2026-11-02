@@ -2020,11 +2020,11 @@
 }
 
 /* .law-cal a strips link colour and underline for the programme's cards, which
-   left a link in the description reading as bold text. #b35f00, not the brand
-   #ef7d05: this is body text on white, and the brand orange is 2.8:1 there
-   against #b35f00's 4.6:1 (the light forms' orange, event-form.css). */
+   left a link in the description reading as bold text. The brand orange, to
+   match .law-back-link above it (Denis, 2 November 2026), knowingly at 2.8:1
+   on white rather than the light forms' AA-passing #b35f00. */
 .law-cal .law-cal-detail__body a {
-  color: #b35f00;
+  color: #ef7d05;
   text-decoration: underline;
 }
 
