@@ -2019,6 +2019,20 @@
   line-height: 1.5;
 }
 
+/* .law-cal a strips link colour and underline for the programme's cards, which
+   left a link in the description reading as bold text. #b35f00, not the brand
+   #ef7d05: this is body text on white, and the brand orange is 2.8:1 there
+   against #b35f00's 4.6:1 (the light forms' orange, event-form.css). */
+.law-cal .law-cal-detail__body a {
+  color: #b35f00;
+  text-decoration: underline;
+}
+
+.law-cal .law-cal-detail__body a:hover,
+.law-cal .law-cal-detail__body a:focus {
+  color: #292459;
+}
+
 /* --- Speaker cards (parts/events/speaker-card.php) ---
    Two per row from 48em, each a block with an orange rule down its left edge
    rather than a box: the single event view is already a light page with an
