@@ -270,6 +270,9 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			'booking_id'    => (int) $booking->ID,
 			'number'        => $number,
 			'status'        => $statuses[ $booking->post_status ] ?? 'active',
+			// Why the queue is skipping a waitlisted row, in full: this
+			// dashboard is the committee's alone.
+			'passed_over'   => 'law-waitlisted' === $booking->post_status ? law_waitlist_passed_over_reason( $booking ) : '',
 			'booked'        => (string) $booking->post_date,
 			'event_id'      => $event_id,
 			'event_title'   => $event->post_title,

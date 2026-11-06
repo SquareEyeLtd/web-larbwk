@@ -1249,7 +1249,7 @@ ONE booking carrying an attendee rows array; that model, its flat
   from `wp_trash_post` while the event is still published; otherwise a freed
   place could promote somebody onto an event being deleted seconds later.
 - Tests: `tests/BookingsTest.php` (35), `tests/BookingEmailsTest.php` (16),
-  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (18).
+  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (24).
 
 ### `waitlist.php`: the waitlist (WAITLIST.md Part B)
 
@@ -1268,17 +1268,54 @@ block the queue. Joining is refused while places are free.
   guards. An entry the guards refuse is **skipped in place**: it keeps its
   position, the log records why every time, and its owner is emailed once
   (`_law_waitlist_blocked` is the latch), so one stuck entry can never freeze
-  the queue behind it. The pass is capped at `LAW_WAITLIST_PASS_CAP` (10) and
-  `LAW_WAITLIST_PASS_SECONDS` (15) and hands the rest to the
+  the queue behind it. The pass seats at most `LAW_WAITLIST_PASS_CAP` (10),
+  looks at most `LAW_WAITLIST_PASS_WINDOW` (30) entries and runs at most
+  `LAW_WAITLIST_PASS_SECONDS` (15), and hands the rest to the
   `law_waitlist_resume` cron event, checking `wp_next_scheduled()` first
-  because WordPress silently drops a duplicate schedule. Every email is sent
+  because WordPress silently drops a duplicate schedule. Since 6 November 2026
+  only SEATED entries count towards the cap (passed-over ones used to, which
+  let ten clashes at the front end every pass and reschedule it every minute),
+  and a pass that walked its whole window hands on only if it seated somebody.
+- **Re-offering places nothing else would (6 November 2026).**
+  `law_waitlist_has_promotable()` is a read-only "would a pass seat anybody?"
+  over the same window; `law_waitlist_offer()` runs a pass only when it would,
+  so none of the callers below writes a "passed over" line for nobody. Its
+  callers: the resume cron; `law_waitlist_recheck_person()`, called when
+  somebody gives up a place (`law_booking_cancel()`, `law_bookings_cancel_party()`
+  and the wp-admin trash backstop), which looks again at every other queue that
+  person is in, because the place may have been their clash; and
+  `law_waitlist_sweep()` on the hourly `law_waitlist_hourly` event (scheduled
+  on `init`, so a deploy needs no step), which walks
+  `law_waitlist_events_with_queue()` for at most `LAW_WAITLIST_SWEEP_SECONDS`.
+  The sweep is the safety net for an event moved, a booking deleted outright, a
+  missed resume or a busy lock.
+- **Why somebody is passed over is on screen.**
+  `law_waitlist_passed_over_reason( $entry, $name_event )` gives one short
+  third-person line ("Passed over: booked on "X" at the same time.", "…already
+  has a place on this event.", "…no payment method saved.") for an entry with
+  the latch set whose reason still stands (re-checked live, because the latch
+  outlives a clash that has cleared). The bookings list
+  (`parts/events/booking-list.php`) prints it under the attendee's name on the
+  waitlist table, naming the other event to the committee and saying "another
+  event" to a host; the committee's Manage bookings table prints it under the
+  Waitlisted badge (row key `passed_over`). The wording comes from
+  `law_waitlist_passed_over_text()`, and `law_booking_clash_event()` (the
+  finding half of `law_booking_guard_clash()`, split out for this) supplies the
+  other event.
+- **`/wp-admin/?check-waitlists`** (`admin/waitlist-check.php`,
+  `manage_options`): every queue on an upcoming event as `law_waitlist_preview()`
+  sees it (who would be seated, who is passed over and why, how many are just
+  waiting, and why an event cannot seat anybody at all), plus whether the
+  site's scheduled tasks are overdue. Opening it changes nothing; the "Seat
+  them now" button is a nonce'd POST that runs `law_waitlist_offer()` pass after
+  pass for up to `LAW_WAITLIST_CHECK_SECONDS` and reports who was seated. Every email is sent
   after the lock is released; a static per-event flag and
   `$GLOBALS['law_waitlist_suspended']` keep it out of its own re-entry and out
   of the cancel sweep. It is deliberately NOT called from the recount, which
   runs inside other bookers' locks.
 - Called from: `law_booking_cancel()` (any context but the sweep), both
-  wp-admin backstops, `law_event_tickets_changed()`, reorder and manual
-  promote.
+  wp-admin backstops, `law_event_tickets_changed()`, reorder, manual
+  promote and `law_waitlist_offer()`.
 - `law_waitlist_promote()` is the host's "Promote now": it bypasses the
   capacity guard only, never the duplicate or clash guards, and logs an
   over-booking loudly (`waitlist_overbooked`).
@@ -1294,9 +1331,10 @@ block the queue. Joining is refused while places are free.
 - An entry restored from the trash goes to the BACK of the queue
   (`untrashed_post`): its old position is meaningless once the people behind it
   have moved up.
-- `law_event_tickets_changed()` (in waitlist.php) is called at the END of both
-  ticket write paths — `admin/event-screen.php` and
-  `law_events_form_save()` — after every other field is written, so a save that
+- `law_event_tickets_changed()` (in waitlist.php) is called at the END of every
+  ticket write path — `admin/event-screen.php`, `law_events_form_save()`, the
+  committee panel, the content-transfer import and (since 6 November 2026) the
+  Manage receptions save — after every other field is written, so a save that
   moves the date and raises the places cannot email an invitation carrying the
   old date. Raising the places offers them to the queue; lowering them only
   logs.
@@ -10896,6 +10934,46 @@ those comes from a registration.
 
 Touched: `functions/events/receptions.php`, `functions/events/flagship-bookings.php`,
 `functions/events/notifications.php` (the sample), `tests/ReceptionInclusionTest.php`.
+
+## Waitlists catch up with raised places (6 November 2026)
+
+The client reported people left on waitlists after places were raised on
+several events, the Opening Reception among them, with nothing apparently
+clashing. Production data was not available, so the fix covers every route the
+code allowed rather than one confirmed case.
+
+**The Manage receptions save never offered raised places to the queue.**
+`law_reception_manage_handler()` wrote the number through `law_reception_save()`
+and stopped; every other screen that changes places ends in
+`law_event_tickets_changed()`. It now does too (source `receptions_dashboard`),
+after the confirmation-override write. A new reception is not a raise and skips
+it. The log carries both the reception's own diff line and "Places available
+changed", as the wp-admin path already did.
+
+**A passed-over entry was only looked at again when something happened on its
+own event**, so somebody passed over for a clash who then cancelled the other
+booking sat at the front of a queue with places free beside it. Cancelling a
+place now re-checks that person's other queues, an hourly sweep re-offers every
+free place, and the pass cap counts only seated entries (see the `waitlist.php`
+section for all three). Every one of them goes through
+`law_waitlist_has_promotable()` first, so a queue whose front is genuinely
+blocked gets no hourly "passed over" log lines and no emails. The event-cancel
+sweep still suspends promotion, so a clash cleared by a whole event being
+cancelled waits for the hourly sweep.
+
+**The reason is now on screen** for hosts and the committee, and
+**`/wp-admin/?check-waitlists`** reports every queue, and why each stuck person is
+stuck, before seating anybody. The person-level clash rule itself is unchanged:
+it is what stops one person holding two rooms at once.
+
+Touched: `functions/events/waitlist.php`, `functions/events/bookings.php`
+(`law_booking_clash_event()`, the cancel re-checks),
+`functions/events/receptions-dashboard.php`, `functions/events/bookings-dashboard.php`,
+`functions/events/admin/waitlist-check.php` (new), `functions/events/_load.php`,
+`parts/events/booking-list.php`, `parts/events/bookings-dashboard-list.php`,
+`assets/css/event-form.css`, `tests/WaitlistTest.php` (6 new),
+`tests/ReceptionsDashboardTest.php` (1 new). Checked in the browser on the host's
+and the committee's bookings list, Manage bookings and the trigger page.
 
 ---
 

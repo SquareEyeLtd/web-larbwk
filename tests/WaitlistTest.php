@@ -504,4 +504,152 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertCount( 2, $rest );
 		$this->assertSame( 0, law_waitlist_count( $event ) );
 	}
+
+	/* Places nothing else would offer (November 2026) _______________________ */
+
+	/** Queue somebody, then give them a place on an overlapping event. */
+	private function make_clashing_entry( int $event_id, int $overlap ): array {
+		$user  = $this->make_user();
+		$entry = $this->make_waitlist( $event_id, $user )[0];
+		$this->assertIsArray( $this->make_booking( $overlap, $user ) );
+		return array( 'user' => $user, 'entry' => (int) $entry );
+	}
+
+	public function test_passed_over_entries_no_longer_use_up_the_pass(): void {
+		// Eleven clashing entries at the front used to be a whole pass's cap,
+		// so the one seatable person behind them was never reached, and the
+		// same eleven were handed to cron a minute later, for ever.
+		$event   = $this->make_bookable_event();
+		$booked  = $this->fill( $event );
+		$overlap = $this->make_event(
+			array( '_law_tickets_available' => 20, '_law_start' => '2026-12-01 11:00', '_law_end' => '2026-12-01 13:00' ),
+			'publish',
+			$this->make_user()
+		);
+		for ( $i = 0; $i <= LAW_WAITLIST_PASS_CAP; $i++ ) {
+			$this->make_clashing_entry( $event, $overlap );
+		}
+		$seatable = $this->make_waitlist( $event, $this->make_user() )[0];
+
+		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
+
+		$this->assertSame( 'publish', get_post_status( $seatable ), 'The pass walks past the passed-over entries to the person it can seat.' );
+		$this->assertFalse( wp_next_scheduled( 'law_waitlist_resume', array( $event ) ), 'And hands nothing to cron: there is nobody left it could seat.' );
+	}
+
+	public function test_a_cleared_clash_offers_the_place_at_once(): void {
+		$event   = $this->make_bookable_event();
+		$this->fill( $event );
+		$overlap = $this->make_overlapping_event();
+		$clasher = $this->make_clashing_entry( $event, $overlap );
+
+		// A place comes up while they are still booked on the other session.
+		law_event_update_meta( $event, '_law_tickets_available', 3 );
+		law_event_tickets_changed( $event, 2, 3, 0, 'test' );
+		$this->assertSame( 'law-waitlisted', get_post_status( $clasher['entry'] ) );
+
+		// Giving up the other session is the only thing that changed, and it
+		// happened on a different event. Nothing used to look again.
+		$other = law_bookings_for_event( $overlap, 'publish', -1 );
+		law_booking_cancel( $other[0]->ID, $clasher['user'], 'self' );
+
+		$this->assertSame( 'publish', get_post_status( $clasher['entry'] ), 'Cancelling the clash seats them on the event they were waiting for.' );
+		$this->assertStringContainsString( 'promoted from the waitlist', $this->log_text( $event ) );
+	}
+
+	public function test_the_hourly_sweep_seats_a_queue_nothing_offered_its_places(): void {
+		$event = $this->make_bookable_event();
+		$this->fill( $event );
+		$entry = $this->make_waitlist( $event, $this->make_user() )[0];
+
+		// Places raised by a path that never ran the queue: the receptions
+		// screen until November 2026, a resume cron that never fired.
+		law_event_update_meta( $event, '_law_tickets_available', 3 );
+		$this->assertSame( 'law-waitlisted', get_post_status( $entry ) );
+
+		$this->assertContains( $event, law_waitlist_events_with_queue() );
+		// Scoped to this fixture: the sweep's own call covers every event on
+		// the site, and the local database has queues of its own.
+		$swept = law_waitlist_sweep( 'test', array( $event ) );
+
+		$this->assertSame( array( (int) $entry ), $swept[ $event ] ?? array() );
+		$this->assertSame( 'publish', get_post_status( $entry ) );
+		$this->assertNotFalse( wp_next_scheduled( 'law_waitlist_hourly' ), 'The sweep schedules itself, so a deploy needs no step.' );
+	}
+
+	public function test_the_sweep_is_silent_when_nobody_could_be_seated(): void {
+		$event   = $this->make_bookable_event();
+		$this->fill( $event );
+		$clasher = $this->make_clashing_entry( $event, $this->make_overlapping_event() );
+		law_event_update_meta( $event, '_law_tickets_available', 3 );
+		$this->mail = array();
+		$before     = count( law_event_log_entries( $event ) );
+
+		$this->assertFalse( law_waitlist_has_promotable( $event ) );
+		$this->assertSame( array(), law_waitlist_sweep( 'test', array( $event ) ) );
+		$this->assertCount( $before, law_event_log_entries( $event ), 'No "passed over" line every hour for the same person.' );
+		$this->assertSame( array(), $this->mail );
+		$this->assertSame( 'law-waitlisted', get_post_status( $clasher['entry'] ) );
+	}
+
+	public function test_the_passed_over_line_says_why_and_names_the_event_only_to_the_committee(): void {
+		$event   = $this->make_bookable_event();
+		$booked  = $this->fill( $event );
+		$overlap = $this->make_overlapping_event();
+		$waiting = $this->make_waitlist( $event, $this->make_user() )[0];
+		$clasher = $this->make_clashing_entry( $event, $overlap );
+
+		$this->assertSame( '', law_waitlist_passed_over_reason( $clasher['entry'] ), 'Nothing until a pass has actually passed them over.' );
+
+		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
+		law_booking_cancel( $booked[1]['booking'], $booked[1]['user'], 'self' );
+
+		$this->assertSame( 'publish', get_post_status( $waiting ) );
+		$this->assertSame(
+			sprintf( 'Passed over: booked on "%s" at the same time.', get_the_title( $overlap ) ),
+			law_waitlist_passed_over_reason( $clasher['entry'], true )
+		);
+		$this->assertSame(
+			'Passed over: booked on another event at the same time.',
+			law_waitlist_passed_over_reason( $clasher['entry'], false ),
+			'A host is told there is a clash, not which session somebody booked elsewhere.'
+		);
+
+		// The latch outlives the clash; the line must not.
+		$GLOBALS['law_waitlist_suspended'] = true;
+		$other                             = law_bookings_for_event( $overlap, 'publish', -1 );
+		law_booking_cancel( $other[0]->ID, $clasher['user'], 'self' );
+		$GLOBALS['law_waitlist_suspended'] = false;
+		$this->assertNotSame( '', (string) law_event_meta( $clasher['entry'], '_law_waitlist_blocked' ) );
+		$this->assertSame( '', law_waitlist_passed_over_reason( $clasher['entry'] ) );
+	}
+
+	public function test_the_preview_reports_without_changing_anything(): void {
+		$event   = $this->make_bookable_event();
+		$this->fill( $event );
+		$overlap = $this->make_overlapping_event();
+		$clasher = $this->make_clashing_entry( $event, $overlap );
+		$next    = $this->make_waitlist( $event, $this->make_user() )[0];
+		$last    = $this->make_waitlist( $event, $this->make_user() )[0];
+		law_event_update_meta( $event, '_law_tickets_available', 3 );
+		$before = count( law_event_log_entries( $event ) );
+
+		$preview = law_waitlist_preview( $event );
+
+		$this->assertTrue( $preview['open'] );
+		$this->assertSame( 1, $preview['remaining'] );
+		$this->assertSame(
+			array( 'passed_over', 'seat', 'waiting' ),
+			wp_list_pluck( $preview['rows'], 'state' ),
+			'One place: the clasher is passed over, the next person takes it, the last keeps waiting.'
+		);
+		$this->assertStringContainsString( get_the_title( $overlap ), $preview['rows'][0]['reason'] );
+		$this->assertSame( 'law-waitlisted', get_post_status( $next ), 'Nothing seated.' );
+		$this->assertSame( 'law-waitlisted', get_post_status( $last ) );
+		$this->assertCount( $before, law_event_log_entries( $event ), 'Nothing logged.' );
+
+		$run = law_waitlist_check_run( array( $event ) );
+		$this->assertSame( array( (int) $next ), $run['seated'][ $event ] ?? array() );
+		$this->assertSame( 'law-waitlisted', get_post_status( $last ) );
+	}
 }
