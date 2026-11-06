@@ -1815,9 +1815,32 @@ function law_booking_guard_seats( $event_id, $seats, $status = 'publish' ) {
  * @return true|WP_Error
  */
 function law_booking_guard_clash( $user_id, $event_id, $attendee_name = '' ) {
+	$other_id = law_booking_clash_event( $user_id, $event_id );
+	if ( ! $other_id ) {
+		return true;
+	}
+	$who = '' !== $attendee_name ? $attendee_name . ' is' : 'You are';
+	return new WP_Error(
+		'law_booking_clash',
+		sprintf( '%s already booked on "%s", which overlaps with this event.', $who, get_the_title( $other_id ) )
+	);
+}
+
+/**
+ * The event this person already holds a place on that overlaps this one, or 0.
+ *
+ * The finding half of law_booking_guard_clash(), on its own because the
+ * waitlist's "passed over" line has to name the other event for the committee
+ * and must not for a host, which a ready-made sentence cannot do.
+ *
+ * @param int $user_id  The attendee (0 = no account yet, no clash possible).
+ * @param int $event_id The event being booked.
+ * @return int The overlapping event's ID, or 0.
+ */
+function law_booking_clash_event( $user_id, $event_id ) {
 	$user_id = (int) $user_id;
 	if ( $user_id < 1 ) {
-		return true;
+		return 0;
 	}
 
 	// A reception and the flagship are exempt, on BOTH sides of the pair: the
@@ -1828,12 +1851,12 @@ function law_booking_guard_clash( $user_id, $event_id, $attendee_name = '' ) {
 	// this, so a reception queue would otherwise refuse to promote anybody who
 	// had booked something else that evening.
 	if ( law_booking_clash_exempt( $event_id ) ) {
-		return true;
+		return 0;
 	}
 
 	$start = (string) law_event_meta( $event_id, '_law_start' );
 	if ( '' === $start ) {
-		return true;
+		return 0;
 	}
 	$this_start = (int) strtotime( $start );
 	$this_end   = law_booking_clash_end( $start, (string) law_event_meta( $event_id, '_law_end' ) );
@@ -1852,14 +1875,10 @@ function law_booking_guard_clash( $user_id, $event_id, $attendee_name = '' ) {
 		$os = (int) strtotime( $other_start );
 		$oe = law_booking_clash_end( $other_start, (string) law_event_meta( $other_id, '_law_end' ) );
 		if ( $os < $this_end && $oe > $this_start ) {
-			$who = '' !== $attendee_name ? $attendee_name . ' is' : 'You are';
-			return new WP_Error(
-				'law_booking_clash',
-				sprintf( '%s already booked on "%s", which overlaps with this event.', $who, get_the_title( $other_id ) )
-			);
+			return (int) $other_id;
 		}
 	}
-	return true;
+	return 0;
 }
 
 /**
@@ -4330,6 +4349,10 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 	// where the event itself is going away.
 	if ( 'event_cancelled' !== $context && ! $waitlisted && function_exists( 'law_waitlist_process' ) ) {
 		law_waitlist_process( $event_id, 'cancel' );
+		// The same place may have been the clash that kept this person waiting
+		// for something else at the same time. Nothing else would ever look at
+		// those queues again until a place there moved.
+		law_waitlist_recheck_person( (int) $booking->post_author, $event_id, 'clash_cleared' );
 	}
 
 	return true;
@@ -4378,6 +4401,11 @@ function law_bookings_cancel_party( $event_id, $booker_id, $actor_id ) {
 
 	if ( $done && function_exists( 'law_waitlist_process' ) ) {
 		law_waitlist_process( $event_id, 'cancel_party' );
+		// Each person in the party, for the same reason as law_booking_cancel():
+		// the per-booking re-check was suspended with the pass above.
+		foreach ( array_unique( array_map( 'intval', wp_list_pluck( $party, 'post_author' ) ) ) as $law_cp_user ) {
+			law_waitlist_recheck_person( $law_cp_user, $event_id, 'clash_cleared' );
+		}
 	}
 
 	return $done;
@@ -5187,6 +5215,7 @@ add_action(
 		// engine never saw it. Offer it to the queue.
 		if ( ! $engine && 'publish' === $old_status && function_exists( 'law_waitlist_process' ) ) {
 			law_waitlist_process( (int) $post->post_parent, 'wp-admin' );
+			law_waitlist_recheck_person( (int) $post->post_author, (int) $post->post_parent, 'wp-admin' );
 		}
 	},
 	10,
