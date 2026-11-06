@@ -861,6 +861,14 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    a value on the same row and reads as a continuation, so it keeps the body
    colour rather than greying out. */
 .law-flagship-application .law-booking-table__sub { color: inherit; }
+/* A waitlist entry the queue is skipping, and why. The one sub-line that asks
+   to be acted on, so it takes the amber of the "Awaiting payment" badge rather
+   than the grey (5.5:1 on white). */
+.law-booking-table__sub--passed-over {
+	color: #a35300;
+	/* Widens its column rather than wrapping to the width of a short name. */
+	min-width: 15em;
+}
 
 /* The waitlist's position cell: the number, then the three move buttons, which
    are separate one-field forms and would otherwise stack vertically. */

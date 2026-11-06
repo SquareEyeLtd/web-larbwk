@@ -83,6 +83,7 @@ require_once __DIR__ . '/stripe/health.php';
 require_once __DIR__ . '/admin/fields.php';
 require_once __DIR__ . '/admin/event-screen.php';
 require_once __DIR__ . '/admin/booking-screen.php';
+require_once __DIR__ . '/admin/waitlist-check.php';
 require_once __DIR__ . '/admin/speaker-screen.php';
 require_once __DIR__ . '/admin/session-screen.php';
 require_once __DIR__ . '/admin/flagship-screen.php';

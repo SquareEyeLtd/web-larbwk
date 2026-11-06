@@ -27,6 +27,15 @@ const LAW_WAITLIST_PASS_CAP = 10;
 /** How long one pass may run before handing the rest to cron, in seconds. */
 const LAW_WAITLIST_PASS_SECONDS = 15;
 
+/**
+ * How many entries one pass looks at, seated or passed over. Bounds the walk
+ * now that a passed-over entry no longer counts towards the cap.
+ */
+const LAW_WAITLIST_PASS_WINDOW = LAW_WAITLIST_PASS_CAP * 3;
+
+/** How long the hourly sweep may spend starting passes, in seconds. */
+const LAW_WAITLIST_SWEEP_SECONDS = 20;
+
 /* Queries ____________________________________________________________________ */
 
 /**
@@ -278,14 +287,18 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 		if ( true !== law_booking_guard_open( $event_id ) ) {
 			return array();
 		}
-		foreach ( law_waitlist_for_event( $event_id, LAW_WAITLIST_PASS_CAP * 3 ) as $entry ) {
+		$window = law_waitlist_for_event( $event_id, LAW_WAITLIST_PASS_WINDOW );
+		foreach ( $window as $entry ) {
 			$remaining = law_event_tickets_remaining( $event_id );
 			if ( null === $remaining || $remaining < 1 ) {
 				break;
 			}
-			// Blocked entries count too: a queue where most entries clash would
-			// otherwise walk every one of them, on every cancellation, forever.
-			if ( count( $promoted ) + count( $blocked ) >= LAW_WAITLIST_PASS_CAP || time() - $started > LAW_WAITLIST_PASS_SECONDS ) {
+			// Only promotions count towards the cap. Blocked entries used to
+			// count as well, which let ten clashing entries at the front end
+			// every pass before it reached anybody seatable behind them, and
+			// hand the same ten to cron a minute later, for ever. The walk is
+			// still bounded: by the window fetched above and by the clock.
+			if ( count( $promoted ) >= LAW_WAITLIST_PASS_CAP || time() - $started > LAW_WAITLIST_PASS_SECONDS ) {
 				$more = true;
 				break;
 			}
@@ -312,6 +325,14 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 			if ( '' !== $email ) {
 				$taken['emails'][ $email ] = true;
 			}
+		}
+		// The window ran out with places still free and more people queued
+		// behind it. Hand on only when this pass seated somebody: a pass that
+		// seated nobody would give the next one the same window, which would
+		// pass over the same people again, every minute.
+		if ( ! $more && $promoted && count( $window ) >= LAW_WAITLIST_PASS_WINDOW
+			&& law_event_tickets_remaining( $event_id ) > 0 ) {
+			$more = true;
 		}
 		// Always, not only after a promotion: this is also what heals an entry
 		// restored from the trash with a stale or missing position.
@@ -364,8 +385,234 @@ function law_waitlist_schedule_resume( $event_id ) {
 	}
 }
 add_action( 'law_waitlist_resume', function ( $event_id ) {
-	law_waitlist_process( (int) $event_id, 'cron' );
+	law_waitlist_offer( (int) $event_id, 'cron' );
 } );
+
+/* Re-offering places that nothing else would ___________________________________
+
+   A pass only runs when something happens on the event itself: a cancellation,
+   a raise, a move, a promotion. Two things can make somebody seatable without
+   any of those. The clash that got them passed over can go away (they cancel
+   the other booking), and a scheduled resume can be missed (no real cron, or
+   the lock was busy). Either way the person sits at the front of a queue with
+   places free beside it. These are what look again. */
+
+/**
+ * Could a pass seat anybody on this event right now? Read-only: no lock, no
+ * log, no email. It is what keeps the sweep and the re-checks from writing a
+ * "passed over" line for every stuck entry on every run when nobody would be
+ * seated anyway.
+ *
+ * Looks at the same window law_waitlist_process() walks, so a yes here is a
+ * pass that will seat somebody.
+ */
+function law_waitlist_has_promotable( $event_id ) {
+	$event_id = (int) $event_id;
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return false;
+	}
+	if ( true !== law_booking_guard_open( $event_id ) ) {
+		return false;
+	}
+	$remaining = law_event_tickets_remaining( $event_id );
+	if ( null === $remaining || $remaining < 1 ) {
+		return false;
+	}
+	$taken = law_booking_taken_index( $event_id );
+	foreach ( law_waitlist_for_event( $event_id, LAW_WAITLIST_PASS_WINDOW ) as $entry ) {
+		if ( true === law_waitlist_check_promotable( $entry, $taken ) ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Run a pass only when it would seat somebody.
+ *
+ * @return int[] The bookings promoted.
+ */
+function law_waitlist_offer( $event_id, $source ) {
+	if ( ! empty( $GLOBALS['law_waitlist_suspended'] ) || ! law_waitlist_has_promotable( $event_id ) ) {
+		return array();
+	}
+	return law_waitlist_process( $event_id, $source );
+}
+
+/**
+ * Look again at every queue this person is waiting in, other than the event
+ * that just changed (its own pass has already run). Called when they give up a
+ * place, because that place may have been the clash they were passed over for.
+ *
+ * @return int[] The bookings promoted, across every event.
+ */
+function law_waitlist_recheck_person( $user_id, $except_event_id = 0, $source = 'clash_cleared' ) {
+	$user_id = (int) $user_id;
+	if ( $user_id < 1 || ! empty( $GLOBALS['law_waitlist_suspended'] ) ) {
+		return array();
+	}
+	$events = get_posts(
+		array(
+			'post_type'      => LAW_BOOKING_CPT,
+			'post_status'    => 'law-waitlisted',
+			'author'         => $user_id,
+			'fields'         => 'id=>parent',
+			'posts_per_page' => 50,
+		)
+	);
+	$promoted = array();
+	foreach ( array_unique( array_map( 'intval', (array) $events ) ) as $event_id ) {
+		if ( $event_id && $event_id !== (int) $except_event_id ) {
+			$promoted = array_merge( $promoted, law_waitlist_offer( $event_id, $source ) );
+		}
+	}
+	return $promoted;
+}
+
+/**
+ * Every event with at least one person waiting.
+ *
+ * @return int[]
+ */
+function law_waitlist_events_with_queue() {
+	global $wpdb;
+	return array_map(
+		'intval',
+		$wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT DISTINCT post_parent FROM {$wpdb->posts} WHERE post_type = %s AND post_status = %s AND post_parent > 0 ORDER BY post_parent",
+				LAW_BOOKING_CPT,
+				'law-waitlisted'
+			)
+		)
+	);
+}
+
+/**
+ * The hourly safety net: offer every free place to its queue. Catches a clash
+ * that cleared by any route the re-check does not see (an event moved, a
+ * booking trashed outright), a resume cron missed, and a lock that was busy.
+ *
+ * Starts no new pass after LAW_WAITLIST_SWEEP_SECONDS; each pass bounds
+ * itself and hands its own remainder to the resume cron, and anything the
+ * sweep did not reach is picked up next hour.
+ *
+ * @param string     $source    For the log.
+ * @param int[]|null $event_ids The events to look at; every event with a
+ *                              queue when null (the cron's call).
+ * @return array<int,int[]> Promoted booking IDs, keyed by event.
+ */
+function law_waitlist_sweep( $source = 'sweep', ?array $event_ids = null ) {
+	$started = time();
+	$out     = array();
+	foreach ( null === $event_ids ? law_waitlist_events_with_queue() : array_map( 'intval', $event_ids ) as $event_id ) {
+		if ( time() - $started > LAW_WAITLIST_SWEEP_SECONDS ) {
+			break;
+		}
+		$promoted = law_waitlist_offer( $event_id, $source );
+		if ( $promoted ) {
+			$out[ $event_id ] = $promoted;
+		}
+	}
+	return $out;
+}
+add_action( 'law_waitlist_hourly', function () {
+	law_waitlist_sweep();
+} );
+
+/** Schedule the hourly sweep. Idempotent; on init, so a deploy needs no step. */
+function law_waitlist_schedule_sweep() {
+	if ( ! wp_next_scheduled( 'law_waitlist_hourly' ) ) {
+		wp_schedule_event( time() + HOUR_IN_SECONDS, 'hourly', 'law_waitlist_hourly' );
+	}
+}
+add_action( 'init', 'law_waitlist_schedule_sweep' );
+
+/**
+ * Why the queue is passing this entry over, as one short line for the people
+ * managing it, or '' when nothing is holding it back.
+ *
+ * Only for an entry a pass has actually passed over (the _law_waitlist_blocked
+ * latch), and only while the reason still stands: it is checked again here
+ * rather than read from the latch, which outlives a clash that has since
+ * cleared and would otherwise go on blaming one.
+ *
+ * @param WP_Post|int $entry      A waitlisted booking.
+ * @param bool        $name_event Name the clashing event. The committee sees
+ *                                it; a host does not, because which other
+ *                                session somebody booked is not theirs to know.
+ * @return string
+ */
+function law_waitlist_passed_over_reason( $entry, $name_event = true ) {
+	$entry = get_post( $entry );
+	if ( ! $entry || 'law-waitlisted' !== $entry->post_status
+		|| '' === (string) law_event_meta( $entry->ID, '_law_waitlist_blocked' ) ) {
+		return '';
+	}
+	$check = law_waitlist_check_promotable( $entry );
+	return is_wp_error( $check ) ? law_waitlist_passed_over_text( $entry, $check, $name_event ) : '';
+}
+
+/**
+ * The third-person wording for a refusal from law_waitlist_check_promotable(),
+ * whose own messages are addressed to the person waiting.
+ */
+function law_waitlist_passed_over_text( $entry, WP_Error $error, $name_event = true ) {
+	$entry = get_post( $entry );
+	switch ( $error->get_error_code() ) {
+		case 'law_booking_clash':
+			$other = $name_event ? law_booking_clash_event( (int) $entry->post_author, (int) $entry->post_parent ) : 0;
+			return $other
+				/* translators: %s: the title of the other event. */
+				? sprintf( __( 'Passed over: booked on "%s" at the same time.', 'law' ), get_the_title( $other ) )
+				: __( 'Passed over: booked on another event at the same time.', 'law' );
+		case 'law_booking_duplicate':
+			return __( 'Passed over: already has a place on this event.', 'law' );
+		case 'law_waitlist_no_payment_method':
+			return __( 'Passed over: no payment method saved.', 'law' );
+	}
+	/* translators: %s: the reason, as the booking engine words it. */
+	return sprintf( __( 'Passed over: %s', 'law' ), $error->get_error_message() );
+}
+
+/**
+ * What a pass on this event would do now, without doing it: who would be
+ * seated, who would be passed over and why, and who is simply waiting for a
+ * place. Walks the WHOLE queue rather than one pass's window, because this is
+ * the report the committee reads, not the work itself.
+ *
+ * @return array{open:true|WP_Error,remaining:int|null,rows:array<int,array{entry:WP_Post,state:string,reason:string}>}
+ */
+function law_waitlist_preview( $event_id ) {
+	$event_id  = (int) $event_id;
+	$open      = law_booking_guard_open( $event_id );
+	$remaining = law_event_tickets_remaining( $event_id );
+	$seats     = true === $open && null !== $remaining ? $remaining : 0;
+	$taken     = law_booking_taken_index( $event_id );
+	$rows      = array();
+
+	foreach ( law_waitlist_for_event( $event_id ) as $entry ) {
+		$check = law_waitlist_check_promotable( $entry, $taken );
+		if ( is_wp_error( $check ) ) {
+			$rows[] = array( 'entry' => $entry, 'state' => 'passed_over', 'reason' => law_waitlist_passed_over_text( $entry, $check ) );
+			continue;
+		}
+		if ( $seats > 0 ) {
+			$rows[] = array( 'entry' => $entry, 'state' => 'seat', 'reason' => '' );
+			$seats--;
+			// As the real pass does: the person just seated now holds a place.
+			$taken['users'][ (int) $entry->post_author ] = true;
+			$email = strtolower( law_booking_attendee( $entry )['email'] );
+			if ( '' !== $email ) {
+				$taken['emails'][ $email ] = true;
+			}
+			continue;
+		}
+		$rows[] = array( 'entry' => $entry, 'state' => 'waiting', 'reason' => '' );
+	}
+
+	return array( 'open' => $open, 'remaining' => $remaining, 'rows' => $rows );
+}
 
 /**
  * Can this entry take a place right now? Capacity is the caller's business;

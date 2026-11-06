@@ -244,6 +244,13 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 						if ( law_event_meta( $law_bl_booking->ID, '_law_is_press' ) ) {
 							echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';
 						}
+						// Why the queue is skipping them, while it still is. A host
+						// is told there is a clash but not with what: which other
+						// session somebody booked is the committee's to see.
+						$law_bl_passed = $law_bl_waiting ? law_waitlist_passed_over_reason( $law_bl_booking, $law_bl_is_committee ) : '';
+						if ( '' !== $law_bl_passed ) {
+							echo '<span class="law-booking-table__sub law-booking-table__sub--passed-over">' . esc_html( $law_bl_passed ) . '</span>';
+						}
 					?></td>
 					<td><?php echo esc_html( $law_bl_person['email'] ); ?></td>
 					<td><?php echo esc_html( $law_bl_person['organisation'] ?: '—' ); ?></td>

@@ -94,6 +94,9 @@ $law_bd_rows    = $law_bd_data['rows'];
 							<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Cancelled', 'law' ); ?></span>
 						<?php elseif ( 'waitlisted' === $law_bd_row['status'] ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--waitlisted"><?php esc_html_e( 'Waitlisted', 'law' ); ?></span>
+							<?php if ( '' !== $law_bd_row['passed_over'] ) : ?>
+								<span class="law-booking-table__sub law-booking-table__sub--passed-over"><?php echo esc_html( $law_bd_row['passed_over'] ); ?></span>
+							<?php endif; ?>
 						<?php elseif ( 'pending-payment' === $law_bd_row['status'] ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--applied"><?php esc_html_e( 'Awaiting payment', 'law' ); ?></span>
 						<?php elseif ( 'payment-failed' === $law_bd_row['status'] ) : ?>
