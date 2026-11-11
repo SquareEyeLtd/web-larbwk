@@ -58,12 +58,18 @@ if ( ! $law_bl_event || LAW_EVENT_CPT !== $law_bl_event->post_type
 // read as a bug rather than as somebody standing on Stripe's page
 // (RECEPTIONS.md §1.3). A payment that was refused shows too, because that
 // person is waiting on something the committee may need to know about.
+//
+// UNCAPPED, the one deliberate exception to "never -1 on screens" (Denis,
+// 11 November 2026): this is the host's and the committee's full attendee
+// list, and it must show every booking. Under law_bookings_for_event()'s
+// default of 500, oldest first, the 2026 Opening Reception (551) silently lost
+// its 51 newest bookings. An event is bounded by its places, so the set is too.
 $law_bl_active    = law_event_is_priced( $law_bl_event_id )
-	? law_bookings_for_event( $law_bl_event_id, array( 'publish', 'law-pending-payment', 'law-payment-failed' ) )
-	: law_bookings_for_event( $law_bl_event_id );
+	? law_bookings_for_event( $law_bl_event_id, array( 'publish', 'law-pending-payment', 'law-payment-failed' ), -1 )
+	: law_bookings_for_event( $law_bl_event_id, 'publish', -1 );
 $law_bl_wait_cap  = 200;
 $law_bl_waitlist  = function_exists( 'law_waitlist_for_event' ) ? law_waitlist_for_event( $law_bl_event_id, $law_bl_wait_cap ) : array();
-$law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled' );
+$law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled', -1 );
 
 // One users + one usermeta query for the whole table instead of two per row
 // (the country/dietary/accessibility columns read each attendee's profile, and

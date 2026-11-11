@@ -10975,6 +10975,21 @@ Touched: `functions/events/waitlist.php`, `functions/events/bookings.php`
 `tests/ReceptionsDashboardTest.php` (1 new). Checked in the browser on the host's
 and the committee's bookings list, Manage bookings and the trigger page.
 
+## The bookings list stops dropping its newest rows (11 November 2026)
+
+**An event past 500 bookings lost its newest ones from the per-event list.**
+`booking-list.php` read the active and cancelled sets through
+`law_bookings_for_event()`'s default cap of 500, ordered by ID ascending, so the
+2026 Opening Reception (551 attendees) showed its 500 oldest and silently left
+out the 51 most recent. Manage bookings and the exports were unaffected (the
+export reads uncapped). Both sets are now read uncapped (`-1`), a deliberate
+exception to the "never -1 on screens" rule (Denis): the list is the full
+attendee list and must show everyone, and an event's places bound it anyway.
+The waitlist keeps its 200 cap and notice.
+
+Touched: `parts/events/booking-list.php`. Checked by rendering the list over 512
+bookings inside a rolled-back transaction.
+
 ---
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
