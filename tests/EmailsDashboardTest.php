@@ -501,7 +501,7 @@ class EmailsDashboardTest extends LAW_Test_Case {
 	}
 
 	public function test_a_test_send_renders_through_the_same_path_as_a_real_one(): void {
-		// Otherwise "Send a test to me" would be a second opinion about the
+		// Otherwise "Send test email" would be a second opinion about the
 		// wording rather than a preview of it. Asserted on the mail that
 		// actually leaves, not on the shape of the source: an earlier version
 		// of this test counted occurrences of the renderer's name in the file
@@ -534,9 +534,9 @@ class EmailsDashboardTest extends LAW_Test_Case {
 		}
 
 		$this->assertCount( 2, $captured, 'A test send and a real send both reached wp_mail().' );
-		// The test renders against the most recent event and the real one
-		// against its own, so compare the STRUCTURE the renderer produced
-		// rather than the values it resolved.
+		// The test renders sample values and the real one its own event's,
+		// so compare the STRUCTURE the renderer produced rather than the
+		// values it resolved.
 		foreach ( $captured as $mail ) {
 			$this->assertStringContainsString( '<ul>', $mail['message'] );
 			$this->assertStringContainsString( '<li>', $mail['message'] );
@@ -624,6 +624,109 @@ class EmailsDashboardTest extends LAW_Test_Case {
 
 		$this->assertSame( get_userdata( $user )->user_email, $sent['email'] );
 		$this->assertSame( array( get_userdata( $user )->user_email ), $sent['emails'] );
+	}
+
+	/* Send test email: any address, sample values (26 October 2026) ________ */
+
+	public function test_every_tag_has_a_sample_value(): void {
+		// The one rule that keeps test emails whole: a tag added to
+		// law_events_email_placeholders() needs its sample in
+		// law_events_email_sample_placeholders() in the same change. This is
+		// the test that fails when it is forgotten.
+		$tags    = array_keys( law_events_email_placeholders( 0 ) );
+		$samples = law_events_email_sample_placeholders();
+
+		$this->assertSame( array(), array_values( array_diff( $tags, array_keys( $samples ) ) ), 'Every tag needs a sample in law_events_email_sample_placeholders().' );
+		$this->assertSame( array(), array_values( array_diff( array_keys( $samples ), $tags ) ), 'A sample for a tag that no longer exists should go too.' );
+
+		// Empty only where every real email prints nothing as well.
+		$retired = array( '{user_roles}', '{registered_by}' );
+		foreach ( $samples as $tag => $value ) {
+			if ( in_array( $tag, $retired, true ) ) {
+				$this->assertSame( '', $value, $tag . ' is retired and prints nothing in a real email either.' );
+				continue;
+			}
+			$this->assertNotSame( '', trim( $value ), $tag . ' has no sample, so a test email would show a gap.' );
+		}
+	}
+
+	public function test_a_test_shows_sample_details_never_a_real_events(): void {
+		// The address is typed by the editor, so a real host's name, email
+		// address and invoice link must not ride along with the wording.
+		$host  = $this->make_user( 'events_committee' );
+		$event = $this->make_event( array(), 'law-proposed', $host );
+		$real  = get_userdata( $host )->user_email;
+
+		$captured = array();
+		$capture  = static function ( $atts ) use ( &$captured ) {
+			$captured[] = $atts;
+			return $atts;
+		};
+		add_filter( 'wp_mail', $capture );
+
+		try {
+			$sent = law_events_email_send_test_to(
+				array( 'subject' => 'About {event_title}', 'body' => '<p>{host_name} ({host_email}) booked {attendee_name}, {price_total}.</p>' ),
+				array( 'someone@example.org' )
+			);
+		} finally {
+			remove_filter( 'wp_mail', $capture );
+		}
+
+		$samples = law_events_email_sample_placeholders();
+		$this->assertTrue( $sent['sent'] );
+		$this->assertCount( 1, $captured );
+		$this->assertSame( array( 'someone@example.org' ), $captured[0]['to'] );
+		$this->assertSame( '[TEST] About ' . $samples['{event_title}'], $captured[0]['subject'] );
+		$this->assertStringContainsString( $samples['{host_email}'], $captured[0]['message'] );
+		$this->assertStringContainsString( $samples['{attendee_name}'], $captured[0]['message'] );
+		$this->assertStringContainsString( $samples['{price_total}'], $captured[0]['message'] );
+		$this->assertStringNotContainsString( $real, $captured[0]['message'] );
+		$this->assertStringNotContainsString( get_the_title( $event ), $captured[0]['subject'] );
+	}
+
+	public function test_send_test_email_asks_for_an_address_on_both_screens(): void {
+		$front = file_get_contents( get_theme_file_path( 'parts/events/emails-manage.php' ) );
+		$this->assertStringContainsString( 'data-law-modal-open="law-modal-email-test"', $front );
+		$this->assertStringContainsString( "'name'     => 'law_email_test_to'", $front );
+		$this->assertStringNotContainsString( 'Send a test to me', $front );
+
+		// A typed address that is not one is refused against the dialog's
+		// field, rather than the test quietly going to the editor instead.
+		$handler = file_get_contents( get_theme_file_path( 'functions/events/emails-dashboard.php' ) );
+		$this->assertStringContainsString( "'field'   => 'law_email_test_to'", $handler );
+
+		$admin = file_get_contents( get_theme_file_path( 'functions/events/admin/emails-screen.php' ) );
+		$this->assertStringContainsString( 'name="test_to"', $admin );
+		$this->assertStringContainsString( 'law_events_email_send_test_to( $override, array( $test_to ) )', $admin );
+
+		// sanitize_email() turns "a@b.com, c@d.com" into a@b.comcd.com, a
+		// mailbox somebody else may own, so an address it would change is
+		// refused on both screens rather than sent to.
+		$this->assertSame( 'a@b.comcd.com', sanitize_email( 'a@b.com, c@d.com' ) );
+		foreach ( array( $handler, $admin ) as $screen ) {
+			$this->assertStringContainsString( '$test_to !== $raw || ! is_email( $test_to )', $screen );
+		}
+
+		// And both spend the one test budget.
+		$this->assertStringContainsString( "law_events_rate_limit_ok( 'email_test', get_current_user_id(), 20, 600 )", $admin );
+	}
+
+	public function test_the_shared_dialog_renders_an_email_field(): void {
+		ob_start();
+		get_template_part(
+			'parts/layout/modal',
+			null,
+			array(
+				'id'    => 'law-modal-test-email',
+				'title' => 'Send a test email',
+				'field' => array( 'name' => 'law_email_test_to', 'label' => 'Email address', 'type' => 'email', 'value' => 'a@example.com' ),
+			)
+		);
+		$html = (string) ob_get_clean();
+
+		$this->assertMatchesRegularExpression( '/<input type="email"[^>]+name="law_email_test_to"[^>]+value="a@example.com"[^>]+data-law-modal-field[^>]*disabled>/', $html );
+		$this->assertStringNotContainsString( '<textarea', $html );
 	}
 
 	public function test_both_screens_offer_the_same_formatting_buttons(): void {

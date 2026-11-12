@@ -223,6 +223,7 @@ function law_flagship_action_state( $event_id, array $args = array() ) {
 		'state'       => 'apply',
 		'event_id'    => $event_id,
 		'application' => $application,
+		'user_id'     => $user_id,
 		'manage_url'  => $application ? law_booking_manage_url( (int) $application->ID ) : '',
 		'passed'      => $passed,
 		'price'       => $price,
@@ -291,9 +292,16 @@ function law_flagship_action_link( array $state ) {
 		case 'attended':
 			return array( 'label' => __( 'View my booking and receipt', 'law' ), 'url' => $state['manage_url'] );
 		case 'payment-failed':
-			return array( 'label' => __( 'Sort out my payment', 'law' ), 'url' => $state['manage_url'] );
 		case 'needs-card':
-			return array( 'label' => __( 'Add my payment details', 'law' ), 'url' => $state['manage_url'] );
+			// The attendee of a registration somebody else pays for cannot
+			// sort the payment out, so their link only opens it
+			// (BOOK_ON_BEHALF.md A4).
+			if ( ! empty( $state['application'] ) && ! law_booking_user_manages_payment( $state['application'], (int) ( $state['user_id'] ?? 0 ) ) ) {
+				return array( 'label' => __( 'View my registration', 'law' ), 'url' => $state['manage_url'] );
+			}
+			return 'payment-failed' === $state['state']
+				? array( 'label' => __( 'Sort out my payment', 'law' ), 'url' => $state['manage_url'] )
+				: array( 'label' => __( 'Add my payment details', 'law' ), 'url' => $state['manage_url'] );
 		case 'in-review':
 			return array( 'label' => __( 'View my registration', 'law' ), 'url' => $state['manage_url'] );
 		case 'apply':
@@ -468,7 +476,22 @@ function law_flagship_card_inert_action( array $event ) {
  */
 function law_flagship_render_action_body( array $event, $preview, $application, $price, $passed ) {
 	if ( $application ) {
-		return law_booking_action_parts( law_flagship_render_own_state( $application, $passed ) );
+		$own = law_flagship_render_own_state( $application, $passed );
+		// One registration per PERSON, so a delegate with their own can still
+		// register somebody else (BOOK_ON_BEHALF.md §3.8): Register sits
+		// beside their own link, and its dialog opens with Myself disabled.
+		// Their own link steps down to the secondary style beside it, so the
+		// panel has one orange button.
+		if ( $passed || $price < 1 || $preview ) {
+			return law_booking_action_parts( $own );
+		}
+		$own = str_replace( 'class="button orange"', 'class="button second"', $own );
+		ob_start();
+		law_flagship_render_opener( $event, $preview );
+		$opener = trim( (string) ob_get_clean() );
+		return law_flagship_opener_is_form( $preview )
+			? law_booking_action_parts( $own, $opener )
+			: law_booking_action_parts( trim( $own . ' ' . $opener ) );
 	}
 
 	// State: nothing to register for yet. A price of 0 is the committee's way of
@@ -505,6 +528,34 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 		);
 	}
 
+	// Somebody who has registered others but not themselves: say so, since
+	// the button below would otherwise read as if they had done nothing here.
+	// Each of those registrations has its own card on My bookings.
+	$law_fa_for = ( ! $preview && get_current_user_id() )
+		? (array) ( law_booking_user_bookings_by_event( get_current_user_id() )[ (int) $event['id'] ]['colleagues'] ?? array() )
+		: array();
+	$law_fa_manage = '';
+	if ( $law_fa_for ) {
+		// Worded as the receptions' panel words the same state.
+		printf(
+			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+			esc_html(
+				sprintf(
+					/* translators: %s: a list of names. */
+					_n( "You've booked a place for %s.", "You've booked places for %s.", count( $law_fa_for ), 'law' ),
+					wp_sprintf_l( '%l', array_map( fn( $b ) => law_booking_attendee( $b )['name'], $law_fa_for ) )
+				)
+			),
+			esc_html__( "You don't have a place yourself.", 'law' )
+		);
+		// Each has its own card on My bookings; one goes straight to its page.
+		$law_fa_manage = sprintf(
+			'<a class="button second" href="%s">%s</a>',
+			esc_url( 1 === count( $law_fa_for ) ? law_booking_manage_url( (int) $law_fa_for[0]->ID ) : law_account_url( 'my_bookings' ) ),
+			esc_html( 1 === count( $law_fa_for ) ? __( 'Manage booking', 'law' ) : __( 'Manage bookings', 'law' ) )
+		);
+	}
+
 	// The opener is buffered rather than printed, because where it belongs
 	// depends on what it turns out to be: a button goes in the right-hand slot,
 	// the no-JS form on a full-width row of its own below both.
@@ -513,8 +564,8 @@ function law_flagship_render_action_body( array $event, $preview, $application, 
 	$opener = trim( (string) ob_get_clean() );
 
 	return law_flagship_opener_is_form( $preview )
-		? law_booking_action_parts( '', $opener )
-		: law_booking_action_parts( $opener );
+		? law_booking_action_parts( $law_fa_manage, $opener )
+		: law_booking_action_parts( trim( $law_fa_manage . ' ' . $opener ) );
 }
 
 /**
@@ -709,8 +760,14 @@ function law_flagship_notice_text( $key ) {
 	return $map[ $key ] ?? null;
 }
 
-/** Print the notice for ?law_notice=, if there is one. */
-function law_flagship_notice_render() {
+/**
+ * Print the notice for ?law_notice=, if there is one.
+ *
+ * @param int $booking_id The registration the page is about, so a good
+ *                        outcome on one made for someone else says whose it
+ *                        is (law_booking_on_behalf_notice()).
+ */
+function law_flagship_notice_render( $booking_id = 0 ) {
 	$notice = law_flagship_notice_text( sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) ) );
 	if ( ! $notice ) {
 		return;
@@ -718,7 +775,7 @@ function law_flagship_notice_render() {
 	printf(
 		'<p class="law-form-notice %s" role="alert">%s</p>',
 		'ok' === $notice[0] ? 'is-success' : 'is-error',
-		esc_html( $notice[1] )
+		esc_html( $notice[1] . ( 'ok' === $notice[0] ? law_booking_on_behalf_notice( $booking_id ) : '' ) )
 	);
 }
 
@@ -792,7 +849,7 @@ add_action(
 		}
 		wp_enqueue_style( 'law-event-form', get_theme_file_uri( 'assets/css/event-form.css' ), array(), filemtime( get_theme_file_path( 'assets/css/event-form.css' ) ) );
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), filemtime( get_theme_file_path( 'assets/js/booking-form.js' ) ), true );
+		law_booking_form_enqueue();
 		// The registration dialog takes a discount code since 15 September
 		// 2026, so this page needs the quote nonce in its own right rather
 		// than relying on the event view's enqueue happening to fire too.

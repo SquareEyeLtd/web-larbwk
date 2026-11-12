@@ -372,9 +372,10 @@ class ReferenceAndMigrationTest extends LAW_Test_Case {
 		$this->assertSame( 4242, $sessions[0]['speakers'][0]['photo_id'] );
 		$this->assertSame( 'Wrote a different bio for the later event.', $sessions[0]['speakers'][0]['bio'], "A blank session row inherits the event's biography." );
 
-		// No row biography anywhere: the speaker post's editor content stands in.
-		wp_update_post( array( 'ID' => $speaker, 'post_content' => 'The shared fallback biography.' ) );
-		$this->assertSame( 'The shared fallback biography.', law_event_speaker_cards( $early )[0]['bio'], "An empty row falls back to the speaker post's content." );
+		// No row biography: nothing, even when the speaker post carries content
+		// (Denis, 26 October 2026, after a stale one nobody could see kept printing).
+		wp_update_post( array( 'ID' => $speaker, 'post_content' => 'A stale record biography.' ) );
+		$this->assertSame( '', law_event_speaker_cards( $early )[0]['bio'], "An empty row prints no biography, not the speaker post's content." );
 
 		// Event pages: the photo set for THIS event wins; a row without one falls
 		// back to the first photo ever provided (the archive/profile rule).

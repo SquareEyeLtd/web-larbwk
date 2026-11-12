@@ -81,7 +81,10 @@ function law_committee_export_row( WP_Post $post ) {
 		law_event_sector_summary( $id ),
 		(string) law_event_meta( $id, '_law_host_organisations' ),
 		implode( '; ', law_event_organisation_names( $id ) ),
-		law_events_post_is_sponsored( $post ) ? 'Yes' : '',
+		// Whether it IS sponsored, not whether it is highlighted: the
+		// committee's "Don't highlight as sponsored" box only changes the
+		// programme card (Denis, 26 October 2026).
+		law_events_post_qualifies_as_sponsored( $post ) ? 'Yes' : '',
 		// Yes/blank, matching Sponsored above rather than Yes/No.
 		law_event_meta( $id, '_law_is_external' ) ? 'Yes' : '',
 		(string) law_event_meta( $id, '_law_external_url' ),

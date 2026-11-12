@@ -37,9 +37,10 @@ $law_notice   = isset( $_GET['law_notice'] ) ? sanitize_key( wp_unslash( $_GET['
 			'email-signoff-saved'   => array( 'is-success', __( 'The sign-off has been saved. It applies from the next email sent onwards.', 'law' ) ),
 			'email-signoff-cleared' => array( 'is-success', __( 'The sign-off has been cleared. Notifications will now end with whatever their own wording ends with.', 'law' ) ),
 			'email-reset'           => array( 'is-success', __( 'The notification has been returned to its standard wording.', 'law' ) ),
-			'email-tested'          => array( 'is-success', __( 'A test has been sent to your own email address. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
-			// Test mode was on, so "sent to you" would not have been true.
-			'email-tested-diverted' => array( 'is-warning', __( 'Test mode is on, so the test went to the test address rather than to you. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
+			'email-tested'          => array( 'is-success', __( 'The test email has been sent. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
+			// Test mode was on, so "it has been sent" would not have been true.
+			'email-tested-diverted' => array( 'is-warning', __( 'Test mode is on, so the test went to the test address instead. Nothing was saved: use Save changes to keep this wording.', 'law' ) ),
+			'email-test-address'    => array( 'is-error', __( 'Please enter a valid email address to send the test to.', 'law' ) ),
 			'email-recipients'      => array( 'is-error', __( 'None of those recipients is a valid email address, so nothing was saved. Separate addresses with commas, or untick "Send this notification" to stop it being sent at all.', 'law' ) ),
 			'email-empty-body'      => array( 'is-error', __( 'The message is empty, so nothing was saved. To stop this notification being sent, untick "Send this notification" instead.', 'law' ) ),
 			'email-test-failed'     => array( 'is-error', __( 'The test email could not be sent. Please try again.', 'law' ) ),

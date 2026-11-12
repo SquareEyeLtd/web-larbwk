@@ -297,6 +297,25 @@ function law_events_email_registry() {
 			'subject' => 'You have been booked onto {event_title}',
 			'body'    => "Dear {attendee_name},\n\n{invited_by} has booked a place for you at {event_title}, part of London Arbitration Week. Your booking number is #{booking_number}.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile, so the organisers can look after you on the day: {profile_link}\n\nThe booking is yours: it is listed under My bookings, where you can cancel it if you cannot attend: {bookings_link}\n\nA calendar invitation is attached. If you were not expecting this, please contact the events committee.",
 		),
+		/*
+		 * The attendee's side of a PAID place somebody else booked for them
+		 * (BOOK_ON_BEHALF.md §3.7): registered for the flagship, queued for a
+		 * reception, the place confirmed, or the registration ended. ONE
+		 * template for every moment, the house rule, with the moment's own
+		 * opening paragraph in {status_note}, built already resolved by
+		 * law_booking_notify_on_behalf(); the subject and the rest of the body
+		 * are the client's to edit like any other. The flagship approval is
+		 * the exception: the attendee gets the standard confirmation, as a
+		 * substitute does (Denis, 21 September 2026).
+		 */
+		'user_booking_on_behalf' => array(
+			'name'    => 'Email to attendee > a place booked for them by someone else',
+			'trigger' => 'someone registers, books or queues for a flagship or reception place for them, or that registration ends',
+			'to'      => 'dynamic',
+			'active'  => true,
+			'subject' => 'About your place at {event_title}',
+			'body'    => "Dear {attendee_name},\n\n{status_note}\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nYou can see this place under My bookings: {bookings_link}\n\nPlease make sure any dietary or accessibility requirements are up to date on your profile, so the organisers can look after you on the day: {profile_link}\n\nIf you were not expecting this, please contact the events committee.",
+		),
 		'user_booking_rejected' => array(
 			'name'    => 'Email to attendee > booking cancelled by the committee',
 			'trigger' => 'the committee cancels an attendee\'s booking',
@@ -548,16 +567,15 @@ function law_events_email_registry() {
 		 *
 		 * The opening line lost "has been approved" in the same change: an
 		 * approval is one of the two ways to arrive here now, and the subject
-		 * already says the thing they need to read first. The approval itself
-		 * did not disappear; it is the first sentence of {payment_note} on that
-		 * path.
+		 * already says the thing they need to read first. It sat at the top of
+		 * {payment_note} on that path until 27 October 2026, when Denis took it
+		 * out altogether.
 		 *
 		 * {payment_note} sits FIRST, above the event details, because on the
 		 * transfer path it is the only thing explaining why this email exists.
 		 * A lawyer who never registered, opening "Your ticket is confirmed"
 		 * followed by four paragraphs of date, time and venue, reads it as a
-		 * mistake or a phishing attempt. It serves the approval equally well
-		 * there, since its first line is the approval.
+		 * mistake or a phishing attempt.
 		 *
 		 * {account_note} arrived with the same change and is EMPTY on an
 		 * approval, where the delegate self-evidently has an account already:
@@ -591,7 +609,7 @@ function law_events_email_registry() {
 			'to'      => 'dynamic',
 			'active'  => true,
 			'subject' => 'Your ticket for {event_title} is confirmed',
-			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
+			'body'    => "Dear {attendee_name},\n\nYour ticket for {event_title} is confirmed (ticket #{booking_number}), with our compliments. There is nothing to pay.\n\nDate: {event_date}\nTime: {event_time}\nVenue: {venue}\n\n{account_note}\n\nA calendar invitation is attached. Your booking is listed under My bookings: {bookings_link}\n\n{included_receptions}\n\nPlease add any dietary or accessibility requirements to your profile so we can look after you on the day: {profile_link}",
 		),
 		'user_flagship_declined' => array(
 			'name'    => 'Email to delegate > flagship registration declined',
@@ -1153,13 +1171,21 @@ function law_events_email_with_signoff( $body ) {
  * @param array  $placeholders tag => value, from law_events_email_placeholders().
  * @return string Safe HTML for wp_mail().
  */
-function law_events_email_render_body( $body, array $placeholders ) {
+function law_events_email_render_body( $body, array $placeholders, $lead = '' ) {
 	// The sign-off goes on first, so it is substituted, autop'd and made
 	// clickable with the rest of the message. This is the one place it is
 	// added, which is why a customised body and a per-event override carry it
 	// without either screen having to remember to.
 	$body = law_events_email_with_signoff( $body );
 	$body = strtr( $body, array_map( 'esc_html', $placeholders ) );
+
+	// A line the SENDER adds above the body (who a booking is for, on the
+	// booker's copy), so a template the client has edited still carries it.
+	// After the swap and escaped on its own, so a name somebody typed as
+	// "{invoice_link}" prints as those characters rather than expanding.
+	if ( '' !== trim( (string) $lead ) ) {
+		$body = esc_html( (string) $lead ) . "\n\n" . $body;
+	}
 
 	// law_rich_text_render() is wpautop + the allowlist again: it turns a
 	// plain-text body's blank lines into paragraphs exactly as before, leaves
@@ -1343,14 +1369,19 @@ function law_events_email_recipients_label( array $email ) {
  * Send one email AS TYPED to the current user, persisting nothing, so an
  * editor can see the result before deciding to save.
  *
+ * Since 26 October 2026 the screens send to whatever address the editor types
+ * into the "Send test email" dialog (law_events_email_send_test_to()). This is
+ * what the front-end button falls back to without JavaScript, where the dialog
+ * cannot open and the button posts on its own.
+ *
  * @param array $override subject and body, as typed.
  * @param int   $user_id  Recipient; defaults to the current user.
- * @return array{sent:bool,email:string,emails:array<int,string>,event_id:int,event_title:string}
+ * @return array{sent:bool,email:string,emails:array<int,string>}
  */
 function law_events_email_send_test( array $override, $user_id = 0 ) {
 	$user = $user_id ? get_user_by( 'id', (int) $user_id ) : wp_get_current_user();
 	if ( ! $user || ! is_email( $user->user_email ) ) {
-		return array( 'sent' => false, 'email' => '', 'emails' => array(), 'event_id' => 0, 'event_title' => '' );
+		return array( 'sent' => false, 'email' => '', 'emails' => array() );
 	}
 
 	$test = law_events_email_send_test_to( $override, array( $user->user_email ) );
@@ -1364,7 +1395,7 @@ function law_events_email_send_test( array $override, $user_id = 0 ) {
 /**
  * Send one email AS TYPED to the committee, persisting nothing.
  *
- * The same preview as "Send a test to me", to the audience the notification
+ * The same preview as "Send test email", to the audience the notification
  * actually goes to (Denis, 22 September 2026): a committee notification is
  * usually being reworded on behalf of the people who receive it, and reading
  * it in their own inbox is the only way to see it as they will. Offered only
@@ -1375,39 +1406,37 @@ function law_events_email_send_test( array $override, $user_id = 0 ) {
  * real thing, so the test is a true preview of that too.
  *
  * @param array $override subject and body, as typed.
- * @return array{sent:bool,emails:array<int,string>,event_id:int,event_title:string}
+ * @return array{sent:bool,emails:array<int,string>}
  */
 function law_events_email_send_test_committee( array $override ) {
 	return law_events_email_send_test_to( $override, law_events_committee_emails() );
 }
 
 /**
- * The shared body of both test sends.
+ * The shared body of every test send: to the address typed into the dialog,
+ * to oneself, or to the committee.
  *
  * Rendered exactly as law_events_send() renders a real one (placeholders,
- * esc_html, wpautop, make_clickable), against the most recent event so the
- * tags resolve to something recognisable.
+ * esc_html, wpautop, make_clickable), with every tag filled from
+ * law_events_email_sample_placeholders() (Denis, 26 October 2026). It used to
+ * resolve against the most recent event, which left every tag a send call
+ * supplies itself ({attendee_name}, {price}, {payment_note} and some forty
+ * more) blank, so the test showed a template with holes in it. It also put a
+ * real host's name, email address and invoice link in front of whoever the
+ * test was addressed to, which stopped being acceptable the moment that
+ * address became something the editor types.
  *
  * @param array             $override subject and body, as typed.
  * @param array<int,string> $emails   Recipients; anything that is not an address is dropped.
- * @return array{sent:bool,emails:array<int,string>,event_id:int,event_title:string}
+ * @return array{sent:bool,emails:array<int,string>}
  */
 function law_events_email_send_test_to( array $override, array $emails ) {
 	$emails = array_values( array_unique( array_filter( array_map( 'sanitize_email', $emails ), 'is_email' ) ) );
 	if ( ! $emails ) {
-		return array( 'sent' => false, 'emails' => array(), 'event_id' => 0, 'event_title' => '' );
+		return array( 'sent' => false, 'emails' => array() );
 	}
 
-	$sample = get_posts(
-		array(
-			'post_type'      => LAW_EVENT_CPT,
-			'post_status'    => law_event_all_status_keys(),
-			'posts_per_page' => 1,
-			'fields'         => 'ids',
-		)
-	);
-	$event_id     = $sample ? (int) $sample[0] : 0;
-	$placeholders = law_events_email_placeholders( $event_id );
+	$placeholders = law_events_email_sample_placeholders();
 
 	$sent = wp_mail(
 		$emails,
@@ -1419,19 +1448,24 @@ function law_events_email_send_test_to( array $override, array $emails ) {
 	);
 
 	return array(
-		'sent'        => (bool) $sent,
-		'emails'      => $emails,
-		'event_id'    => $event_id,
-		'event_title' => $event_id ? (string) get_the_title( $event_id ) : '',
+		'sent'   => (bool) $sent,
+		'emails' => $emails,
 	);
 }
 
-/** Placeholder tags available to every event email. */
+/**
+ * Placeholder tags available to every event email.
+ *
+ * Adding a tag here means adding its sample value to
+ * law_events_email_sample_placeholders() too, so a test send shows it filled
+ * in. EmailsDashboardTest fails until both lists name the same tags.
+ */
 function law_events_email_placeholders( $event_id, array $extra = array() ) {
 	$post   = get_post( $event_id );
 	$author = $post ? get_user_by( 'id', (int) $post->post_author ) : null;
 
-	$dashboard = home_url( '/account/events/' );
+	$site      = law_events_email_site_links();
+	$dashboard = $site['{dashboard_link}'];
 	$committee = home_url( '/account/dashboard/?event=' . (int) $event_id );
 
 	$summary = '';
@@ -1494,7 +1528,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{dashboard_link}'   => $dashboard,
 		'{comments_link}'    => $dashboard . '?law_thread=' . (int) $event_id,
 		'{committee_link}'   => $committee,
-		'{site_name}'        => get_bloginfo( 'name' ),
+		'{site_name}'        => $site['{site_name}'],
 		'{stripe_error}'     => '',
 		// Empty on the approval that first raises an invoice, filled by
 		// law_event_apply_fee_change() when the committee changes the fee
@@ -1503,7 +1537,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		// existing for the second case.
 		'{fee_change_note}'  => '',
 		'{latest_comment}'   => '',
-		'{forgot_link}'      => law_auth_login_url( array( 'action' => 'forgot' ) ),
+		'{forgot_link}'      => $site['{forgot_link}'],
 		// User-registration emails (filled via the send call's placeholders).
 		'{user_name}'        => '',
 		'{user_email}'       => '',
@@ -1584,13 +1618,14 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		// {account_note}, {discount_note} and {party_note}.
 		'{payment_note}'          => '',
 		'{receipt_note}'          => '',
-		'{flagship_bookings_link}' => function_exists( 'law_flagship_bookings_url' ) ? law_flagship_bookings_url() : '',
-		'{bookings_link}'     => law_account_url( 'my_bookings' ),
-		'{profile_link}'      => home_url( '/account/profile/' ),
-		// law_account_url() resolves the real permalink and falls back to the
-		// literal path, so a renamed page gives an honest 404 rather than a
-		// link to the home page.
-		'{submit_link}'       => function_exists( 'law_account_url' ) ? law_account_url( 'submit' ) : home_url( '/account/events/submit/' ),
+		// A paid place booked for someone else (BOOK_ON_BEHALF.md §3.7): the
+		// moment's own opening paragraph on the attendee's single template,
+		// built already resolved by law_booking_notify_on_behalf().
+		'{status_note}'           => '',
+		'{flagship_bookings_link}' => $site['{flagship_bookings_link}'],
+		'{bookings_link}'     => $site['{bookings_link}'],
+		'{profile_link}'      => $site['{profile_link}'],
+		'{submit_link}'       => $site['{submit_link}'],
 	);
 
 	$start = (string) law_event_meta( $event_id, '_law_start' );
@@ -1621,6 +1656,195 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 	}
 
 	return $placeholders;
+}
+
+/**
+ * The tags that are the same in every email, whoever it is for: the site's
+ * name and the links to its shared pages.
+ *
+ * Its own function so the test sends can have the real links without calling
+ * law_events_email_placeholders(), which with no event falls back to whatever
+ * post and comment are lying around (security review, 26 October 2026).
+ *
+ * @return array<string,string> tag => value.
+ */
+function law_events_email_site_links() {
+	return array(
+		'{dashboard_link}'         => home_url( '/account/events/' ),
+		'{site_name}'              => get_bloginfo( 'name' ),
+		'{forgot_link}'            => law_auth_login_url( array( 'action' => 'forgot' ) ),
+		'{flagship_bookings_link}' => function_exists( 'law_flagship_bookings_url' ) ? law_flagship_bookings_url() : '',
+		'{bookings_link}'          => law_account_url( 'my_bookings' ),
+		'{profile_link}'           => home_url( '/account/profile/' ),
+		// law_account_url() resolves the real permalink and falls back to the
+		// literal path, so a renamed page gives an honest 404 rather than a
+		// link to the home page.
+		'{submit_link}'            => function_exists( 'law_account_url' ) ? law_account_url( 'submit' ) : home_url( '/account/events/submit/' ),
+	);
+}
+
+/**
+ * A sample value for every placeholder tag, for the test sends.
+ *
+ * THE ONE PLACE the samples live (Denis, 26 October 2026). A tag added to
+ * law_events_email_placeholders() gets its sample here in the same change;
+ * EmailsDashboardTest compares the two lists and fails on a tag with no
+ * sample, or a sample for a tag that no longer exists.
+ *
+ * Invented throughout: one made-up event, host and delegate, so a test can go
+ * to any address without carrying anybody's real details. The addresses use
+ * example.com, which is reserved and can never reach a real inbox. The
+ * site-wide links are the real ones, from law_events_email_site_links() as
+ * the real emails have them; a link that would name one event or one invoice points
+ * at the page it would sit under instead, rather than at a 404.
+ *
+ * Each value is written the way the code that really fills the tag writes it,
+ * so a test shows the punctuation and line breaks the real email will have.
+ * The two retired tags, {user_roles} and {registered_by}, stay empty, because
+ * that is what they print in every real email too.
+ *
+ * @return array<string,string> tag => value, keyed as law_events_email_placeholders() keys them.
+ */
+function law_events_email_sample_placeholders() {
+	$site = law_events_email_site_links();
+
+	// Four weeks out, so the date reads as an upcoming event whenever the test
+	// is sent, and the slot, the date and the time all agree with each other.
+	$start = ( new DateTimeImmutable( 'today 10:30', wp_timezone() ) )->modify( '+28 days' )->getTimestamp();
+	$date  = wp_date( 'l j F Y', $start );
+	$time  = '10:30 to 12:00';
+	$slot  = wp_date( 'D jS M', $start ) . ': 10:30–12:00';
+
+	$event     = 'Cross-border enforcement: a practical workshop';
+	$reference = '55870';
+	$host      = 'Alex Example';
+	$host_mail = 'alex.example@example.com';
+	$venue     = 'Example House, 1 Sample Street, London';
+	$attendee  = 'Sam Sample';
+	$colleague = 'Robin Sample';
+	$booker    = 'Jo Bloggs';
+	$card      = 'Visa ending 4242, expires 04/2029';
+	$dashboard = $site['{dashboard_link}'];
+	$committee = home_url( '/account/dashboard/' );
+	$bookings  = $site['{bookings_link}'];
+	$password  = $site['{forgot_link}'];
+
+	$attendee_list = implode(
+		"\n",
+		array(
+			$attendee . ' (sam.sample@example.com), Example Chambers LLP, Associate (Booking #1042)',
+			$colleague . ' (robin.sample@example.com), Example Chambers LLP, Partner (Booking #1043)',
+		)
+	);
+
+	return array(
+		'{event_summary}'          => implode(
+			"\n",
+			array(
+				'Event: ' . $event,
+				'Reference: ' . $reference,
+				'Host: ' . $host . ' (' . $host_mail . ')',
+				'Organisation: Example Chambers LLP',
+				'Slot: ' . $slot,
+				'Venue: ' . $venue,
+				'Fee tier: UK hosts',
+				'Fee: £1,200.00 + VAT',
+				'Status: Approved',
+				'',
+				'A hands-on session on enforcing arbitral awards across borders, with practitioners from three jurisdictions sharing what has worked for them and what has not.',
+			)
+		),
+		'{event_title}'            => $event,
+		'{law_reference}'          => $reference,
+		'{host_name}'              => $host,
+		'{host_email}'             => $host_mail,
+		'{status}'                 => 'Approved',
+		'{payment_status}'         => 'Paid',
+		'{invoice_url}'            => $dashboard,
+		'{fee}'                    => '£1,200.00',
+		'{venue}'                  => $venue,
+		'{slot}'                   => $slot,
+		'{rejection_reason}'       => 'The proposed slot clashes with the flagship conference. Please choose another time.',
+		'{cancellation_reason}'    => 'Two of the speakers are no longer available on this date.',
+		'{event_link}'             => home_url( '/programme/' ),
+		'{edit_link}'              => $committee,
+		'{dashboard_link}'         => $dashboard,
+		'{comments_link}'          => $dashboard,
+		'{committee_link}'         => $committee,
+		'{site_name}'              => $site['{site_name}'],
+		'{stripe_error}'           => 'Your card was declined. (' . wp_date( 'Y-m-d H:i:s' ) . ')',
+		'{fee_change_note}'        => 'Important: the fee for this event has changed to £1,200.00. This replaces the earlier invoice for £1,500.00, which has been cancelled and can no longer be paid.',
+		'{latest_comment}'         => sprintf(
+			"%s (%s):\n%s",
+			$host,
+			wp_date( 'j F Y, H:i', time() - DAY_IN_SECONDS ),
+			'We have confirmed the second speaker and updated the description.'
+		),
+		'{forgot_link}'            => $password,
+		'{user_name}'              => $attendee,
+		'{user_email}'             => 'sam.sample@example.com',
+		'{user_roles}'             => '',
+		'{co_owner_name}'          => 'Chris Example',
+		'{username}'               => 'sam.sample',
+		'{set_password_link}'      => $password,
+		'{event_date}'             => $date,
+		'{event_time}'             => $time,
+		'{event_when}'             => sprintf( 'on %s at %s', $date, $time ),
+		'{attendee_name}'          => $attendee,
+		'{attendee_list}'          => $attendee_list,
+		'{booking_number}'         => '1042',
+		'{booking_numbers}'        => '#1042, #1043',
+		'{invited_by}'             => $booker,
+		'{party_note}'             => 'Each colleague has a booking of their own, with their own booking number, and has been emailed their own confirmation. Accounts are created for any who do not already have one, with a link to set their password and to add any dietary or accessibility requirements to their profile.',
+		'{waitlist_note}'          => 'Everyone you added is on the waitlist in their own right, so places are offered to them individually.',
+		'{tickets_available}'      => '60',
+		'{tickets_remaining}'      => '12',
+		'{removal_reason}'         => 'The venue has had to reduce the number of places available.',
+		'{account_note}'           => law_booking_account_note( $password ),
+		'{registered_by}'          => '',
+		'{party_list}'             => $attendee_list,
+		'{promoted_list}'          => implode(
+			"\n",
+			array(
+				$attendee . ' (sam.sample@example.com), Booking #1042',
+				$colleague . ' (robin.sample@example.com), Booking #1043',
+			)
+		),
+		'{blocked_reason}'         => 'Sam Sample already has a place at this event.',
+		'{waitlist_count}'         => '3',
+		'{price}'                  => '£295.00',
+		'{price_vat}'              => '£59.00',
+		'{discount_note}'          => 'Discount code SAMPLE10: £29.50 off.',
+		'{included_receptions}'    => law_reception_joining_note(
+			array(
+				array( 'title' => 'Opening reception', 'date' => 'Monday 30 November', 'venue' => 'St Paul\'s Cathedral' ),
+				array( 'title' => 'Flagship reception', 'date' => 'Wednesday 2 December', 'venue' => 'Guildhall' ),
+			)
+		),
+		'{price_total}'            => '£354.00',
+		'{invoice_link}'           => $bookings,
+		'{decline_reason}'         => 'Places at this year\'s conference are now fully allocated.',
+		'{payment_error}'          => 'Your card was declined.',
+		'{payment_deadline}'       => wp_date( 'j F Y', time() + 14 * DAY_IN_SECONDS ),
+		'{card_label}'             => $card,
+		'{payment_method}'         => $card,
+		'{update_payment_link}'    => $bookings,
+		'{substitute_name}'        => 'Taylor Sample',
+		'{previous_attendee_name}' => $attendee,
+		'{payment_note}'           => implode(
+			"\n\n",
+			array(
+				'We have taken £354.00 from your saved payment method (' . $card . '), which is £295.00 plus £59.00 VAT.',
+				'Your VAT invoice is here, and you can download it at any time: ' . $bookings,
+			)
+		),
+		'{receipt_note}'           => 'Nothing has been refunded, and nothing further will be charged. If you need a receipt for what you paid, please reply to this email and we will send you one.',
+		'{status_note}'            => sprintf( '%1$s has booked and paid for a place for you at %2$s (booking #1042), so there is nothing for you to pay. A calendar invitation is attached.', $booker, $event ),
+		'{flagship_bookings_link}' => $site['{flagship_bookings_link}'],
+		'{bookings_link}'          => $bookings,
+		'{profile_link}'           => $site['{profile_link}'],
+		'{submit_link}'            => $site['{submit_link}'],
+	);
 }
 
 /** Resolve an email's recipients for one event. */
@@ -1733,6 +1957,13 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 		return false;
 	}
 
+	// A money or status email about a paid place booked for someone else goes
+	// to the booker, who paid (BOOK_ON_BEHALF.md §3.7). Decided here, once,
+	// so no send site can forget it.
+	if ( function_exists( 'law_booking_route_paid_email' ) ) {
+		$extra = law_booking_route_paid_email( $slug, $extra );
+	}
+
 	$recipients = law_events_email_recipients( $definition, $event_id, $extra );
 	$test_mode  = law_events_test_mode_address();
 	if ( ! $recipients ) {
@@ -1756,7 +1987,7 @@ function law_events_send( $slug, $event_id, array $extra = array() ) {
 	// The subject is a mail header, not HTML: its values go in raw, or a
 	// "Smith & Jones" event would arrive with "&amp;" in the subject line.
 	$subject      = strtr( (string) $definition['subject'], $placeholders );
-	$body         = law_events_email_render_body( (string) $definition['body'], $placeholders );
+	$body         = law_events_email_render_body( (string) $definition['body'], $placeholders, (string) ( $extra['lead'] ?? '' ) );
 
 	// Optional file attachments (the bookings .ics calendar invites). wp_mail
 	// is synchronous, so a caller may delete its temp file right after this

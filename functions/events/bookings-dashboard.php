@@ -230,7 +230,9 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 		$person     = law_booking_attendee( $booking );
 		$invited_by = law_booking_invited_by_label( $booking );
 		$user       = get_user_by( 'id', (int) $booking->post_author );
-		$profile    = $user ? law_profile_values( (int) $user->ID ) : array();
+		// The account's answers, blanks filled from what was typed by whoever
+		// booked them in (law_booking_profile_values(), BOOK_ON_BEHALF.md A3).
+		$profile    = $user ? law_booking_profile_values( $booking ) : array();
 
 		if ( '' !== $needle ) {
 			$haystack = implode(
@@ -268,12 +270,17 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			'booking_id'    => (int) $booking->ID,
 			'number'        => $number,
 			'status'        => $statuses[ $booking->post_status ] ?? 'active',
+			// Why the queue is skipping a waitlisted row, in full: this
+			// dashboard is the committee's alone.
+			'passed_over'   => 'law-waitlisted' === $booking->post_status ? law_waitlist_passed_over_reason( $booking ) : '',
 			'booked'        => (string) $booking->post_date,
 			'event_id'      => $event_id,
 			'event_title'   => $event->post_title,
 			'event_start'   => (string) law_event_meta( $event_id, '_law_start' ),
 			'event_ref'     => (string) law_event_meta( $event_id, '_law_reference' ),
 			'invited_by'    => $invited_by,
+			// The tag's whole wording, hosted or paid (law_booking_booked_by_label()).
+			'invited_label' => law_booking_booked_by_label( $booking ),
 			'user'          => $user,
 			'name'          => $person['name'],
 			'email'         => $person['email'],

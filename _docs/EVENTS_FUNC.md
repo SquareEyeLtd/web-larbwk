@@ -105,7 +105,29 @@ repair-references, backfill-session-agenda).
   `law_event_apply_slot_label()` all pass `true` and label the slot
   "(retired)", because a confirmed slot that vanished from the select would
   fall back to "Slot not confirmed" and blank the event's datetimes on the next
-  save. Deleting the line instead of retiring it breaks both.
+  save. Deleting the line instead of retiring it breaks both, which is why the
+  write path below refuses to delete a slot any event holds (27 October 2026).
+- **The slot write path** (27 October 2026), one for both editors — the
+  committee's Manage time slots screen (`slots-dashboard.php`) and the textarea
+  on this screen, which stays. `law_events_slots_from_input()` cleans posted
+  rows (keeping each row's posted index and its `original` label),
+  `law_events_validate_slots()` requires a label, a real Y-m-d date and an
+  HH:MM start, wants any end LATER than the start, and refuses two labels that
+  share a `law_events_slot_label_key()`, with messages that name the row by
+  position. `law_events_save_slots()` matches rows to stored slots by
+  `original` then by label and refuses any change but Retired to a slot that
+  `law_events_slot_usage()` says an event holds (confirmed or preferred, any
+  status outside the bin): no deletion, no new label, no new date or times
+  (Denis, 27 October 2026). An event stores the label and had its datetimes
+  written from the slot, so a rename would orphan the label and a re-time
+  would move the event the next time anyone saved it. Refused rows come back
+  as stored (a deleted one at the bottom). A held row is validated for
+  duplicate labels only, so a legacy row that breaks a rule cannot lock the
+  list. The list is stored through `law_events_sort_slots()` (date, start,
+  end, an empty end after any end at the same start, then label).
+  `law_events_slots_version()` is the fingerprint the screen posts so a stale
+  page is refused (the textarea passes `null` and skips it). The textarea's
+  refusals print as an admin notice and the rest of the settings still save.
 - `law_events_slot_label_key()`, `law_events_normalise_slot_label()`: a loose
   comparison key (entities decoded, en/em dashes folded to a hyphen, spaces
   around it dropped, whitespace collapsed, lower-cased) and the mapping of any
@@ -715,8 +737,10 @@ deliberately typed 0 still waives the fee, and the help text says so).
   `check_admin_referer`, the `law_website_url` honeypot (pretend success, the
   payload supplied per handler), and the rate limit — returning `$is_ajax`.
 - `law_events_respond( $is_ajax, $ok, $payload, $notice )`: the JSON-versus-
-  redirect-with-notice tail; `law_events_nopriv_json()`: the named signed-out
-  answer for `admin_post_nopriv_*` registrations.
+  redirect-with-notice tail. It never sends a 5xx, because Cloudflare
+  replaces a 502 or 504 body with its own page and the message is lost (26
+  October 2026). `law_events_nopriv_json()`: the named signed-out answer for
+  `admin_post_nopriv_*` registrations.
 - The six older handlers (comments, withdraw, committee, export, submission,
   registration) predate these and still carry the sequence inline; they
   migrate opportunistically.
@@ -744,7 +768,9 @@ deliberately typed 0 still waives the fee, and the help text says so).
   quick edit can neither resurrect a cancelled booking nor seat a waitlisted
   one; the `wp_untrash_post_status` filter likewise restores a booking to its
   pre-trash status, constrained to the keys of `law_booking_statuses()`
-  (anything else restores as cancelled, the safe side).
+  (anything else restores as cancelled, the safe side). Since 21 October 2026
+  it restores a `law_speaker` to `publish` too: core's default is `draft`, and
+  a draft speaker is missing from Manage Speakers and from its own profile.
 - `law_event_ui_actions()`: the five actions the two committee UIs offer
   (approve, send_back, reject, mark_paid, cancel), the shared list both the
   dashboard handler and the wp-admin event screen check a posted action
@@ -1223,7 +1249,7 @@ ONE booking carrying an attendee rows array; that model, its flat
   from `wp_trash_post` while the event is still published; otherwise a freed
   place could promote somebody onto an event being deleted seconds later.
 - Tests: `tests/BookingsTest.php` (35), `tests/BookingEmailsTest.php` (16),
-  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (18).
+  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (24).
 
 ### `waitlist.php`: the waitlist (WAITLIST.md Part B)
 
@@ -1242,17 +1268,54 @@ block the queue. Joining is refused while places are free.
   guards. An entry the guards refuse is **skipped in place**: it keeps its
   position, the log records why every time, and its owner is emailed once
   (`_law_waitlist_blocked` is the latch), so one stuck entry can never freeze
-  the queue behind it. The pass is capped at `LAW_WAITLIST_PASS_CAP` (10) and
-  `LAW_WAITLIST_PASS_SECONDS` (15) and hands the rest to the
+  the queue behind it. The pass seats at most `LAW_WAITLIST_PASS_CAP` (10),
+  looks at most `LAW_WAITLIST_PASS_WINDOW` (30) entries and runs at most
+  `LAW_WAITLIST_PASS_SECONDS` (15), and hands the rest to the
   `law_waitlist_resume` cron event, checking `wp_next_scheduled()` first
-  because WordPress silently drops a duplicate schedule. Every email is sent
+  because WordPress silently drops a duplicate schedule. Since 6 November 2026
+  only SEATED entries count towards the cap (passed-over ones used to, which
+  let ten clashes at the front end every pass and reschedule it every minute),
+  and a pass that walked its whole window hands on only if it seated somebody.
+- **Re-offering places nothing else would (6 November 2026).**
+  `law_waitlist_has_promotable()` is a read-only "would a pass seat anybody?"
+  over the same window; `law_waitlist_offer()` runs a pass only when it would,
+  so none of the callers below writes a "passed over" line for nobody. Its
+  callers: the resume cron; `law_waitlist_recheck_person()`, called when
+  somebody gives up a place (`law_booking_cancel()`, `law_bookings_cancel_party()`
+  and the wp-admin trash backstop), which looks again at every other queue that
+  person is in, because the place may have been their clash; and
+  `law_waitlist_sweep()` on the hourly `law_waitlist_hourly` event (scheduled
+  on `init`, so a deploy needs no step), which walks
+  `law_waitlist_events_with_queue()` for at most `LAW_WAITLIST_SWEEP_SECONDS`.
+  The sweep is the safety net for an event moved, a booking deleted outright, a
+  missed resume or a busy lock.
+- **Why somebody is passed over is on screen.**
+  `law_waitlist_passed_over_reason( $entry, $name_event )` gives one short
+  third-person line ("Passed over: booked on "X" at the same time.", "…already
+  has a place on this event.", "…no payment method saved.") for an entry with
+  the latch set whose reason still stands (re-checked live, because the latch
+  outlives a clash that has cleared). The bookings list
+  (`parts/events/booking-list.php`) prints it under the attendee's name on the
+  waitlist table, naming the other event to the committee and saying "another
+  event" to a host; the committee's Manage bookings table prints it under the
+  Waitlisted badge (row key `passed_over`). The wording comes from
+  `law_waitlist_passed_over_text()`, and `law_booking_clash_event()` (the
+  finding half of `law_booking_guard_clash()`, split out for this) supplies the
+  other event.
+- **`/wp-admin/?check-waitlists`** (`admin/waitlist-check.php`,
+  `manage_options`): every queue on an upcoming event as `law_waitlist_preview()`
+  sees it (who would be seated, who is passed over and why, how many are just
+  waiting, and why an event cannot seat anybody at all), plus whether the
+  site's scheduled tasks are overdue. Opening it changes nothing; the "Seat
+  them now" button is a nonce'd POST that runs `law_waitlist_offer()` pass after
+  pass for up to `LAW_WAITLIST_CHECK_SECONDS` and reports who was seated. Every email is sent
   after the lock is released; a static per-event flag and
   `$GLOBALS['law_waitlist_suspended']` keep it out of its own re-entry and out
   of the cancel sweep. It is deliberately NOT called from the recount, which
   runs inside other bookers' locks.
 - Called from: `law_booking_cancel()` (any context but the sweep), both
-  wp-admin backstops, `law_event_tickets_changed()`, reorder and manual
-  promote.
+  wp-admin backstops, `law_event_tickets_changed()`, reorder, manual
+  promote and `law_waitlist_offer()`.
 - `law_waitlist_promote()` is the host's "Promote now": it bypasses the
   capacity guard only, never the duplicate or clash guards, and logs an
   over-booking loudly (`waitlist_overbooked`).
@@ -1268,9 +1331,10 @@ block the queue. Joining is refused while places are free.
 - An entry restored from the trash goes to the BACK of the queue
   (`untrashed_post`): its old position is meaningless once the people behind it
   have moved up.
-- `law_event_tickets_changed()` (in waitlist.php) is called at the END of both
-  ticket write paths — `admin/event-screen.php` and
-  `law_events_form_save()` — after every other field is written, so a save that
+- `law_event_tickets_changed()` (in waitlist.php) is called at the END of every
+  ticket write path — `admin/event-screen.php`, `law_events_form_save()`, the
+  committee panel, the content-transfer import and (since 6 November 2026) the
+  Manage receptions save — after every other field is written, so a save that
   moves the date and raises the places cannot email an invitation carrying the
   old date. Raising the places offers them to the queue; lowering them only
   logs.
@@ -1618,6 +1682,11 @@ then follows the link that appears and writes that event's confirmation.
   account links `{bookings_link}`, `{profile_link}` and `{submit_link}` (via
   `law_account_url( 'submit' )`) are set unconditionally, so the event-less
   registration emails resolve them.
+- `law_events_email_sample_placeholders()`: **the one place every tag's sample
+  value lives**, used by every test send in place of a real event. A new tag
+  in `law_events_email_placeholders()` needs its sample here in the same
+  change; `EmailsDashboardTest::test_every_tag_has_a_sample_value()` fails
+  until both lists name the same tags.
 - `law_events_email_recipients()`, `law_events_send()`: resolve recipients and
   send, logging the send (with recipients, and the test-mode address when one
   is in force) to the activity log. A £0 event splits to the "confirmed, free"
@@ -1760,9 +1829,10 @@ then follows the link that appears and writes that event's confirmation.
   submitted for it. The old `_law_organisation`/`_law_job_title` speaker meta is
   off the schema (stale rows are inert); the sanitiser reads a pre-change
   `organisation_override` as `organisation`, and `bio` takes the textarea
-  sanitiser so a biography keeps its line breaks. A row that leaves the
-  biography or photo blank falls back to the speaker post's editor content and
-  featured image at read time. Both are optional on the host form, and since
+  sanitiser so a biography keeps its line breaks. A row that leaves the photo
+  blank falls back to the speaker post's featured image at read time; a blank
+  biography prints nothing (since 26 October 2026, see "A blank biography
+  prints nothing" at the end). Both are optional on the host form, and since
   15 September 2026 so are the organisation and the job title — see the Speakers
   fieldset under `law_events_form_save()`. The committee event detail
   (`templates/account-dashboard.php`) prints each of the three lines only when it
@@ -1831,8 +1901,9 @@ then follows the link that appears and writes that event's confirmation.
   committee most likely wants again. `law_speaker_row_prefill()` wraps it for
   the picker: **every** status (a speaker record exists from the first draft
   save, and the appearance worth copying forward is often on an event that is
-  not confirmed yet), with the speaker post's editor content and featured image
-  as the last resort, and the photo's thumbnail URL alongside the ID so the row
+  not confirmed yet), with the speaker post's featured image as the photo's
+  last resort (never its editor content as a biography, since 26 October 2026),
+  and the photo's thumbnail URL alongside the ID so the row
   can show it without a second request. There is no organisation or job title
   on the speaker post to fall back to: those have been per appearance since 4.1
   and the old `_law_organisation` / `_law_job_title` meta rows are inert.
@@ -1945,6 +2016,54 @@ then follows the link that appears and writes that event's confirmation.
   files under itself rather than sorting above everybody on an empty surname.
 - `law_event_session_ids()`, `law_event_session_rows()`: an event's sessions
   (child `law_session` posts) and their rows.
+- **Removing a speaker record** (21 October 2026). A record is referenced by
+  ID from the `_law_speakers` rows of every event and session it appears at,
+  and until this date trashing one (wp-admin's Trash link was the only way)
+  left every row behind: `law_speaker_card()` reads a trashed post like any
+  other, so the event page kept printing the person with a profile link that
+  404s, and once the trash was emptied a flagship session naming them failed
+  its own validation. Now the
+  work hangs off WordPress's hooks rather than off any button, so every route
+  behaves the same:
+  - `wp_trash_post` runs `law_speaker_detach()`: `law_speaker_holder_ids()`
+    finds every event and session in **any** status, trash included (an event
+    restored later must not name a record that has gone; uncapped, because a
+    capped scan would leave rows behind), and each loses that speaker's rows
+    through `law_event_update_meta()`, which deletes the meta when the last row
+    goes. Everybody else's rows stay, in order. What was removed is kept on the
+    trashed record as `LAW_SPEAKER_DETACHED_META` (`_law_speaker_detached`,
+    post ID => rows; plain post meta outside the schema, since no schema type
+    describes it and only the restore reads it).
+  - `untrashed_post` runs `law_speaker_reattach()` with those rows, skipping a
+    post that has gone and one that already names the person again
+    (`law_speaker_rows_name_person()`: the same record, or another with the
+    same email or normalised name). That case is real: while the record sat in
+    the trash, `law_speaker_find_existing()` never matched it, so a host
+    re-adding the person made a new record, and restoring the old row beside it
+    would print them twice.
+  - `before_delete_post` detaches again, which finds nothing for a record that
+    went through the trash and does the whole job for one deleted outright (or
+    trashed before the hooks existed).
+  - `law_speaker_after_rows_changed()` recomputes a flagship whose session
+    changed (its own rows are the sessions' union) and flushes the appearance
+    maps; `law_speaker_log_rows_change()` writes one `speaker_removed` /
+    `speaker_restored` activity-log line per **event** (a session's change is
+    logged on its event, once). Tests: `tests/SpeakerDeleteTest.php` (21):
+    the hooks (trash, restore, the re-added-person skip, trashed and draft
+    holders, duplicate rows, emptying the trash, an event deleted meanwhile,
+    the flagship union), the dialog's wording for none, one and several events
+    under an event filter, the escaped name, and the handler's AJAX answers
+    (committee, not committee, a stale nonce, a record already deleted, an ID
+    that is not a speaker), the save handler refusing a deleted record, and the
+    way back to the list. The handler tests drive its real JSON branch by
+    filtering `wp_doing_ajax` on and swapping `wp_die_ajax_handler` for an
+    exception, the first suite here to do so.
+- **Merging two records** (26 October 2026) is the other way a record leaves
+  the list: an administrator's helper on LAW → Migration
+  (`migration/merge-speakers.php`, described under Migration below) moves one
+  speaker's rows onto another and trashes the emptied record. It reuses
+  `law_speaker_holder_ids()` and `law_speaker_after_rows_changed()`, and runs
+  before the trash, so the trash hook above finds nothing left to detach.
 
 ### `speakers-dashboard.php`: the committee's Manage Speakers dashboard (9 September 2026)
 
@@ -2095,10 +2214,42 @@ then follows the link that appears and writes that event's confirmation.
   screen). Cells that must stay on one line — `.law-dashboard__row-actions`,
   the waitlist position, the flagship tick — opt out there. pdfmake loads
   footer-side for committee only.
-- **Out of scope, deliberately**: creating a speaker here, deleting one, and
-  merging duplicates. Merging needs its own rules for the appearance rows on
-  both sides, and duplicates are the predictable next request now that the
-  whole list is visible.
+- **Delete** (21 October 2026, Denis): a Delete beside Edit on every row and
+  a quieter "Delete this speaker" text button under the edit view's Save, the
+  email editors' Reset treatment (the rarest action on the screen and the only
+  one that throws work away). Both are `parts/events/speaker-delete.php`, a
+  one-button `.law-booking-form` behind the shared confirm dialog, whose list
+  names **every** event the speaker is on with its date and status (the row's
+  own appearance list is filtered by the event and year filters, so the
+  partial is handed the unfiltered `law_speakers_dashboard_appearances()`),
+  says that the per-event details go with them, warns when any of those events
+  is already public, and says under the list that an administrator can
+  restore the record from the wp-admin trash, which puts the appearances back.
+  The name is escaped where it enters that copy, because the modal passes copy
+  through `wp_kses_post()` and an administrator can type a tag into a wp-admin
+  title.
+  The handler, `law_speakers_dashboard_delete_handler()`
+  (`admin_post_law_speaker_delete`, the `speaker_manage` rate surface),
+  checks committee, refuses a missing or already-trashed record, and calls
+  `wp_trash_post()`: taking the speaker off the events is the trash hook's job
+  (`speakers.php` above), so wp-admin's Trash link does exactly the same. It
+  answers over fetch with the outcome (booking-form.js writes it into the
+  dialog before reloading) or redirects, and either way lands on the list the
+  press came from with its filters, minus `law_speaker`; the list prints the
+  `speaker-deleted` notice and its failure siblings. A trashed record is now
+  refused by `law_speakers_dashboard_speaker()`, which the edit view's
+  resolver, the save handler and the delete handler all share, so a stale tab
+  can neither reopen nor write to it. Both handlers refuse such a record
+  through `law_speakers_dashboard_refuse_missing()`, which, like the success
+  path, returns to the list via `law_speakers_dashboard_list_return()` rather
+  than to the referring edit view, so the address carries no `law_speaker`
+  that a later restore would reopen on a reload. booking-form.js is enqueued on the
+  template for this. Without JS the opener is a plain submit with no dialog,
+  as the committee's Delete event already is.
+- **Out of scope, deliberately**: creating a speaker here, and merging
+  duplicates. Merging needs its own rules for the appearance rows on both
+  sides, and duplicates are the predictable next request now that the whole
+  list is visible.
 - **Security review** (9 September 2026, security-specialist): no critical or
   high findings in the new code. The two notes acted on are the export rate
   limit above and an explicit `is_array()` check on the `_FILES` batch shape in
@@ -2884,9 +3035,12 @@ of "the server was right and the screen was not":
   plain static, so a request that creates or renames an organisation does not
   read a stale map. Used by the dashboard detail view, the export and the
   activity log.
-- `law_events_post_is_sponsored()`: the sponsored flag (sponsor tier, a
-  sponsor-category organisation, or a repeat approved/confirmed host this year)
-  — parity with the legacy calendar logic. On the front end it now shows as the
+- `law_events_post_is_sponsored()`: the sponsored flag. False when the
+  committee has ticked "Don't highlight as sponsored"
+  (`_law_no_sponsor_highlight`), otherwise whatever
+  `law_events_post_qualifies_as_sponsored()` says: sponsor tier, a
+  sponsor-category organisation, or a repeat approved/confirmed host this year,
+  parity with the legacy calendar logic. On the front end it now shows as the
   orange fill and border of a sponsored programme card
   (`.law-event-card--sponsored`); the old "Sponsored" pill was removed on
   11 September 2026 in favour of the stronger surface treatment.
@@ -3122,9 +3276,10 @@ saved over. Denis hit the sticky half in practice, seeing the notice name
   speaker dedupe key: with it blank `law_speaker_find_existing()` falls back to
   matching on the name, and a second "John Smith" would be silently attached to
   the first one's shared, publicly displayed profile. The reasoning is set out
-  at `functions/events/speakers.php:110-121`, and the merge tool that comment
-  offers as the remedy for a duplicate (EVENTS_4.2_SPECS.md §3.5) is not built
-  yet. Both names stay required for a different reason:
+  at `functions/events/speakers.php:110-122`, and the remedy that comment
+  offers for a duplicate (EVENTS_4.2_SPECS.md §3.5) is the administrator's
+  "Merge two speakers" panel on LAW → Migration (`migration/merge-speakers.php`,
+  26 October 2026). Both names stay required for a different reason:
   `law_events_form_save_speakers()` drops a row whose joined name is empty, so
   a nameless row would vanish rather than be reported back to the host.
   Before 8 September 2026 this save hard-coded `role => ''`, so a role the
@@ -3976,7 +4131,8 @@ they stay the same length.
   date & time slots, Confirmed slot, Event status, Payment status, Submitted
   (`Y-m-d H:i`, sortable), Sector (`law_event_sector_summary()`), Host
   organisation(s), Linked organisations (`law_event_organisation_names()`,
-  `; `-joined), Sponsored (`law_events_post_is_sponsored()`, `Yes` or blank),
+  `; `-joined), Sponsored (`law_events_post_qualifies_as_sponsored()`, `Yes` or blank, so the
+  "Don't highlight as sponsored" box does not blank it),
   External, External booking URL, Session agenda, Event fee,
   Discounted fee, Venue capacity, Tickets available, Bookings, Awaiting
   payment, Places left, Venue. (This list had drifted: it still named a "Run by
@@ -4092,7 +4248,9 @@ they stay the same length.
     system; it is wrong for an attendee, whose WordPress email is verified and
     who has no such history, because adopting would attach a delegate's card
     to somebody else's record. This searches only customers we ourselves bound
-    to a user.
+    to a user. A stored customer Stripe no longer has is replaced on the fly
+    by `law_stripe_post_for_payer()` (see "A Stripe customer that has gone
+    missing", 26 October 2026).
   - `law_stripe_create_setup_session()` opens Stripe **Checkout in `setup`
     mode**: the hosted page saves a card without charging it, with 3DS handled
     there and PCI scope never reaching LAW. One function serves all four
@@ -4365,7 +4523,7 @@ they stay the same length.
   live in `notifications.php` and are shared with the committee's front-end
   Manage emails screen (`emails-dashboard.php`).
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/content-transfer.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/merge-speakers.php`, `migration/content-transfer.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -4684,7 +4842,8 @@ they stay the same length.
 - **`repair-nbsp.php`** (17 September 2026) — the one-off sweep for rich text
   stored before `law_rich_text_normalise_spaces()` existed. It reads all four
   places rich text is kept: `post_content` on `law_event`, on `law_session`
-  and on `law_speaker` (the fallback biography), and the per-appearance
+  and on `law_speaker` (the record's biography, which no screen prints since
+  26 October 2026), and the per-appearance
   biographies in an event's `_law_speakers` rows. Every affected value is
   listed with the offending text shown in context, each row can be unticked,
   and a change to an event or one of its sessions lands in that event's
@@ -4698,6 +4857,20 @@ they stay the same length.
   17 September 2026: 47 values held one, three of them in runs — the worst
   being the 21 in "Hot Topics in Energy and Mining Arbitration" that started
   this.
+- **`merge-speakers.php`** (26 October 2026): "Merge two speakers". An
+  administrator picks the main speaker (kept) and the speaker to merge into it
+  from two selects labelled with name, email, record ID and event count, then
+  "Preview merge" (`law_events_merge_speakers_plan()`, writes nothing) and
+  "Merge #B into #A" (`law_events_merge_speakers_apply()`, which re-reads the
+  plan). The apply re-points the second speaker's `_law_speakers` rows on every
+  event and session in any status at the main speaker with their per-event
+  details intact, drops a row where the post already names the main speaker,
+  logs `speaker_merged` once per event, moves the legacy entry IDs (migration
+  map and `_law_gf_entry_ids`) and `law_year` terms across, adds the second
+  speaker's slug to the main speaker's `_wp_old_slug` (core 301s the old
+  address), stamps `_law_speaker_merged_into` and trashes the second record.
+  The main speaker's own record is never written. See "Two speakers can be
+  merged (26 October 2026)" at the end.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
@@ -5587,7 +5760,11 @@ These predate the rebuild and now branch on `law_events_source()`.
   button that closes the dialog and scrolls to the control that selector
   names), and `autoopen`, which marks the dialog `data-law-modal-autoopen` so
   `law-modal.js` opens it as the page loads — for a dialog that reports what
-  just happened rather than confirming what is about to.
+  just happened rather than confirming what is about to. `after` (21 October
+  2026, for Delete speaker) takes paragraphs like `copy` but prints them under
+  the list, as `.law-modal__copy--after`; the lead stays the first
+  `.law-modal__copy`, which is the one booking-form.js overwrites with the
+  outcome.
 - **Calendar parts** (`parts/`): `calendar-body.php` (the shared list/single
   view; its optional caller variables, set before the `require` —
   `$law_cal_show_status` for committee mode, `$law_cal_hero_title` for the
@@ -5836,7 +6013,8 @@ These predate the rebuild and now branch on `law_events_source()`.
   submission is not AJAX, because a form with no Apply button was rendered at
   the list price and comparing it against the discounted total refused every
   no-JS redemption (fixed 15 September 2026). No colleague repeater: one place per checkout,
-  self only. A reception priced at 0 is FREE, not closed (Denis, 16 September
+  for the buyer or, since 26 October 2026, for someone else they name ("Booking a
+  paid place for someone else" at the end). A reception priced at 0 is FREE, not closed (Denis, 16 September
   2026): the dialog then shows no price block, no discount code field and no
   Stripe line, and its summary says "Free to attend." beside the places left —
   a £0.00 receipt and a code field on nothing were the two things that read as
@@ -10035,6 +10213,782 @@ Touched: `functions/events/submitters-dashboard.php` (new),
 `functions/events/submission-form.php`, `functions/setup-account-pages.php`,
 `functions/events/migration/runner.php`, and the tests
 `tests/EventSubmittersDashboardTest.php` (new), `tests/HeaderNavTest.php`.
+
+## The committee can delete a speaker (21 October 2026)
+
+**The ask** (Denis): a Delete beside Edit on Manage Speakers and on the
+speaker's edit view, with a confirmation that tells the committee which events
+the speaker is on, and the speaker taken off those events rather than left
+dangling.
+
+**What was wrong before.** Deleting was deliberately out of scope when the
+dashboard was built, so the only route was wp-admin's Trash link, and that left
+the speaker's ID on every `_law_speakers` row that named it. A trashed post
+still reads as a speaker to `law_speaker_card()`, so the event page went on
+printing the person, linked to a profile that 404s; once the trash was emptied
+a flagship session naming them could not be saved ("speaker #N no longer
+exists"); and an untrash brought
+the record back as a core `draft`, missing from Manage Speakers and from its
+profile. None of this had happened on the local copy (no trashed speakers, no
+dangling rows), but nothing stopped it.
+
+**What it does now.** Delete moves the record to the trash, as the committee's
+Delete event does, and the trash hook takes the speaker off every event and
+session in any status, keeping what it took on the record. Restoring from the
+wp-admin trash puts the rows back (skipping any event that has since been given
+the same person under a new record) and restores the record as published. The
+work hangs off the trash and delete hooks rather than the button, so wp-admin's
+Trash and permanent Delete behave identically. Each event gets an activity-log
+line either way. Details under `speakers.php` and `speakers-dashboard.php`
+above.
+
+**Known edges.** A host with the event form open when the committee deletes a
+speaker puts that person back on their next save, under a new record: the form
+honours a posted speaker ID only for a speaker the event still holds and falls
+back to match-or-create otherwise, and match-or-create never matches a trashed
+record. That is the host's intent winning, and it is visible on the event. The photos themselves stay in the media
+library; only the rows that pointed at them go.
+
+**Verified in a browser** on 21 October 2026 on the local site, signed in as a
+throwaway committee member, against throwaway fixtures (a speaker on a Confirmed
+and a Proposed event and one of the Confirmed event's sessions, a speaker on no
+event, and a bystander on the same event): the dialog names both events with
+date and status, warns that the Confirmed one is public, and Keep the speaker
+leaves everything alone; Delete opens its dialog on a table swapped in by the
+keyword filter rather than submitting; deleting from the edit view reports
+"…taken off 2 events." in the dialog and lands on the list with the notice;
+the old `?law_speaker=` address then shows the list; deleting from a filtered
+list keeps the filter. The database afterwards: the speaker gone from both
+events and the session, the bystander's rows intact, one log line per event,
+the rows kept on the trashed record; `wp_untrash_post()` (what wp-admin's
+Restore calls) brought the record back published and the rows back on all
+three. No console errors. Two things the run caught were fixed: the edit view's
+text button sat outside the light form and drew in the pale hero red (the
+tokens are now set on `.law-speaker-delete`), and the restore note said "these
+events" for one event.
+
+**A second round** the same day, on fresh fixtures (a committee member, a
+subscriber, seven speakers, two events, a session, and a speaker added to the
+real local flagship's session): the subscriber gets only "This dashboard is for
+the LAW committee."; with the list filtered to one event the dialog still names
+both and the filter survives the delete; a second dialog after a dismissed
+first deletes only its own speaker; the public event page drops the speaker
+and their profile answers 404; the event's activity log carries the line; a
+keyboard alone reaches Delete, the focus stays trapped in the dialog, Escape
+returns it to the button and Enter deletes; with JavaScript disabled the
+button posts straight through to the list and its notice; the flagship page
+drops the speaker and its rows came back byte-identical to before the test;
+wp-admin's own Trash and Restore, as a committee member, take the speaker off
+and put them back. A save from an edit view left open in another tab after
+the delete wrote nothing (the job title typed there never landed) but returned
+to an address still carrying `law_speaker`, which is what
+`law_speakers_dashboard_refuse_missing()` above fixed. The dialog's name was
+also escaped (an administrator can type a tag into a wp-admin title), and the
+suite grew to 21 tests, including the handlers' JSON answers.
+
+**Found, not fixed:** at phone width with the WordPress admin bar showing
+(committee members get it), the shared modal's × sits under the admin bar and
+cannot be pressed (`.law-modal` is `z-index: 10050`, `#wpadminbar` 99999). The
+dialog's own Keep/Cancel button still closes it. It affects every
+`parts/layout/modal.php` dialog, not this one, so it belongs in its own change.
+
+Touched: `functions/events/speakers.php`,
+`functions/events/speakers-dashboard.php`, `functions/events/workflow.php`,
+`parts/events/speaker-delete.php` (new), `parts/events/speakers-dashboard-list.php`,
+`parts/events/speaker-manage.php`, `parts/layout/modal.php`,
+`templates/account-speakers-dashboard.php`, `assets/css/event-form.css`, and
+`tests/SpeakerDeleteTest.php` (new).
+
+---
+
+## Two speakers can be merged (26 October 2026)
+
+**The ask** (Denis, after the client found the same person twice on Manage
+Speakers on production): an administrator's helper that merges two speakers,
+picked by hand. First the main speaker, then the speaker merged into it; the
+second speaker's events go to the first, and the first speaker's name,
+biography and everything else stay as they are. Picked by hand, not detected,
+because a typo can sit in the name as easily as in the email. Asked whether
+the moved events should keep their own per-event details or take the main
+speaker's, Denis chose to keep their own.
+
+**How the duplicate arose.** Sylvia Tonova, on the local copy: the same host
+entered her twice in form 8 (Event > speaker) on 9 September 2026, entry 1406
+as `sylvia.tonova@` and entry 1426 as `sylvia.tonva@`. Two different emails
+rightly made two records (#5877, #5879) at migration. On production both now
+show the same address, so the typo was corrected after the migration, and the
+wp-admin speaker screen (`admin/speaker-screen.php`) writes the email with no
+clash check, unlike the upsert and Manage Speakers. That gap is still open.
+
+**What it does now.** A "Merge two speakers" panel on LAW → Migration,
+admin-only (`manage_options`), dry run first. Details under `merge-speakers.php`
+in the Migration section above. In short: rows move with their details, a
+post never ends up naming the main speaker twice, one `speaker_merged` line
+per event, legacy entry addresses, years and the old `/speakers/<slug>/`
+address follow the main speaker, and the second record goes to the trash
+stamped `_law_speaker_merged_into`.
+
+**Known edges.**
+- **Merge where the duplicate lives.** The content transfer never deletes, so
+  a merge done on staging leaves production's duplicate in place; production's
+  events in the bundle would follow the email the main speaker keeps.
+- **A restore is not an undo.** Restoring the merged record from the trash
+  brings back an empty profile; the rows stay on the main speaker, because the
+  trash hook found none to keep.
+- **Older activity-log lines** still name the merged record's ID in their
+  context; they are history and are left alone.
+
+**Verified** with `tests/SpeakerMergeTest.php` (14): rows and session rows
+moving with role, organisation, job title, photo and bio; an event naming both
+keeping the main row; two rows of the second speaker collapsing to one; the
+main record byte-identical; the trash, the stamp and the old-slug lookup core's
+redirect makes; a restore putting nothing back; legacy entry IDs through the
+map and the meta fallback; year terms; one log line per event with its session
+folded in; the flagship union; the refusals; and the panel's preview (writes
+nothing), merge and error notice. Then locally on the real pair (#5879 into
+#5877): one Sylvia on both events, the activity-log line on the moved event,
+and `/speakers/sylvia-tonova-2/` answering 301 to `/speakers/sylvia-tonova/`.
+The full suite's only failures were nine in `FlagshipPaymentsTest`, which read
+the flagship price "now" and started failing once the late price took over;
+nothing here touches them.
+
+Touched: `functions/events/migration/merge-speakers.php` (new),
+`functions/events/_load.php`, `functions/events/migration/page.php`,
+`functions/events/speakers.php` (comment only), and
+`tests/SpeakerMergeTest.php` (new).
+
+---
+
+## A blank biography prints nothing (26 October 2026)
+
+**The ask** (Denis, from the client): Domitille Baizeau's card on the David D.
+Caron Praelium kept printing "download CV from website" after the committee
+had emptied every biography Manage Speakers showed for her.
+
+**What was wrong before.** A blank appearance bio fell back to the speaker
+post's own `post_content`. That is written once, by `law_speaker_upsert()`,
+from the first bio any host typed for the person, and no front-end screen
+shows or edits it, so the committee could see the text but not reach it.
+Four readers used it: `law_speaker_card()` (event cards, session rows and the
+SEO description), `law_speaker_post_profile()` (the profile page and archive),
+`law_speaker_row_prefill()` (which copied it into a new row) and the committee
+event detail in `templates/account-dashboard.php`, which printed the record's
+content and never the event's own bio at all.
+
+**What it does now.** All four read the appearance only: a blank bio prints
+nothing. The dashboard detail now shows the card's bio, the event's own. The
+upsert still writes `post_content` and nothing reads it, so the data is kept
+and the change is a read-side one; the wp-admin speaker editor's content box
+no longer affects any page. On the local copy no Confirmed event's card relied
+on the fallback (0 of 130 rows), so nothing visible changed here; production
+may differ.
+
+**The photo tint went with it** (same day). The pale navy square behind a
+speaker photo is the initials placeholder's backdrop, and it showed through a
+transparent PNG (a round cut-out sat on a tinted square). `:has(img)` clears
+it on the event cards, the committee timeline panel
+(`assets/css/calendar.css`), the archive card and the profile
+(`assets/css/speakers.css`).
+
+**Verified** by `tests/SpeakerPrefillTest.php`
+(`test_a_blank_appearance_bio_prints_nothing_anywhere`, and the prefill test
+now expects no biography) and `tests/ReferenceAndMigrationTest.php` (an empty
+row prints no biography).
+
+Touched: `functions/events/speakers.php`, `parts/events/speaker-card.php`
+(comment), `templates/account-dashboard.php`, `assets/css/calendar.css`,
+`assets/css/speakers.css`, `tests/SpeakerPrefillTest.php`,
+`tests/ReferenceAndMigrationTest.php`.
+
+## A Stripe customer that has gone missing (26 October 2026)
+
+**What happened.** Staging's `wp-config.php` held the LIVE Stripe keys, so a
+test card on staging reached live Checkout. Once the keys were switched to
+test, "Add payment details" on a flagship registration failed every time with
+"Sorry, that change could not be made. Please reload the page and try again."
+Two faults sat behind that one line.
+
+**Stripe's reason never reached the page.** The card handler answered with
+HTTP 502, and Cloudflare, in front of staging and production, swaps the body
+of an origin 502 or 504 for its own error page. booking-form.js could not
+parse that as JSON and fell back to its generic catch message.
+`law_events_respond()` now never sends a 5xx: anything from 500 up goes out
+as 400, which is the helper's own default for a refusal. The JS reads only
+`success`, so nothing else changes. With the message now arriving, the card
+handler and the reception "Continue to payment" handler (which also quoted
+Stripe verbatim under a 502) run through the new
+`law_booking_refusal_payload( $error, $plain )`: a configuration error
+(`law_booking_is_configuration_error()`) is replaced with one plain line,
+and anything the delegate can act on is still quoted. The Stripe wording
+stays in the activity log. `law_reception_refusal_payload()` now delegates to
+it with its own wording.
+
+**A stored customer was trusted without question.**
+`law_stripe_user_customer_id()` caches the customer in user meta, and
+staging's database (copied from production) held live customer IDs, which a
+test key answers with "No such customer". A customer deleted in the Stripe
+dashboard on production fails the same way. Now:
+
+- `law_stripe_is_missing_customer()` recognises Stripe's answer
+  (`resource_missing` on param `customer`).
+- `law_stripe_post_for_payer()` wraps both Checkout session POSTs
+  (`law_stripe_create_setup_session()` and
+  `law_stripe_create_checkout_session()`). On that answer it gives the payer a
+  new customer, logs `customer_replaced` with both IDs, and sends once more.
+  The idempotency key is built per send, so the retry takes the next attempt
+  number, because Stripe refuses a key reused with a different customer.
+  It retries once only.
+- `law_stripe_user_customer_id( $user_id, $replacing )` creates the
+  replacement. It keys the customer POST on `-after-{old id}`, because the
+  plain key would replay the missing customer within Stripe's 24 hours. If
+  the stored ID has already moved on (a concurrent request replaced it
+  first), it returns that one instead.
+- `law_stripe_charge_booking()` cannot recover the same way, because the
+  saved payment method went with the customer. When creating the invoice hits
+  a missing customer, it returns `law_stripe_customer_missing` ("The payment
+  details saved for this place are no longer held by our payment provider.
+  Please add them again."). That is deliberately not a configuration error,
+  so the booking goes to payment-failed and the delegate is asked for their
+  details again, which opens a new customer on the way. A configuration error
+  would leave the place untouched and alert an admin who cannot put a card
+  back.
+
+**Verified** by `tests/StripeMissingCustomerTest.php`: both sessions recover
+under fresh keys, only a missing customer is retried and only once, an
+already-replaced customer is reused, the charge hands the fix to the
+delegate, and the refusal payload wording.
+
+Touched: `functions/events/request.php`, `functions/events/bookings.php`,
+`functions/events/receptions.php`, `functions/events/stripe/attendees.php`,
+`tests/StripeMissingCustomerTest.php`.
+
+---
+
+## Booking a paid place for someone else (26 October 2026)
+
+**The ask** (Denis): a secretary or PA books and pays for a paid place for
+their boss, and keeps managing it. The flagship and the receptions only; hosted
+events already take colleagues. The design contract is **BOOK_ON_BEHALF.md**
+(theme root), which records the decisions Denis settled (D1 to D8, A1 to A8)
+and the UX, design-reuse and backend reviews folded into it.
+
+**What was true before.** Both paid flows were self-service by design: the
+flagship "always themselves" and the receptions "one place per checkout, self
+only". Every money path keyed on `post_author`: the Stripe customer, the saved
+card, the invoice, every `user_flagship_*` / `user_reception_*` email, and every
+ownership check on the paid handlers and return URLs.
+
+**The model.** The attendee is still `post_author`; whoever booked is
+`_law_booked_by`. Three helpers in `bookings.php` decide everything else:
+
+- `law_booking_booker_id()`: `_law_booked_by`, else the attendee. Manages.
+- `law_booking_payer_id()`: `_law_substituted_from`, else the booker. Pays.
+- `law_booking_user_role( $booking, $user )`: 'attendee', 'booker' or ''.
+  `law_booking_user_manages_payment()` is the booker only;
+  `law_booking_is_on_behalf()` is booker ≠ attendee.
+
+On every self-booked place the three are one person, so nothing written before
+this reads differently, and the full suite proved it before any UI existed.
+
+**The seam** (`bookings.php`, "A paid place for someone else"):
+`law_booking_paid_choice_from_request()` reads `law_for` and
+`law_attendees[0][…]` plus the flat profile fields (all errors carry a field;
+the booker's own email is refused); `law_booking_run_for_party()` refuses an
+attendee who already holds a place BY EMAIL before creating anything, matches
+or creates their account before the engine's lock, marks a created one
+`_law_invitation_pending` (cleared by core's `after_password_reset`), runs the
+engine with `$input['party']`, and deletes an account it created only if that
+account authors no booking at all (the old unconditional delete could cancel a
+booking another request had just made, through `account_deleted`).
+`law_flagship_apply()`, `law_reception_checkout()` and
+`law_reception_waitlist_join()` take the party; `law_booking_insert()` gained
+`$booked_by`. The typed answers are stored on the booking as
+`_law_attendee_profile` (new `attendee_profile` meta type) and written to the
+account only when this booking created it (A3); `law_booking_profile_values()`
+fills a profile's blanks from them for the committee's lists and exports.
+
+**Refusals that do not tell.** An attendee who already has a place gets
+`law_booking_attendee_taken_error()` ("We can't register this person…") rather
+than "X already has a place" (A8); buying a reception for someone whose
+confirmed flagship place includes it is refused conditionally
+(`law_reception_guard_not_included()`, A6).
+
+**Stripe.** Setup session, checkout session and off-session charge resolve the
+customer from the payer; metadata `law_user_id` is the payer and
+`law_attendee_user_id` the attendee; the invoice line reads "…, for Jane
+Smith" on a place booked for someone else. No new webhook events.
+
+**Permissions.** The three `require_own` loaders and the two Stripe return
+handlers use the roles: payment actions are the booker's, withdrawing a pending
+flagship registration and leaving a waitlist are open to both (A5).
+`law_booking_cancel_handler()` and the cancel-all handler now refuse flagship
+bookings (they bypassed `law_flagship_withdraw()`, so no invoice void).
+`law_booking_payment_facts_visible()` is the payer only.
+
+**Emails** (`law_booking_route_paid_email()`, called once in
+`law_events_send()`): every `user_flagship_*` / `user_reception_*` email about
+a place booked for someone else goes to the booker, addressed to them, without
+the calendar file, under a line the SENDER adds (`law_events_email_render_body()`
+gained a `lead`, escaped after the placeholder swap so a typed `{tag}` prints
+literally), so templates the client has edited carry it too. The attendee's
+own emails are explicit (`law_booking_notify_on_behalf()`): one new template,
+`user_booking_on_behalf` (registry now 80), with `{status_title}` and
+`{status_note}` for registered, waitlisted, confirmed (reception), declined,
+withdrawn, withdrawn by themselves, and booker deleted; the flagship approval
+is the standard `user_flagship_approved` with the payer tags blanked
+(`law_booking_payer_tags()`, shared with substitution) and "booked and paid for
+by", as a substitute receives it (D7). The attendee is emailed only once the
+booking is real (card saved, or nothing to pay). Committee emails gain a
+"booked and paid for by" lead.
+
+**Screens.** `parts/events/booking-for-someone.php` (the radio and the revealed
+details, after the summary in both paid dialogs; Myself disabled when the
+viewer already holds a place) and `parts/events/attendee-details-fields.php`
+(the four identity fields plus the profile part, now the ONE copy used by the
+committee's Register an attendee, the flagship's add-attendee and substitution
+dialogs as well). Neutral copy in both dialogs; neutral accessibility labels on
+every on-behalf form (`law_registration_accessibility_choices( true )`; the
+registration form keeps its own). The flagship manage view admits the booker
+(snapshot only, via `law_booking_snapshot_values()`, never the live profile)
+and words itself for either reader; the card form disables itself for the
+attendee with who manages payment; the reception manage view is per booking;
+My bookings gives each paid place booked for someone its own card; both event
+panels keep Register beside a holder's own link; post-Stripe notices name the
+attendee for the booker; the flagship dashboard shows "Booked and paid for by"
+and its export a Booked by column. The no-JS inline forms sit on a white card
+(they were navy on navy).
+
+**Front-end utilities.** `assets/js/law-toggles.js` is the one delegated
+`data-law-toggles` / `data-law-toggle-for` implementation (from event-form.js
+and the profile page's inline script), with `data-law-toggle-disable` for
+blocks whose controls must be disabled while hidden and `lawToggles.sync()`
+for fetched dialogs; `law_booking_form_enqueue()` replaced eight hand-written
+enqueues; `markFlatField()` finds fields by `data-law-field` and sets
+`aria-invalid`.
+
+**Substitution** of a place booked for someone else keeps `_law_booked_by` and
+writes none of the `_law_substituted_from*` keys (the payer is already
+recorded); the receipt note goes only to whoever paid
+(`law_booking_payer_id()`), and the booker gets a copy of the transfer note.
+
+**A7.** Deleting a booker withdraws their UNPAID paid bookings for others
+through each flow's own exit, emails held back, and tells the attendee once.
+
+**Deviations from the spec, deliberate.** No `required` attributes (the house
+pattern is `aria-required`, so refusals show in the modal); errors come back
+one at a time. A6's refusal is conditional, like A8. Known limits: a delegate
+whose flagship includes a reception sees only "Add" until they hold that place;
+the included-receptions banner stays the viewer's own.
+
+**Separately.** The flagship test fixture's price switch moved to 2099: the real
+switch passed on 17 October 2026 and turned nine tests red that were not about
+it.
+
+**The review round** (three conformance passes, one of them executing the
+handlers against the local site, and a security review; same day):
+
+- **Volume.** `law_booking_unfinished_on_behalf()`: one unfinished booking for
+  someone else per booker (a held reception place, or a registration or
+  waitlist entry still waiting for its card), so one account cannot hold a
+  reception's places by abandoning Stripe pages. A reception that costs
+  nothing was booked for oneself only; superseded the same day (see "Free
+  receptions too" below).
+- **Accounts left behind.** `law_booking_forget_unclaimed_attendee()` deletes an
+  account the site created for somebody who never set a password when every
+  booking it authors was booked by this booker and is cancelled: a refused
+  engine run, a released reception hold (`law_reception_release_hold()`) and
+  an abandoned flagship registration (the 48-hour sweep). Never an account
+  with a live booking or one somebody else booked onto. `_law_invitation_pending`
+  is now also cleared on `wp_login`.
+- **Nothing that tells.** A6 returns `law_booking_attendee_taken_error()` word
+  for word; an account-creation failure is reported generically (the raw
+  `wp_insert_user()` message could reveal a login); the reception is checked
+  before the seam writes anything against the posted event ID; the card
+  decline reason is the payer's (masked, and in `law_booking_payer_tags()`).
+- **Typed details** may not contain a web address or `@`, or run past 100
+  characters (`law_booking_clean_additional_rows()`, shared with hosted
+  colleagues): they are printed into emails sent to the typed address.
+- **The booker hears** when a paid place they booked is cancelled by the
+  attendee, the committee or the event (`law_booking_cancel()`), with a lead
+  line; the attendee hears a decline's reason too.
+- **One label**, `law_booking_booked_by_label()` ("Invited by" on hosted,
+  "Booked and paid for by" on paid), and one name, `law_booking_booked_by_name()`,
+  for every list, panel, card and email.
+- **Substitution** of a place booked for someone else writes the outgoing
+  attendee's NAME and email (for the committee's record) but never the payer
+  ID, replaces the stored answers with the new delegate's (they were printing
+  the previous attendee's accessibility needs against the new one), and names
+  the real buyer in the new delegate's email; the three "never charge a
+  transferred place" guards key on `_law_substituted_at` as well.
+- **Toggles**: a sync never hides a block holding a value or an error (the
+  sector "please specify" boxes with a stored answer were vanishing while
+  still posting). The white card restores navy outline buttons (Apply and Sign
+  in had gone white on white). The profile password block disables both
+  fields while closed.
+- **Smaller**: the attendee template's subject is "About your place at
+  {event_title}" (editable; `{status_title}` is gone); the attendee sees a
+  disabled payment control on a pending registration; both panels name the
+  people booked for and link to them; the post-Stripe notice says only "This
+  place is for X."; the saved no-JS choice is keyed by event; the complimentary
+  place's promised set-password link is sent (`{account_note}` in
+  `user_flagship_complimentary`).
+
+**The second review round** (a designer, a DRY and scalability review, and a
+WCAG 2.2 AA audit with a browser; same day):
+
+- **A bug.** The no-JS choice state was stored under a transient called
+  `job_title`, shared by everybody: the store's key was reused as a loop
+  variable. Fixed and tested.
+- **Helpers.** `law_booking_booker()`, `law_booking_booker_copy()` (the ONE
+  builder of a booker's email copy: the routing, the cancellation copy and the
+  substitution copy), `law_booking_attendee_who()`,
+  `law_booking_blank_payer_tags()`, `law_booking_is_paid_for()`;
+  `law_booking_is_self_booked()` is now the inverse of
+  `law_booking_is_on_behalf()`; the unfinished-booking check queries only the
+  statuses that can be unfinished; the flagship dashboard primes the bookers.
+- **Wording.** "Booked by X" until a place is paid for, "Booked and paid for by
+  X" after, and the payer note likewise; the "for" line is the booker's only
+  ("For Jane Smith."), the attendee being told who pays in the payment facts.
+- **Panels.** Beside Register, the holder's own link is the secondary button
+  (one orange button per panel); Register beside Manage on a reception; the
+  attendee of a place being paid for by somebody
+  else gets an inert "Continue to payment" with who is paying, and the
+  flagship's own link reads "View my registration" for them; both panels word
+  "booked for someone, no place yourself" the same way; a "For X" card on My
+  bookings carries no booking control.
+- **Look.** The attendee row is flat (`.law-row--bare`); the payer hint is
+  readable on the white manage pages (`.law-booking-manage` hint token); a
+  disabled `.law-linkish` reads as disabled everywhere; the panel's big button
+  size applies to its action slot only; links on the white card look like
+  links; the flagship dialog's errors and "conference full" line sit above the
+  choice again.
+- **Accessibility.** A refusal is rendered beside its field and tied to it with
+  `aria-describedby`, and the red edge survives focus; closing a dialog clears
+  the marks; light forms use the darker orange (#b35f00) for the radio and
+  checkbox accent and the focus ring (the brand orange is 2.8:1 on white); a
+  24px target per choice on light forms; Accessibility and Dietary are named
+  groups and their "Other" fields have distinct labels; `aria-required` where
+  an asterisk shows; the hint for a disabled Myself and for a disabled payment
+  control is tied to the control. Left for Denis, as older and site-wide: the
+  light form's field borders (about 1.7:1), the orange terms link in the
+  dialogs and the white-on-orange buttons (both 2.8:1).
+
+**Free receptions too** (Denis, same day: "It should be for free receptions as
+well!"):
+
+- The reception dialog asks who the place is for whatever it costs, and the
+  event panel offers Register beside Manage on a free reception too.
+- `law_reception_on_behalf_free_cap()` replaces the refusal: one booker holds
+  at most `law_booking_max_additional()` (three, the hosted colleague cap)
+  places for others at a reception that costs nothing, counted over every
+  holding state through `law_booking_colleague_count()`'s new `$status`
+  argument. Checked in `law_reception_run_for_party()` before an account is
+  created, and in both engines. A priced reception has no cap: each place is
+  paid for.
+- `law_booking_payer_note()` reads "Booked by X. There is nothing to pay." for
+  a place with nothing to pay; `law_booking_committee_lead()` says "booked by"
+  until money has been taken.
+- `law_booking_withdraw_unpaid_made_by()` (A7) leaves a `no_charge` entry
+  alone: nothing about it was unpaid or needed the booker's card. This covers a
+  100% code too.
+- The cap is shown before anything is typed (Denis): `booking-for-someone.php`
+  takes `others_full`, the cap's message, and shows Someone else disabled with
+  it, the details closed and disabled. With the booker's own place held too,
+  both choices and the dialog's submit are disabled, and the event panel shows
+  Register disabled (`law_booking_inert_button()`) beside Manage with the same
+  sentence. The message is worded as a limit reached ("You've booked places for
+  3 other people here, which is the most allowed.") so the refusal, the hint
+  and the panel share it. `law_booking_resolve_state()` now carries `user_id`.
+- The activity log names the booker on a reception booked for someone else
+  ("started by Pat Assistant for Jane Partner"), and the Emails screen lists
+  `user_booking_on_behalf` without "paid".
+
+**Verified** with `tests/BookOnBehalfTest.php` (54) and the full suite (1322,
+green), and a browser pass of the free reception flows at 1280px and 375px
+(before the cap was shown up front).
+
+Touched: `functions/events/bookings.php`, `functions/events/meta.php`,
+`functions/events/flagship-bookings.php`, `functions/events/receptions.php`,
+`functions/events/waitlist.php`, `functions/events/notifications.php`,
+`functions/events/registration.php`, `functions/events/stripe/attendees.php`,
+`functions/events/flagship-bookings-dashboard.php`,
+`functions/events/bookings-dashboard.php`, `functions/events/submission-form.php`,
+`functions/events/*-dashboard.php` (enqueue), `functions/account-bookings.php`,
+`functions/account-flagship.php`, `functions/modal.php`,
+`parts/events/booking-for-someone.php` (new),
+`parts/events/attendee-details-fields.php` (new),
+`parts/events/flagship-apply-modal.php`, `parts/events/reception-checkout-modal.php`,
+`parts/events/flagship-manage-application.php`, `parts/events/booking-manage.php`,
+`parts/events/booking-payment-facts.php`, `parts/events/flagship-card-form.php`,
+`parts/events/booking-list.php`, `parts/events/flagship-add-attendee.php`,
+`parts/events/flagship-substitute.php`, `parts/events/flagship-bookings-list.php`,
+`parts/events/attendee-profile-fields.php`, `templates/account-bookings.php`,
+`templates/account-profile.php`, `assets/js/law-toggles.js` (new),
+`assets/js/booking-form.js`, `assets/js/event-form.js`, `assets/css/calendar.css`,
+`tests/BookOnBehalfTest.php` (new), `tests/FlagshipPaymentsTest.php`,
+`tests/FlagshipSubstituteTest.php`.
+
+## A sponsor can opt out of the highlight (26 October 2026)
+
+**Asked for:** an event on the sponsor fee tier whose sponsor does not want it
+shown as sponsored; a checkbox after Override booking confirmation (Denis,
+26 October 2026).
+
+**What the committee sees.** "Don't highlight as sponsored", with one line of
+help ("Shows this event as a plain row on the programme, without the orange
+sponsor fill."), under Override booking confirmation on the Committee controls
+panel, and the same box at the foot of the wp-admin Event flags box. Ticked, the
+event loses the `#fdeedd` fill and orange edge on the programme, which reads
+`law_events_post_is_sponsored()`. **The export is untouched**: its Sponsored
+column reads `law_events_post_qualifies_as_sponsored()`, so an opted-out
+sponsor event still exports as Yes. The box hides the highlight; it does not
+change whether the event is sponsored (Denis, 26 October 2026).
+
+**It wins over all three routes, not only the tier.** Asked for on a
+sponsor-tier event, but the highlight can equally come from a linked
+sponsor-category organisation or the repeat-host count. A switch that cancelled
+only the tier would leave a sponsor-tier event with a gold organisation linked
+still orange, which reads as a broken box.
+
+**Shown only where it acts.** The box renders when
+`law_events_post_qualifies_as_sponsored()` (the old rule, split out of
+`law_events_post_is_sponsored()` unchanged) says yes, or when the flag is
+already on, so it can always be unticked. Both savers write it unconditionally
+under the existing `law_flags_present` sentinel and nonce gate: a box that was
+not rendered is always an unticked one on an event whose flag is off, so that
+write deletes nothing that exists and logs nothing. Changes are logged by
+`law_event_log_flag_change()` ("Sponsor highlight turned off: this event shows
+as a plain row on the programme." / "Sponsor highlight turned back on.").
+
+**Not in the content transfer bundle**, like `_law_disabled`: a local committee
+decision about the live site.
+
+**Tests.** Three cases in `tests/EventFlagsTest.php`: the opt-out beats a sponsor
+tier on the programme while the event still qualifies and still exports as
+Sponsored, it beats the repeat-host route too, and
+the log writes one line each way and nothing for an unchanged save.
+
+Touched: `functions/events/meta.php`, `functions/events/source.php`,
+`functions/events/workflow.php`, `functions/events/committee.php`,
+`functions/events/admin/event-screen.php`, `functions/events/export.php`,
+`templates/account-dashboard.php`, `tests/EventFlagsTest.php`.
+
+---
+
+## Send test email: any address, every tag filled (26 October 2026)
+
+**"Send a test to me" became "Send test email"**, which opens the shared
+dialog (`parts/layout/modal.php`) asking where to send it, prefilled with the
+editor's own address (Denis, 26 October 2026). The dialog's Send test button
+posts `law_email_test` with `law_email_test_to`, and the handler sends through
+`law_events_email_send_test_to()`. An address that is not one is refused
+against the field (`email-test-address`) rather than quietly sent to the
+editor, who would be waiting on the wrong inbox. Without JavaScript the dialog
+cannot open, so the button posts on its own with no address and the test goes
+to the editor, as it always did. The wp-admin screen has no dialog component,
+so it gets a "Send a test to" field above the buttons instead (a text input
+with `inputmode="email"`, because a half-typed address in a real email input
+would block Save email too). "Send a test to committee" is unchanged.
+
+**The shared dialog gained `'type' => 'email'`**, on the same terms as the
+select before it: one input, the same name and disabled-until-open rules, and
+the textarea's light-surface styling in `law-modal.css`. Separately,
+`law-modal.js` now removes its "please complete this field" message once the
+field has been filled and the button pressed again; it used to sit under the
+field through the whole send.
+
+**Every tag is filled with sample details.** Tests used to resolve against the
+most recent event, which left every tag a send call supplies itself
+(`{attendee_name}`, `{price}`, `{payment_note}` and some forty more) blank. It
+also put a real host's name, email address and invoice link in front of
+whoever the test went to, which stopped being acceptable once that address
+became something the editor types. `law_events_email_sample_placeholders()` in
+`notifications.php` now holds a sample for every tag: one invented event, host
+and delegate, `example.com` addresses, values written the way the code that
+really fills each tag writes them, and the real site-wide links read from
+`law_events_email_placeholders()` itself. Event- and invoice-specific links
+point at the page they would sit under (the programme, the dashboards, My
+bookings) rather than at a 404. The two retired tags, `{user_roles}` and
+`{registered_by}`, stay empty because every real email prints nothing for them
+either.
+
+**Keeping it whole.** Any new tag needs a sample in that function in the same
+change, and `EmailsDashboardTest::test_every_tag_has_a_sample_value()` fails
+until it has one (or while a sample outlives its tag). The send-test return
+shape lost `event_id` and `event_title`, which only the wp-admin notice read.
+
+**Security review, same day.** An address `sanitize_email()` would change is
+refused on both screens rather than sent to: it collapses `a@b.com, c@d.com`
+into `a@b.comcd.com`, a mailbox somebody else may own. The wp-admin test send
+now spends the same `email_test` budget (20 per 10 minutes) as the front end.
+The site-wide links moved into `law_events_email_site_links()`, which both
+`law_events_email_placeholders()` and the samples read, so the samples no
+longer call the full builder with no event (which falls back to whatever post
+and latest comment are lying around). Open, for Denis to decide: any
+committee-level account can now send draft wording to any address, at up to
+20 per 10 minutes, with no record kept.
+
+Verified through Mailpit (`user_flagship_approved` and `host_waitlist_promoted`
+arrive with every tag filled) and in the browser at desktop and phone widths:
+the dialog opens focused and prefilled, catches an empty field, shows the
+server's refusal of `someone@nodot`, and reports the send in place.
+
+Touched: `functions/events/notifications.php`,
+`functions/events/emails-dashboard.php`,
+`functions/events/admin/emails-screen.php`, `parts/events/emails-manage.php`,
+`parts/layout/modal.php`, `templates/account-dashboard-emails.php`,
+`assets/css/law-modal.css`, `assets/js/law-modal.js`,
+`tests/EmailsDashboardTest.php`.
+
+---
+
+## Manage time slots on the front end (27 October 2026)
+
+The slot list was a pipe-separated textarea on Events → Settings, out of reach
+of a member holding only `events_committee`. It now has a committee screen at
+`/account/dashboard/slots/`, "Manage time slots", under Manage emails in the
+top bar and the account hub (Denis, 27 October 2026), with the clock glyph.
+
+**A table repeater.** One row per slot: label, date, start, end, retired, the
+events holding it ("9 confirmed / 36 preferred") and a delete control. It is
+`event-form.js`'s repeater drawn as `<tr class="law-row">` rows, so "Add a
+slot" appends at the bottom; the save sorts the list. Label, date and start
+are `required`; the template row carries `data-law-required` instead, because
+a hidden empty required control blocks the whole form, and the repeater's
+clone step now turns that into `required` on the copy. A key above the table
+says what retired and no end time mean, and that a held slot is locked. A held
+row is drawn with its label, date and times `readonly` and its delete button
+disabled, so Retired is the one thing that can change on it.
+
+**One write path.** Both editors save through `law_events_save_slots()` in
+`settings.php` (see that section). Events → Settings keeps its textarea
+(Denis, 27 October 2026); it obeys the same rules. Nothing is logged: a change
+the screen can make reaches no event.
+
+**Save and failure.** A plain POST to `admin_post_law_slots_manage` on the
+standard guard (nonce, honeypot, a `slots_manage` rate surface of 30 per 10
+minutes, committee check), then a redirect. A refused save comes back through
+a one-shot transient with every row as typed (plus any held slot it tried to
+delete, put back at the bottom), each bad control marked `is-invalid` and
+described by its line in the error notice, and the shared failed-save dialog
+open (`law_events_form_error_modal()`). `law_events_form_error_selector()`
+learned bracketed input names (`slots[3][end]`) so its jump lines reach a row's
+control. A save from a page opened before somebody else's save is refused as
+stale and redraws the current list rather than the typed one, which would
+otherwise put the other change back.
+
+**Date inputs joined the shared control rules** in `event-form.css`. They had
+been left on Foundation's shorter box and grey glow, which showed as soon as a
+date sat beside the two time inputs. The flagship, reception and external-event
+forms' date boxes now match the inputs beside them.
+
+Provisioned both ways (`law_migration_page_map()` and `?setup-account-pages`,
+which also copies the dashboard's Members restriction). Verified in the browser
+at desktop and phone widths: 18 rows with 13 held, add-then-empty save blocked
+by the browser, a new earliest slot sorted to the top, a refused save with
+the dialog open and its jump line focusing the field, an unheld slot deleted.
+Two reversals the same day, both Denis's: the end-after-start rule was taken
+out and put back, and the first build's carry-through (a renamed or re-timed
+held slot rewrote its events' labels and datetimes) gave way to locking held
+slots altogether.
+
+Touched: `functions/events/slots-dashboard.php` (new),
+`templates/account-dashboard-slots.php` (new), `parts/events/slots-manage.php`
+(new), `functions/events/settings.php` (the write path; the textarea routed
+through it), `functions/events/_load.php`, `functions/header-nav.php`,
+`functions/setup-account-pages.php`, `functions/events/migration/runner.php`,
+`functions/enqueue.php`, `functions/events/submission-form.php` (assets and the
+jump selector), `assets/js/event-form.js`, `assets/css/event-form.css`,
+`assets/css/calendar.css`, `tests/SlotsDashboardTest.php` (new),
+`tests/HeaderNavTest.php`, `tests/AccountHubTest.php`.
+
+## The ticket confirmation names the receptions (27 October 2026)
+
+Two wording changes to the flagship confirmation emails, both Denis's.
+
+**`{payment_note}` no longer says "Your registration has been approved by the
+committee."** The subject and the "Your ticket … is confirmed" line already
+say it. On a paid approval the note now opens with the charge sentence. The
+transfer wording is unchanged.
+
+**`{included_receptions}` lists every reception the delegate will be at.** It
+used to say "Opening reception and Closing drinks have been added to your
+bookings, at no cost." It now reads "As part of your ticket package, you are
+invited to attend the official LAW receptions. According to your registration,
+you will be joining us at:" followed by one bulleted line per reception, earliest
+first: "The Opening Reception on Monday 30 November at St Paul's Cathedral".
+Receptions they already held are listed with the ones just granted, since either
+way they are coming. One that could not be granted is left out. Built by
+`law_reception_included_email_note()` from the grant result, and the line
+itself by `law_reception_joining_note()`, which the test email's sample also
+uses. A reception title that already starts with "The" gets no second one. The
+names are not bold, because tag values are escaped as text before the body is
+rendered.
+
+It feeds all three confirmation templates (`user_flagship_approved`,
+`user_flagship_approved_free`, `user_flagship_complimentary`) and the attendee's
+copy on a place booked for someone else. The My bookings "Added to your
+bookings" notice keeps `law_reception_choices_note()` and its old wording, and a
+transferred ticket keeps `law_flagship_receptions_moved_note()`. Neither of
+those comes from a registration.
+
+Touched: `functions/events/receptions.php`, `functions/events/flagship-bookings.php`,
+`functions/events/notifications.php` (the sample), `tests/ReceptionInclusionTest.php`.
+
+## Waitlists catch up with raised places (6 November 2026)
+
+The client reported people left on waitlists after places were raised on
+several events, the Opening Reception among them, with nothing apparently
+clashing. Production data was not available, so the fix covers every route the
+code allowed rather than one confirmed case.
+
+**The Manage receptions save never offered raised places to the queue.**
+`law_reception_manage_handler()` wrote the number through `law_reception_save()`
+and stopped; every other screen that changes places ends in
+`law_event_tickets_changed()`. It now does too (source `receptions_dashboard`),
+after the confirmation-override write. A new reception is not a raise and skips
+it. The log carries both the reception's own diff line and "Places available
+changed", as the wp-admin path already did.
+
+**A passed-over entry was only looked at again when something happened on its
+own event**, so somebody passed over for a clash who then cancelled the other
+booking sat at the front of a queue with places free beside it. Cancelling a
+place now re-checks that person's other queues, an hourly sweep re-offers every
+free place, and the pass cap counts only seated entries (see the `waitlist.php`
+section for all three). Every one of them goes through
+`law_waitlist_has_promotable()` first, so a queue whose front is genuinely
+blocked gets no hourly "passed over" log lines and no emails. The event-cancel
+sweep still suspends promotion, so a clash cleared by a whole event being
+cancelled waits for the hourly sweep.
+
+**The reason is now on screen** for hosts and the committee, and
+**`/wp-admin/?check-waitlists`** reports every queue, and why each stuck person is
+stuck, before seating anybody. The person-level clash rule itself is unchanged:
+it is what stops one person holding two rooms at once.
+
+Touched: `functions/events/waitlist.php`, `functions/events/bookings.php`
+(`law_booking_clash_event()`, the cancel re-checks),
+`functions/events/receptions-dashboard.php`, `functions/events/bookings-dashboard.php`,
+`functions/events/admin/waitlist-check.php` (new), `functions/events/_load.php`,
+`parts/events/booking-list.php`, `parts/events/bookings-dashboard-list.php`,
+`assets/css/event-form.css`, `tests/WaitlistTest.php` (6 new),
+`tests/ReceptionsDashboardTest.php` (1 new). Checked in the browser on the host's
+and the committee's bookings list, Manage bookings and the trigger page.
+
+## The bookings list stops dropping its newest rows (11 November 2026)
+
+**An event past 500 bookings lost its newest ones from the per-event list.**
+`booking-list.php` read the active and cancelled sets through
+`law_bookings_for_event()`'s default cap of 500, ordered by ID ascending, so the
+2026 Opening Reception (551 attendees) showed its 500 oldest and silently left
+out the 51 most recent. Manage bookings and the exports were unaffected (the
+export reads uncapped). Both sets are now read uncapped (`-1`), a deliberate
+exception to the "never -1 on screens" rule (Denis): the list is the full
+attendee list and must show everyone, and an event's places bound it anyway.
+The waitlist keeps its 200 cap and notice.
+
+Touched: `parts/events/booking-list.php`. Checked by rendering the list over 512
+bookings inside a rolled-back transaction.
 
 ---
 

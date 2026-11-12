@@ -106,13 +106,23 @@ function law_flagship_bookings_rows( array $filters ) {
 
 	// One pass for the profiles the rows read live (country, dietary,
 	// accessibility), rather than a query per row.
-	cache_users( array_map( fn( $p ) => (int) $p->post_author, $posts ) );
+	// The bookers too, for the "Booked and paid for by" line on places
+	// registered for someone else (their meta came in with the posts).
+	cache_users(
+		array_unique(
+			array_merge(
+				array_map( fn( $p ) => (int) $p->post_author, $posts ),
+				array_map( fn( $p ) => (int) get_post_meta( $p->ID, '_law_booked_by', true ), $posts )
+			)
+		)
+	);
 
 	$rows = array();
 	foreach ( $posts as $post ) {
 		$booking_id = (int) $post->ID;
 		$person     = law_booking_attendee( $booking_id );
-		$profile    = law_profile_values( (int) $post->post_author );
+		$profile    = law_booking_profile_values( $post );
+		$on_behalf  = law_booking_is_on_behalf( $post );
 		$price      = law_booking_price( $booking_id );
 		$state      = (string) law_event_meta( $booking_id, '_law_payment_status' );
 
@@ -179,6 +189,12 @@ function law_flagship_bookings_rows( array $filters ) {
 			// The payer's address, for the title on the sub-line: tracing a
 			// refund otherwise means opening the activity log.
 			'substituted_from_email' => (string) law_event_meta( $booking_id, '_law_substituted_from_email' ),
+			// Who registered and pays, when that is somebody else (a PA
+			// registering a partner, BOOK_ON_BEHALF.md §3.8): the person to
+			// write to about the money. '' when the delegate registered
+			// themselves.
+			'booked_by'       => $on_behalf ? law_booking_booked_by_name( $post ) : '',
+			'booked_by_email' => $on_behalf ? law_booking_booked_by_email( $post ) : '',
 		);
 	}
 
@@ -224,6 +240,7 @@ function law_flagship_bookings_export_rows( array $filters ) {
 		'Press',
 		'Complimentary',
 		'Ticket type',
+		'Booked by',
 		'Substituted from',
 		'List price',
 		'Discount code',
@@ -253,6 +270,7 @@ function law_flagship_bookings_export_rows( array $filters ) {
 			$row['press'] ? 'Yes' : '',
 			$row['complimentary'] ? 'Yes' : '',
 			$row['ticket_label'],
+			'' !== $row['booked_by'] ? $row['booked_by'] . ' (' . $row['booked_by_email'] . ')' : '',
 			$row['substituted_from'],
 			law_events_format_pence( $row['list_pence'] ),
 			$row['discount_code'],
@@ -516,7 +534,7 @@ add_action(
 			return filemtime( get_theme_file_path( $rel ) );
 		};
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		law_booking_form_enqueue();
 		wp_enqueue_script( 'law-flagship-ticket-type', get_theme_file_uri( 'assets/js/flagship-ticket-type.js' ), array( 'law-modal', 'law-booking-form' ), $mtime( 'assets/js/flagship-ticket-type.js' ), true );
 		wp_enqueue_script( 'law-flagship-substitute', get_theme_file_uri( 'assets/js/flagship-substitute.js' ), array( 'law-modal', 'law-booking-form' ), $mtime( 'assets/js/flagship-substitute.js' ), true );
 		wp_enqueue_script( 'law-pdfmake', get_theme_file_uri( 'assets/js/vendor/pdfmake.min.js' ), array(), $mtime( 'assets/js/vendor/pdfmake.min.js' ), true );

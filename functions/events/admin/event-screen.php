@@ -122,6 +122,12 @@ function law_event_box_flags( $post ) {
 			)
 		);
 	}
+
+	// Same condition as the dashboard panel: only where it has something to act on.
+	$no_highlight = (bool) law_event_meta( $post->ID, '_law_no_sponsor_highlight' );
+	if ( $no_highlight || law_events_post_qualifies_as_sponsored( $post ) ) {
+		law_field_checkbox( 'law_no_sponsor_highlight', 'Don\'t highlight as sponsored', $no_highlight );
+	}
 }
 
 /**
@@ -432,6 +438,7 @@ function law_event_admin_save( $post_id, $post ) {
 		'_law_is_external'   => (int) law_event_meta( $post_id, '_law_is_external' ),
 		'_law_session_agenda' => (int) law_event_meta( $post_id, '_law_session_agenda' ),
 		'_law_disabled'      => (int) law_event_meta( $post_id, '_law_disabled' ),
+		'_law_no_sponsor_highlight' => (int) law_event_meta( $post_id, '_law_no_sponsor_highlight' ),
 	);
 	// NOT $before_override: that name already holds the FEE override read four
 	// lines up, and this assignment used to overwrite it. Both readers of the
@@ -557,6 +564,7 @@ function law_event_admin_save( $post_id, $post ) {
 	law_event_update_meta( $post_id, '_law_is_external', ! empty( $_POST['law_is_external'] ) );
 	law_event_update_meta( $post_id, '_law_session_agenda', ! empty( $_POST['law_session_agenda'] ) );
 	law_event_update_meta( $post_id, '_law_disabled', ! empty( $_POST['law_disabled'] ) );
+	law_event_update_meta( $post_id, '_law_no_sponsor_highlight', ! empty( $_POST['law_no_sponsor_highlight'] ) );
 	law_event_log_flag_change( $post_id, $before_flags, $actor );
 
 	// The Reception box, through the SAME saver the committee's Manage

@@ -115,8 +115,9 @@ function law_speaker_role_heading( $role ) {
  * into one shared, publicly-displayed profile that then carries the wrong
  * email. The fallback still exists for the sources that have no email at all —
  * the legacy List field 48 rows the migration reads, which pass '' here.
- * A duplicate record is a nuisance the committee can merge on the Manage
- * Speakers screen; a wrong merge silently rewrites a real person's profile.
+ * A duplicate record is a nuisance an administrator can merge on LAW →
+ * Migration (migration/merge-speakers.php); a wrong merge silently rewrites a
+ * real person's profile.
  *
  * @param string $email Email (may be empty).
  * @param string $name  Full display name.
@@ -501,7 +502,8 @@ function law_speaker_post_profile( $post_id, array $event_ids = array() ) {
 		'job_title'    => $seen['job_title'],
 		'url'          => (string) law_event_meta( $post->ID, '_law_website' ),
 		'photo'        => law_speaker_photo_url( $post->ID, $seen['photo_id'], 'medium' ),
-		'bio'          => '' !== $seen['bio'] ? $seen['bio'] : trim( $post->post_content ),
+		// The appearance's own, never the record's post_content: see law_speaker_card().
+		'bio'          => $seen['bio'],
 		'email'        => (string) law_event_meta( $post->ID, '_law_speaker_email' ),
 		'entry_ids'    => array( (int) $post->ID ),
 		'event_ids'    => array_map( 'intval', $event_ids ),
@@ -762,9 +764,11 @@ function law_speaker_latest_appearance( $speaker_id, ?array $statuses = null ) {
  * from the first draft save, and the appearance worth copying forward is often
  * on an event that has not been confirmed yet.
  *
- * The speaker post's own editor content and featured image are the last
- * resort, exactly as they are when an event renders a row that left those
- * fields blank (law_speaker_photo_url(), the single event view). There is no
+ * The speaker post's featured image is the photo's last resort, exactly as it
+ * is when an event renders a row that left the photo blank
+ * (law_speaker_photo_url(), the single event view). The biography has no such
+ * resort: the post's own content stopped standing in for a blank bio on
+ * 26 October 2026 (law_speaker_card()). There is no
  * organisation or job title on the speaker post to fall back to: those have
  * been per appearance since 4.1, and the old _law_organisation /
  * _law_job_title meta rows are inert (law_speaker_meta_schema()).
@@ -777,7 +781,7 @@ function law_speaker_row_prefill( $speaker_id ) {
 	$latest     = law_speaker_latest_appearance( $speaker_id, law_event_all_status_keys() );
 
 	$photo_id = (int) $latest['photo_id'] ?: (int) get_post_thumbnail_id( $speaker_id );
-	$bio      = '' !== $latest['bio'] ? $latest['bio'] : trim( (string) get_post_field( 'post_content', $speaker_id ) );
+	$bio      = $latest['bio'];
 
 	return array(
 		'role'         => (string) $latest['role'],
@@ -1040,7 +1044,8 @@ function law_event_speaker_cards( $event_id ) {
  * photo and biography come from the appearance row; any field the row leaves empty falls
  * through to $fallback_rows (the parent event's rows, for a session row the
  * committee added in wp-admin without details), then the photo falls back to
- * the speaker post's featured image and the biography to its editor content.
+ * the speaker post's featured image. The biography stops there: a blank one
+ * prints nothing.
  *
  * 'medium', not 'thumbnail': the single event view renders these at 5.5rem, so
  * a 150px hard-cropped thumbnail is soft on a retina screen. Note medium is
@@ -1091,7 +1096,12 @@ function law_speaker_card( $speaker_id, array $row = array(), array $fallback_ro
 		'url'          => function_exists( 'law_speaker_url' ) ? law_speaker_url( $post->ID ) : '',
 		'photo'        => law_speaker_photo_url( $post->ID, $photo_id, 'medium' ),
 		'photo_id'     => $photo_id,
-		'bio'          => '' !== $bio ? $bio : trim( $post->post_content ),
+		// This event's own, or none (Denis, 26 October 2026). The record's
+		// post_content used to stand in, and that is set once from the first bio
+		// any host typed, where nobody on Manage Speakers can see or clear it: a
+		// "download CV from website" kept printing after the committee had emptied
+		// every bio it could reach.
+		'bio'          => $bio,
 	);
 }
 
@@ -1226,3 +1236,278 @@ function law_event_session_rows( $event_id ) {
 	}
 	return $sessions;
 }
+
+/* Removing a speaker record __________________________________________________
+ *
+ * A speaker is referenced by ID from the _law_speakers rows of every event and
+ * session they appear at, and those rows carry the per-event details (role,
+ * organisation, job title, photo, biography). Trashing the record used to leave
+ * every row behind: the event page kept printing the person (law_speaker_card()
+ * reads a trashed post like any other) with a profile link that went nowhere,
+ * and once the trash was emptied a flagship session naming them could no
+ * longer be saved ("speaker #N no longer exists").
+ *
+ * So taking a record out takes it off everything that names it, whichever
+ * screen did it (Manage Speakers' Delete, or wp-admin's own Trash link): the
+ * work hangs off WordPress's trash and delete hooks rather than off a button.
+ * Trash keeps what it removed on the record, and a restore from the wp-admin
+ * trash puts it back, so a mistaken delete costs nobody the biographies.
+ */
+
+/** The meta key that holds, on a trashed speaker, the rows its trash removed. */
+const LAW_SPEAKER_DETACHED_META = '_law_speaker_detached';
+
+/**
+ * Every event or session, in ANY status, whose _law_speakers rows name this
+ * speaker. Trashed events too: one restored later must not come back naming a
+ * record that has gone.
+ *
+ * Uncapped, unlike the screen passes: this decides what a delete writes, and a
+ * capped scan would leave rows behind on whatever fell past the cap.
+ *
+ * @param int $speaker_id Speaker post ID.
+ * @return int[]
+ */
+function law_speaker_holder_ids( $speaker_id ) {
+	$speaker_id = (int) $speaker_id;
+	$candidates = array_map(
+		'intval',
+		get_posts(
+			array(
+				'post_type'      => array( LAW_EVENT_CPT, LAW_SESSION_CPT ),
+				'post_status'    => array_keys( get_post_stati() ),
+				'meta_key'       => '_law_speakers', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- an EXISTS join, not a LIKE over the serialised rows.
+				'fields'         => 'ids',
+				'posts_per_page' => -1,
+				'no_found_rows'  => true,
+			)
+		)
+	);
+	update_meta_cache( 'post', $candidates );
+
+	$holders = array();
+	foreach ( $candidates as $post_id ) {
+		foreach ( law_event_meta( $post_id, '_law_speakers' ) as $row ) {
+			if ( (int) ( $row['speaker_id'] ?? 0 ) === $speaker_id ) {
+				$holders[] = $post_id;
+				break;
+			}
+		}
+	}
+	return $holders;
+}
+
+/**
+ * Take one speaker off every event and session that names them.
+ *
+ * Every other row stays, in its order; the array goes back through
+ * law_event_update_meta(), the single write path, which deletes the meta
+ * outright when the last row goes. A flagship's own rows are the union of its
+ * sessions', so the flagship is recomputed rather than edited by hand.
+ *
+ * @param int $speaker_id Speaker post ID.
+ * @return array<int,array[]> post ID => the rows removed from it.
+ */
+function law_speaker_detach( $speaker_id ) {
+	$speaker_id = (int) $speaker_id;
+	$removed    = array();
+
+	foreach ( law_speaker_holder_ids( $speaker_id ) as $post_id ) {
+		$keep = array();
+		foreach ( law_event_meta( $post_id, '_law_speakers' ) as $row ) {
+			if ( (int) ( $row['speaker_id'] ?? 0 ) === $speaker_id ) {
+				$removed[ $post_id ][] = $row;
+			} else {
+				$keep[] = $row;
+			}
+		}
+		law_event_update_meta( $post_id, '_law_speakers', $keep );
+	}
+
+	law_speaker_after_rows_changed( array_keys( $removed ) );
+
+	return $removed;
+}
+
+/**
+ * Put back what law_speaker_detach() took, on whatever still exists.
+ *
+ * A post that already names this person again is skipped: while the record sat
+ * in the trash, a host re-adding them by email would have created a NEW record
+ * (law_speaker_find_existing() never matches a trashed one), and restoring the
+ * old row beside it would print the same person twice.
+ *
+ * @param int   $speaker_id Speaker post ID.
+ * @param array $removed    law_speaker_detach()'s return value.
+ * @return array<int,array[]> post ID => the rows put back on it.
+ */
+function law_speaker_reattach( $speaker_id, array $removed ) {
+	$speaker_id = (int) $speaker_id;
+	$restored   = array();
+
+	foreach ( $removed as $post_id => $rows ) {
+		$post_id = (int) $post_id;
+		if ( ! is_array( $rows ) || ! in_array( get_post_type( $post_id ), array( LAW_EVENT_CPT, LAW_SESSION_CPT ), true ) ) {
+			continue;
+		}
+		$current = law_event_meta( $post_id, '_law_speakers' );
+		if ( law_speaker_rows_name_person( $current, $speaker_id ) ) {
+			continue;
+		}
+		foreach ( $rows as $row ) {
+			$current[] = array( 'speaker_id' => $speaker_id ) + (array) $row;
+		}
+		law_event_update_meta( $post_id, '_law_speakers', $current );
+		$restored[ $post_id ] = $rows;
+	}
+
+	law_speaker_after_rows_changed( array_keys( $restored ) );
+
+	return $restored;
+}
+
+/**
+ * Whether a set of speaker rows already names this person: the same record, or
+ * a different record with the same email or the same name (the two keys
+ * law_speaker_find_existing() matches on).
+ *
+ * @param array $rows       _law_speakers rows.
+ * @param int   $speaker_id Speaker post ID.
+ */
+function law_speaker_rows_name_person( array $rows, $speaker_id ) {
+	$speaker_id = (int) $speaker_id;
+	$email      = mb_strtolower( trim( (string) law_event_meta( $speaker_id, '_law_speaker_email' ) ) );
+	$name       = law_speaker_normalise_name( law_speaker_raw_name( $speaker_id ) );
+
+	foreach ( $rows as $row ) {
+		$other = (int) ( $row['speaker_id'] ?? 0 );
+		if ( $other === $speaker_id ) {
+			return true;
+		}
+		if ( '' !== $email && mb_strtolower( trim( (string) law_event_meta( $other, '_law_speaker_email' ) ) ) === $email ) {
+			return true;
+		}
+		if ( '' !== $name && law_speaker_normalise_name( law_speaker_raw_name( $other ) ) === $name ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * The derived data that follows a change to some posts' speaker rows: a
+ * flagship's union of its sessions, and the memoised appearance maps.
+ *
+ * @param int[] $post_ids Events and sessions whose rows changed.
+ */
+function law_speaker_after_rows_changed( array $post_ids ) {
+	$flagships = array();
+	foreach ( $post_ids as $post_id ) {
+		$parent = LAW_SESSION_CPT === get_post_type( $post_id ) ? (int) wp_get_post_parent_id( $post_id ) : 0;
+		if ( $parent && function_exists( 'law_flagship_is' ) && law_flagship_is( $parent ) ) {
+			$flagships[ $parent ] = true;
+		}
+	}
+	foreach ( array_keys( $flagships ) as $flagship_id ) {
+		law_flagship_recompute( $flagship_id );
+	}
+	law_speakers_flush_maps();
+}
+
+/**
+ * One activity-log line per EVENT a removal or a restore touched, so a host or
+ * the committee wondering where a speaker went can read it on the event. A
+ * session's rows are logged on its event; an event that lost the person from
+ * its own row and from a session gets one line, not two.
+ *
+ * @param int    $speaker_id Speaker post ID.
+ * @param array  $rows_by_post post ID => rows, from detach or reattach.
+ * @param string $what       'removed' or 'restored'.
+ */
+function law_speaker_log_rows_change( $speaker_id, array $rows_by_post, $what ) {
+	$events = array();
+	foreach ( array_keys( $rows_by_post ) as $post_id ) {
+		$event_id = LAW_SESSION_CPT === get_post_type( $post_id ) ? (int) wp_get_post_parent_id( $post_id ) : (int) $post_id;
+		if ( $event_id ) {
+			$events[ $event_id ] = true;
+		}
+	}
+
+	$name    = law_speaker_raw_name( (int) $speaker_id );
+	$message = 'restored' === $what
+		? 'Speaker "%s" put back on this event: their speaker record was restored from the trash.'
+		: 'Speaker "%s" taken off this event: their speaker record was deleted.';
+
+	foreach ( array_keys( $events ) as $event_id ) {
+		law_event_log(
+			$event_id,
+			sprintf( $message, $name ),
+			array(
+				'action'  => 'restored' === $what ? 'speaker_restored' : 'speaker_removed',
+				'source'  => 'speaker_record',
+				'speaker' => (int) $speaker_id,
+			)
+		);
+	}
+}
+
+/**
+ * Trash: take the speaker off everything and keep what was taken on the record.
+ * wp_trash_post fires before the status changes, the same moment the bookings
+ * sweep uses for an event.
+ */
+add_action(
+	'wp_trash_post',
+	function ( $post_id ) {
+		if ( LAW_SPEAKER_CPT !== get_post_type( $post_id ) ) {
+			return;
+		}
+		$removed = law_speaker_detach( $post_id );
+		if ( ! $removed ) {
+			return;
+		}
+		// Plain post meta, outside the schema: a map of rows keyed by post ID
+		// is no type the schema describes, and nothing reads it but the restore
+		// below. It is deleted with the post when the trash is emptied.
+		update_post_meta( $post_id, LAW_SPEAKER_DETACHED_META, $removed );
+		law_speaker_log_rows_change( $post_id, $removed, 'removed' );
+	}
+);
+
+/** Restore: put the rows back. The status itself is workflow.php's untrash filter. */
+add_action(
+	'untrashed_post',
+	function ( $post_id ) {
+		if ( LAW_SPEAKER_CPT !== get_post_type( $post_id ) ) {
+			return;
+		}
+		$removed = get_post_meta( $post_id, LAW_SPEAKER_DETACHED_META, true );
+		delete_post_meta( $post_id, LAW_SPEAKER_DETACHED_META );
+		if ( ! is_array( $removed ) || ! $removed ) {
+			return;
+		}
+		$restored = law_speaker_reattach( $post_id, $removed );
+		if ( $restored ) {
+			law_speaker_log_rows_change( $post_id, $restored, 'restored' );
+		}
+	}
+);
+
+/**
+ * Permanent deletion. A record deleted from the trash was detached when it went
+ * in, so this finds nothing; one deleted outright (wp_delete_post( $id, true ),
+ * or a site with the trash switched off) has its rows taken here instead, as
+ * has one trashed before this hook existed.
+ */
+add_action(
+	'before_delete_post',
+	function ( $post_id ) {
+		if ( LAW_SPEAKER_CPT !== get_post_type( $post_id ) ) {
+			return;
+		}
+		$removed = law_speaker_detach( $post_id );
+		if ( $removed ) {
+			law_speaker_log_rows_change( $post_id, $removed, 'removed' );
+		}
+	}
+);

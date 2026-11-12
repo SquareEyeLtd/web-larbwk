@@ -5,8 +5,8 @@
  * cannot drift.
  *
  * The biography is the appearance's own (law_speaker_card() reads the event or
- * session row, falling back to the parent event's row and then to the speaker
- * post's editor content), shown as a short excerpt with a "Read full bio"
+ * session row, falling back to the parent event's row, and nothing further),
+ * shown as a short excerpt with a "Read full bio"
  * control when there is more to read. The role at this event (Speaker / Host /
  * Moderator, per appearance too) prints on its own line ABOVE the name, as a
  * label for what follows, and outside the profile link so the link text stays

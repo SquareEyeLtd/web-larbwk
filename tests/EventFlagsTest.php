@@ -649,4 +649,59 @@ class EventFlagsTest extends LAW_Test_Case {
 
 		$this->assertTrue( law_events_post_is_sponsored( $reception ) );
 	}
+
+	/* The committee's opt-out from the sponsored highlight ___________________ */
+
+	public function test_the_opt_out_wins_over_a_sponsor_tier(): void {
+		// The case it was asked for (Denis, 26 October 2026): a sponsor-tier
+		// event whose sponsor wants a plain row on the programme.
+		$event = $this->make_event( array( '_law_fee_tier' => 'sponsor' ) );
+		$this->assertTrue( law_events_post_is_sponsored( $event ) );
+
+		law_event_update_meta( $event, '_law_no_sponsor_highlight', 1 );
+		$this->assertFalse( law_events_post_is_sponsored( $event ) );
+		$this->assertTrue(
+			law_events_post_qualifies_as_sponsored( $event ),
+			'The event still qualifies, which is what keeps the box on the panel so it can be unticked.'
+		);
+
+		// The box is about the programme card only: the event is still
+		// sponsored, so the export still says so (Denis, 26 October 2026).
+		$by_column = array_combine( law_committee_export_columns(), law_committee_export_row( get_post( $event ) ) );
+		$this->assertSame( 'Yes', $by_column['Sponsored'] );
+	}
+
+	public function test_the_opt_out_wins_over_a_repeat_host_too(): void {
+		$host = $this->make_user();
+		$one  = $this->make_counted_event( $host, array( '_law_no_sponsor_highlight' => 1 ) );
+		$this->make_counted_event( $host );
+		law_events_cpt_author_counts( true );
+
+		$this->assertTrue( law_events_post_qualifies_as_sponsored( $one ) );
+		$this->assertFalse( law_events_post_is_sponsored( $one ) );
+	}
+
+	public function test_the_opt_out_is_logged_both_ways_and_an_untouched_save_is_quiet(): void {
+		$event = $this->make_event( array( '_law_fee_tier' => 'sponsor' ) );
+		$actor = $this->make_committee_user();
+		$save  = function ( $on ) use ( $event, $actor ) {
+			$before = array( '_law_no_sponsor_highlight' => (int) law_event_meta( $event, '_law_no_sponsor_highlight' ) );
+			law_event_update_meta( $event, '_law_no_sponsor_highlight', $on );
+			law_event_log_flag_change( $event, $before, $actor );
+		};
+
+		$save( true );
+		$save( true );
+		$save( false );
+
+		// Canonicalising, not assertSame: law_event_log_entries() has no
+		// tie-break, and all three saves land in the same second.
+		$this->assertEqualsCanonicalizing(
+			array(
+				'Sponsor highlight turned off: this event shows as a plain row on the programme.',
+				'Sponsor highlight turned back on.',
+			),
+			$this->log_messages( $event )
+		);
+	}
 }

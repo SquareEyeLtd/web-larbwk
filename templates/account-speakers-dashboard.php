@@ -38,6 +38,25 @@ $law_speaker = $law_can ? law_speakers_dashboard_requested_speaker() : 0;
 
 	<?php else : ?>
 		<?php
+		// What a Delete (or a save aimed at a record deleted meanwhile) came
+		// back with. The edit view keeps its own notices; these are the ones
+		// that land on the list.
+		$law_notice  = sanitize_key( wp_unslash( $_GET['law_notice'] ?? '' ) );
+		$law_notices = array(
+			'speaker-deleted'       => array( 'is-success', __( 'Speaker deleted. If this was a mistake, an administrator can restore them from the wp-admin trash.', 'law' ) ),
+			'speaker-not-found'     => array( 'is-error', __( 'That speaker could not be found. They may already have been deleted.', 'law' ) ),
+			'speaker-delete-failed' => array( 'is-error', __( 'Sorry, that speaker could not be deleted. Please try again.', 'law' ) ),
+			'speaker-denied'        => array( 'is-error', __( 'Sorry, managing speakers is for the committee.', 'law' ) ),
+			'rate-limited'          => array( 'is-error', __( 'Too many changes in a short time; please wait a moment and try again.', 'law' ) ),
+		);
+		?>
+		<?php if ( isset( $law_notices[ $law_notice ] ) ) : ?>
+			<p class="law-form-notice <?php echo esc_attr( $law_notices[ $law_notice ][0] ); ?>" role="<?php echo 'is-success' === $law_notices[ $law_notice ][0] ? 'status' : 'alert'; ?>">
+				<?php echo esc_html( $law_notices[ $law_notice ][1] ); ?>
+			</p>
+		<?php endif; ?>
+
+		<?php
 		// The filter bar reuses the programme page's markup, CSS and JS
 		// (calendar.css, assets/js/calendar-filters.js), exactly as the events
 		// and bookings dashboards do: keyword and selects over AJAX, mobile

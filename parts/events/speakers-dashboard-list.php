@@ -6,8 +6,10 @@
  * (functions/events/speakers-dashboard.php), so filtering swaps it in place.
  *
  * A flat table, one row per speaker record, the committee dashboard's idiom.
- * Read-only: every change is made in the edit view the Edit link opens, so
- * there is one place where an appearance is written.
+ * Every change is made in the edit view the Edit link opens, so there is one
+ * place where an appearance is written. The one action here is Delete
+ * (parts/events/speaker-delete.php), behind a dialog naming each event the
+ * speaker is on.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -99,6 +101,20 @@ $law_sd_rows    = $law_sd_data['rows'];
 					</td>
 					<td class="law-speakers-table__actions">
 						<a class="button second" href="<?php echo esc_url( $law_sd_edit ); ?>"><?php esc_html_e( 'Edit', 'law' ); ?></a>
+						<?php
+						// Every appearance, not the filtered set this row shows: a
+						// delete takes the speaker off all of them, so the dialog
+						// must name all of them even when an event filter is on.
+						get_template_part(
+							'parts/events/speaker-delete',
+							null,
+							array(
+								'speaker_id'  => $law_sd_row['id'],
+								'name'        => $law_sd_row['name'],
+								'appearances' => law_speakers_dashboard_appearances( $law_sd_row['id'] ),
+							)
+						);
+						?>
 					</td>
 				</tr>
 			<?php endforeach; ?>

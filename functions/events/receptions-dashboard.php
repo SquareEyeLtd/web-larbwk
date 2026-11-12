@@ -205,6 +205,9 @@ function law_reception_manage_handler() {
 		);
 	}
 
+	// The places as they stood, so a raise can be offered to the waitlist below.
+	$law_rd_places_before = ! empty( $input['event_id'] ) ? (int) law_event_meta( (int) $input['event_id'], '_law_tickets_available' ) : null;
+
 	$result = law_reception_save( $input, get_current_user_id() );
 
 	// The confirmation override rides alongside the saver rather than inside it:
@@ -219,6 +222,20 @@ function law_reception_manage_handler() {
 			law_event_update_meta( $law_ro_event, '_law_email_override', ! empty( $_POST['law_reception']['email_override'] ) );
 			law_event_log_flag_change( $law_ro_event, $law_ro_before, get_current_user_id() );
 		}
+	}
+
+	// Raising the places offers them to the queue, as on every other screen
+	// that can change them. This one used to write the number and stop, so a
+	// reception's waitlist sat still beside places it had just been given.
+	// After every other write, for the reason law_event_tickets_changed() gives.
+	if ( ! is_wp_error( $result ) && null !== $law_rd_places_before ) {
+		law_event_tickets_changed(
+			(int) $result,
+			$law_rd_places_before,
+			(int) law_event_meta( (int) $result, '_law_tickets_available' ),
+			get_current_user_id(),
+			'receptions_dashboard'
+		);
 	}
 
 	if ( is_wp_error( $result ) ) {
@@ -300,6 +317,6 @@ add_action(
 		// No pdfmake and no export-buttons.js either, because this screen has
 		// no export and must not serve ~3MB of PDF library to show three rows.
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), $mtime( 'assets/js/booking-form.js' ), true );
+		law_booking_form_enqueue();
 	}
 );

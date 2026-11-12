@@ -22,11 +22,16 @@
  *   ),                                     // (law-modal.js resolves it, and
  *                                          // flattens a line whose control is
  *                                          // not on the page to plain text).
+ *   'after'   => 'One paragraph.',         // Optional, like 'copy' but under
+ *                                          // the list: the line that closes
+ *                                          // the thought the list belongs to
+ *                                          // (Delete speaker's restore note).
  *   'field'   => array(                    // Optional; omit for a plain
  *     'name'     => 'law_note',            // confirmation with no input.
  *     'label'    => 'What needs changing?',
  *     'help'     => 'Small print under the label.',
- *     'type'     => 'textarea',            // Or 'select'. Default 'textarea'.
+ *     'type'     => 'textarea',            // Or 'select' or 'email'. Default
+ *                                          // 'textarea'.
  *     'rows'     => 4,                     // Default 4. Textarea only.
  *     'options'  => array( 'a' => 'A' ),   // Required for 'select'.
  *     'placeholder' => 'Not set',          // The select's blank first option.
@@ -86,6 +91,9 @@ $law_modal_copy = is_array( $law_modal_copy ) ? $law_modal_copy : array( $law_mo
 
 $law_modal_list = isset( $args['list'] ) && is_array( $args['list'] ) ? $args['list'] : array();
 
+$law_modal_after = $args['after'] ?? array();
+$law_modal_after = is_array( $law_modal_after ) ? $law_modal_after : array( $law_modal_after );
+
 $law_modal_close = isset( $args['close'] ) && '' !== trim( (string) $args['close'] ) ? trim( (string) $args['close'] ) : 'Cancel';
 
 // false, exactly, means no submit button: an informational dialog.
@@ -111,7 +119,11 @@ if ( $law_modal_field ) {
 		// name, same disabled-until-open behaviour, same aria-required — so
 		// law-modal.js needed no change at all. Anything but 'select' is the
 		// textarea this component started as.
-		'type'        => isset( $law_modal_field['type'] ) && 'select' === $law_modal_field['type'] ? 'select' : 'textarea',
+		//
+		// 'email' followed on 26 October 2026 for the Emails screen's "Send
+		// test email" dialog, on the same terms: one input, the same name and
+		// disabled-until-open rules.
+		'type'        => isset( $law_modal_field['type'] ) && in_array( $law_modal_field['type'], array( 'select', 'email' ), true ) ? $law_modal_field['type'] : 'textarea',
 		'rows'        => isset( $law_modal_field['rows'] ) ? max( 1, (int) $law_modal_field['rows'] ) : 4,
 		'options'     => isset( $law_modal_field['options'] ) && is_array( $law_modal_field['options'] ) ? $law_modal_field['options'] : array(),
 		'placeholder' => isset( $law_modal_field['placeholder'] ) ? trim( (string) $law_modal_field['placeholder'] ) : '',
@@ -188,6 +200,16 @@ if ( $law_modal_field ) {
 				?>
 			</ul>
 		<?php endif; ?>
+		<?php
+		// A modifier class as well as the shared one: booking-form.js writes the
+		// outcome into the FIRST .law-modal__copy, which must stay the lead.
+		foreach ( $law_modal_after as $law_modal_paragraph ) {
+			if ( '' === trim( (string) $law_modal_paragraph ) ) {
+				continue;
+			}
+			echo "\t\t" . '<p class="law-modal__copy law-modal__copy--after">' . wp_kses_post( (string) $law_modal_paragraph ) . "</p>\n";
+		}
+		?>
 		<?php if ( $law_modal_field ) : ?>
 			<?php
 			// The control ships disabled and law-modal.js enables it only while
@@ -207,6 +229,8 @@ if ( $law_modal_field ) {
 							<option value="<?php echo esc_attr( (string) $law_modal_option ); ?>" <?php selected( $law_modal_field['value'], (string) $law_modal_option ); ?>><?php echo esc_html( (string) $law_modal_option_label ); ?></option>
 						<?php endforeach; ?>
 					</select>
+				<?php elseif ( 'email' === $law_modal_field['type'] ) : ?>
+					<input type="email" id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" value="<?php echo esc_attr( $law_modal_field['value'] ); ?>" autocomplete="email" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled>
 				<?php else : ?>
 					<textarea id="<?php echo esc_attr( $law_modal_field_id ); ?>" name="<?php echo esc_attr( $law_modal_field['name'] ); ?>" rows="<?php echo esc_attr( (string) $law_modal_field['rows'] ); ?>" data-law-modal-field<?php if ( $law_modal_field['required'] ) : ?> aria-required="true" data-law-modal-error="<?php echo esc_attr( $law_modal_field['error'] ); ?>"<?php endif; ?> disabled><?php echo esc_textarea( $law_modal_field['value'] ); ?></textarea>
 				<?php endif; ?>

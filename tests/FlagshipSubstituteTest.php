@@ -620,8 +620,10 @@ class FlagshipSubstituteTest extends LAW_Test_Case {
 		$this->assertArrayHasKey( 'user_flagship_place_transferred', $registry );
 		// The count, not the absence of one invented slug: asserting a key is
 		// missing passes just as happily when a SECOND template is added.
+		// 80 since 26 October 2026: user_booking_on_behalf, the attendee's
+		// side of a paid place booked for them (BOOK_ON_BEHALF.md §3.7).
 		$this->assertCount(
-			79,
+			80,
 			$registry,
 			'A template was added or removed. If that is deliberate, update this number and say why in EVENTS_FUNC.md.'
 		);

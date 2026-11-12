@@ -20,7 +20,9 @@
  *
  * Args:
  *   id_prefix  Required, unique per copy on the page: the two "Other" boxes are
- *              shown and hidden by id (event-form.js, data-law-toggles).
+ *              shown and hidden by id (law-toggles.js, data-law-toggles).
+ *   country_required  Mark the country as required (the caller's validator
+ *              decides whether it really is).
  *   values     Prefill, in law_profile_values() shape (the no-JS refusal path).
  *   show_other Render both "Other" boxes visible rather than waiting for the
  *              script to reveal them: true for the <noscript> copy, where
@@ -53,7 +55,7 @@ $law_apf_diet_id   = $law_apf_prefix . '-diet-other';
 		<?php echo esc_html( ! empty( $args['country_required'] ) ? __( 'Country of residence *', 'law' ) : __( 'Country of residence', 'law' ) ); ?>
 	</label>
 	<?php if ( $law_apf_country ) : ?>
-		<select id="<?php echo esc_attr( $law_apf_prefix . '-country' ); ?>" name="country">
+		<select id="<?php echo esc_attr( $law_apf_prefix . '-country' ); ?>" name="country"<?php echo ! empty( $args['country_required'] ) ? ' aria-required="true"' : ''; ?>>
 			<option value=""><?php esc_html_e( 'Select country', 'law' ); ?></option>
 			<?php foreach ( $law_apf_country as $law_apf_choice ) : ?>
 				<option value="<?php echo esc_attr( $law_apf_choice ); ?>" <?php selected( $law_apf_country_v, $law_apf_choice ); ?>><?php echo esc_html( $law_apf_choice ); ?></option>
@@ -73,9 +75,9 @@ $law_apf_diet_id   = $law_apf_prefix . '-diet-other';
 	<div class="law-row-grid">
 	<div class="law-attendee-profile__group">
 	<div class="law-form-field">
-		<span class="law-form-label"><?php esc_html_e( 'Accessibility', 'law' ); ?></span>
-		<div class="law-choices">
-			<?php foreach ( law_registration_accessibility_choices() as $law_apf_value => $law_apf_label ) : ?>
+		<span class="law-form-label" id="<?php echo esc_attr( $law_apf_prefix . '-access-label' ); ?>"><?php esc_html_e( 'Accessibility', 'law' ); ?></span>
+		<div class="law-choices" role="group" aria-labelledby="<?php echo esc_attr( $law_apf_prefix . '-access-label' ); ?>">
+			<?php foreach ( law_registration_accessibility_choices( true ) as $law_apf_value => $law_apf_label ) : ?>
 				<label><input type="checkbox" name="accessibility[]" value="<?php echo esc_attr( $law_apf_value ); ?>"
 					<?php echo 'Other' === $law_apf_value ? 'data-law-toggles="' . esc_attr( $law_apf_access_id ) . '"' : ''; ?>
 					<?php checked( in_array( $law_apf_value, $law_apf_access, true ) ); ?>>
@@ -85,15 +87,15 @@ $law_apf_diet_id   = $law_apf_prefix . '-diet-other';
 	</div>
 	<p class="law-form-field" id="<?php echo esc_attr( $law_apf_access_id ); ?>"
 		<?php echo ( $law_apf_open || in_array( 'Other', $law_apf_access, true ) || '' !== $law_apf_access_o ) ? '' : 'hidden'; ?>>
-		<label for="<?php echo esc_attr( $law_apf_access_id . '-input' ); ?>"><?php esc_html_e( 'Other: please specify *', 'law' ); ?></label>
-		<input type="text" id="<?php echo esc_attr( $law_apf_access_id . '-input' ); ?>" name="accessibility_other" value="<?php echo esc_attr( $law_apf_access_o ); ?>">
+		<label for="<?php echo esc_attr( $law_apf_access_id . '-input' ); ?>"><?php esc_html_e( 'Other accessibility need *', 'law' ); ?></label>
+		<input type="text" id="<?php echo esc_attr( $law_apf_access_id . '-input' ); ?>" name="accessibility_other" value="<?php echo esc_attr( $law_apf_access_o ); ?>" aria-required="true">
 	</p>
 	</div>
 
 	<div class="law-attendee-profile__group">
 	<div class="law-form-field">
-		<span class="law-form-label"><?php esc_html_e( 'Dietary', 'law' ); ?></span>
-		<div class="law-choices">
+		<span class="law-form-label" id="<?php echo esc_attr( $law_apf_prefix . '-diet-label' ); ?>"><?php esc_html_e( 'Dietary', 'law' ); ?></span>
+		<div class="law-choices" role="group" aria-labelledby="<?php echo esc_attr( $law_apf_prefix . '-diet-label' ); ?>">
 			<?php foreach ( law_registration_dietary_choices() as $law_apf_choice ) : ?>
 				<label><input type="checkbox" name="dietary[]" value="<?php echo esc_attr( $law_apf_choice ); ?>"
 					<?php echo 'Other' === $law_apf_choice ? 'data-law-toggles="' . esc_attr( $law_apf_diet_id ) . '"' : ''; ?>
@@ -104,8 +106,8 @@ $law_apf_diet_id   = $law_apf_prefix . '-diet-other';
 	</div>
 	<p class="law-form-field" id="<?php echo esc_attr( $law_apf_diet_id ); ?>"
 		<?php echo ( $law_apf_open || in_array( 'Other', $law_apf_diet, true ) || '' !== $law_apf_diet_o ) ? '' : 'hidden'; ?>>
-		<label for="<?php echo esc_attr( $law_apf_diet_id . '-input' ); ?>"><?php esc_html_e( 'Other: please specify *', 'law' ); ?></label>
-		<input type="text" id="<?php echo esc_attr( $law_apf_diet_id . '-input' ); ?>" name="dietary_other" value="<?php echo esc_attr( $law_apf_diet_o ); ?>">
+		<label for="<?php echo esc_attr( $law_apf_diet_id . '-input' ); ?>"><?php esc_html_e( 'Other dietary requirement *', 'law' ); ?></label>
+		<input type="text" id="<?php echo esc_attr( $law_apf_diet_id . '-input' ); ?>" name="dietary_other" value="<?php echo esc_attr( $law_apf_diet_o ); ?>" aria-required="true">
 	</p>
 	</div>
 	</div>

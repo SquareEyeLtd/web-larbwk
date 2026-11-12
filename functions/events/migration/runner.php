@@ -2250,6 +2250,7 @@ function law_migration_page_map() {
 		'account/dashboard/discounts' => array( 'title' => 'Discount codes', 'template' => 'templates/account-dashboard-discounts.php' ),
 		'account/dashboard/submitters' => array( 'title' => 'Event submitters', 'template' => 'templates/account-dashboard-submitters.php' ),
 		'account/dashboard/emails'   => array( 'title' => 'Manage emails', 'template' => 'templates/account-dashboard-emails.php' ),
+		'account/dashboard/slots'    => array( 'title' => 'Manage time slots', 'template' => 'templates/account-dashboard-slots.php' ),
 		'account/events'             => array( 'title' => 'My events', 'template' => 'templates/account-events.php' ),
 		'account/profile'            => array( 'title' => 'Profile', 'template' => 'templates/account-profile.php' ),
 		'account/events/submit'      => array( 'title' => 'Submit an event', 'template' => 'templates/account-event-form.php' ),
@@ -2407,6 +2408,10 @@ function law_migration_run_pages( $dry ) {
 	// And the discount-code catalogue.
 	if ( ! $dry && function_exists( 'law_setup_discounts_dashboard_access' ) ) {
 		law_migration_log( 'pages', 'created', '/account/dashboard/discounts/', 'Committee restriction: ' . law_setup_discounts_dashboard_access() . '.' );
+	}
+	// And Manage time slots.
+	if ( ! $dry && function_exists( 'law_setup_slots_dashboard_access' ) ) {
+		law_migration_log( 'pages', 'created', '/account/dashboard/slots/', 'Committee restriction: ' . law_setup_slots_dashboard_access() . '.' );
 	}
 
 	// The flagship conference. Not a page: it is a law_event post whose slug

@@ -160,7 +160,9 @@ function law_event_is_managed_by_law( $post_id ) {
  * Untrash restores the status the post was trashed with (core would restore
  * to `draft`, a status the module never uses). Bookings are constrained to
  * law_booking_statuses(); anything else restores as cancelled, the safe side
- * (a confirmed booking appearing from nowhere would consume places).
+ * (a confirmed booking appearing from nowhere would consume places). A speaker
+ * is always `publish` (its visibility comes from events, not its status), and
+ * a draft one would be missing from Manage Speakers and its own profile.
  */
 add_filter(
 	'wp_untrash_post_status',
@@ -169,6 +171,9 @@ add_filter(
 		$previous  = (string) get_post_meta( $post_id, '_wp_trash_meta_status', true );
 		if ( LAW_BOOKING_CPT === $post_type ) {
 			return in_array( $previous, array_keys( law_booking_statuses() ), true ) ? $previous : 'law-cancelled';
+		}
+		if ( LAW_SPEAKER_CPT === $post_type ) {
+			return 'publish' === $previous ? 'publish' : $new_status;
 		}
 		if ( LAW_EVENT_CPT !== $post_type ) {
 			return $new_status;
@@ -604,6 +609,7 @@ function law_event_log_flag_change( $event_id, array $before_flags, $actor ) {
 		'_law_session_agenda'   => array( 'Session agenda turned off.', 'Session agenda turned on.' ),
 		'_law_email_override'   => array( 'Custom booking confirmation turned off; this event sends the standard wording again.', 'Custom booking confirmation turned on.' ),
 		'_law_disabled'         => array( 'Event enabled again: it is back on the programme, subject to its status and booking settings.', 'Event disabled: it is hidden from the programme and its own page, and takes no bookings.' ),
+		'_law_no_sponsor_highlight' => array( 'Sponsor highlight turned back on.', 'Sponsor highlight turned off: this event shows as a plain row on the programme.' ),
 	);
 
 	// Driven by the keys the CALLER read before its own write, not by a fixed

@@ -324,12 +324,26 @@ function law_event_organisation_names( $event_id ) {
 }
 
 /**
- * Sponsored tag (parity with law_calendar_is_sponsored_event()): sponsor tier
- * or zero fee, a sponsor-category organisation, or a submitter with more than
- * one Approved/Confirmed event this year -- that last one for HOSTED events
- * only, see below.
+ * Sponsored tag: the event qualifies (below) and the committee has not turned
+ * the highlight off for it (_law_no_sponsor_highlight).
  */
 function law_events_post_is_sponsored( $post ) {
+	$post = get_post( $post );
+	if ( ! $post || law_event_meta( $post->ID, '_law_no_sponsor_highlight' ) ) {
+		return false;
+	}
+	return law_events_post_qualifies_as_sponsored( $post );
+}
+
+/**
+ * Whether the event earns the sponsored tag on its own facts (parity with
+ * law_calendar_is_sponsored_event()): sponsor tier or zero fee, a
+ * sponsor-category organisation, or a submitter with more than one
+ * Approved/Confirmed event this year -- that last one for HOSTED events only,
+ * see below. Read on its own by the committee panel, which offers the opt-out
+ * only on an event this says yes to.
+ */
+function law_events_post_qualifies_as_sponsored( $post ) {
 	$post = get_post( $post );
 	if ( ! $post ) {
 		return false;

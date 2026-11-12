@@ -179,17 +179,49 @@ function law_account_bookings() {
 			continue;
 		}
 		$primary = $group['own'] ?: $group['colleagues'][0];
+		$flagship = function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id );
+
+		// A PAID place booked for someone else is a booking with its own
+		// payment, status and page (BOOK_ON_BEHALF.md §3.8), so each gets its
+		// own card rather than a "+1 colleague" line on one card with one
+		// Manage link: a PA with their own place and a partner's, or two
+		// partners, could otherwise reach only one of them. Hosted events keep
+		// the party card, where colleagues share one booker's page.
+		$paid = 'hosted' !== law_booking_kind( $primary );
+		if ( $paid ) {
+			foreach ( $group['colleagues'] as $for ) {
+				$items[] = array(
+					'event'      => $event,
+					'own'        => null,
+					'colleagues' => array(),
+					'for'        => law_booking_attendee( $for )['name'],
+					'number'     => (int) law_event_meta( $for->ID, '_law_booking_number' ),
+					'invited_by' => '',
+					'waitlisted' => 'law-waitlisted' === $for->post_status,
+					'status'     => (string) $for->post_status,
+					'flagship'   => $flagship,
+					'manage_id'  => (int) $for->ID,
+				);
+			}
+			if ( ! $group['own'] ) {
+				continue;
+			}
+			$primary = $group['own'];
+		}
+
 		$items[] = array(
 			'event'      => $event,
 			'own'        => $group['own'],
-			'colleagues' => $group['colleagues'],
+			'colleagues' => $paid ? array() : $group['colleagues'],
+			'for'        => '',
+			'number'     => (int) law_event_meta( $primary->ID, '_law_booking_number' ),
 			'invited_by' => $group['own'] ? law_booking_invited_by_label( $group['own'] ) : '',
 			'waitlisted' => 'law-waitlisted' === $primary->post_status,
 			// The status itself, so a surface can badge a flagship
 			// application ("Pending approval", "Payment failed") without every
 			// caller learning a new boolean per state.
 			'status'     => (string) $primary->post_status,
-			'flagship'   => function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ),
+			'flagship'   => $flagship,
 			'manage_id'  => (int) $primary->ID,
 		);
 	}
@@ -288,8 +320,14 @@ function law_booking_status_badge_class( $status ) {
 	return $map[ (string) $status ] ?? '';
 }
 
-/** Print the notice for ?law_notice=, if there is one. */
-function law_booking_notice_render() {
+/**
+ * Print the notice for ?law_notice=, if there is one.
+ *
+ * @param int $booking_id The booking the page is about, if any: a good
+ *                        outcome on a place booked for someone else says who
+ *                        it is for (law_booking_on_behalf_notice()).
+ */
+function law_booking_notice_render( $booking_id = 0 ) {
 	$notice = law_booking_notice_text( sanitize_key( (string) ( $_GET['law_notice'] ?? '' ) ) );
 	if ( ! $notice ) {
 		return;
@@ -297,7 +335,25 @@ function law_booking_notice_render() {
 	printf(
 		'<p class="law-form-notice %s" role="alert">%s</p>',
 		'ok' === $notice[0] ? 'is-success' : 'is-error',
-		esc_html( $notice[1] )
+		esc_html( $notice[1] . ( 'ok' === $notice[0] ? law_booking_on_behalf_notice( $booking_id ) : '' ) )
+	);
+}
+
+/**
+ * The sentence a good outcome gains when the viewer booked the place for
+ * somebody else: the notices are written to whoever holds the place ("your
+ * registration has been received"), and the PA reading them after Stripe
+ * needs to know whose it was (BOOK_ON_BEHALF.md §3.2). '' otherwise.
+ */
+function law_booking_on_behalf_notice( $booking_id ) {
+	$booking = $booking_id ? get_post( (int) $booking_id ) : null;
+	if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type || 'booker' !== law_booking_user_role( $booking ) ) {
+		return '';
+	}
+	return ' ' . sprintf(
+		/* translators: %s: the attendee's name. */
+		__( 'This place is for %s.', 'law' ),
+		law_booking_attendee( $booking )['name']
 	);
 }
 
@@ -462,6 +518,8 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 	$state = array(
 		'state'      => 'bookable',
 		'event_id'   => $event_id,
+		// Whose state this is, for a surface that asks more about the viewer.
+		'user_id'    => $user_id,
 		'remaining'  => null,
 		'booking'    => null,
 		'manage_url' => '',
@@ -574,6 +632,9 @@ function law_booking_resolve_state( $event_id, array $args = array() ) {
 
 		$state['booking']    = $group['own'];
 		$state['colleagues'] = count( $colleagues );
+		// Their names, for the paid events' panel, which names whose places
+		// they are rather than counting "colleagues" (BOOK_ON_BEHALF.md §3.8).
+		$state['colleague_names'] = array_map( fn( $b ) => law_booking_attendee( $b )['name'], $colleagues );
 
 		if ( $state['booking'] ) {
 			$own                 = $state['booking'];
@@ -850,6 +911,17 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 				)
 			);
 		}
+		// The attendee of a place somebody else is paying for: the payment is
+		// not theirs to finish, so the control is shown inert with who is
+		// (BOOK_ON_BEHALF.md A4), never a live button the server refuses.
+		if ( ! law_booking_user_manages_payment( $booking ) ) {
+			printf(
+				'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
+				esc_html__( 'Your place is held while it is paid for.', 'law' ),
+				esc_html( law_booking_payment_refusal( $booking ) )
+			);
+			return law_booking_action_parts( law_booking_inert_button( __( 'Continue to payment', 'law' ) ) );
+		}
 		printf(
 			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
 			esc_html__( 'Finish paying for your place.', 'law' ),
@@ -903,20 +975,41 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 			);
 		} else {
 			printf( '<p class="law-booking-state">%s</p>', esc_html__( "You're booked on this event.", 'law' ) );
-			if ( '' !== $invited_by ) {
-				printf(
-					'<p class="law-booking-substate">%s</p>',
-					esc_html( sprintf( __( 'Invited by %s.', 'law' ), $invited_by ) )
-				);
+			$booked_by = law_booking_booked_by_label( $booking );
+			if ( '' !== $booked_by ) {
+				printf( '<p class="law-booking-substate">%s</p>', esc_html( $booked_by . '.' ) );
 			}
 		}
-		return law_booking_action_parts(
-			sprintf(
-				'<a class="button orange" href="%s">%s</a>',
-				esc_url( $state['manage_url'] ),
-				esc_html( law_booking_manage_label( $state ) )
-			)
+		// A reception place is one per checkout, so somebody who holds one can
+		// still buy one for someone else (BOOK_ON_BEHALF.md §3.8): Register sits
+		// beside Manage, and its dialog opens with Myself disabled. Free
+		// receptions too. Beside Register, Manage steps down to the secondary
+		// style, so the page has one orange button.
+		$law_bk_more = ! $preview && $state['reception']
+			&& true === law_reception_guard_open( (int) $state['event_id'] );
+		$law_bk_own_manage = sprintf(
+			'<a class="button %s" href="%s">%s</a>',
+			$law_bk_more ? 'second' : 'orange',
+			esc_url( $state['manage_url'] ),
+			esc_html( law_booking_manage_label( $state ) )
 		);
+		// A free reception where they have also booked every place they may
+		// for others: nothing is left to book, so Register shows disabled with
+		// why (law_reception_on_behalf_free_cap()).
+		$law_bk_cap = $law_bk_more ? law_reception_on_behalf_free_cap( (int) $state['user_id'], (int) $state['event_id'] ) : true;
+		if ( is_wp_error( $law_bk_cap ) ) {
+			printf( '<p class="law-booking-substate">%s</p>', esc_html( $law_bk_cap->get_error_message() ) );
+			return law_booking_action_parts( $law_bk_own_manage . law_booking_inert_button( __( 'Register', 'law' ) ) );
+		}
+		if ( $law_bk_more ) {
+			return law_booking_opener_parts(
+				$event,
+				0 === law_event_tickets_remaining( (int) $state['event_id'] ) ? 'waitlist' : 'book',
+				$preview,
+				$law_bk_own_manage
+			);
+		}
+		return law_booking_action_parts( $law_bk_own_manage );
 	}
 
 	// State: no place of their own, but they booked colleagues here. They
@@ -925,18 +1018,32 @@ function law_booking_render_action_body( array $state, $event, $preview = false 
 	// button joins this one in the same slot.
 	$law_bk_manage = '';
 	if ( $state['colleagues'] ) {
+		// A paid place booked for someone else is that person's, with its own
+		// payment and page, so the panel names them and sends the booker to My
+		// bookings, where each has a card of its own; a hosted party is
+		// "colleagues", managed together from one page.
+		$law_bk_paid = ! empty( $state['reception'] ) && ! empty( $state['colleague_names'] );
 		printf(
 			'<p class="law-booking-state">%s</p><p class="law-booking-substate">%s</p>',
-			esc_html( sprintf(
-				_n( "You've booked a place for %s colleague.", "You've booked places for %s colleagues.", $state['colleagues'], 'law' ),
-				number_format_i18n( $state['colleagues'] )
-			) ),
+			esc_html(
+				$law_bk_paid
+					? sprintf(
+						/* translators: %s: a list of names. */
+						_n( "You've booked a place for %s.", "You've booked places for %s.", $state['colleagues'], 'law' ),
+						wp_sprintf_l( '%l', $state['colleague_names'] )
+					)
+					: sprintf(
+						_n( "You've booked a place for %s colleague.", "You've booked places for %s colleagues.", $state['colleagues'], 'law' ),
+						number_format_i18n( $state['colleagues'] )
+					)
+			),
 			esc_html__( "You don't have a place yourself.", 'law' )
 		);
 		$law_bk_manage = sprintf(
 			'<a class="button second" href="%s">%s</a>',
-			esc_url( $state['manage_url'] ),
-			esc_html__( 'Manage bookings', 'law' )
+			esc_url( $law_bk_paid && $state['colleagues'] > 1 ? law_account_url( 'my_bookings' ) : $state['manage_url'] ),
+			// Singular for one paid place; a hosted party is managed together.
+			esc_html( $law_bk_paid && 1 === (int) $state['colleagues'] ? __( 'Manage booking', 'law' ) : __( 'Manage bookings', 'law' ) )
 		);
 	}
 
@@ -1871,7 +1978,7 @@ add_action( 'wp_enqueue_scripts', function () {
 
 	$booking_script = function () {
 		law_modal_enqueue();
-		wp_enqueue_script( 'law-booking-form', get_theme_file_uri( 'assets/js/booking-form.js' ), array( 'law-modal' ), filemtime( get_theme_file_path( 'assets/js/booking-form.js' ) ), true );
+		law_booking_form_enqueue();
 		law_booking_quote_localise();
 	};
 

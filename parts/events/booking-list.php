@@ -58,12 +58,18 @@ if ( ! $law_bl_event || LAW_EVENT_CPT !== $law_bl_event->post_type
 // read as a bug rather than as somebody standing on Stripe's page
 // (RECEPTIONS.md §1.3). A payment that was refused shows too, because that
 // person is waiting on something the committee may need to know about.
+//
+// UNCAPPED, the one deliberate exception to "never -1 on screens" (Denis,
+// 11 November 2026): this is the host's and the committee's full attendee
+// list, and it must show every booking. Under law_bookings_for_event()'s
+// default of 500, oldest first, the 2026 Opening Reception (551) silently lost
+// its 51 newest bookings. An event is bounded by its places, so the set is too.
 $law_bl_active    = law_event_is_priced( $law_bl_event_id )
-	? law_bookings_for_event( $law_bl_event_id, array( 'publish', 'law-pending-payment', 'law-payment-failed' ) )
-	: law_bookings_for_event( $law_bl_event_id );
+	? law_bookings_for_event( $law_bl_event_id, array( 'publish', 'law-pending-payment', 'law-payment-failed' ), -1 )
+	: law_bookings_for_event( $law_bl_event_id, 'publish', -1 );
 $law_bl_wait_cap  = 200;
 $law_bl_waitlist  = function_exists( 'law_waitlist_for_event' ) ? law_waitlist_for_event( $law_bl_event_id, $law_bl_wait_cap ) : array();
-$law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled' );
+$law_bl_cancelled = law_bookings_for_event( $law_bl_event_id, 'law-cancelled', -1 );
 
 // One users + one usermeta query for the whole table instead of two per row
 // (the country/dietary/accessibility columns read each attendee's profile, and
@@ -106,37 +112,23 @@ $law_bl_register_modal = 'law-booking-register';
  */
 $law_bl_register_fields = function ( $law_bl_prefix, $law_bl_show_other = false ) use ( $law_bl_form_state, $law_bl_typed, $law_bl_is_committee ) {
 	?>
-	<div class="law-rows" data-law-booking-rows="law_attendees" data-law-max="1">
-		<div class="law-row">
-			<div class="law-row-grid law-row-grid--attendee">
-				<?php
-				$law_bl_fields = array(
-					'name'         => array( __( 'Full name *', 'law' ), 'text' ),
-					'email'        => array( __( 'Email *', 'law' ), 'email' ),
-					'organisation' => array( __( 'Organisation *', 'law' ), 'text' ),
-					'job_title'    => array( __( 'Job title *', 'law' ), 'text' ),
-				);
-				foreach ( $law_bl_fields as $law_bl_key => $law_bl_field ) :
-					$law_bl_invalid = 0 === (int) $law_bl_form_state['row'] && $law_bl_form_state['field'] === $law_bl_key;
-					?>
-					<label<?php echo $law_bl_invalid ? ' class="is-invalid"' : ''; ?>><?php echo esc_html( $law_bl_field[0] ); ?><input type="<?php echo esc_attr( $law_bl_field[1] ); ?>" autocomplete="off" aria-required="true" name="law_attendees[0][<?php echo esc_attr( $law_bl_key ); ?>]" value="<?php echo esc_attr( (string) ( $law_bl_typed[ $law_bl_key ] ?? '' ) ); ?>"></label>
-				<?php endforeach; ?>
-			</div>
-		</div>
-	</div>
 	<?php
-	// Country, accessibility and dietary, exactly as registration asks for
-	// them: the table's own columns read these live from the attendee's
-	// profile, and somebody booked in by phone has nobody else to fill them in.
+	// The four attendee fields plus country, accessibility and dietary,
+	// exactly as registration asks for them: the table's own columns read
+	// these live from the attendee's profile, and somebody booked in by phone
+	// has nobody else to fill them in. One shared part with the flagship's
+	// committee dialogs and the paid booking dialogs.
 	get_template_part(
-		'parts/events/attendee-profile-fields',
+		'parts/events/attendee-details-fields',
 		null,
 		array(
 			'id_prefix'        => $law_bl_prefix,
-			'values'           => (array) ( $law_bl_form_state['profile'] ?? array() ),
+			'values'           => (array) $law_bl_typed,
+			'invalid'          => 0 === (int) $law_bl_form_state['row'] ? (string) $law_bl_form_state['field'] : '',
+			'profile'          => (array) ( $law_bl_form_state['profile'] ?? array() ),
 			'show_other'       => $law_bl_show_other,
 			'country_required' => true,
-			'note'             => __( 'Whatever they told you. They can change any of this themselves from their profile.', 'law' ),
+			'note'             => law_booking_attendee_details_note(),
 		)
 	);
 	?>
@@ -205,7 +197,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				$law_bl_number     = (int) law_event_meta( $law_bl_booking->ID, '_law_booking_number' );
 				$law_bl_person     = law_booking_attendee( $law_bl_booking );
 				$law_bl_invited_by = law_booking_invited_by_label( $law_bl_booking );
-				$law_bl_profile    = law_profile_values( (int) $law_bl_booking->post_author );
+				$law_bl_profile    = law_booking_profile_values( $law_bl_booking );
 				$law_bl_access     = law_booking_profile_requirements( $law_bl_profile, 'accessibility' );
 				$law_bl_diet       = law_booking_profile_requirements( $law_bl_profile, 'dietary' );
 				$law_bl_modal      = 'law-modal-reject-' . $law_bl_booking->ID;
@@ -253,10 +245,17 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					</td>
 					<td><strong><?php echo esc_html( $law_bl_person['name'] ); ?></strong><?php
 						if ( '' !== $law_bl_invited_by ) {
-							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( sprintf( __( 'Invited by %s', 'law' ), $law_bl_invited_by ) ) . '</span>';
+							echo ' <span class="law-cal-card__badge law-booking-table__invited">' . esc_html( law_booking_booked_by_label( $law_bl_booking ) ) . '</span>';
 						}
 						if ( law_event_meta( $law_bl_booking->ID, '_law_is_press' ) ) {
 							echo ' <span class="law-cal-card__badge law-booking-table__press">' . esc_html__( 'Press', 'law' ) . '</span>';
+						}
+						// Why the queue is skipping them, while it still is. A host
+						// is told there is a clash but not with what: which other
+						// session somebody booked is the committee's to see.
+						$law_bl_passed = $law_bl_waiting ? law_waitlist_passed_over_reason( $law_bl_booking, $law_bl_is_committee ) : '';
+						if ( '' !== $law_bl_passed ) {
+							echo '<span class="law-booking-table__sub law-booking-table__sub--passed-over">' . esc_html( $law_bl_passed ) . '</span>';
 						}
 					?></td>
 					<td><?php echo esc_html( $law_bl_person['email'] ); ?></td>

@@ -14,9 +14,10 @@
  * and three labels is identical — and the price block, which is the whole
  * point, is the same arithmetic either way.
  *
- * ONE PLACE PER CHECKOUT, self only (Denis, 14 September 2026), so there is no
- * colleague repeater: a colleague buys their own, which is also what keeps a
- * failed payment from stranding half a party.
+ * ONE PLACE PER CHECKOUT (Denis, 14 September 2026), so there is no colleague
+ * repeater, which is also what keeps a failed payment from stranding half a
+ * party. The one place may be for someone else (booking-for-someone.php,
+ * BOOK_ON_BEHALF.md), except on a reception that costs nothing.
  *
  * The money is never computed in the browser. Every figure here comes from
  * law_reception_quote() on the server, and the Apply button re-asks it; all
@@ -52,6 +53,13 @@ $law_rc_quote     = is_wp_error( $law_rc_quote ) ? law_reception_quote( $law_rc_
 // 16 September 2026).
 $law_rc_gratis = (int) $law_rc_quote['list_net'] < 1;
 
+// Who the place can be for. With their own place held AND every place they may
+// book for others booked, there is nothing left to book: both choices show
+// disabled with their reasons, and so does the submit.
+$law_rc_holds = law_reception_holds_place( get_current_user_id(), $law_rc_id );
+$law_rc_cap   = law_reception_on_behalf_free_cap( get_current_user_id(), $law_rc_id );
+$law_rc_full  = is_wp_error( $law_rc_cap ) ? $law_rc_cap->get_error_message() : '';
+
 $law_rc_action  = $law_rc_wait ? 'law_reception_waitlist_join' : 'law_reception_checkout';
 $law_rc_dialog  = 'law-reception-modal';
 $law_rc_heading = $law_rc_wait ? __( 'Join the waitlist', 'law' ) : __( 'Register', 'law' );
@@ -76,8 +84,8 @@ if ( ! is_user_logged_in() ) :
 	?>
 	<p class="law-modal__copy"><?php echo esc_html(
 		$law_rc_wait
-			? __( 'You need an account to join the waitlist for this reception. It only takes a minute, and you will come straight back here.', 'law' )
-			: __( 'You need an account to book a place at this reception. It only takes a minute, and you will come straight back here.', 'law' )
+			? __( 'You need an account to join the waitlist for this reception, for yourself or someone else. It only takes a minute, and you will come straight back here.', 'law' )
+			: __( 'You need an account to book a place at this reception, for yourself or someone else. It only takes a minute, and you will come straight back here.', 'law' )
 	); ?></p>
 	<p class="law-modal__actions law-booking-auth">
 		<a class="button second" href="<?php echo esc_url( wp_login_url( $law_rc_permalink ) ); ?>"><?php esc_html_e( 'Sign in', 'law' ); ?></a>
@@ -143,6 +151,27 @@ else :
 				<?php endif; ?>
 			</p>
 		</div>
+
+		<?php
+		// Myself or someone else (BOOK_ON_BEHALF.md §3.2), straight after what
+		// is being booked. Still one place per checkout: two people is two
+		// checkouts. Somebody who already has a place here can still book one
+		// for someone else; their own choice is shown disabled. Free receptions
+		// too, capped at three places for others: once they are booked,
+		// Someone else is shown disabled with why, before anything is typed
+		// (law_reception_on_behalf_free_cap()).
+		get_template_part(
+			'parts/events/booking-for-someone',
+			null,
+			array(
+				'context'     => $law_rc_ctx,
+				'id_prefix'   => 'law-rc-for-' . $law_rc_ctx,
+				'holds_place' => $law_rc_holds,
+				'others_full' => $law_rc_full,
+				'state'       => 'inline' === $law_rc_ctx ? law_booking_paid_choice_state( $law_rc_id ) : array(),
+			)
+		);
+		?>
 
 		<?php
 		// The price block and the code field below it are for a reception that
@@ -216,8 +245,8 @@ else :
 		?>
 		<?php if ( $law_rc_wait && ! $law_rc_gratis ) : ?>
 			<?php
-			$law_rc_consent_default = __( 'Save my payment details and charge %s when a place opens up. You can leave the waitlist at any time before then. *', 'law' );
-			$law_rc_consent_free    = __( 'Hold my place in the queue. My discount code covers the whole price, so there is nothing to pay and no payment details are needed. *', 'law' );
+			$law_rc_consent_default = __( 'Save my payment details and charge %s when a place opens up. The waitlist entry can be cancelled at any time before then. *', 'law' );
+			$law_rc_consent_free    = __( 'Hold the place in the queue. My discount code covers the whole price, so there is nothing to pay and no payment details are needed. *', 'law' );
 			?>
 			<p class="law-form-field">
 				<label>
@@ -280,9 +309,10 @@ else :
 				// that is not there. Only the checkout's free label says
 				// confirm.
 				?>
-				data-law-submit-free="<?php echo esc_attr( $law_rc_wait ? __( 'Join waitlist', 'law' ) : __( 'Confirm my free place', 'law' ) ); ?>"
-				data-law-submit-busy-free="<?php echo esc_attr( $law_rc_wait ? __( 'Joining…', 'law' ) : __( 'Confirming…', 'law' ) ); ?>">
-				<?php echo esc_html( $law_rc_quote['free'] && ! $law_rc_wait ? __( 'Confirm my free place', 'law' ) : $law_rc_submit ); ?>
+				data-law-submit-free="<?php echo esc_attr( $law_rc_wait ? __( 'Join waitlist', 'law' ) : __( 'Confirm free place', 'law' ) ); ?>"
+				data-law-submit-busy-free="<?php echo esc_attr( $law_rc_wait ? __( 'Joining…', 'law' ) : __( 'Confirming…', 'law' ) ); ?>"
+				<?php disabled( $law_rc_holds && '' !== $law_rc_full ); ?>>
+				<?php echo esc_html( $law_rc_quote['free'] && ! $law_rc_wait ? __( 'Confirm free place', 'law' ) : $law_rc_submit ); ?>
 			</button>
 		</p>
 	</form>

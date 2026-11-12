@@ -48,6 +48,9 @@ $law_pf_mask     = law_booking_payment_facts_mask( $law_pf_id );
 $law_pf_moved    = ! $law_pf_mask['invoice'];
 if ( ! $law_pf_mask['card'] ) {
 	$law_pf_method = '';
+	// Why the card was refused is about the card, and so the payer's
+	// business ("insufficient funds" is somebody's bank balance).
+	$law_pf_error  = '';
 }
 if ( ! $law_pf_mask['invoice'] ) {
 	$law_pf_invoice = '';
@@ -204,21 +207,7 @@ if ( ! $law_pf_mask['code'] ) {
 			<tr>
 				<th scope="row"><?php esc_html_e( 'Payment', 'law' ); ?></th>
 				<td>
-					<?php
-					// Named where we have a name. "The person who paid for it"
-					// answered none of the question a delegate actually has,
-					// which is who to ask for a receipt for their expenses.
-					$law_pf_payer = (string) law_event_meta( $law_pf_id, '_law_substituted_from_name' );
-					echo esc_html(
-						'' !== $law_pf_payer
-							? sprintf(
-								/* translators: %s: the delegate who bought the place. */
-								__( 'This place was transferred to you from %s, who bought it. They hold the VAT receipt, so please ask them if you need a copy.', 'law' ),
-								$law_pf_payer
-							)
-							: __( 'This place was transferred to you. The VAT receipt is held by the person who bought it.', 'law' )
-					);
-					?>
+					<?php echo esc_html( law_booking_payer_note( $law_pf_id ) ); ?>
 				</td>
 			</tr>
 		<?php endif; ?>

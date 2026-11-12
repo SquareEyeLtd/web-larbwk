@@ -353,4 +353,80 @@ class ReceptionsDashboardTest extends LAW_Test_Case {
 
 		$this->assertStringContainsString( 'event=' . $hosted, $title_href( $hosted ), 'Guard: a hosted event still opens the detail view.' );
 	}
+
+	public function test_raising_the_places_here_offers_them_to_the_waitlist(): void {
+		// November 2026: this screen wrote the new number and stopped, so the
+		// Opening Reception's queue sat still beside the places it had just
+		// been given. Every other screen that changes places runs the queue.
+		$event_id = $this->make_reception(
+			array(
+				'_law_tickets_available' => 2,
+				'_law_start'             => '2026-12-30 18:30',
+				'_law_end'               => '2026-12-30 20:30',
+				'_law_venue'             => 'The Hall, EC4',
+			),
+			'publish'
+		);
+		foreach ( array( 'one', 'two' ) as $law_who ) {
+			$this->posts[] = law_booking_insert(
+				$event_id,
+				$this->make_user(),
+				'publish',
+				array( 'name' => 'Guest ' . $law_who, 'email' => 'guest-' . $law_who . '@example.test' )
+			);
+		}
+		$waiting       = law_booking_insert(
+			$event_id,
+			$this->make_user(),
+			'law-waitlisted',
+			array( 'name' => 'Guest waiting', 'email' => 'guest-waiting@example.test' )
+		);
+		$this->posts[] = $waiting;
+		law_event_update_meta( $waiting, '_law_waitlist_position', 1 );
+		law_event_recount_attendees( $event_id );
+		$this->assertSame( 0, law_event_tickets_remaining( $event_id ) );
+
+		wp_set_current_user( $this->make_committee_user() );
+		$_POST    = array(
+			'action'        => 'law_reception_manage',
+			'law_ajax'      => '1',
+			'_wpnonce'      => wp_create_nonce( 'law_reception_manage' ),
+			'law_reception' => array(
+				'event_id'    => (string) $event_id,
+				'title'       => get_the_title( $event_id ),
+				'description' => '',
+				'date'        => '2026-12-30',
+				'start'       => '18:30',
+				'end'         => '20:30',
+				'venue'       => 'The Hall, EC4',
+				'places'      => '3',
+				'price'       => '',
+				// The form's checkbox sentinel and "Show on the programme",
+				// as the real screen posts them for a live reception.
+				'present'     => '1',
+				'show'        => '1',
+			),
+		);
+		$_REQUEST = $_POST;
+		add_filter( 'wp_doing_ajax', '__return_true' );
+		add_filter(
+			'wp_die_ajax_handler',
+			fn() => function () {
+				throw new RuntimeException( 'law-test-die' );
+			}
+		);
+		ob_start();
+		try {
+			law_reception_manage_handler();
+		} catch ( RuntimeException $e ) {
+			$this->assertSame( 'law-test-die', $e->getMessage() );
+		}
+		$json = json_decode( (string) ob_get_clean(), true );
+		remove_filter( 'wp_doing_ajax', '__return_true' );
+		remove_all_filters( 'wp_die_ajax_handler' );
+
+		$this->assertTrue( $json['success'] ?? false, 'The save went through: ' . wp_json_encode( $json ) );
+		$this->assertSame( 3, (int) law_event_meta( $event_id, '_law_tickets_available' ) );
+		$this->assertSame( 'publish', get_post_status( $waiting ), 'The raised place went to the person waiting.' );
+	}
 }
