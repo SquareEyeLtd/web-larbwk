@@ -173,6 +173,7 @@ if ( $law_is_reception && ! $law_is_flagship ) {
 			<?php /* Committee views only, like the status pill it sits beside: a
 			         disabled event never reaches a public card at all. */ ?>
 			<?php law_event_disabled_badge( (int) ( $event['id'] ?? 0 ) ); ?>
+			<?php law_event_private_badge( (int) ( $event['id'] ?? 0 ) ); ?>
 		<?php endif; ?>
 		<?php if ( ! empty( $args['badge']['label'] ) ) : ?>
 			<span class="law-cal-card__badge law-cal-card__badge--<?php echo esc_attr( (string) ( $args['badge']['slug'] ?? 'default' ) ); ?>"><?php echo esc_html( (string) $args['badge']['label'] ); ?></span>

@@ -1788,6 +1788,14 @@
   color: #fff;
 }
 
+/* Opens only from its private link (Denis, 13 November 2026). The Draft tag's
+   shape in a quiet lilac of its own: a fact about who can find the event, not
+   an alarm like --disabled. #3d3480 on #e9e6f5 is about 8.6:1. */
+.law-cal-card__badge--private {
+  background: #e9e6f5;
+  color: #3d3480;
+}
+
 /* Identity, not status: a third party runs this event and books it on its own
    website. Deliberately the only OUTLINE badge in the set — a filled navy pill
    would be pixel-identical to --confirmed, and an identity tag that looks like
@@ -2918,8 +2926,10 @@
   margin: 0;
 }
 
-/* The committee's applications table. The tick column is a control, not
-   content: it stays as narrow as the box it holds. */
+/* The committee's applications table, and since 13 November 2026 the bulk
+   cancel on the per-event bookings list (parts/events/booking-list.php),
+   which shares every rule below rather than copying it. The tick column is a
+   control, not content: it stays as narrow as the box it holds. */
 /* Shrink-wrap the tick column.
    .law-dashboard__table td:first-child (event-form.css) sets min-width: 220px,
    because in every other dashboard table the first cell holds a title that
@@ -2929,7 +2939,9 @@
    width: 1% then asks the auto layout for the column's minimum rather than a
    share of the leftover space. */
 .law-dashboard__table th.law-flagship-bookings__tick,
-.law-dashboard__table td.law-flagship-bookings__tick {
+.law-dashboard__table td.law-flagship-bookings__tick,
+.law-dashboard__table th.law-booking-table__tick,
+.law-dashboard__table td.law-booking-table__tick {
   width: 1%;
   min-width: 0;
   white-space: nowrap;
@@ -2937,13 +2949,15 @@
   padding-right: 0;
 }
 
-.law-flagship-bookings__tick label {
+.law-flagship-bookings__tick label,
+.law-booking-table__tick label {
   margin: 0;
   display: inline-flex;
   align-items: center;
 }
 
-.law-flagship-bookings__tick input[type="checkbox"] {
+.law-flagship-bookings__tick input[type="checkbox"],
+.law-booking-table__tick input[type="checkbox"] {
   margin: 0;
 }
 
@@ -2986,14 +3000,16 @@
    <p>. */
 /* The bulk form itself carries nothing visible: its buttons render above the
    table and join it with the HTML `form` attribute. */
-.law-flagship-bookings__bulk {
+.law-flagship-bookings__bulk,
+.law-booking-bulk {
   margin: 0;
 }
 
 /* One inline row of text links above the table: the two decide actions and
    the add-attendee opener. They wrap rather than overflowing, and the gap
    keeps a mis-tap on a phone from declining a batch meant to be approved. */
-.law-flagship-bookings__bulk-actions {
+.law-flagship-bookings__bulk-actions,
+.law-booking-bulk__actions {
   display: flex;
   flex-wrap: wrap;
   gap: .25rem 1rem;

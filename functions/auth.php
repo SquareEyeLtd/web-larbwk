@@ -531,3 +531,31 @@ add_action( 'login_init', function () {
 	}
 	// Other actions (logout, postpass, confirm_action, …) run as normal.
 } );
+
+/**
+ * Hand core's admin email check back to wp-login.php.
+ *
+ * Every six months core sends an administrator, straight after sign-in, to
+ * wp-login.php?action=confirm_admin_email. It builds that URL from
+ * wp_login_url(), which the login_url filter above points at /login/, so the
+ * administrator landed on the branded page, saw "You are signed in" and lost
+ * the redirect_to (the event they were registering for, say). Core's screen
+ * honours redirect_to itself once they confirm or pick "Remind me later".
+ */
+add_action( 'template_redirect', function () {
+	if ( ! is_page_template( 'templates/login.php' ) || ! is_user_logged_in() ) {
+		return;
+	}
+	$action = isset( $_GET['action'] ) ? sanitize_key( wp_unslash( $_GET['action'] ) ) : '';
+	if ( 'confirm_admin_email' !== $action ) {
+		return;
+	}
+
+	$args     = array( 'action' => 'confirm_admin_email' );
+	$redirect = isset( $_GET['redirect_to'] ) ? wp_validate_redirect( wp_unslash( $_GET['redirect_to'] ), '' ) : '';
+	if ( $redirect ) {
+		$args['redirect_to'] = rawurlencode( $redirect );
+	}
+	wp_safe_redirect( add_query_arg( $args, site_url( 'wp-login.php', 'login' ) ) );
+	exit;
+} );

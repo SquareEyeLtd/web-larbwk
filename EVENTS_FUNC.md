@@ -1221,6 +1221,16 @@ ONE booking carrying an attendee rows array; that model, its flat
   releases any queue position, recounts, and offers the freed place to the
   waitlist unless the event itself is going away.
   `law_bookings_cancel_party()` is the booker's "cancel everything I booked".
+  `law_bookings_reject_bulk()` (13 November 2026) is the committee's Bulk
+  cancel and Bulk remove on the bookings list: each ticked booking goes through
+  `law_booking_cancel()` with `host_reject` and the one shared reason, so every
+  attendee gets the email the per-row Cancel would send. It skips any ID that
+  is not this event's or no longer held (publish, pending payment, payment
+  failed, waitlisted), holds the waitlist back for the pass and runs one
+  promotion pass plus the clash re-check at the end, as the party cancel does,
+  and logs one summary line. Time-boxed at `LAW_BOOKING_BULK_SECONDS` (15):
+  the rest goes to the `law_bookings_resume_reject_bulk` cron with the same
+  actor and reason, the shape of the event-cancel sweep.
 - **Status writes** go through `law_booking_set_status()`, which saves and
   restores `$GLOBALS['law_booking_transitioning']` rather than clearing it, so
   a nested transition (a promotion inside a sweep) cannot strand its caller.
@@ -1240,7 +1250,9 @@ ONE booking carrying an attendee rows array; that model, its flat
   booked them), `law_booking_cancel_party`, `law_booking_reject_attendee`
   (`law_user_can_manage_event()` on `post_parent`, then
   `law_booking_user_can_reject()` — a host gets a 403 saying only the LAW
-  committee can cancel a booking) and
+  committee can cancel a booking), `law_booking_reject_bulk` (posts the EVENT,
+  refuses the flagship, then `law_booking_user_can_reject()` on it; the engine
+  drops any ticked ID from another event) and
   `law_booking_register_attendee` (`law_user_can_manage_event()`; hosts keep
   this one). `law_booking_error_payload()` is the shared
   row/field refusal shape booking-form.js marks in place.
@@ -1249,7 +1261,7 @@ ONE booking carrying an attendee rows array; that model, its flat
   from `wp_trash_post` while the event is still published; otherwise a freed
   place could promote somebody onto an event being deleted seconds later.
 - Tests: `tests/BookingsTest.php` (35), `tests/BookingEmailsTest.php` (16),
-  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (24).
+  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (27).
 
 ### `waitlist.php`: the waitlist (WAITLIST.md Part B)
 
@@ -3012,6 +3024,58 @@ of "the server was right and the screen was not":
    `array( '*' )`. Both now carve out the external case.
 
 - Tests: `tests/ExternalEventsTest.php` (21).
+
+### `private-events.php`: events that open only from a private link (13 November 2026)
+
+A hosted event or a reception the committee ticks **private** (`_law_private`)
+is off every public list, and its own page opens only with `?c=<code>`
+(`_law_private_code`). It still takes bookings exactly as before: privacy is
+about who can find the event, not who may book it.
+
+- **One write path**, `law_event_set_private()`, used by the Committee controls
+  panel, the receptions editor (through `law_reception_save()`) and the wp-admin
+  Event flags box. The code is generated on the first tick (ten characters from
+  an alphabet without look-alikes) and **kept on untick**, so links already sent
+  out survive a re-tick. Logged through `law_event_log_flag_change()` (hosted
+  events, wp-admin) or `law_reception_log_save()` (receptions).
+- **The code rides on every link** through a `post_type_link` filter, so every
+  existing `get_permalink()` caller (the `{event_link}` email tag, My bookings,
+  the Register dialog's URLs, Stripe's return URL, the waitlist emails, the
+  `.ics` description, the committee's View buttons) carries it with no change.
+  `law_event_private_url()` gives the link for a draft too, from
+  `law_events_public_url()`.
+- **The page gate**, `law_events_gate_private_event_page()` at
+  `template_redirect` priority 3 (after the disabled gate, so a disabled event
+  still 404s), sends a visitor without the right code to the programme
+  (`law_events_programme_url()`) with a 302. The host, co-owners and committee
+  (`law_user_can_manage_event()`) keep the page. The rule is
+  `law_event_private_page_allowed()`, testable without the redirect. Both the
+  redirect and the page are sent uncached (`nocache_headers()`,
+  `DONOTCACHEPAGE`), and the page is `X-Robots-Tag: noindex`.
+- **Off every public list, because a list would hand out the code**: the
+  programme (`law_events_cpt_mapped_events()`, public status set only; not in
+  `law_events_map_post()`, which also renders the page itself), the speakers
+  archive and profiles (`law_speakers_event_maps( …, $listed_only )`, which
+  `law_speakers_confirmed_maps()` now passes), the SEOPress sitemap
+  (`seopress_sitemaps_single_query`) and the post-type listing and feed WordPress
+  would build for `/?post_type=law_event` (`pre_get_posts`). The committee's
+  programme and the host's dashboard still list it. WordPress's oEmbed endpoint
+  answered the bare address with the coded permalink, so a private event gets
+  no embed (`oembed_response_data` at `PHP_INT_MAX`, because SEOPress filters
+  the same data later and rebuilds a stub with the title), and its page drops
+  the comments-feed `<link>`, which landed after the query string.
+- **Not** a change to `law_event_is_publicly_listed()`: a private event still
+  has a live page, so its links, `.ics` and forced-open booking behave as for any
+  live event.
+- **UI.** "Private event" on the Committee controls panel after Don't highlight
+  as sponsored; a Privacy fieldset ("Private reception") at the foot of the
+  receptions editor with its own `private_present` sentinel; the link in a notice
+  at the top of both screens (`parts/events/private-notice.php`), which says
+  first when the event is not live yet; a **Private** tag
+  (`law_event_private_badge()`, `.law-cal-card__badge--private`) on the events
+  table, the receptions table and committee cards.
+- **Not in the content transfer bundle**, like `_law_disabled`.
+- Tests: `tests/EventPrivateTest.php` (19).
 
 ### `source.php`: the CPT ↔ front-end bridge and legacy continuity
 
@@ -5613,6 +5677,14 @@ These predate the rebuild and now branch on `law_events_source()`.
   `/account/dashboard/` instead, only overrides a destination that EQUALS the
   default, so writing the default in two places would silently disable the
   committee shortcut. `tests/AuthRedirectTest.php` pins both.
+  **Core's six-monthly admin email check is forwarded back to `wp-login.php`**
+  (13 November 2026). Core builds that post-sign-in screen's URL from
+  `wp_login_url()`, which this file points at `/login/`, so an administrator
+  landed on "You are signed in" and lost their `redirect_to` (the event they
+  were registering for). A `template_redirect` hook sends
+  `/login/?action=confirm_admin_email` to core's own screen with the validated
+  `redirect_to`, which core honours after "confirm" or "Remind me later". Only
+  `manage_options` accounts ever see it.
   Two security properties to preserve:
   `LAW_AUTH_MIN_PASSWORD_LENGTH` (10) is the **single source** for the password
   floor, applied by the reset form, the registration handler, the profile
@@ -10989,6 +11061,72 @@ The waitlist keeps its 200 cap and notice.
 
 Touched: `parts/events/booking-list.php`. Checked by rendering the list over 512
 bookings inside a rolled-back transaction.
+
+## Private events (13 November 2026)
+
+**Asked for:** a checkbox to make an event or reception private: off the
+programme, and its page available only from a link carrying `?c=<code>`, with
+anyone else redirected to the programme; the link at the top of the screen, a
+draft explained as not available yet; a Private tag on both lists (Denis,
+13 November 2026). The design is in the `private-events.php` section above.
+
+**Decisions made in the build, for Denis to overrule:** the host, co-owners and
+committee open the page without the code (as with a disabled event); the code
+is kept when the box is unticked; booking is unaffected; private receptions
+included with the flagship are still offered to flagship delegates, because that
+offer is a committee setting of its own; the export has no Private column yet.
+
+**Checked on the local site:** no code or a wrong one gets a 302 to the
+programme, the right one (in any case) a 200 with `no-store` and `noindex`; the
+event is off the programme and `/?post_type=law_event`; the notices, the two
+checkboxes and both tags render. That pass found the oEmbed leak above.
+**Known gap:** a speaker who appears only at a
+private event has no public profile, so the private page's speaker name links
+to a profile that 404s, as it already did for an Approved event's speakers.
+
+Touched: `functions/events/private-events.php` (new), `functions/events/_load.php`,
+`functions/events/meta.php`, `functions/events/workflow.php`,
+`functions/events/committee.php`, `functions/events/admin/event-screen.php`,
+`functions/events/receptions.php`, `functions/events/source.php`,
+`functions/events/speakers.php`, `functions/calendar.php`,
+`templates/account-dashboard.php`, `parts/events/private-notice.php` (new),
+`parts/events/reception-manage.php`, `parts/events/receptions-list.php`,
+`parts/events/dashboard-list.php`, `parts/loop/event.php`,
+`assets/css/calendar.css`, `tests/EventPrivateTest.php` (new).
+
+## Bulk cancel on an event's bookings list (13 November 2026)
+
+**Asked for:** bulk cancellation on the per-event bookings list
+(`/account/events/?law_event_bookings=<id>`), the way the flagship bookings
+dashboard has bulk approve and decline.
+
+The same pattern, reused rather than copied: a tick column on the active and
+waitlist tables (committee only, the per-row Cancel's gate), a select-all in
+each header, and a "Bulk cancel" / "Bulk remove" text link above each table,
+dead until something is ticked. Each table has its own bulk form outside the
+table, joined to the boxes and the link with the HTML `form` attribute, and one
+confirm dialog with one optional reason that goes into every attendee's email.
+On a priced event the dialog also says nobody is refunded automatically. The
+select-all and the disabled-until-ticked link are the existing
+`data-law-check-all` / `data-law-bulk-decide` code in booking-form.js, untouched;
+the tick and actions-row styles are the flagship's rules in calendar.css with the
+new `.law-booking-table__tick`, `.law-booking-bulk` and
+`.law-booking-bulk__actions` selectors added to them. It posts over fetch like
+every `.law-booking-form`, shows the counts in the dialog and reloads (to
+`#law-waitlist` for a waitlist batch); without JavaScript the link submits the
+form directly and lands on one of three new notices (`bookings-rejected`,
+`bookings-rejecting`, `bookings-partly-rejected`).
+
+Server side, `law_booking_reject_bulk_handler()` and `law_bookings_reject_bulk()`
+(see the `bookings.php` section). Hosts get none of it, and the flagship stays
+on its own page, where Cancel still has no bulk form on purpose.
+
+Touched: `functions/events/bookings.php`, `functions/account-bookings.php`,
+`parts/events/booking-list.php`, `assets/css/calendar.css`,
+`tests/WaitlistTest.php` (3 new). Checked in the browser as a committee member
+on a local event with four bookings and two waitlist entries: bulk remove with
+a reason, bulk cancel of two places (one waitlist promotion pass, the right
+emails in Mailpit), and the no-JS path for both a ticked and an empty selection.
 
 ---
 
