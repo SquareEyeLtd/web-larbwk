@@ -195,6 +195,12 @@ $law_email_mode = $law_detail
 			<div class="law-form-notice is-error" role="alert">Invoice creation failed again; see the Stripe error below.</div>
 		<?php endif; ?>
 
+		<?php
+		// Above the title, so the link to hand out is the first thing on the
+		// screen of an event the committee made private (Denis, 13 November 2026).
+		get_template_part( 'parts/events/private-notice', null, array( 'event_id' => $law_id, 'class' => 'is-warning' ) );
+		?>
+
 		<div class="grid-x grid-padding-x">
 			<div class="large-8 cell">
 				<h1 class="law-dashboard__title"><?php echo esc_html( $law_detail->post_title ); ?>
@@ -672,6 +678,18 @@ $law_email_mode = $law_detail
 							<small>Shows this event as a plain row on the programme, without the orange sponsor fill.</small>
 						</div>
 					<?php endif; ?>
+
+					<?php
+					// After the sponsor opt-out (Denis, 13 November 2026). Posts under
+					// law_flags_present like the boxes above it, so unticking it works.
+					// The link it creates is printed at the top of this screen.
+					?>
+					<div class="law-form-field">
+						<div class="law-choices">
+							<label><input type="checkbox" name="law_private" value="1" <?php checked( law_event_is_private( $law_id ) ); ?>> Private event</label>
+						</div>
+						<small>Takes it off the programme. Its page opens only from the private link shown at the top of this page.</small>
+					</div>
 
 					<input type="hidden" name="law_orgs_present" value="1">
 					<p class="law-form-field"><label for="law-dash-orgs">Linked organisations (sponsor highlighting)</label>

@@ -140,6 +140,20 @@ function law_event_disabled_badge( $event_id ) {
 }
 
 /**
+ * The "Private" tag for an event that opens only from its private link, for
+ * committee views: the events table, the receptions table and committee cards
+ * (Denis, 13 November 2026). Shaped like the receptions table's Draft tag.
+ *
+ * @param int $event_id law_event post ID.
+ */
+function law_event_private_badge( $event_id ) {
+	if ( ! function_exists( 'law_event_is_private' ) || ! law_event_is_private( $event_id ) ) {
+		return;
+	}
+	echo '<span class="law-cal-card__badge law-cal-card__badge--private">Private<span class="show-for-sr">: off the programme, opens only from its private link</span></span>';
+}
+
+/**
  * "Session agenda: 3 sessions" / "on, none added yet", or '' when it is off.
  *
  * Text rather than a pill, and with the count, because a flag switched on with

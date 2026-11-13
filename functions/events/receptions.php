@@ -253,6 +253,7 @@ function law_reception_form_values( $event_id = 0 ) {
 			'invitation'  => false,
 			'show'        => false,
 			'registration_warning' => '',
+			'private'     => false,
 		);
 	}
 
@@ -277,6 +278,7 @@ function law_reception_form_values( $event_id = 0 ) {
 		'invitation'  => law_event_is_invitation_only( $event_id ),
 		'show'        => 'publish' === $post->post_status,
 		'registration_warning' => law_event_registration_warning( $event_id ),
+		'private'     => law_event_is_private( $event_id ),
 	);
 }
 
@@ -332,6 +334,11 @@ function law_reception_input_from_post() {
 		$input['show']       = ! empty( $raw['show'] );
 		$input['included']   = ! empty( $raw['included'] );
 		$input['invitation'] = ! empty( $raw['invitation'] );
+	}
+	// Private sits at the foot of the form with a sentinel of its own, so a POST
+	// truncated before it leaves the stored answer alone.
+	if ( ! empty( $raw['private_present'] ) ) {
+		$input['private'] = ! empty( $raw['private'] );
 	}
 
 	return $input;
@@ -533,6 +540,10 @@ function law_reception_save( array $input, $actor = 0, array $args = array() ) {
 		law_event_update_meta( $event_id, '_law_registration_state', law_event_is_priced( $event_id ) ? 'open' : 'free' );
 	}
 
+	if ( array_key_exists( 'private', $input ) ) {
+		law_event_set_private( $event_id, ! empty( $input['private'] ) );
+	}
+
 	law_reception_log_save( $event_id, $before, law_reception_snapshot( $event_id ), $actor );
 
 	return $event_id;
@@ -554,6 +565,7 @@ function law_reception_snapshot( $event_id ) {
 		'state'      => (string) law_event_meta( $event_id, '_law_registration_state' ),
 		'reception'  => (int) (bool) law_event_meta( $event_id, '_law_is_reception' ),
 		'warning'    => law_event_registration_warning( $event_id ),
+		'private'    => (int) law_event_is_private( $event_id ),
 	);
 }
 
@@ -603,6 +615,12 @@ function law_reception_log_save( $event_id, array $before, array $after, $actor 
 		$changes[] = 'invitation' === $after['state']
 			? 'invitation only: the site takes no bookings'
 			: sprintf( 'bookable on the site (%s)', 'open' === $after['state'] ? 'paid' : 'free' );
+	}
+
+	if ( $before['private'] !== $after['private'] ) {
+		$changes[] = $after['private']
+			? 'made private: off the programme, and its page opens only from its private link'
+			: 'made public again';
 	}
 
 	if ( $before['warning'] !== $after['warning'] ) {

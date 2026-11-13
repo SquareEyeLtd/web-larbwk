@@ -1780,6 +1780,14 @@
   color: #fff;
 }
 
+/* Opens only from its private link (Denis, 13 November 2026). The Draft tag's
+   shape in a quiet lilac of its own: a fact about who can find the event, not
+   an alarm like --disabled. #3d3480 on #e9e6f5 is about 8.6:1. */
+.law-cal-card__badge--private {
+  background: #e9e6f5;
+  color: #3d3480;
+}
+
 /* Identity, not status: a third party runs this event and books it on its own
    website. Deliberately the only OUTLINE badge in the set — a filled navy pill
    would be pixel-identical to --confirmed, and an identity tag that looks like

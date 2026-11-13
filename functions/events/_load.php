@@ -62,6 +62,9 @@ require_once __DIR__ . '/receptions-dashboard.php';
 // shape, and before source.php, which maps the flag onto the calendar event.
 require_once __DIR__ . '/external-events.php';
 require_once __DIR__ . '/source.php';
+// Private events: after source.php, so its page gate runs after the disabled
+// gate at the same template_redirect priority.
+require_once __DIR__ . '/private-events.php';
 require_once __DIR__ . '/edit-lock.php';
 require_once __DIR__ . '/submission-form.php';
 require_once __DIR__ . '/registration.php';

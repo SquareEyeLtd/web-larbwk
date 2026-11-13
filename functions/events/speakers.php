@@ -537,11 +537,12 @@ function law_speakers_confirmed_event_map() {
  * @param string[] $statuses post_status values to walk.
  * @param int      $limit    Event cap (house style: never -1 on a screen path).
  * @param bool     $reset    Rebuild (tests create events mid-request).
+ * @param bool     $listed_only Leave out private events (the public archive).
  * @return array{events:array<int,int[]>,appearances:array<int,array<int,array>>}
  */
-function law_speakers_event_maps( array $statuses, $limit = 500, $reset = false ) {
+function law_speakers_event_maps( array $statuses, $limit = 500, $reset = false, $listed_only = false ) {
 	$cache = &law_speakers_event_maps_cache();
-	$key   = implode( ',', $statuses ) . '|' . (int) $limit;
+	$key   = implode( ',', $statuses ) . '|' . (int) $limit . ( $listed_only ? '|listed' : '' );
 	if ( $reset ) {
 		// Every key, not just this one: whatever invalidated one status set
 		// (a test creating an event, a save mid-request) invalidated the rest.
@@ -562,6 +563,12 @@ function law_speakers_event_maps( array $statuses, $limit = 500, $reset = false 
 
 	foreach ( $events as $event_id ) {
 		$event_id = (int) $event_id;
+		// The public archive and profiles leave out a private event (Denis,
+		// 13 November 2026): a profile listing one would link to it, code and
+		// all, and a speaker known only from one would be a public trace of it.
+		if ( $listed_only && function_exists( 'law_event_is_private' ) && law_event_is_private( $event_id ) ) {
+			continue;
+		}
 		foreach ( law_event_meta( $event_id, '_law_speakers' ) as $row ) {
 			$speaker_id = (int) ( $row['speaker_id'] ?? 0 );
 			if ( $speaker_id ) {
@@ -614,7 +621,7 @@ function law_speakers_flush_maps() {
  * @return array{events:array<int,int[]>,appearances:array<int,array<int,array>>}
  */
 function law_speakers_confirmed_maps( $reset = false ) {
-	return law_speakers_event_maps( array( 'publish' ), 500, $reset );
+	return law_speakers_event_maps( array( 'publish' ), 500, $reset, true );
 }
 
 /**

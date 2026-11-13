@@ -45,8 +45,17 @@ function law_events_cpt_mapped_events( $allowed ) {
 		)
 	);
 
+	// A private event is off every PUBLIC list (Denis, 13 November 2026), and
+	// here rather than in law_events_map_post(), which also renders the event's
+	// own page: that page still opens with its code. The committee's programme
+	// (array()) and the host's ('*') keep it, like a disabled one.
+	$public = ! ( is_array( $allowed ) && ( empty( $allowed ) || in_array( '*', $allowed, true ) ) );
+
 	$mapped = array();
 	foreach ( $posts as $post ) {
+		if ( $public && function_exists( 'law_event_is_private' ) && law_event_is_private( $post ) ) {
+			continue;
+		}
 		$event = law_events_map_post( $post, $allowed );
 		if ( $event ) {
 			$mapped[] = $event;
