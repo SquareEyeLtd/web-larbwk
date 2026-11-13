@@ -5677,6 +5677,14 @@ These predate the rebuild and now branch on `law_events_source()`.
   `/account/dashboard/` instead, only overrides a destination that EQUALS the
   default, so writing the default in two places would silently disable the
   committee shortcut. `tests/AuthRedirectTest.php` pins both.
+  **Core's six-monthly admin email check is forwarded back to `wp-login.php`**
+  (13 November 2026). Core builds that post-sign-in screen's URL from
+  `wp_login_url()`, which this file points at `/login/`, so an administrator
+  landed on "You are signed in" and lost their `redirect_to` (the event they
+  were registering for). A `template_redirect` hook sends
+  `/login/?action=confirm_admin_email` to core's own screen with the validated
+  `redirect_to`, which core honours after "confirm" or "Remind me later". Only
+  `manage_options` accounts ever see it.
   Two security properties to preserve:
   `LAW_AUTH_MIN_PASSWORD_LENGTH` (10) is the **single source** for the password
   floor, applied by the reset form, the registration handler, the profile
