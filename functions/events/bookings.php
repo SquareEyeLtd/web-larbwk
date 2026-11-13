@@ -4656,6 +4656,8 @@ add_action( 'admin_post_law_booking_cancel_party', 'law_booking_cancel_party_han
 add_action( 'admin_post_nopriv_law_booking_cancel_party', 'law_events_nopriv_json' );
 add_action( 'admin_post_law_booking_reject_attendee', 'law_booking_reject_attendee_handler' );
 add_action( 'admin_post_nopriv_law_booking_reject_attendee', 'law_events_nopriv_json' );
+add_action( 'admin_post_law_booking_reject_bulk', 'law_booking_reject_bulk_handler' );
+add_action( 'admin_post_nopriv_law_booking_reject_bulk', 'law_events_nopriv_json' );
 add_action( 'admin_post_law_booking_register_attendee', 'law_booking_register_attendee_handler' );
 add_action( 'admin_post_nopriv_law_booking_register_attendee', 'law_events_nopriv_json' );
 
@@ -4886,6 +4888,248 @@ function law_booking_reject_attendee_handler() {
 		),
 		'booking-rejected'
 	);
+}
+
+/** Seconds one bulk-cancel pass may run before handing the rest to cron. */
+const LAW_BOOKING_BULK_SECONDS = 15;
+
+/**
+ * The committee's Bulk cancel and Bulk remove on the bookings list: tick a run
+ * of rows, cancel them in one go with one optional reason for everybody.
+ *
+ * The same act as the per-row Cancel above, through the same engine with the
+ * same 'host_reject' context, so each attendee gets exactly the email they
+ * would have had one at a time. Gate: the posted event, then the
+ * committee-only law_booking_user_can_reject() on it. The event ID is trusted
+ * only that far: every ticked booking must belong to THAT event, which
+ * law_bookings_reject_bulk() checks one by one, so a forged ID from some other
+ * event is skipped rather than cancelled.
+ */
+function law_booking_reject_bulk_handler() {
+	$event_id = absint( $_POST['event_id'] ?? 0 );
+	$list     = $event_id ? law_booking_list_url( $event_id ) : home_url( '/account/events/' );
+	$is_ajax  = law_events_guard_post(
+		'law_booking_reject_bulk',
+		array(
+			'rate'            => array( 'booking_edit', 15, 600, 150 ),
+			'honeypot_json'   => array( 'title' => 'Bookings cancelled', 'message' => 'Done.', 'redirect' => $list ),
+			'honeypot_notice' => 'bookings-rejected',
+		)
+	);
+
+	$event = get_post( $event_id );
+	// Never the flagship: its places are paid and invoiced, and its mutations
+	// have exactly one home (law_flagship_redirect_hosted_list()).
+	if ( ! $event || LAW_EVENT_CPT !== $event->post_type
+		|| ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) )
+		|| ! law_booking_user_can_reject( get_current_user_id(), $event_id ) ) {
+		law_events_respond(
+			$is_ajax,
+			false,
+			array( 'message' => 'Sorry, only the LAW committee can cancel a booking.', 'status' => 403 ),
+			'booking-failed'
+		);
+	}
+
+	$ids = array_values( array_filter( array_map( 'absint', (array) ( $_POST['booking_id'] ?? array() ) ) ) );
+	if ( ! $ids ) {
+		law_events_respond(
+			$is_ajax,
+			false,
+			array( 'message' => 'Tick at least one booking first.', 'status' => 400 ),
+			'booking-failed'
+		);
+	}
+
+	$result = law_bookings_reject_bulk(
+		$event_id,
+		$ids,
+		get_current_user_id(),
+		trim( (string) wp_unslash( $_POST['law_reject_reason'] ?? '' ) )
+	);
+
+	if ( ! $result['done'] && ! $result['remaining'] ) {
+		law_events_respond( $is_ajax, false, array( 'message' => $result['message'] ), 'booking-failed' );
+	}
+
+	// Back to the table the selection came from: a waitlist batch lands on
+	// the waitlist rather than at the top of a long active table.
+	$only_waitlist = $result['done'] && $result['done'] === $result['waitlisted'];
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => $only_waitlist ? 'Removed from the waitlist' : 'Bookings cancelled',
+			'message'  => $result['message'] . ' Reloading the page…',
+			'redirect' => add_query_arg( 'law_notice', $result['notice'], $list ) . ( $only_waitlist ? '#law-waitlist' : '' ),
+		),
+		$result['notice']
+	);
+}
+
+/**
+ * Cancel a committee-ticked selection of one event's bookings, time-boxed and
+ * resumable.
+ *
+ * Every cancel emails its attendee synchronously, so a selection of a hundred
+ * would outlive PHP's execution limit halfway through. The pass stops after
+ * LAW_BOOKING_BULK_SECONDS and hands the rest to cron, the same shape as the
+ * event-cancel sweep and the flagship's bulk review.
+ *
+ * The waitlist is held back for the pass and run ONCE at the end, as
+ * law_bookings_cancel_party() does: thirty cancellations should be one
+ * promotion pass, not thirty, each taking the event lock.
+ *
+ * @param int    $event_id    The event every booking must belong to.
+ * @param int[]  $booking_ids The ticked bookings.
+ * @param int    $actor_id    The committee member.
+ * @param string $reason      Optional, quoted in every attendee's email.
+ * @return array{done:int,waitlisted:int,skipped:int,failed:int,remaining:int,message:string,notice:string}
+ */
+function law_bookings_reject_bulk( $event_id, array $booking_ids, $actor_id, $reason = '' ) {
+	$event_id    = (int) $event_id;
+	$actor_id    = (int) $actor_id;
+	$started     = time();
+	// Deduplicated before anything is counted: a repeated ID would cancel
+	// once (the engine is idempotent) and be reported twice.
+	$booking_ids = array_values( array_unique( array_filter( array_map( 'intval', $booking_ids ) ) ) );
+	$done        = 0;
+	$waitlisted  = 0;
+	$skipped     = 0;
+	$errors      = array();
+	$numbers     = array();
+	$freed_by    = array();
+	$remaining   = array();
+
+	$suspended                         = $GLOBALS['law_waitlist_suspended'] ?? false;
+	$GLOBALS['law_waitlist_suspended'] = true;
+	foreach ( $booking_ids as $i => $booking_id ) {
+		if ( $i > 0 && ( time() - $started ) >= LAW_BOOKING_BULK_SECONDS ) {
+			$remaining = array_slice( $booking_ids, $i );
+			break;
+		}
+
+		$booking = get_post( $booking_id );
+		// Only this event's bookings, and only one somebody still holds. A row
+		// cancelled by someone else since the page loaded is not an error,
+		// just nothing left to do.
+		if ( ! $booking || LAW_BOOKING_CPT !== $booking->post_type
+			|| $event_id !== (int) $booking->post_parent
+			|| ! in_array( $booking->post_status, array( 'publish', 'law-pending-payment', 'law-payment-failed', 'law-waitlisted' ), true ) ) {
+			$skipped++;
+			continue;
+		}
+
+		$was_waiting = 'law-waitlisted' === $booking->post_status;
+		$cancelled   = law_booking_cancel( $booking->ID, $actor_id, 'host_reject', array( 'reason' => $reason ) );
+		if ( is_wp_error( $cancelled ) ) {
+			$errors[] = $cancelled->get_error_message();
+			continue;
+		}
+		$done++;
+		$numbers[] = '#' . (int) law_event_meta( $booking->ID, '_law_booking_number' );
+		if ( $was_waiting ) {
+			$waitlisted++;
+		} else {
+			$freed_by[] = (int) $booking->post_author;
+		}
+	}
+	$GLOBALS['law_waitlist_suspended'] = $suspended;
+
+	if ( $remaining ) {
+		wp_schedule_single_event(
+			time() + 60,
+			'law_bookings_resume_reject_bulk',
+			array( $event_id, $remaining, $actor_id, (string) $reason )
+		);
+	}
+
+	if ( $done || $remaining ) {
+		$actor = get_user_by( 'id', $actor_id );
+		law_event_log(
+			$event_id,
+			sprintf(
+				'%1$s cancelled %2$d %3$s in bulk: %4$s.%5$s%6$s',
+				$actor ? $actor->display_name : 'The committee',
+				$done,
+				$done && $done === $waitlisted
+					? ( 1 === $done ? 'waitlist entry' : 'waitlist entries' )
+					: ( 1 === $done ? 'booking' : 'bookings' ),
+				$numbers ? implode( ', ', $numbers ) : 'none yet',
+				$remaining ? sprintf( ' Time-boxed: %d more continue in the background.', count( $remaining ) ) : '',
+				'' !== $reason ? ' Reason: ' . $reason : ''
+			),
+			array(
+				'action'    => 'booking_bulk_rejected',
+				'bookings'  => $done,
+				'remaining' => count( $remaining ),
+				'failed'    => count( $errors ),
+				'source'    => 'bookings',
+			),
+			array( 'user_id' => $actor_id )
+		);
+	}
+
+	// What law_booking_cancel() would have done after each one, once for the
+	// lot: offer the freed places to the waitlist, then re-check anyone whose
+	// cancelled place was the clash holding them back elsewhere. Only for
+	// active places, as there: a waitlist entry leaving frees nothing.
+	if ( $freed_by && function_exists( 'law_waitlist_process' ) ) {
+		law_waitlist_process( $event_id, 'bulk_reject' );
+		foreach ( array_unique( $freed_by ) as $law_rb_user ) {
+			law_waitlist_recheck_person( $law_rb_user, $event_id, 'clash_cleared' );
+		}
+	}
+
+	$active = $done - $waitlisted;
+	$parts  = array();
+	if ( $active ) {
+		/* translators: %s: how many bookings. */
+		$parts[] = sprintf( _n( '%s booking cancelled', '%s bookings cancelled', $active, 'law' ), number_format_i18n( $active ) );
+	}
+	if ( $waitlisted ) {
+		/* translators: %s: how many waitlist entries. */
+		$parts[] = sprintf( _n( '%s waitlist entry removed', '%s waitlist entries removed', $waitlisted, 'law' ), number_format_i18n( $waitlisted ) );
+	}
+	$message = $parts
+		? ucfirst( implode( __( ' and ', 'law' ), $parts ) ) . '. ' . __( 'Everyone affected has been emailed.', 'law' )
+		: __( 'Nothing was cancelled.', 'law' );
+	if ( $remaining ) {
+		/* translators: %s: how many are still to do. */
+		$message .= ' ' . sprintf( __( 'The other %s will follow in the background within a few minutes.', 'law' ), number_format_i18n( count( $remaining ) ) );
+	}
+	if ( $skipped ) {
+		/* translators: %s: how many were skipped. */
+		$message .= ' ' . sprintf( _n( '%s was already cancelled or is no longer on this list.', '%s were already cancelled or are no longer on this list.', $skipped, 'law' ), number_format_i18n( $skipped ) );
+	}
+	if ( $errors ) {
+		/* translators: %s: how many failed. */
+		$message .= ' ' . sprintf( _n( '%s could not be cancelled:', '%s could not be cancelled:', count( $errors ), 'law' ), number_format_i18n( count( $errors ) ) )
+			. ' ' . implode( ' ', array_unique( $errors ) );
+	}
+
+	if ( $errors ) {
+		$notice = 'bookings-partly-rejected';
+	} elseif ( $remaining ) {
+		$notice = 'bookings-rejecting';
+	} else {
+		$notice = 'bookings-rejected';
+	}
+
+	return array(
+		'done'       => $done,
+		'waitlisted' => $waitlisted,
+		'skipped'    => $skipped,
+		'failed'     => count( $errors ),
+		'remaining'  => count( $remaining ),
+		'message'    => $message,
+		'notice'     => $notice,
+	);
+}
+
+add_action( 'law_bookings_resume_reject_bulk', 'law_bookings_resume_reject_bulk', 10, 4 );
+function law_bookings_resume_reject_bulk( $event_id, $booking_ids, $actor_id, $reason = '' ) {
+	law_bookings_reject_bulk( (int) $event_id, (array) $booking_ids, (int) $actor_id, (string) $reason );
 }
 
 /**

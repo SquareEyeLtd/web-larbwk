@@ -652,4 +652,87 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertSame( array( (int) $next ), $run['seated'][ $event ] ?? array() );
 		$this->assertSame( 'law-waitlisted', get_post_status( $last ) );
 	}
+
+	/* Bulk cancel on the bookings list (13 November 2026) ___________________ */
+
+	public function test_bulk_cancel_cancels_the_selection_and_offers_the_places_once(): void {
+		$event     = $this->make_bookable_event();
+		$booked    = $this->fill( $event );
+		$first     = $this->make_waitlist( $event, $this->make_user() )[0];
+		$second    = $this->make_waitlist( $event, $this->make_user() )[0];
+		$third     = $this->make_waitlist( $event, $this->make_user() )[0];
+		$elsewhere = $this->make_booking_id( $this->make_bookable_event(), $this->make_user() );
+		$committee = $this->make_committee_user();
+		$this->mail = array();
+
+		$result = law_bookings_reject_bulk(
+			$event,
+			array( $booked[0]['booking'], $booked[1]['booking'], $booked[1]['booking'], $elsewhere ),
+			$committee,
+			'Room change'
+		);
+
+		$this->assertSame( 2, $result['done'], 'A box ticked twice is cancelled and counted once.' );
+		$this->assertSame( 0, $result['waitlisted'] );
+		$this->assertSame( 1, $result['skipped'] );
+		$this->assertSame( 0, $result['remaining'] );
+		$this->assertSame( 'bookings-rejected', $result['notice'] );
+		$this->assertSame( 'law-cancelled', get_post_status( $booked[0]['booking'] ) );
+		$this->assertSame( 'law-cancelled', get_post_status( $booked[1]['booking'] ) );
+		$this->assertSame( 'publish', get_post_status( $elsewhere ), 'Another event\'s booking is never cancelled from this list.' );
+
+		// The same email the per-row Cancel sends, reason included.
+		foreach ( $booked as $place ) {
+			$mail = $this->mail_to( get_userdata( $place['user'] )->user_email );
+			$this->assertNotEmpty( $mail );
+			$this->assertStringContainsString( 'Room change', $mail[0]['message'] );
+		}
+
+		// One promotion pass for the batch: two places, the first two in line.
+		$this->assertSame( 'publish', get_post_status( $first ) );
+		$this->assertSame( 'publish', get_post_status( $second ) );
+		$this->assertSame( 'law-waitlisted', get_post_status( $third ) );
+		$this->assertSame( 0, law_event_tickets_remaining( $event ) );
+		$this->assertStringContainsString( 'cancelled 2 bookings in bulk', $this->log_text( $event ) );
+		$this->assertStringContainsString( 'Reason: Room change', $this->log_text( $event ) );
+	}
+
+	public function test_bulk_remove_takes_entries_off_the_waitlist_without_promoting_anyone(): void {
+		$event     = $this->make_bookable_event();
+		$booked    = $this->fill( $event );
+		$first     = $this->make_waitlist( $event, $this->make_user() )[0];
+		$second    = $this->make_waitlist( $event, $this->make_user() )[0];
+		$third     = $this->make_waitlist( $event, $this->make_user() )[0];
+		$gone      = $this->make_waitlist( $event, $this->make_user() )[0];
+		$committee = $this->make_committee_user();
+		law_booking_cancel( $gone, $committee, 'host_reject' );
+
+		$result = law_bookings_reject_bulk( $event, array( $first, $third, $gone ), $committee );
+
+		$this->assertSame( 2, $result['done'] );
+		$this->assertSame( 2, $result['waitlisted'] );
+		$this->assertSame( 1, $result['skipped'], 'An entry cancelled since the page loaded is skipped, not an error.' );
+		$this->assertSame( 'law-cancelled', get_post_status( $first ) );
+		$this->assertSame( 'law-cancelled', get_post_status( $third ) );
+		$this->assertSame( 'law-waitlisted', get_post_status( $second ) );
+		$this->assertSame( 1, $this->position( $second ), 'The queue closes up behind the removed entries.' );
+		foreach ( $booked as $place ) {
+			$this->assertSame( 'publish', get_post_status( $place['booking'] ), 'Removing waitlist entries frees no place.' );
+		}
+		$this->assertStringContainsString( 'waitlist entries removed', $result['message'] );
+	}
+
+	public function test_bulk_cancel_with_nothing_left_to_cancel_reports_nothing_done(): void {
+		$event     = $this->make_bookable_event();
+		$booked    = $this->fill( $event );
+		$committee = $this->make_committee_user();
+		law_booking_cancel( $booked[0]['booking'], $committee, 'host_reject' );
+		$before = count( law_event_log_entries( $event ) );
+
+		$result = law_bookings_reject_bulk( $event, array( $booked[0]['booking'] ), $committee );
+
+		$this->assertSame( 0, $result['done'] );
+		$this->assertSame( 0, $result['remaining'] );
+		$this->assertCount( $before, law_event_log_entries( $event ), 'A batch that did nothing logs nothing.' );
+	}
 }

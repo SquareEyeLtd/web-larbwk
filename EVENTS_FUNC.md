@@ -1221,6 +1221,16 @@ ONE booking carrying an attendee rows array; that model, its flat
   releases any queue position, recounts, and offers the freed place to the
   waitlist unless the event itself is going away.
   `law_bookings_cancel_party()` is the booker's "cancel everything I booked".
+  `law_bookings_reject_bulk()` (13 November 2026) is the committee's Bulk
+  cancel and Bulk remove on the bookings list: each ticked booking goes through
+  `law_booking_cancel()` with `host_reject` and the one shared reason, so every
+  attendee gets the email the per-row Cancel would send. It skips any ID that
+  is not this event's or no longer held (publish, pending payment, payment
+  failed, waitlisted), holds the waitlist back for the pass and runs one
+  promotion pass plus the clash re-check at the end, as the party cancel does,
+  and logs one summary line. Time-boxed at `LAW_BOOKING_BULK_SECONDS` (15):
+  the rest goes to the `law_bookings_resume_reject_bulk` cron with the same
+  actor and reason, the shape of the event-cancel sweep.
 - **Status writes** go through `law_booking_set_status()`, which saves and
   restores `$GLOBALS['law_booking_transitioning']` rather than clearing it, so
   a nested transition (a promotion inside a sweep) cannot strand its caller.
@@ -1240,7 +1250,9 @@ ONE booking carrying an attendee rows array; that model, its flat
   booked them), `law_booking_cancel_party`, `law_booking_reject_attendee`
   (`law_user_can_manage_event()` on `post_parent`, then
   `law_booking_user_can_reject()` — a host gets a 403 saying only the LAW
-  committee can cancel a booking) and
+  committee can cancel a booking), `law_booking_reject_bulk` (posts the EVENT,
+  refuses the flagship, then `law_booking_user_can_reject()` on it; the engine
+  drops any ticked ID from another event) and
   `law_booking_register_attendee` (`law_user_can_manage_event()`; hosts keep
   this one). `law_booking_error_payload()` is the shared
   row/field refusal shape booking-form.js marks in place.
@@ -1249,7 +1261,7 @@ ONE booking carrying an attendee rows array; that model, its flat
   from `wp_trash_post` while the event is still published; otherwise a freed
   place could promote somebody onto an event being deleted seconds later.
 - Tests: `tests/BookingsTest.php` (35), `tests/BookingEmailsTest.php` (16),
-  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (24).
+  `tests/BookingsDashboardTest.php` (6) and `tests/WaitlistTest.php` (27).
 
 ### `waitlist.php`: the waitlist (WAITLIST.md Part B)
 
@@ -11073,6 +11085,40 @@ Touched: `functions/events/private-events.php` (new), `functions/events/_load.ph
 `parts/events/reception-manage.php`, `parts/events/receptions-list.php`,
 `parts/events/dashboard-list.php`, `parts/loop/event.php`,
 `assets/css/calendar.css`, `tests/EventPrivateTest.php` (new).
+
+## Bulk cancel on an event's bookings list (13 November 2026)
+
+**Asked for:** bulk cancellation on the per-event bookings list
+(`/account/events/?law_event_bookings=<id>`), the way the flagship bookings
+dashboard has bulk approve and decline.
+
+The same pattern, reused rather than copied: a tick column on the active and
+waitlist tables (committee only, the per-row Cancel's gate), a select-all in
+each header, and a "Bulk cancel" / "Bulk remove" text link above each table,
+dead until something is ticked. Each table has its own bulk form outside the
+table, joined to the boxes and the link with the HTML `form` attribute, and one
+confirm dialog with one optional reason that goes into every attendee's email.
+On a priced event the dialog also says nobody is refunded automatically. The
+select-all and the disabled-until-ticked link are the existing
+`data-law-check-all` / `data-law-bulk-decide` code in booking-form.js, untouched;
+the tick and actions-row styles are the flagship's rules in calendar.css with the
+new `.law-booking-table__tick`, `.law-booking-bulk` and
+`.law-booking-bulk__actions` selectors added to them. It posts over fetch like
+every `.law-booking-form`, shows the counts in the dialog and reloads (to
+`#law-waitlist` for a waitlist batch); without JavaScript the link submits the
+form directly and lands on one of three new notices (`bookings-rejected`,
+`bookings-rejecting`, `bookings-partly-rejected`).
+
+Server side, `law_booking_reject_bulk_handler()` and `law_bookings_reject_bulk()`
+(see the `bookings.php` section). Hosts get none of it, and the flagship stays
+on its own page, where Cancel still has no bulk form on purpose.
+
+Touched: `functions/events/bookings.php`, `functions/account-bookings.php`,
+`parts/events/booking-list.php`, `assets/css/calendar.css`,
+`tests/WaitlistTest.php` (3 new). Checked in the browser as a committee member
+on a local event with four bookings and two waitlist entries: bulk remove with
+a reason, bulk cancel of two places (one waitlist promotion pass, the right
+emails in Mailpit), and the no-JS path for both a ticked and an empty selection.
 
 ---
 
