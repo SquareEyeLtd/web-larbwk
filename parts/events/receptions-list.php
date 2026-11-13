@@ -52,7 +52,9 @@ $law_rl_rows = law_receptions_dashboard_rows();
 						?>
 						<?php if ( ! $law_rl_row['shown'] ) : ?>
 							<span class="law-cal-card__badge law-cal-card__badge--cancelled"><?php esc_html_e( 'Draft', 'law' ); ?></span>
-						<?php elseif ( $law_rl_row['view_url'] ) : ?>
+						<?php endif; ?>
+						<?php law_event_private_badge( $law_rl_row['id'] ); ?>
+						<?php if ( $law_rl_row['shown'] && $law_rl_row['view_url'] ) : ?>
 							<span class="law-booking-table__sub">
 								<a href="<?php echo esc_url( $law_rl_row['view_url'] ); ?>"><?php esc_html_e( 'View the page', 'law' ); ?></a>
 							</span>

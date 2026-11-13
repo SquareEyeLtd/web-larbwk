@@ -22,6 +22,15 @@
  * active table loses its actions column altogether and the waitlist table keeps
  * one holding Promote now.
  *
+ * The committee can also cancel in bulk (13 November 2026): a tick column on
+ * the active and waitlist tables, a select-all in each header, and a "Bulk
+ * cancel" / "Bulk remove" link above each table behind one confirm dialog with
+ * one optional reason. Built on the flagship bookings list's bulk pattern
+ * (bulk form outside the table, boxes joined with the `form` attribute, link
+ * dead until something is ticked) and posted to law_booking_reject_bulk, which
+ * runs every row through the same engine call as the per-row Cancel. Hosts get
+ * none of it, for the same reason they have no Cancel.
+ *
  * "Register an attendee" (a host, co-owner or committee member booking someone
  * on their behalf) is a BUTTON ABOVE THE TABLE opening a dialog, not a form
  * sitting open at the foot of the page (Denis, 11 September 2026), the way
@@ -172,10 +181,88 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 	// actions column for a host while the active table drops it entirely.
 	$law_bl_can_cancel  = $law_bl_actionable && $law_bl_is_committee;
 	$law_bl_has_actions = $law_bl_can_cancel || ( $law_bl_actionable && $law_bl_waiting );
+	// Bulk cancel rides on the per-row Cancel's gate, so a host sees neither
+	// the tick boxes nor the link. One bulk form per table: a waitlist batch
+	// and an active one say different things to different people.
+	$law_bl_bulk       = $law_bl_can_cancel ? 'law-booking-bulk-' . ( $law_bl_waiting ? 'waitlist' : 'active' ) : '';
+	$law_bl_bulk_modal = $law_bl_bulk . '-confirm';
 	?>
+	<?php if ( '' !== $law_bl_bulk ) : ?>
+		<?php
+		// The flagship bookings list's pattern (parts/events/flagship-bookings-list.php):
+		// the form sits OUTSIDE the table, so the per-row Cancel forms are
+		// siblings rather than nested in it, and the tick boxes and the link
+		// join it with the HTML `form` attribute. It shows nothing itself: the
+		// dialog is position:fixed and the link renders in the row below.
+		?>
+		<form class="law-booking-form law-booking-bulk" id="<?php echo esc_attr( $law_bl_bulk ); ?>" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+			<input type="hidden" name="action" value="law_booking_reject_bulk">
+			<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bl_event_id ); ?>">
+			<?php wp_nonce_field( 'law_booking_reject_bulk' ); ?>
+			<?php law_events_honeypot_field(); ?>
+			<?php
+			get_template_part(
+				'parts/layout/modal',
+				null,
+				array(
+					'id'      => $law_bl_bulk_modal,
+					'title'   => $law_bl_waiting
+						? __( 'Remove the selected people from the waitlist?', 'law' )
+						: __( 'Cancel the selected bookings?', 'law' ),
+					'copy'    => array_filter(
+						array(
+							$law_bl_waiting
+								? __( 'This takes each of them off the waitlist. They are emailed to let them know.', 'law' )
+								: __( 'This cancels each selected booking and releases the places. Every attendee is emailed to let them know.', 'law' ),
+							// The per-row Cancel refunds nothing either; a batch
+							// is where it is easiest to forget.
+							$law_bl_priced && ! $law_bl_waiting
+								? __( 'Nobody is refunded automatically. Any refund for a paid place is made by hand in Stripe.', 'law' )
+								: '',
+						)
+					),
+					'field'   => array(
+						'name'     => 'law_reject_reason',
+						'label'    => $law_bl_waiting
+							? __( 'Why are they being taken off the waitlist? (optional)', 'law' )
+							: __( 'Why are the places being cancelled? (optional)', 'law' ),
+						'help'     => __( 'Included in the email to everyone in this selection.', 'law' ),
+						'rows'     => 3,
+						'required' => false,
+					),
+					'confirm' => array(
+						'label' => $law_bl_waiting ? __( 'Remove from waitlist', 'law' ) : __( 'Cancel bookings', 'law' ),
+						'class' => 'button alert',
+						'busy'  => $law_bl_waiting ? __( 'Removing…', 'law' ) : __( 'Cancelling…', 'law' ),
+					),
+					'close'   => __( 'Keep these attendees', 'law' ),
+				)
+			);
+			?>
+		</form>
+		<?php
+		// A real submit dressed as a link, so the no-JS path still posts; dead
+		// until something is ticked, which booking-form.js manages through
+		// data-law-bulk-decide.
+		?>
+		<p class="law-booking-bulk__actions">
+			<button type="submit" form="<?php echo esc_attr( $law_bl_bulk ); ?>" class="law-linkish"
+				data-law-bulk-decide data-law-modal-open="<?php echo esc_attr( $law_bl_bulk_modal ); ?>">
+				<?php echo esc_html( $law_bl_waiting ? __( 'Bulk remove', 'law' ) : __( 'Bulk cancel', 'law' ) ); ?>
+			</button>
+		</p>
+	<?php endif; ?>
 	<div class="law-dashboard__table-wrap">
 		<table class="law-dashboard__table law-booking-table">
 			<thead><tr>
+				<?php if ( '' !== $law_bl_bulk ) : ?>
+					<th class="law-booking-table__tick">
+						<label>
+							<input type="checkbox" data-law-check-all aria-label="<?php echo esc_attr( $law_bl_waiting ? __( 'Select every waitlist entry', 'law' ) : __( 'Select every booking', 'law' ) ); ?>">
+							<span class="show-for-sr"><?php esc_html_e( 'Select', 'law' ); ?></span>
+						</label>
+					</th>
+				<?php endif; ?>
 				<?php if ( $law_bl_waiting ) : ?><th><?php esc_html_e( 'Position', 'law' ); ?></th><?php endif; ?>
 				<th><?php esc_html_e( 'Booking', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Attendee', 'law' ); ?></th>
@@ -204,6 +291,14 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				$law_bl_position   = (int) law_event_meta( $law_bl_booking->ID, '_law_waitlist_position' );
 				?>
 				<tr<?php echo $law_bl_waiting ? ' data-law-waitlist-row="' . esc_attr( (string) $law_bl_booking->ID ) . '"' : ''; ?>>
+					<?php if ( '' !== $law_bl_bulk ) : ?>
+						<td class="law-booking-table__tick">
+							<label>
+								<input type="checkbox" name="booking_id[]" form="<?php echo esc_attr( $law_bl_bulk ); ?>" value="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>">
+								<span class="show-for-sr"><?php echo esc_html( sprintf( __( 'Select %s', 'law' ), $law_bl_person['name'] ) ); ?></span>
+							</label>
+						</td>
+					<?php endif; ?>
 					<?php if ( $law_bl_waiting ) : ?>
 						<td class="law-booking-table__position">
 							<strong><?php echo esc_html( number_format_i18n( $law_bl_i + 1 ) ); ?></strong>

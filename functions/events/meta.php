@@ -111,6 +111,12 @@ function law_event_meta_schema() {
 		'_law_booking_override'     => 'booking_override',
 		'_law_disabled'             => 'flag',
 		'_law_no_sponsor_highlight' => 'flag',
+		// _law_private: off the public lists, and its page opens only with
+		// ?c=_law_private_code (Denis, 13 November 2026; private-events.php).
+		// The code is made on the first tick and kept when the box is
+		// unticked, so links already sent out survive a re-tick.
+		'_law_private'              => 'flag',
+		'_law_private_code'         => 'text',
 		// The flagship conference (functions/events/flagship.php). Exactly one
 		// law_event post carries _law_is_flagship; it is edited on the Flagship
 		// screen, its date is fixed (2 December by default) and its _law_start /

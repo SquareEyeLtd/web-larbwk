@@ -52,7 +52,12 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 	</div>
 <?php endif; ?>
 
-<?php if ( ! $law_rm_new && ! $law_rm_values['show'] ) : ?>
+<?php
+// A private reception's notice replaces the draft one: it says the same "not
+// on the programme yet" and adds the private link (parts/events/private-notice.php).
+get_template_part( 'parts/events/private-notice', null, array( 'event_id' => $law_rm_id ) );
+?>
+<?php if ( ! $law_rm_new && ! $law_rm_values['show'] && ! law_event_is_private( $law_rm_id ) ) : ?>
 	<div class="law-form-notice" role="status">
 		<p><?php esc_html_e( 'This reception is not on the programme yet. Tick "Show on the programme" below and save to publish it at:', 'law' ); ?></p>
 		<?php // Its own line: a URL inline in a sentence wraps mid-address. ?>
@@ -275,6 +280,25 @@ $law_rm_taken  = $law_rm_id ? law_event_attendee_total( $law_rm_id ) : 0;
 			</fieldset>
 		<?php endif; ?>
 	<?php endif; ?>
+
+	<?php
+	// Last, before the buttons (Denis, 13 November 2026). Its own sentinel, as
+	// the confirmation email's has: PHP truncates a long POST from the END, and
+	// a save that lost this box must not read as "make it public".
+	?>
+	<fieldset>
+		<legend><?php esc_html_e( 'Privacy', 'law' ); ?></legend>
+
+		<input type="hidden" name="law_reception[private_present]" value="1">
+
+		<p class="law-form-field">
+			<label>
+				<input type="checkbox" name="law_reception[private]" value="1" <?php checked( ! empty( $law_rm_values['private'] ) ); ?>>
+				<?php esc_html_e( 'Private reception', 'law' ); ?>
+			</label>
+			<span class="law-form-hint"><?php esc_html_e( 'Keeps it off the programme and the calendar. Its page opens only from the private link shown at the top of this page.', 'law' ); ?></span>
+		</p>
+	</fieldset>
 
 	<p class="law-form-buttons">
 <a class="button second" href="<?php echo esc_url( law_receptions_dashboard_url() ); ?>"><?php esc_html_e( 'Cancel', 'law' ); ?></a>

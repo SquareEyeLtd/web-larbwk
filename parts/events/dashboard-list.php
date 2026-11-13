@@ -154,7 +154,8 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 					// no hit in this field. ?>
 					<td><strong><a href="<?php echo esc_url( $law_row_review_url ); ?>"><?php echo law_calendar_highlight( $law_row->post_title, $law_hl ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></a></strong>
 						<?php law_event_external_badge( $law_row->ID ); ?>
-						<?php law_event_disabled_badge( $law_row->ID ); ?><br>
+						<?php law_event_disabled_badge( $law_row->ID ); ?>
+						<?php law_event_private_badge( $law_row->ID ); ?><br>
 						<code><?php echo esc_html( (string) law_event_meta( $law_row->ID, '_law_reference' ) ); ?></code>
 						<?php
 						// The committee member the event is assigned to, under the

@@ -244,6 +244,11 @@ function law_booking_notice_text( $key ) {
 		'party-cancelled'   => array( 'ok', __( 'Your place and every booking you made for this event have been cancelled, and everyone has been emailed.', 'law' ) ),
 		'attendee-added'    => array( 'ok', __( 'Your colleague has their own booking now and has been emailed their confirmation.', 'law' ) ),
 		'booking-rejected'  => array( 'ok', __( 'The booking has been cancelled and the attendee emailed.', 'law' ) ),
+		// The bulk cancel on the bookings list. With JavaScript the dialog
+		// carries the exact counts; these are the no-JS landing.
+		'bookings-rejected'        => array( 'ok', __( 'The selected bookings have been cancelled and everyone affected emailed.', 'law' ) ),
+		'bookings-rejecting'       => array( 'ok', __( 'The selected bookings are being cancelled. The last of them will follow in the background within a few minutes, and everyone affected is emailed.', 'law' ) ),
+		'bookings-partly-rejected' => array( 'error', __( 'Some of the selected bookings could not be cancelled. Please check the list and try those again.', 'law' ) ),
 		'attendee-registered' => array( 'ok', __( 'The attendee has been registered and emailed their confirmation.', 'law' ) ),
 		'booking-failed'    => array( 'error', __( 'Sorry, that change could not be made.', 'law' ) ),
 		'rate-limited'      => array( 'error', __( 'Too many actions in a short time. Please wait a moment and try again.', 'law' ) ),
