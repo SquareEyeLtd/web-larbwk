@@ -478,6 +478,30 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertNotContains( get_userdata( $waiter )->user_email, $emails );
 	}
 
+	public function test_a_long_queue_promotes_in_the_hosts_order_not_booking_order(): void {
+		// Evensong, 13 November 2026: 91 waiting, heavily reordered. The pass
+		// used to fetch the oldest LAW_WAITLIST_PASS_WINDOW bookings and only
+		// then sort them, so the host's head of the queue, joined late, was
+		// never seen and the oldest booking took the place instead.
+		$event  = $this->make_bookable_event();
+		$booked = $this->fill( $event );
+		$host   = (int) get_post_field( 'post_author', $event );
+
+		$entries = array();
+		for ( $i = 0; $i < LAW_WAITLIST_PASS_WINDOW + 2; $i++ ) {
+			$entries[] = (int) $this->make_waitlist( $event, $this->make_user() )[0];
+		}
+		$latest = end( $entries );
+		$this->assertTrue( law_waitlist_reorder( $latest, 'top', $host, $this->position( $latest ) )['moved'] );
+
+		$this->assertSame( $latest, (int) law_waitlist_for_event( $event, LAW_WAITLIST_PASS_WINDOW )[0]->ID, 'The window starts at the head of the queue.' );
+		$this->assertCount( LAW_WAITLIST_PASS_WINDOW, law_waitlist_for_event( $event, LAW_WAITLIST_PASS_WINDOW ) );
+
+		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
+		$this->assertSame( 'publish', get_post_status( $latest ), 'The host\'s first in line takes the place.' );
+		$this->assertSame( 'law-waitlisted', get_post_status( $entries[0] ), 'Not the oldest booking.' );
+	}
+
 	public function test_pass_cap_promotes_ten_and_schedules_the_rest(): void {
 		$event = $this->make_bookable_event( array( '_law_tickets_available' => 12 ) );
 		$this->fill( $event );

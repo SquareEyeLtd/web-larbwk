@@ -1282,6 +1282,11 @@ block the queue. Joining is refused while places are free.
   consecutive positions. It emails the joiner the whole party, each colleague
   their own entry, and the host once, the first time a queue forms
   (`host_waitlist_activated`, spec §4.4).
+- `law_waitlist_for_event( $event_id, $limit )` fetches the WHOLE queue, sorts
+  it by position in PHP and only then takes the first `$limit`. Limiting the
+  query took the oldest bookings by ID before sorting, so a queue longer than
+  the 30-entry pass window promoted by booking number rather than the host's
+  order (fixed 16 November 2026).
 - `law_waitlist_process( $event_id, $source )` walks the queue in order while
   places remain, seating each entry that still passes the duplicate and clash
   guards. An entry the guards refuse is **skipped in place**: it keeps its
@@ -11149,6 +11154,26 @@ Touched: `functions/events/bookings.php`, `functions/account-bookings.php`,
 on a local event with four bookings and two waitlist entries: bulk remove with
 a reason, bulk cancel of two places (one waitlist promotion pass, the right
 emails in Mailpit), and the no-JS path for both a ticked and an empty selection.
+
+## Long waitlists promote in the host's order (16 November 2026)
+
+Reported on Evensong (a reception, 91 waiting): cancelled places went to the
+oldest bookings rather than the order the host had set. `law_waitlist_for_event()`
+asked the database for the first `$limit` entries by post ID and sorted only
+those by `_law_waitlist_position`. A promotion pass asks for 30
+(`LAW_WAITLIST_PASS_WINDOW`), so on any queue longer than that the pass never
+saw people the host had moved up from further back, and seated the front of the
+30 oldest instead. On the local Evensong copy the pass would have seated
+position 20 (booking #8598) ahead of position 1 (#9888).
+
+It now fetches every waitlisted entry, sorts, then slices. This one function
+feeds every promotion route (cancel, bulk cancel, raised places, reorder,
+Promote now's follow-up pass, the resume cron and the hourly sweep) for hosted
+events and receptions alike, and the bookings list's 200-row waitlist table,
+which had the same flaw past 200 entries. The flagship has no waitlist.
+
+Touched: `functions/events/waitlist.php`, `tests/WaitlistTest.php` (1 new:
+a queue longer than the window with its newest entry moved to the top).
 
 ## A flagship approval that approves nothing says so (16 November 2026)
 
