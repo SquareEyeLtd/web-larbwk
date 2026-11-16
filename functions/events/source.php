@@ -35,13 +35,18 @@ function law_events_cpt_mapped_events( $allowed ) {
 		$statuses = law_event_all_status_keys();
 	}
 
+	// Newest first: the one caller (law_calendar_events()) filters and sorts
+	// by date itself, so the order here only decides what a full cap leaves
+	// out. By title, past the cap, that was whichever CURRENT events sorted
+	// late in the alphabet; by ID it is the oldest events, from past
+	// programme years (16 November 2026).
 	$posts = get_posts(
 		array(
 			'post_type'      => LAW_EVENT_CPT,
 			'post_status'    => $statuses,
 			'posts_per_page' => 500,
-			'orderby'        => 'title',
-			'order'          => 'ASC',
+			'orderby'        => 'ID',
+			'order'          => 'DESC',
 		)
 	);
 

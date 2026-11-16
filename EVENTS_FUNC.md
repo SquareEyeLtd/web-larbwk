@@ -11201,6 +11201,61 @@ reload.
 Touched: `functions/events/flagship-bookings.php`, `assets/js/booking-form.js`,
 `tests/FlagshipPaymentsTest.php` (1 new).
 
+## Capped lists that hid what they were capped for (16 November 2026)
+
+A sweep after the waitlist fix, for the same shape of fault: a query capped
+at N and then sorted, filtered or worked through in PHP, so anything past the
+first N by the query's own order was never seen.
+
+- **Reception sweep** (`law_reception_sweep()`). Each stage took the oldest
+  100 bookings in a status and tested the payment state in PHP; with 1,304
+  confirmed reception places it never reached a confirmation that had not gone
+  out, a charge stuck at `processing` or a long-settling payment, and the
+  newest no-card waitlist entries were never closed. `law_reception_bookings()`
+  now takes a meta query, and each stage asks for exactly the bookings it acts
+  on (`law_reception_payment_is()`); stage 1 leaves `processing` holds out of
+  the query. Its docblock said "newest first" over an oldest-first query; it
+  now says oldest first, which is right for a work queue.
+- **Daily Stripe reconcile** (`law_stripe_reconcile_run_sweep()`). The batch
+  was the first 60 candidates by ID, of 92, so the 32 newest invoiced events
+  were never read. `law_stripe_reconcile_next_batch()` takes the 60 read
+  longest ago (new meta `_law_reconcile_swept_at`, never-read and newest
+  first), so the whole list is covered over consecutive days with the same
+  Stripe budget per run. A key of its own, not the migration panel's
+  `_law_reconcile_checked_at`, which stays the date a person checked it there.
+- **Committee bookings and speakers dashboards.** The keyword, payment, press,
+  event and year tests ran in PHP over the first 2,000 bookings (newest) or
+  1,000 speakers (by name), so a search could not find anybody past them.
+  New `law_events_scan_posts()` (meta.php) reads the query in batches until
+  the cap's worth of rows has PASSED the tests, so the cap limits what is
+  shown, not what is searched. Both orders gained an ID tie-break so the
+  batches page stably. A search that matches nobody reads all 10,000+
+  bookings locally in about 1.5 seconds and 79 MB, under the export's 118 MB.
+- **Programme** (`law_events_cpt_mapped_events()`). 500 events of every year,
+  by title; past 500 the alphabetically late events of the CURRENT programme
+  would have dropped off. Now newest first, so a full cap drops the oldest
+  years instead. The programme is not scoped to a year at all, which is a
+  product question for when 2027 events arrive.
+- **Linked organisations picker** on the committee's event panel. 200
+  organisations by title, and the save replaces the list wholesale, so past
+  200 a save would have unlinked the rest. Now 1,000, and every linked
+  organisation is printed whatever the cap.
+- **Unclaimed invited accounts** (`law_booking_forget_unclaimed_attendee()`).
+  Read only 20 of the person's bookings before deciding every one was
+  cancelled; one unread live place would have been cancelled by the account
+  deletion. Now reads them all.
+
+Left alone: the committee events list (300 by last edit) already prints
+"Showing N of M events" and filters in SQL, and the wp-admin session screen's
+event picker (300) cannot change a session's event when it misses one.
+
+Tests: `ReceptionWaitlistTest` (the two sweep tests had been failing on this
+install for exactly this reason; one now asserts on its own entry rather than
+the site-wide counter), `PaymentReconcileTest` (1 new; two had been failing
+for the same reason), `BookingsDashboardTest` and `SpeakersDashboardTest`
+(1 new each; one old assertion of "not truncated" across every event made
+event-scoped).
+
 ---
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;

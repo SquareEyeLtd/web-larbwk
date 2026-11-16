@@ -3142,7 +3142,14 @@ function law_reception_sweep( $limit = 100 ) {
 	// 1. Holds past their session's expiry, plus a margin so the webhook
 	//    normally wins the race. `processing` is skipped inside
 	//    law_reception_release_hold(): money in flight is not an abandoned hold.
-	foreach ( law_reception_bookings( 'law-pending-payment', $limit ) as $booking ) {
+	//    Left out of the query too, so holds with money in flight can never
+	//    fill the batch ahead of the abandoned ones behind them.
+	$not_processing = array(
+		'relation' => 'OR',
+		array( 'key' => '_law_payment_status', 'compare' => 'NOT EXISTS' ),
+		array( 'key' => '_law_payment_status', 'value' => 'processing', 'compare' => '!=' ),
+	);
+	foreach ( law_reception_bookings( 'law-pending-payment', $limit, array( $not_processing ) ) as $booking ) {
 		$expires = (string) law_event_meta( $booking->ID, '_law_checkout_expires_at' );
 		if ( '' === $expires ) {
 			continue;
@@ -3159,10 +3166,11 @@ function law_reception_sweep( $limit = 100 ) {
 	// 2. Confirmed places whose invoice never arrived. Fifteen minutes is long
 	//    enough for invoice.paid on any normal account, and a confirmation
 	//    with no receipt link beats no confirmation at all.
-	foreach ( law_reception_bookings( 'publish', $limit ) as $booking ) {
-		if ( 'paid' !== (string) law_event_meta( $booking->ID, '_law_payment_status' ) ) {
-			continue;
-		}
+	$unconfirmed = array(
+		law_reception_payment_is( 'paid' ),
+		array( 'key' => '_law_confirmation_sent', 'compare' => 'NOT EXISTS' ),
+	);
+	foreach ( law_reception_bookings( 'publish', $limit, $unconfirmed ) as $booking ) {
 		if ( '' !== (string) get_post_meta( $booking->ID, '_law_confirmation_sent', true ) ) {
 			continue;
 		}
@@ -3178,7 +3186,7 @@ function law_reception_sweep( $limit = 100 ) {
 	// 3. Orphans: seated, `processing`, and nothing has moved for fifteen
 	//    minutes. Either the charge never started (PHP died between the unlock
 	//    and the Stripe call) or it did and we never heard the answer.
-	foreach ( law_reception_bookings( 'publish', $limit ) as $booking ) {
+	foreach ( law_reception_bookings( 'publish', $limit, array( law_reception_payment_is( 'processing' ) ) ) as $booking ) {
 		if ( 'processing' !== (string) law_event_meta( $booking->ID, '_law_payment_status' ) ) {
 			continue;
 		}
@@ -3194,7 +3202,7 @@ function law_reception_sweep( $limit = 100 ) {
 	// 4. Queue entries that never saved a payment method. They can never be
 	//    promoted, so leaving them in the queue is a place nobody can have.
 	$grace = LAW_FLAGSHIP_SETUP_GRACE_HOURS * HOUR_IN_SECONDS;
-	foreach ( law_reception_bookings( 'law-waitlisted', $limit ) as $booking ) {
+	foreach ( law_reception_bookings( 'law-waitlisted', $limit, array( law_reception_payment_is( 'pending_setup' ) ) ) as $booking ) {
 		if ( 'pending_setup' !== (string) law_event_meta( $booking->ID, '_law_payment_status' ) ) {
 			continue;
 		}
@@ -3225,7 +3233,7 @@ function law_reception_sweep( $limit = 100 ) {
 	//    and a bank debit in working days, so this only ever fires on one that
 	//    has genuinely gone nowhere.
 	$stuck = LAW_FLAGSHIP_PROCESSING_ALERT_DAYS * DAY_IN_SECONDS;
-	foreach ( law_reception_bookings( 'publish', $limit ) as $booking ) {
+	foreach ( law_reception_bookings( 'publish', $limit, array( law_reception_payment_is( 'processing' ) ) ) as $booking ) {
 		if ( 'processing' !== (string) law_event_meta( $booking->ID, '_law_payment_status' ) ) {
 			continue;
 		}
@@ -3259,30 +3267,46 @@ function law_reception_sweep( $limit = 100 ) {
 }
 
 /**
- * Reception bookings in one status, newest first.
+ * Reception bookings in one status, oldest first: the sweep's work queue, so
+ * whatever has waited longest is handled first.
  *
- * A meta query on the parent event rather than a post_parent list, so the pass
- * is one query however many receptions there are.
+ * $meta_query narrows it to the bookings a stage acts on, IN THE QUERY. The
+ * stages used to fetch the first $limit bookings in a status and test the
+ * payment state in PHP, so once a status held more than $limit bookings the
+ * sweep only ever looked at the oldest ones, all long settled: with 1,304
+ * confirmed reception places it never saw a confirmation that had not gone out
+ * or a charge stuck at `processing` (16 November 2026).
  *
+ * @param string $status     Booking post status.
+ * @param int    $limit      Rows.
+ * @param array  $meta_query WP_Query meta_query clauses; none for every
+ *                           booking in the status.
  * @return WP_Post[]
  */
-function law_reception_bookings( $status, $limit = 100 ) {
+function law_reception_bookings( $status, $limit = 100, array $meta_query = array() ) {
 	$receptions = law_reception_ids();
 	if ( ! $receptions ) {
 		return array();
 	}
 
-	return get_posts(
-		array(
-			'post_type'      => LAW_BOOKING_CPT,
-			'post_status'    => $status,
-			'post_parent__in' => $receptions,
-			'posts_per_page' => max( 1, (int) $limit ),
-			'orderby'        => 'ID',
-			'order'          => 'ASC',
-			'no_found_rows'  => true,
-		)
+	$query = array(
+		'post_type'       => LAW_BOOKING_CPT,
+		'post_status'     => $status,
+		'post_parent__in' => $receptions,
+		'posts_per_page'  => max( 1, (int) $limit ),
+		'orderby'         => 'ID',
+		'order'           => 'ASC',
+		'no_found_rows'   => true,
 	);
+	if ( $meta_query ) {
+		$query['meta_query'] = $meta_query; // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+	}
+	return get_posts( $query );
+}
+
+/** The meta_query clause for one _law_payment_status. */
+function law_reception_payment_is( $payment_status ) {
+	return array( 'key' => '_law_payment_status', 'value' => (string) $payment_status );
 }
 
 /**
