@@ -357,13 +357,59 @@ function law_hubspot_event_year( $event_id ) {
 }
 
 /**
- * The law_events_attending option a confirmed place at this event earns,
- * or '' when the event is not one of the four (config `attending_options`:
- * the flagship, or a reception by its seed slug).
+ * Every law_events_attending option for this year, keyed by 'flagship' or the
+ * reception's slug: the config's fixed labels plus "{year} {title}" for any
+ * other reception the year has in a bookable status (approved or confirmed).
+ * The config label wins where both exist, so the three seeded receptions keep
+ * the names already in the portal whatever their titles become.
+ *
+ * A hard-coded list left production's fourth reception (Evensong at St
+ * Paul's, 16 November 2026) off the property and the badging segment while
+ * its attendees' access needs were still sent: the two halves of the rule
+ * disagreed about what a LAW-run event was. Deriving the options from the
+ * receptions themselves keeps them in step, and check-properties --create
+ * adds a new option to the portal as it adds any other.
+ *
+ * The reception lookup is cached for the request; the config is merged fresh
+ * each call so a law_hubspot_config filter still applies. Pass true to drop
+ * the cache (tests that create receptions mid-run).
+ *
+ * @return array<string,string> 'flagship' | slug => option value.
+ */
+function law_hubspot_attending_options( $reset = false ) {
+	static $derived = null;
+	static $for     = 0;
+
+	$year = law_hubspot_year();
+	if ( $reset || null === $derived || $for !== $year ) {
+		$derived = array();
+		$for     = $year;
+		if ( function_exists( 'law_reception_ids' ) ) {
+			foreach ( law_reception_ids( $year ) as $reception_id ) {
+				$post = get_post( $reception_id );
+				if ( ! $post || ! in_array( $post->post_status, array( 'publish', 'law-approved' ), true ) ) {
+					continue;
+				}
+				$title = trim( html_entity_decode( get_the_title( $post ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+				if ( '' !== $title ) {
+					$derived[ $post->post_name ] = $year . ' ' . $title;
+				}
+			}
+		}
+	}
+
+	// Config first so its label wins; '+' keeps the left operand's keys.
+	return (array) law_hubspot_setting( 'attending_options', array() ) + $derived;
+}
+
+/**
+ * The law_events_attending option a confirmed place at this event earns, or
+ * '' when the event is neither the flagship nor one of the year's receptions
+ * (law_hubspot_attending_options()).
  */
 function law_hubspot_attending_option_for_event( $event_id ) {
 	$event_id = (int) $event_id;
-	$options  = (array) law_hubspot_setting( 'attending_options', array() );
+	$options  = law_hubspot_attending_options();
 	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
 		return (string) ( $options['flagship'] ?? '' );
 	}

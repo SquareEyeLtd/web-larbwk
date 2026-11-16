@@ -26,6 +26,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		$this->mode         = 'live';
 		$this->missing_groups = array();
 		$this->isolate_option( LAW_EVENTS_SETTINGS_OPTION, array( 'year' => 2026 ) );
+		law_hubspot_attending_options( true );
 
 		// A portal with everything in place, which each test then breaks.
 		$this->portal = array();
@@ -126,10 +127,11 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		$this->assertTrue( $report['groups']['year']['exists'] );
 		$this->assertFalse( $report['properties']['law26_dietary']['exists'] );
 		$this->assertFalse( $report['properties']['law_events_registered_count']['type_ok'] );
-		$this->assertSame(
-			array( '2026 Monday reception', '2026 Wednesday reception', '2026 Friday reception' ),
-			$report['properties']['law_events_attending']['missing_options']
-		);
+		// Every option but the flagship is missing: the three seeded receptions
+		// and whatever other receptions the year has (derived from the events).
+		$expected_missing = array_values( array_diff( law_hubspot_attending_options(), array( '2026 Flagship' ) ) );
+		$this->assertGreaterThanOrEqual( 3, count( $expected_missing ) );
+		$this->assertSame( $expected_missing, $report['properties']['law_events_attending']['missing_options'] );
 		$this->assertTrue( $report['properties']['law_sync_updated']['ok'] );
 	}
 
@@ -325,7 +327,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		$patch = $by_path['PATCH /crm/v3/properties/contacts/law_events_attending'];
 		$values = array_column( $patch['body']['options'], 'value' );
 		$this->assertSame(
-			array( '2026 Flagship', '2025 Flagship', '2026 Monday reception', '2026 Wednesday reception', '2026 Friday reception' ),
+			array_merge( array( '2026 Flagship', '2025 Flagship' ), array_values( array_diff( law_hubspot_attending_options(), array( '2026 Flagship' ) ) ) ),
 			$values,
 			'Existing options first and untouched, including the one the module does not know; new ones appended.'
 		);

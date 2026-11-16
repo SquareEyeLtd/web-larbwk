@@ -314,6 +314,12 @@ class LAW_HubSpot_CLI {
 			array( 'item' => 'Legal basis now', 'value' => $plan['before']['legal_basis'] ?: '(empty)' ),
 			array( 'item' => 'Legal basis after', 'value' => $plan['after']['legal_basis'] ?: '(empty)' ),
 		);
+		// What the site believes for the LAW-owned properties, whether or not
+		// the portal already agrees; the `write` rows below are the differences.
+		foreach ( (array) ( $state['site_properties'] ?? array() ) as $key => $value ) {
+			$shown  = is_array( $value ) ? implode( '; ', $value ) : (string) $value;
+			$rows[] = array( 'item' => 'site ' . $key, 'value' => '' !== $shown ? $shown : '(empty)' );
+		}
 		foreach ( $plan['properties'] as $name => $value ) {
 			$rows[] = array( 'item' => 'write ' . $name, 'value' => (string) $value );
 		}

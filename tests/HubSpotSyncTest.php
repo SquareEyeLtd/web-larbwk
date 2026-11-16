@@ -448,6 +448,7 @@ class HubSpotSyncTest extends LAW_Test_Case {
 				}
 			);
 		}
+		law_hubspot_attending_options( true );
 		$booking = wp_insert_post( array( 'post_type' => LAW_BOOKING_CPT, 'post_status' => 'publish', 'post_title' => 'b', 'post_author' => $user_id, 'post_parent' => $event ) );
 		$this->posts[] = $booking;
 		if ( '' !== $type ) {

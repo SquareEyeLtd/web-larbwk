@@ -138,7 +138,7 @@ further code. Config `property_groups`; each definition in
 
 | Internal name | Label | Type | Content |
 |---|---|---|---|
-| `law_events_attending` | LAW-run events | multi-checkbox | Year-prefixed options: `2026 Flagship`, `2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`. One option per **confirmed** booking (paid where paid). This year's options are replaced on every sync (so a cancelled place drops off); other years' options are kept. |
+| `law_events_attending` | LAW-run events | multi-checkbox | Year-prefixed options: `2026 Flagship` plus one per reception the year has in a bookable status — the three seeded ones keep their fixed labels (`2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`), any other is `{year} {event title}` (`2026 Evensong at St Paul’s Cathedral`). `law_hubspot_attending_options()`, derived from the reception events, so a new reception needs no code; `check-properties --create` adds its option. One option per **confirmed** booking (paid where paid). This year's options are replaced on every sync (so a cancelled place drops off); other years' options are kept. |
 | `law26_ec_passtype` | 2026 pass type (badge) | dropdown | Delegate, Speaker, Sponsor, Committee, Press, Patron: the committee's ticket types (`law_booking_ticket_types()`; Exhibitor retired). From `_law_ticket_type` on this year's **confirmed LAW-run** bookings (flagship and receptions); a `_law_is_press` flag counts as Press. One person, several bookings, several types: the first in the config's `passtype_precedence` wins — **Delegate, Press > Sponsor > Committee > Speaker > Patron** (Emily, 12 November 2026; Delegate and Press never coincide; reorder one array to change it). **Never blanked**: an unclassified booking sends nothing, so a value LAW typed by hand survives. |
 | `law26_dietary_icon` | 2026 dietary icon (badge) | dropdown | The one icon Event Connections print: `Vegetarian or vegan`, `Pescatarian`, `Allergy or intolerance`. Folded from the site's dietary choices through the config's `dietary_icon_map` (Vegetarian, Vegan → Vegetarian or vegan; Pescatarian → Pescatarian; Gluten free, Dairy free, Coeliac, Lactose free, Nut allergy → Allergy or intolerance; Other → no icon); when several icons result, `dietary_icon_precedence` picks one, **allergy first** (Emily and Milly, 12 November 2026). Both are one-line config edits. |
 | `law26_dietary` | 2026 dietary requirements | multi-checkbox | The site's own choices as options (`law_registration_dietary_choices()` minus Other). The detail behind the icon. |
@@ -816,8 +816,23 @@ never run, and no contact in the portal carried `law_sync_updated`. In order, on
    addresses on the site (user profile or speaker record); the change requeues the person and
    the next sync creates the contact. Follow-up idea, not urgent: park an address HubSpot
    rejects as invalid at once instead of retrying it.
-6. Still to do by hand in HubSpot: the "LAW 2026 badging" active segment (*LAW-run events* is
-   any of the four 2026 values), then a spot-check of one contact's LAW2026 section.
+6. Trevor created the "LAW 2026 badging" active segment (*LAW-run events* is any of the four
+   2026 values): 954 people. Spot-check of Sophie Nappert's record: pass type Speaker (the
+   committee had already set flagship ticket types on production), attending Flagship +
+   Wednesday reception, synced 06:35. Alison Macdonald KC shows the full set (Vegetarian →
+   icon, Wheelchair, Speaker).
+7. **A fourth reception.** Two contacts with access needs had no *LAW-run events* value. Cause:
+   production (and, it turned out, the local copy) has a fourth reception, **Evensong at St
+   Paul's Cathedral** (ID 1132, slug `evensong-at-st-pauls-cathedral`), and the attending
+   options were a fixed list of three slugs. The badging data treated it as LAW-run (so access
+   needs were sent) while the attending property did not — the two halves of "LAW-run"
+   disagreed. Fix, same day: `law_hubspot_attending_options()` derives the options from the
+   year's receptions (§5.2), the fixed labels kept for the seeded three. On production:
+   `check-properties --create` adds the `2026 Evensong at St Paul’s Cathedral` option, then
+   the Evensong attendees are re-queued. Whether Evensong is a badging event is Emily's to say;
+   if not, the segment filter simply leaves that option out — the property should still carry
+   it, and the disclosure of dietary/access for a LAW-run reception stands under Peter's
+   sign-off.
 
 ### Phase 3 to-do
 

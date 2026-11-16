@@ -512,6 +512,7 @@ class HubSpotRulesTest extends LAW_Test_Case {
 	}
 
 	private function site( string $email ): array {
+		law_hubspot_attending_options( true ); // receptions are created mid-test
 		return law_hubspot_desired_state( $email )['site_properties'];
 	}
 
@@ -717,15 +718,46 @@ class HubSpotRulesTest extends LAW_Test_Case {
 			}
 		);
 		$this->insert_booking( $reception, $user_id );
-		$this->assertSame( array( '2026 Test reception' ), $this->site( $email )['events_attending'] );
+		$this->assertSame( array( '2026 Test reception' ), $this->site( $email )['events_attending'], 'The config label wins over the title.' );
+	}
 
-		// A reception the config does not name earns nothing (but still counts
-		// for the badging data: it is LAW-run).
-		[ $user_b, $email_b ] = $this->make_person();
-		$this->insert_booking( $this->make_law_run(), $user_b );
-		update_user_meta( $user_b, 'dietary', array( 'Vegan' ) );
-		$site = $this->site( $email_b );
-		$this->assertSame( array(), $site['events_attending'] );
-		$this->assertSame( 'Vegan', $site['dietary'] );
+	public function test_a_reception_the_config_does_not_name_is_named_by_its_title(): void {
+		// Production's fourth reception (Evensong at St Paul's, 16 November
+		// 2026) was LAW-run for the badging data but invisible to the
+		// attending property, because the options were a fixed list of three.
+		[ $user_id, $email ] = $this->make_person();
+		$reception = $this->make_law_run();
+		wp_update_post( array( 'ID' => $reception, 'post_title' => 'Evensong at St Paul&#8217;s Cathedral' ) );
+		$this->insert_booking( $reception, $user_id );
+		update_user_meta( $user_id, 'accessibility', array( 'Captions' ) );
+
+		$site = $this->site( $email );
+		$this->assertSame( array( '2026 Evensong at St Paul’s Cathedral' ), $site['events_attending'], 'Year plus the decoded title.' );
+		$this->assertSame( 'Captions', $site['access'], 'And the two halves of "LAW-run" agree.' );
+
+		$options = law_hubspot_attending_options();
+		$this->assertSame( '2026 Flagship', $options['flagship'], 'The fixed labels are still there.' );
+		$this->assertSame( '2026 Monday reception', $options['opening-drinks'] );
+		$this->assertSame( '2026 Evensong at St Paul’s Cathedral', $options[ get_post_field( 'post_name', $reception ) ] );
+		$this->assertContains(
+			'2026 Evensong at St Paul’s Cathedral',
+			array_column( law_hubspot_property_definitions()['law_events_attending']['options'], 'value' ),
+			'So check-properties sees it as a missing option and --create adds it.'
+		);
+
+		// A reception nobody can book yet (draft, proposed) earns no option:
+		// the portal should not learn about it before the committee publishes.
+		$draft = $this->make_law_run();
+		$GLOBALS['law_workflow_transitioning'] = true;
+		try {
+			wp_update_post( array( 'ID' => $draft, 'post_status' => 'law-draft' ) );
+		} finally {
+			$GLOBALS['law_workflow_transitioning'] = false;
+		}
+		$this->assertArrayNotHasKey( get_post_field( 'post_name', $draft ), law_hubspot_attending_options( true ) );
+
+		// A different year's reception belongs to that year's options.
+		$old = $this->make_law_run( 'reception', 2025 );
+		$this->assertArrayNotHasKey( get_post_field( 'post_name', $old ), law_hubspot_attending_options( true ) );
 	}
 }
