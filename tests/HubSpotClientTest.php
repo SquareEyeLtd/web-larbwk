@@ -324,7 +324,7 @@ class HubSpotClientTest extends LAW_Test_Case {
 		$this->assertSame( 'law31_ec_passtype', $config['properties']['passtype'], 'The badging set is prefixed with the year.' );
 		$this->assertSame( 'Speaker', $config['passtype_values']['speaker'] );
 		$this->assertArrayNotHasKey( 'exhibitor', $config['passtype_values'], 'Exhibitor is retired.' );
-		$this->assertSame( array( 'committee', 'speaker', 'sponsor', 'press', 'patron', 'delegate' ), $config['passtype_precedence'] );
+		$this->assertSame( array( 'delegate', 'press', 'sponsor', 'committee', 'speaker', 'patron' ), $config['passtype_precedence'], 'Emily, 12 November 2026.' );
 		// The registration form's own tag function must agree, or the backfill
 		// and the live path would write two vocabularies.
 		$this->assertSame( '2031 Registered user;2031 Sponsor;2031 Event Host', law_registration_hubspot_tags( array( 'sponsor', 'host' ) ) );

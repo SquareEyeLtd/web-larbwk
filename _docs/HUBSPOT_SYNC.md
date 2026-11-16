@@ -139,8 +139,8 @@ further code. Config `property_groups`; each definition in
 | Internal name | Label | Type | Content |
 |---|---|---|---|
 | `law_events_attending` | LAW-run events | multi-checkbox | Year-prefixed options: `2026 Flagship`, `2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`. One option per **confirmed** booking (paid where paid). This year's options are replaced on every sync (so a cancelled place drops off); other years' options are kept. |
-| `law26_ec_passtype` | 2026 pass type (badge) | dropdown | Delegate, Speaker, Sponsor, Committee, Press, Patron: the committee's ticket types (`law_booking_ticket_types()`; Exhibitor retired). From `_law_ticket_type` on this year's **confirmed LAW-run** bookings (flagship and receptions); a `_law_is_press` flag counts as Press. One person, several bookings, several types: the first in the config's `passtype_precedence` wins — **Committee > Speaker > Sponsor > Press > Patron > Delegate** (not yet confirmed by Event Connections; reorder one array to change it). **Never blanked**: an unclassified booking sends nothing, so a value LAW typed by hand survives. |
-| `law26_dietary_icon` | 2026 dietary icon (badge) | dropdown | The one icon Event Connections print: `Vegetarian or vegan`, `Pescatarian`, `Allergy or intolerance`. Folded from the site's dietary choices through the config's `dietary_icon_map` (Vegetarian, Vegan → Vegetarian or vegan; Pescatarian → Pescatarian; Gluten free, Dairy free, Coeliac, Lactose free, Nut allergy → Allergy or intolerance; Other → no icon); when several icons result, `dietary_icon_precedence` picks one, **allergy first**. Not yet confirmed by Event Connections; both are one-line config edits. |
+| `law26_ec_passtype` | 2026 pass type (badge) | dropdown | Delegate, Speaker, Sponsor, Committee, Press, Patron: the committee's ticket types (`law_booking_ticket_types()`; Exhibitor retired). From `_law_ticket_type` on this year's **confirmed LAW-run** bookings (flagship and receptions); a `_law_is_press` flag counts as Press. One person, several bookings, several types: the first in the config's `passtype_precedence` wins — **Delegate, Press > Sponsor > Committee > Speaker > Patron** (Emily, 12 November 2026; Delegate and Press never coincide; reorder one array to change it). **Never blanked**: an unclassified booking sends nothing, so a value LAW typed by hand survives. |
+| `law26_dietary_icon` | 2026 dietary icon (badge) | dropdown | The one icon Event Connections print: `Vegetarian or vegan`, `Pescatarian`, `Allergy or intolerance`. Folded from the site's dietary choices through the config's `dietary_icon_map` (Vegetarian, Vegan → Vegetarian or vegan; Pescatarian → Pescatarian; Gluten free, Dairy free, Coeliac, Lactose free, Nut allergy → Allergy or intolerance; Other → no icon); when several icons result, `dietary_icon_precedence` picks one, **allergy first** (Emily and Milly, 12 November 2026). Both are one-line config edits. |
 | `law26_dietary` | 2026 dietary requirements | multi-checkbox | The site's own choices as options (`law_registration_dietary_choices()` minus Other). The detail behind the icon. |
 | `law26_dietary_other` | 2026 dietary requirements (other) | single-line text | The free text. |
 | `law26_access` | 2026 access requirements | multi-checkbox | The site's stored accessibility values (Captions, Sign language, Animal / PCA, Wheelchair). |
@@ -461,12 +461,17 @@ This plan names these from reading part of the tree; check each one.
 4. **Pass type for people with only a reception booking.** Settled 12 November 2026: the
    reception bookings lists carry the same committee-only Ticket type column as the flagship
    dashboard (blank by default, nothing assumed), so a reception-only guest is classified the
-   same way, and the HubSpot pass type reads every LAW-run booking. Two things remain our reading
-   of the brief rather than confirmed: the **precedence order** when one person holds several
-   types, and the **dietary icon folding** (both in `law_hubspot_config()`, one edit each); and
-   that `law26_badge_manual` = Yes means "leave this contact's pass type and dietary icon alone".
-   Emily also mentioned an "arrived yes/no" column (`law26_ec_arrived`): not created; it is
-   Event Connections' field to write, and we have asked whether they want the site to create it.
+   same way, and the HubSpot pass type reads every LAW-run booking. **Precedence** settled by
+   Emily, 12 November 2026: Delegate + Press (never the same person) > Sponsor > Committee >
+   Speaker > Patron — a paying delegate who also speaks is badged Delegate. **Allergy icon wins**
+   confirmed by Emily and Milly the same day. Kitty (Event Connections, 12 November) chose a
+   single-value pass type (option A) and one dietary value per person, which is what
+   `law26_ec_passtype` and `law26_dietary_icon` are; she matches on HubSpot contact ID, not
+   email. Still our reading rather than confirmed: that `law26_badge_manual` = Yes means
+   "leave this contact's pass type and dietary icon alone" (Trevor is showing LAW the populated
+   segment first and will fill holes in the next pass). **`law26_ec_arrived`**: Kitty says
+   arrival push-back is optional and would be one **date/time, the first badge print**, so if LAW
+   want it the property is a LAW-owned datetime in the LAW2026 group; not created until asked.
 5. **Subscription status** (7.2): Fred. **Dietary/access data** (7.3): signed off by Peter.
 6. **Sponsor attendee, Supporting organisation attendee, survey responses**: not built until
    defined.
@@ -793,9 +798,9 @@ sends nothing.
 Approved 13 October 2026 (16 hours). What is left after the 12 November build:
 
 1. ~~Internal names~~ settled by Trevor, 16 November 2026 (the `law26_` set, in the `law26` /
-   "LAW2026" group). Still to confirm: the pass-type precedence and the icon folding. Create the
-   properties with `wp law hubspot check-properties --create --live` (the portal is shared, so
-   from any environment holding the token), then later `--archive --live` for the three
+   "LAW2026" group). ~~Precedence and icon folding~~ confirmed by Emily, 12 November 2026.
+   ~~Create the properties~~ done 16 November 2026 (`check-properties --create --live` from the
+   local copy: group `law26` and the seven properties). Later: `--archive --live` for the three
    superseded properties (ask first), then the Contact type check.
 2. **`law26_ec_arrived`** (Emily's "arrived yes/no"): ask before creating. If wanted, it is a
    LAW-owned yes/no like `badge_manual` (Event Connections write it, the site never does).

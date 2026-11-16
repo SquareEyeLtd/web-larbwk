@@ -239,17 +239,21 @@ function law_hubspot_config() {
 
 		// A person with places at several LAW-run events can hold several
 		// ticket types; the badge takes ONE. This is the order they win in,
-		// first wins (Emily, 4 November 2026 -- NOT YET CONFIRMED by Event
-		// Connections; to change it, reorder this list). A type not listed
-		// here never wins, and a person whose only types are unlisted sends
-		// nothing. `press` here is the ticket type OR the _law_is_press flag.
-		'passtype_precedence'   => array( 'committee', 'speaker', 'sponsor', 'press', 'patron', 'delegate' ),
+		// first wins (Emily, 12 November 2026: "Delegate + Press (will never
+		// be the same) > Sponsor > Committee > Speaker > Patron" -- a paying
+		// delegate who also speaks is badged Delegate; Delegate and Press
+		// never coincide, so their relative order is moot). To change it,
+		// reorder this list. A type not listed here never wins, and a person
+		// whose only types are unlisted sends nothing. `press` here is the
+		// ticket type OR the _law_is_press flag.
+		'passtype_precedence'   => array( 'delegate', 'press', 'sponsor', 'committee', 'speaker', 'patron' ),
 
 		// The dietary icon (law26_dietary_icon): the site's dietary choices
 		// (law_registration_dietary_choices()) folded into the three icons
 		// Event Connections print, choice => icon. A choice absent here
-		// ("Other") earns no icon. NOT YET CONFIRMED by Event Connections;
-		// to change the folding, edit this map.
+		// ("Other") earns no icon. Allergy winning was confirmed by Emily and
+		// Milly (12 November 2026); the three icon names are ours and Event
+		// Connections have yet to see them. To change the folding, edit this map.
 		'dietary_icon_map'      => array(
 			'Vegetarian'   => 'Vegetarian or vegan',
 			'Vegan'        => 'Vegetarian or vegan',
