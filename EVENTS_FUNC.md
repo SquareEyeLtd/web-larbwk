@@ -83,9 +83,16 @@ repair-references, backfill-session-agenda).
 - `law_events_settings_defaults()`, `law_events_settings()`,
   `law_events_setting()`, `law_events_update_settings()`: one option,
   `law_events_settings`, holds the fee tiers, the programme year, the date/time
-  slots, the committee recipient emails, the Stripe `tax_rate_id` and
-  `rendering_template_id`, the `speakers_archive_public` switch and the
-  reserved `host_edit_review` mode.
+  slots, the committee recipient emails, the `contact_email` for LAW-run
+  events, the Stripe `tax_rate_id` and `rendering_template_id`, the
+  `speakers_archive_public` switch and the reserved `host_edit_review` mode.
+- `contact_email` (16 November 2026), read through
+  `law_events_contact_email()`: the shared address attendees of the flagship,
+  the receptions and external events are told to contact, defaulting to
+  `website@londonarbitrationweek.co.uk`. It is a default in
+  `law_events_settings_defaults()`, so it is live on deploy with no migration.
+  Saving the field empty or invalid stores `''`, and `law_event_contact_email()`
+  (`notifications.php`) then falls back to the event's author.
 - `speakers_archive_public` (Denis, 17 September 2026): whether the Speakers
   archive is public. **Off by default.** The archive is assembled from Confirmed
   events as soon as they exist, which is long before LAW wants the line-up
@@ -1694,6 +1701,21 @@ then follows the link that appears and writes that event's confirmation.
   account links `{bookings_link}`, `{profile_link}` and `{submit_link}` (via
   `law_account_url( 'submit' )`) are set unconditionally, so the event-less
   registration emails resolve them.
+- `law_event_contact_email( $event_id )` (16 November 2026): the value of
+  `{host_email}`, the address the four "if you think this is a mistake,
+  contact the host at …" attendee emails give (booking cancelled by the
+  committee or by whoever booked it, taken off the waitlist by the committee
+  or by whoever added you). A hosted event gives its host's own email. An
+  event `law_event_is_managed_by_law()` (the flagship, a reception, an
+  external event) gives the shared **Contact email for LAW-run events** from
+  Events → Settings instead, because its author is whichever committee member
+  ran the setup and attendees were being sent to one person's inbox (client
+  request, 13 November 2026). With that setting empty it falls back to the
+  author, as before. `law_booking_cancel()` used to override `{host_email}`
+  with the author's address itself; it now leaves the tag to this helper, so
+  there is one rule. The "Email to host" notifications (`'to' => 'host'` in
+  `law_events_email_recipients()`) still go to the event's author: this
+  changes what attendees are told, not who the internal alerts reach.
 - `law_events_email_sample_placeholders()`: **the one place every tag's sample
   value lives**, used by every test send in place of a real event. A new tag
   in `law_events_email_placeholders()` needs its sample here in the same

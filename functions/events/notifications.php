@@ -1454,6 +1454,28 @@ function law_events_email_send_test_to( array $override, array $emails ) {
 }
 
 /**
+ * The address an attendee is told to contact about this event: {host_email}.
+ *
+ * A hosted event's is its host's own. An event LAW runs itself (the flagship,
+ * a reception, an external event) was created by whichever committee member
+ * ran the setup, so its author's address is one person's inbox; those give
+ * the shared contact address from Events → Settings instead, so several
+ * people can answer (client request, 13 November 2026). With that setting
+ * empty, the author's address stands, as it did before.
+ */
+function law_event_contact_email( $event_id ) {
+	if ( law_event_is_managed_by_law( $event_id ) ) {
+		$shared = law_events_contact_email();
+		if ( '' !== $shared ) {
+			return $shared;
+		}
+	}
+
+	$author = get_user_by( 'id', (int) get_post_field( 'post_author', (int) $event_id ) );
+	return $author ? (string) $author->user_email : '';
+}
+
+/**
  * Placeholder tags available to every event email.
  *
  * Adding a tag here means adding its sample value to
@@ -1508,7 +1530,7 @@ function law_events_email_placeholders( $event_id, array $extra = array() ) {
 		'{event_title}'      => $post ? $post->post_title : '',
 		'{law_reference}'    => (string) law_event_meta( $event_id, '_law_reference' ),
 		'{host_name}'        => $author ? $author->display_name : '',
-		'{host_email}'       => $author ? $author->user_email : '',
+		'{host_email}'       => law_event_contact_email( $event_id ),
 		'{status}'           => $post ? law_event_status_label( $post ) : '',
 		'{payment_status}'   => ucfirst( (string) law_event_meta( $event_id, '_law_payment_status' ) ),
 		'{invoice_url}'      => (string) law_event_meta( $event_id, '_law_stripe_invoice_url' ),

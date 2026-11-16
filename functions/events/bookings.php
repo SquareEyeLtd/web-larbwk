@@ -4298,7 +4298,6 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		);
 	$email = law_booking_attendee_email( $booking );
 	if ( isset( $slugs[ $context ] ) && '' !== $email ) {
-		$host = get_user_by( 'id', (int) get_post_field( 'post_author', $event_id ) );
 		$args = array(
 			'to'           => array( $email ),
 			'placeholders' => array_merge(
@@ -4306,7 +4305,6 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 				array(
 					'attendee_name'  => $person['name'],
 					'removal_reason' => $reason,
-					'host_email'     => $host ? $host->user_email : '',
 				)
 			),
 		);
