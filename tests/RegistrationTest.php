@@ -171,6 +171,36 @@ class RegistrationTest extends LAW_Test_Case {
 		$this->assertSame( 5, $allowed, 'The sixth anonymous attempt from one IP is refused.' );
 	}
 
+	public function test_the_rate_window_runs_from_the_first_action_not_the_last(): void {
+		// 16 November 2026: each action used to write the counter back with a
+		// fresh window, so steady work never got its budget back.
+		if ( wp_using_ext_object_cache() ) {
+			$this->markTestSkipped( 'Reads the transient timeout from the options table.' );
+		}
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.78';
+		$surface = 'window_test_' . wp_rand();
+		$key     = 'law_rl_' . $surface . '_ip' . md5( '203.0.113.78' );
+		set_transient( $key, array( 'count' => 1, 'start' => time() - 50 ), 10 );
+
+		$this->assertTrue( law_events_rate_limit_ok( $surface, 0, 5, 60 ) );
+		$this->assertSame( 2, law_events_rate_state( $key )['count'] );
+		$this->assertLessThanOrEqual( time() + 11, (int) get_option( '_transient_timeout_' . $key ), 'The window still ends 60 seconds after it opened.' );
+	}
+
+	public function test_the_committee_is_not_rate_limited_on_guarded_posts(): void {
+		$_SERVER['REMOTE_ADDR'] = '203.0.113.79';
+		$rate = array( 'guard_test_' . wp_rand(), 2, 600 );
+
+		wp_set_current_user( $this->make_user() );
+		$this->assertSame( array( true, true, false ), array( law_events_guard_rate_ok( $rate ), law_events_guard_rate_ok( $rate ), law_events_guard_rate_ok( $rate ) ), 'Anybody else keeps the budget.' );
+
+		wp_set_current_user( $this->make_committee_user() );
+		for ( $i = 0; $i < 5; $i++ ) {
+			$this->assertTrue( law_events_guard_rate_ok( $rate ), 'The committee is never refused.' );
+		}
+		wp_set_current_user( 0 );
+	}
+
 	/**
 	 * The cached-nonce regression (22 September 2026).
 	 *

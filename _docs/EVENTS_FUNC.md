@@ -11256,6 +11256,29 @@ for the same reason), `BookingsDashboardTest` and `SpeakersDashboardTest`
 (1 new each; one old assertion of "not truncated" across every event made
 event-scoped).
 
+## The committee is not rate limited (16 November 2026)
+
+Reported by the client: setting delegate (ticket) types on the Opening and
+flagship receptions kept stopping on "Too many actions in a short time". The
+ticket type shares the flagship screens' `flagship_review` budget, 60 per ten
+minutes, and a 551-booking reception is classified one row at a time.
+
+- `law_events_guard_rate_ok()` (request.php), called by
+  `law_events_guard_post()`: a committee-level user (`law_user_is_committee()`)
+  is never limited. The limiter is for public write surfaces; every committee
+  action already sits behind a nonce and a capability check. Denis, 16
+  November 2026: no limits for the committee. Everybody else keeps every
+  budget, and the direct `law_events_rate_limit_ok()` callers (exports,
+  password reset, registration, comments, profile) are unchanged.
+- `law_events_rate_limit_ok()`: the window now runs from the first action in
+  it. It used to write the counter back with a fresh window on every action,
+  so steady work never got its budget back until it stopped for the whole
+  window. The transient now holds `count` and `start`
+  (`law_events_rate_state()`); a bare integer from before reads as a window
+  opening now.
+
+Tests: `RegistrationTest` (2 new).
+
 ---
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;
