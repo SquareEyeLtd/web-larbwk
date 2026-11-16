@@ -45,7 +45,10 @@ function law_hubspot_property_definitions() {
 			'description' => 'Confirmed bookings on the conference and receptions, by year. Set by the LAW website; overwritten on every sync.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'checkbox',
-			'options'     => law_hubspot_options_from_values( array_values( $config['attending_options'] ) ),
+			// Every reception the year has, not only the seeded three
+			// (law_hubspot_attending_options()); a new one becomes a
+			// missing option that check-properties --create adds.
+			'options'     => law_hubspot_options_from_values( array_values( law_hubspot_attending_options() ) ),
 		),
 		// The badging set (HUBSPOT_SYNC.md §5.2, 12 November 2026): one per
 		// year, named with the year's prefix. Labels carry the year too, so

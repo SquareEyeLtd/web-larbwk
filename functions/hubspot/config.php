@@ -224,7 +224,11 @@ function law_hubspot_config() {
 
 		// law_events_attending options, keyed by the reception seed slug
 		// (law_reception_seed_map()) or 'flagship'. Year-prefixed so 2027 adds
-		// options rather than overwriting 2026.
+		// options rather than overwriting 2026. These are the FIXED labels;
+		// law_hubspot_attending_options() adds every other reception the year
+		// has (16 November 2026: production had a fourth, Evensong at St
+		// Paul's, that a hard-coded list silently left out) as
+		// "{year} {event title}". A label here wins over the title.
 		'attending_options'     => array(
 			'flagship'            => $year . ' Flagship',
 			'opening-drinks'      => $year . ' Monday reception',
