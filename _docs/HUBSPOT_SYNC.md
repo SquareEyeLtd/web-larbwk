@@ -125,9 +125,16 @@ badging app reads HubSpot directly). The badging set is **year-prefixed**: `law2
 (`law_hubspot_year_prefix()`). A pass type is a fact about one year's badge, a property cannot
 hold two years' worth, and HubSpot cannot rename a property once created, so each year gets a
 fresh set and Event Connections read the current year's. The `_ec_` names are the ones their
-app reads. **Internal names are pending Kitty's confirmation and none of the `law26_` set is
-created in the live portal until she has confirmed them.** Changing a name is one line in
-`law_hubspot_config()`.
+app reads. Internal names were settled by Trevor on 16 November 2026 (the `law26_` set below);
+changing one is still a single line in `law_hubspot_config()`.
+
+**Property groups** (the section headings on a contact record): the un-prefixed properties sit
+in `law_site` ("LAW site"); the year's set sits in its own group named by the prefix and
+labelled the way LAW label the year — `law26` / **"LAW2026"** (Trevor, 16 November 2026; not
+"badge", since the data serves more than badging). Both groups are created by
+`check-properties --create` when missing, and next year's set gets `law27` / "LAW2027" without
+further code. Config `property_groups`; each definition in
+`law_hubspot_property_definitions()` names its group.
 
 | Internal name | Label | Type | Content |
 |---|---|---|---|
@@ -785,11 +792,11 @@ sends nothing.
 
 Approved 13 October 2026 (16 hours). What is left after the 12 November build:
 
-1. **Kitty to confirm the internal names** (`law26_ec_passtype`, `law26_dietary_icon`,
-   `law26_dietary`, `law26_dietary_other`, `law26_access`, `law26_access_other`,
-   `law26_badge_manual`), the pass-type precedence and the icon folding. Then, on production:
-   `wp law hubspot check-properties --create`, then `--archive` for the three superseded
-   properties (ask first), then the Contact type check.
+1. ~~Internal names~~ settled by Trevor, 16 November 2026 (the `law26_` set, in the `law26` /
+   "LAW2026" group). Still to confirm: the pass-type precedence and the icon folding. Create the
+   properties with `wp law hubspot check-properties --create --live` (the portal is shared, so
+   from any environment holding the token), then later `--archive --live` for the three
+   superseded properties (ask first), then the Contact type check.
 2. **`law26_ec_arrived`** (Emily's "arrived yes/no"): ask before creating. If wanted, it is a
    LAW-owned yes/no like `badge_manual` (Event Connections write it, the site never does).
 3. Confirm the `badge_manual` reading with Emily: "Yes" freezes the pass type and the icon,

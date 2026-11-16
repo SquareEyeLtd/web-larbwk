@@ -27,8 +27,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * The site-owned properties as HubSpot expects them (minus groupName, added
- * on create). Keyed by internal name.
+ * The site-owned properties as HubSpot expects them, keyed by internal name,
+ * plus one key of the module's own: `group`, the config `property_groups` key
+ * the property lives in ('site' when absent). Creation turns it into HubSpot's
+ * groupName and strips it from the payload.
  *
  * @return array<string,array>
  */
@@ -50,6 +52,7 @@ function law_hubspot_property_definitions() {
 		// the 2026 and 2027 sets read apart in the portal's property lists.
 		$names['passtype']                => array(
 			'label'       => $year . ' pass type (badge)',
+			'group'       => 'year',
 			'description' => 'The pass type Event Connections print on the ' . $year . ' badge, from the committee\'s ticket types on this person\'s confirmed LAW-run bookings. Set by the LAW website unless "' . $year . ' badge set by hand" is Yes.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'select',
@@ -57,6 +60,7 @@ function law_hubspot_property_definitions() {
 		),
 		$names['dietary_icon']            => array(
 			'label'       => $year . ' dietary icon (badge)',
+			'group'       => 'year',
 			'description' => 'The one dietary icon for the ' . $year . ' badge, folded from the LAW website\'s dietary choices. Set by the LAW website unless "' . $year . ' badge set by hand" is Yes.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'select',
@@ -64,6 +68,7 @@ function law_hubspot_property_definitions() {
 		),
 		$names['dietary']                 => array(
 			'label'       => $year . ' dietary requirements',
+			'group'       => 'year',
 			'description' => 'The dietary choices ticked on the LAW website, for people with a confirmed booking on a ' . $year . ' LAW-run event. Overwritten on every sync.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'checkbox',
@@ -71,12 +76,14 @@ function law_hubspot_property_definitions() {
 		),
 		$names['dietary_other']           => array(
 			'label'       => $year . ' dietary requirements (other)',
+			'group'       => 'year',
 			'description' => 'The free-text dietary requirement typed on the LAW website. Overwritten on every sync.',
 			'type'        => 'string',
 			'fieldType'   => 'text',
 		),
 		$names['access']                  => array(
 			'label'       => $year . ' access requirements',
+			'group'       => 'year',
 			'description' => 'The access requirements ticked on the LAW website, for people with a confirmed booking on a ' . $year . ' LAW-run event. Overwritten on every sync.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'checkbox',
@@ -84,12 +91,14 @@ function law_hubspot_property_definitions() {
 		),
 		$names['access_other']            => array(
 			'label'       => $year . ' access requirements (other)',
+			'group'       => 'year',
 			'description' => 'The free-text access requirement typed on the LAW website. Overwritten on every sync.',
 			'type'        => 'string',
 			'fieldType'   => 'text',
 		),
 		$names['badge_manual']            => array(
 			'label'       => $year . ' badge set by hand',
+			'group'       => 'year',
 			'description' => 'Set to Yes by LAW when this person\'s ' . $year . ' pass type or dietary icon has been decided by hand. The LAW website never writes this, and leaves the pass type and dietary icon alone while it is Yes.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'booleancheckbox',
@@ -227,10 +236,13 @@ function law_hubspot_portal_has_property( $key ) {
 	return null === $known || in_array( $name, $known, true );
 }
 
-/** Does the module's property group exist? true / false / WP_Error. */
-function law_hubspot_fetch_group_exists() {
-	$group  = law_hubspot_setting( 'property_group' );
-	$result = law_hubspot_request( 'GET', '/crm/v3/properties/contacts/groups/' . rawurlencode( $group['name'] ) );
+/**
+ * Does a property group exist? true / false / WP_Error.
+ *
+ * @param string $name The group's internal name (config `property_groups`).
+ */
+function law_hubspot_fetch_group_exists( $name ) {
+	$result = law_hubspot_request( 'GET', '/crm/v3/properties/contacts/groups/' . rawurlencode( $name ) );
 	if ( is_wp_error( $result ) ) {
 		return 404 === (int) ( $result->get_error_data()['status'] ?? 0 ) ? false : $result;
 	}
@@ -259,7 +271,7 @@ function law_hubspot_property_option_map( array $property ) {
  *   ok: bool,
  *   checked_at: int,
  *   error: string,
- *   group: array{name:string,exists:bool},
+ *   groups: array<string,array{name:string,label:string,exists:bool}>,
  *   properties: array<string,array>,
  *   contact_type: array,
  *   legal_basis: array
@@ -272,7 +284,7 @@ function law_hubspot_properties_check() {
 		'checked_at'   => time(),
 		'mode'         => law_hubspot_mode(),
 		'error'        => '',
-		'group'        => array( 'name' => $config['property_group']['name'], 'exists' => false ),
+		'groups'       => array(),
 		'properties'   => array(),
 		// Superseded site-owned properties still in the portal (config
 		// `superseded_properties`): reported, never touched here. Their
@@ -288,14 +300,16 @@ function law_hubspot_properties_check() {
 		return $report;
 	}
 
-	$group_exists = law_hubspot_fetch_group_exists();
-	if ( is_wp_error( $group_exists ) ) {
-		$report['error'] = $group_exists->get_error_message();
-		return $report;
+	$all_ok = true;
+	foreach ( $config['property_groups'] as $key => $group ) {
+		$exists = law_hubspot_fetch_group_exists( $group['name'] );
+		if ( is_wp_error( $exists ) ) {
+			$report['error'] = $exists->get_error_message();
+			return $report;
+		}
+		$report['groups'][ $key ] = array( 'name' => $group['name'], 'label' => $group['label'], 'exists' => (bool) $exists );
+		$all_ok                   = $all_ok && $exists;
 	}
-	$report['group']['exists'] = (bool) $group_exists;
-
-	$all_ok = $report['group']['exists'];
 
 	// Site-owned properties: exist, right type, every option present.
 	foreach ( law_hubspot_property_definitions() as $name => $definition ) {
@@ -445,10 +459,15 @@ function law_hubspot_properties_create( ?array $report = null ) {
 	}
 
 	$config  = law_hubspot_config();
-	$group   = $config['property_group'];
+	$groups  = $config['property_groups'];
 	$actions = array();
 
-	if ( ! $report['group']['exists'] ) {
+	// Groups first: a property is created inside its group, so the group has
+	// to be there before it. Each is created only when the check missed it.
+	foreach ( $groups as $key => $group ) {
+		if ( ! empty( $report['groups'][ $key ]['exists'] ) ) {
+			continue;
+		}
 		$result    = law_hubspot_request(
 			'POST',
 			'/crm/v3/properties/contacts/groups',
@@ -468,7 +487,9 @@ function law_hubspot_properties_create( ?array $report = null ) {
 		}
 
 		if ( ! $row['exists'] ) {
-			$payload   = array_merge( $definition, array( 'name' => $name, 'groupName' => $group['name'] ) );
+			$group_key = $definition['group'] ?? 'site';
+			unset( $definition['group'] );
+			$payload   = array_merge( $definition, array( 'name' => $name, 'groupName' => $groups[ $group_key ]['name'] ) );
 			$result    = law_hubspot_request( 'POST', '/crm/v3/properties/contacts', $payload );
 			$actions[] = law_hubspot_action_row( 'create_property', $name, $result );
 			continue;

@@ -9,7 +9,8 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 
 	/** @var array<string,array> Contact properties the fake portal holds, by name. */
 	private array $portal = array();
-	private bool $group_exists = true;
+	/** @var string[] Property groups the fake portal does NOT have, by internal name. */
+	private array $missing_groups = array();
 	/** @var array[] Writes the module attempted: method, path, body. */
 	private array $writes = array();
 	private string $mode = 'live';
@@ -23,7 +24,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		parent::setUp();
 		$this->writes       = array();
 		$this->mode         = 'live';
-		$this->group_exists = true;
+		$this->missing_groups = array();
 		$this->isolate_option( LAW_EVENTS_SETTINGS_OPTION, array( 'year' => 2026 ) );
 
 		// A portal with everything in place, which each test then breaks.
@@ -79,9 +80,10 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 			return array( 'results' => array_values( $this->portal ) );
 		}
 		if ( 'GET' === $method && str_starts_with( $path, '/crm/v3/properties/contacts/groups/' ) ) {
-			return $this->group_exists
-				? array( 'name' => 'law_site' )
-				: new WP_Error( 'law_hubspot_api_error', 'HubSpot: group not found', array( 'status' => 404 ) );
+			$group = rawurldecode( substr( $path, strlen( '/crm/v3/properties/contacts/groups/' ) ) );
+			return in_array( $group, $this->missing_groups, true )
+				? new WP_Error( 'law_hubspot_api_error', 'HubSpot: group not found', array( 'status' => 404 ) )
+				: array( 'name' => $group );
 		}
 		if ( 'dry' === $this->mode && law_hubspot_request_is_write( $method, $path ) ) {
 			// Let the client's own dry gate handle it, so the test proves the
@@ -99,7 +101,9 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 
 		$this->assertSame( '', $report['error'] );
 		$this->assertTrue( $report['ok'] );
-		$this->assertTrue( $report['group']['exists'] );
+		$this->assertSame( array( 'site', 'year' ), array_keys( $report['groups'] ) );
+		$this->assertTrue( $report['groups']['site']['exists'] );
+		$this->assertTrue( $report['groups']['year']['exists'] );
 		foreach ( $report['properties'] as $name => $row ) {
 			$this->assertTrue( $row['ok'], $name );
 		}
@@ -113,12 +117,13 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		unset( $this->portal['law26_dietary'] );
 		$this->portal['law_events_registered_count']['type'] = 'string';
 		$this->portal['law_events_attending']['options']     = law_hubspot_options_from_values( array( '2026 Flagship', '2025 Flagship' ) );
-		$this->group_exists                                  = false;
+		$this->missing_groups                                = array( 'law_site' );
 
 		$report = law_hubspot_properties_check();
 
 		$this->assertFalse( $report['ok'] );
-		$this->assertFalse( $report['group']['exists'] );
+		$this->assertFalse( $report['groups']['site']['exists'] );
+		$this->assertTrue( $report['groups']['year']['exists'] );
 		$this->assertFalse( $report['properties']['law26_dietary']['exists'] );
 		$this->assertFalse( $report['properties']['law_events_registered_count']['type_ok'] );
 		$this->assertSame(
@@ -230,8 +235,60 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 
 	/* ---- creating ------------------------------------------------------- */
 
+	public function test_the_year_group_is_created_and_holds_the_year_s_properties(): void {
+		// The portal as it stands before the first phase 3 create: the site
+		// group and the un-prefixed properties exist, nothing law26 does.
+		$this->missing_groups = array( 'law26' );
+		foreach ( array_keys( $this->portal ) as $name ) {
+			if ( str_starts_with( $name, 'law26_' ) ) {
+				unset( $this->portal[ $name ] );
+			}
+		}
+
+		$actions = law_hubspot_properties_create();
+
+		$groups = array_filter( $this->writes, fn( $w ) => '/crm/v3/properties/contacts/groups' === $w['path'] );
+		$this->assertCount( 1, $groups );
+		$group = array_values( $groups )[0]['body'];
+		$this->assertSame( array( 'name' => 'law26', 'label' => 'LAW2026', 'displayOrder' => -1 ), $group, 'Named by the prefix, labelled the way LAW label the year.' );
+
+		$created = array();
+		foreach ( $this->writes as $write ) {
+			if ( 'POST' === $write['method'] && '/crm/v3/properties/contacts' === $write['path'] ) {
+				$created[ $write['body']['name'] ] = $write['body']['groupName'];
+			}
+		}
+		$this->assertSame(
+			array(
+				'law26_ec_passtype'    => 'law26',
+				'law26_dietary_icon'   => 'law26',
+				'law26_dietary'        => 'law26',
+				'law26_dietary_other'  => 'law26',
+				'law26_access'         => 'law26',
+				'law26_access_other'   => 'law26',
+				'law26_badge_manual'   => 'law26',
+			),
+			$created,
+			'All seven, every one in the year group; nothing un-prefixed recreated.'
+		);
+		$this->assertSame( array(), array_filter( $actions, fn( $a ) => 'error' === $a['result'] ) );
+
+		// And an un-prefixed property, when missing, still goes in the site group.
+		$this->writes = array();
+		unset( $this->portal['law_event_sectors'] );
+		foreach ( array_keys( law_hubspot_property_definitions() ) as $name ) {
+			if ( str_starts_with( $name, 'law26_' ) ) {
+				$this->portal[ $name ] = array_merge( law_hubspot_property_definitions()[ $name ], array( 'name' => $name ) );
+			}
+		}
+		$this->missing_groups = array();
+		law_hubspot_properties_create();
+		$this->assertCount( 1, $this->writes );
+		$this->assertSame( 'law_site', $this->writes[0]['body']['groupName'] );
+	}
+
 	public function test_create_adds_only_what_is_missing_and_keeps_existing_options(): void {
-		$this->group_exists = false;
+		$this->missing_groups = array( 'law_site' );
 		unset( $this->portal['law26_dietary_other'] );
 		$this->portal['law_events_attending']['options'] = array(
 			array( 'label' => 'Flagship 2026', 'value' => '2026 Flagship', 'displayOrder' => 3, 'hidden' => false, 'description' => 'kept' ),
@@ -244,6 +301,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		foreach ( $actions as $row ) {
 			$by_action[ $row['action'] ][] = $row;
 		}
+		$this->assertCount( 1, $by_action['create_group'], 'Only the missing group is created; the year group was there.' );
 		$this->assertSame( 'done', $by_action['create_group'][0]['result'] );
 		$this->assertCount( 1, $by_action['create_property'] );
 		$this->assertSame( 'law26_dietary_other', $by_action['create_property'][0]['target'] );
@@ -252,6 +310,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		$this->assertCount( 3, $this->writes );
 		$this->assertSame( array( 'POST', '/crm/v3/properties/contacts/groups' ), array( $this->writes[0]['method'], $this->writes[0]['path'] ), 'The group comes first: the properties are created inside it.' );
 		$this->assertSame( 'law_site', $this->writes[0]['body']['name'] );
+		$this->assertSame( 'LAW site', $this->writes[0]['body']['label'] );
 
 		$by_path = array();
 		foreach ( array_slice( $this->writes, 1 ) as $write ) {
@@ -259,7 +318,8 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		}
 		$create = $by_path['POST /crm/v3/properties/contacts'];
 		$this->assertSame( 'law26_dietary_other', $create['body']['name'] );
-		$this->assertSame( 'law_site', $create['body']['groupName'] );
+		$this->assertSame( 'law26', $create['body']['groupName'], 'A year-prefixed property goes in the year group.' );
+		$this->assertArrayNotHasKey( 'group', $create['body'], 'The module\'s own group key is not sent to HubSpot.' );
 		$this->assertSame( 'string', $create['body']['type'] );
 
 		$patch = $by_path['PATCH /crm/v3/properties/contacts/law_events_attending'];

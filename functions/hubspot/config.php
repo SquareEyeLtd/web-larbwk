@@ -183,7 +183,15 @@ function law_hubspot_config() {
 		// Kitty's confirmation (Event Connections, November 2026): HubSpot
 		// cannot rename a property once created, so none is created in the
 		// live portal until she has. Changing a name here is the whole change.
-		'property_group'        => array( 'name' => 'law_site', 'label' => 'LAW site' ),
+		// Property groups are the section headings on a contact record. The
+		// year's set has its own, named by the prefix and labelled the way LAW
+		// label the year ("LAW2026"), so each year's properties read as one
+		// block and next year's sit under their own heading. Everything else
+		// stays in the site group.
+		'property_groups'       => array(
+			'site' => array( 'name' => 'law_site', 'label' => 'LAW site' ),
+			'year' => array( 'name' => $prefix, 'label' => 'LAW' . $year ),
+		),
 		'properties'            => array(
 			'events_attending'        => 'law_events_attending',
 			'passtype'                => $prefix . '_ec_passtype',
