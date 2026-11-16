@@ -35,6 +35,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 function law_hubspot_property_definitions() {
 	$config = law_hubspot_config();
 	$names  = $config['properties'];
+	$year   = (int) $config['year'];
 
 	$definitions = array(
 		$names['events_attending']        => array(
@@ -44,24 +45,58 @@ function law_hubspot_property_definitions() {
 			'fieldType'   => 'checkbox',
 			'options'     => law_hubspot_options_from_values( array_values( $config['attending_options'] ) ),
 		),
-		$names['delegate_type']           => array(
-			'label'       => 'Delegate type (current year)',
-			'description' => 'The committee\'s ticket type on the flagship booking. Set by the LAW website.',
+		// The badging set (HUBSPOT_SYNC.md §5.2, 12 November 2026): one per
+		// year, named with the year's prefix. Labels carry the year too, so
+		// the 2026 and 2027 sets read apart in the portal's property lists.
+		$names['passtype']                => array(
+			'label'       => $year . ' pass type (badge)',
+			'description' => 'The pass type Event Connections print on the ' . $year . ' badge, from the committee\'s ticket types on this person\'s confirmed LAW-run bookings. Set by the LAW website unless "' . $year . ' badge set by hand" is Yes.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'select',
-			'options'     => law_hubspot_options_from_values( $config['delegate_types'] ),
+			'options'     => law_hubspot_options_from_values( array_values( $config['passtype_values'] ) ),
+		),
+		$names['dietary_icon']            => array(
+			'label'       => $year . ' dietary icon (badge)',
+			'description' => 'The one dietary icon for the ' . $year . ' badge, folded from the LAW website\'s dietary choices. Set by the LAW website unless "' . $year . ' badge set by hand" is Yes.',
+			'type'        => 'enumeration',
+			'fieldType'   => 'select',
+			'options'     => law_hubspot_options_from_values( $config['dietary_icon_precedence'] ),
 		),
 		$names['dietary']                 => array(
-			'label'       => 'Dietary requirements',
-			'description' => 'From the LAW website profile, for people with a booking on an LAW-run event. Overwritten on every sync.',
+			'label'       => $year . ' dietary requirements',
+			'description' => 'The dietary choices ticked on the LAW website, for people with a confirmed booking on a ' . $year . ' LAW-run event. Overwritten on every sync.',
+			'type'        => 'enumeration',
+			'fieldType'   => 'checkbox',
+			'options'     => law_hubspot_options_from_values( $config['dietary_values'] ),
+		),
+		$names['dietary_other']           => array(
+			'label'       => $year . ' dietary requirements (other)',
+			'description' => 'The free-text dietary requirement typed on the LAW website. Overwritten on every sync.',
 			'type'        => 'string',
 			'fieldType'   => 'text',
 		),
-		$names['accessibility']           => array(
-			'label'       => 'Access requirements',
-			'description' => 'From the LAW website profile, for people with a booking on an LAW-run event. Overwritten on every sync.',
+		$names['access']                  => array(
+			'label'       => $year . ' access requirements',
+			'description' => 'The access requirements ticked on the LAW website, for people with a confirmed booking on a ' . $year . ' LAW-run event. Overwritten on every sync.',
+			'type'        => 'enumeration',
+			'fieldType'   => 'checkbox',
+			'options'     => law_hubspot_options_from_values( $config['access_values'] ),
+		),
+		$names['access_other']            => array(
+			'label'       => $year . ' access requirements (other)',
+			'description' => 'The free-text access requirement typed on the LAW website. Overwritten on every sync.',
 			'type'        => 'string',
 			'fieldType'   => 'text',
+		),
+		$names['badge_manual']            => array(
+			'label'       => $year . ' badge set by hand',
+			'description' => 'Set to Yes by LAW when this person\'s ' . $year . ' pass type or dietary icon has been decided by hand. The LAW website never writes this, and leaves the pass type and dietary icon alone while it is Yes.',
+			'type'        => 'enumeration',
+			'fieldType'   => 'booleancheckbox',
+			'options'     => array(
+				array( 'label' => 'Yes', 'value' => 'true', 'displayOrder' => 0, 'hidden' => false ),
+				array( 'label' => 'No', 'value' => 'false', 'displayOrder' => 1, 'hidden' => false ),
+			),
 		),
 		$names['events_registered_count'] => array(
 			'label'       => 'Hosted events booked (count, current year)',
@@ -149,7 +184,47 @@ function law_hubspot_fetch_properties() {
 			$properties[ (string) $property['name'] ] = $property;
 		}
 	}
+	if ( $properties ) {
+		law_hubspot_remember_portal_properties( array_keys( $properties ) );
+	}
 	return $properties;
+}
+
+/**
+ * Remember which site-owned properties the portal actually has, from the
+ * last property fetch. The sync's read-back (sync.php) asks for the site-
+ * owned properties by name, and HubSpot refuses the whole batch read when
+ * one does not exist -- which is exactly the state between "the code knows
+ * about law26_ec_passtype" and "Kitty has confirmed the name and it has
+ * been created". Until a check has run, every site-owned property is
+ * assumed present (the pre-November behaviour).
+ *
+ * @param string[] $names Every internal name the portal returned.
+ */
+function law_hubspot_remember_portal_properties( array $names ) {
+	$site = array_values( law_hubspot_setting( 'properties', array() ) );
+	update_option( 'law_hubspot_portal_properties', array_values( array_intersect( $site, $names ) ), false );
+}
+
+/**
+ * The site-owned property internal names the portal is known to have, or
+ * null when no check has run yet (so the caller assumes all of them).
+ *
+ * @return string[]|null
+ */
+function law_hubspot_known_portal_properties() {
+	$known = get_option( 'law_hubspot_portal_properties', null );
+	return is_array( $known ) ? array_map( 'strval', $known ) : null;
+}
+
+/** Does the portal have this site-owned property (by config key)? Unknown counts as yes. */
+function law_hubspot_portal_has_property( $key ) {
+	$name = law_hubspot_property_name( $key );
+	if ( '' === $name ) {
+		return false;
+	}
+	$known = law_hubspot_known_portal_properties();
+	return null === $known || in_array( $name, $known, true );
 }
 
 /** Does the module's property group exist? true / false / WP_Error. */
@@ -199,6 +274,10 @@ function law_hubspot_properties_check() {
 		'error'        => '',
 		'group'        => array( 'name' => $config['property_group']['name'], 'exists' => false ),
 		'properties'   => array(),
+		// Superseded site-owned properties still in the portal (config
+		// `superseded_properties`): reported, never touched here. Their
+		// removal is law_hubspot_properties_archive(), on request only.
+		'superseded'   => array(),
 		'contact_type' => array(),
 		'legal_basis'  => array(),
 	);
@@ -245,6 +324,17 @@ function law_hubspot_properties_check() {
 		$all_ok    = $all_ok && $row['ok'];
 
 		$report['properties'][ $name ] = $row;
+	}
+
+	// The old design's properties, while they linger. Not part of `ok`: a
+	// leftover property breaks nothing, it only confuses the portal's users.
+	foreach ( (array) ( $config['superseded_properties'] ?? array() ) as $name ) {
+		if ( isset( $portal[ $name ] ) ) {
+			$report['superseded'][ $name ] = array(
+				'label' => (string) ( $portal[ $name ]['label'] ?? $name ),
+				'type'  => (string) ( $portal[ $name ]['type'] ?? '' ),
+			);
+		}
 	}
 
 	// Contact type: shared, so report only. Compare VALUES; also say when a
@@ -410,6 +500,48 @@ function law_hubspot_properties_create( ?array $report = null ) {
 
 	if ( ! $actions ) {
 		$actions[] = array( 'action' => 'none', 'target' => '', 'result' => 'skipped', 'message' => 'Every site-owned property is already in place.' );
+	}
+
+	law_hubspot_log( '', 'properties', $actions, 'dry' === law_hubspot_mode() ? 'dry' : 'ok' );
+	return $actions;
+}
+
+/**
+ * Archive the superseded site-owned properties (config `superseded_properties`)
+ * that the portal still has. HubSpot's DELETE archives rather than destroys:
+ * the property and its values disappear from the record and the lists, and
+ * HubSpot support can restore it within its retention window. The names are
+ * freed for nothing -- the replacements are year-prefixed -- so this is
+ * tidiness, not a prerequisite, and it is NEVER run by the check or the
+ * create step. Only `wp law hubspot check-properties --archive` and the
+ * admin screen's button call it, and both say what they are about to do.
+ *
+ * In dry mode each DELETE is logged and reported as 'dry'; nothing changes.
+ *
+ * @param array|null $report A fresh law_hubspot_properties_check(); fetched when null.
+ * @return array[] Action rows as law_hubspot_properties_create().
+ */
+function law_hubspot_properties_archive( ?array $report = null ) {
+	$report = $report ?? law_hubspot_properties_check();
+	if ( '' !== $report['error'] ) {
+		return array( array( 'action' => 'check', 'target' => '', 'result' => 'error', 'message' => $report['error'] ) );
+	}
+
+	$actions = array();
+	foreach ( array_keys( (array) ( $report['superseded'] ?? array() ) ) as $name ) {
+		// Belt and braces: only a name config calls superseded, and never one
+		// the module still writes, can go.
+		if ( ! in_array( $name, (array) law_hubspot_setting( 'superseded_properties', array() ), true )
+			|| in_array( $name, array_values( law_hubspot_setting( 'properties', array() ) ), true ) ) {
+			$actions[] = array( 'action' => 'archive_property', 'target' => $name, 'result' => 'skipped', 'message' => 'Not a superseded property; left alone.' );
+			continue;
+		}
+		$result    = law_hubspot_request( 'DELETE', '/crm/v3/properties/contacts/' . rawurlencode( $name ) );
+		$actions[] = law_hubspot_action_row( 'archive_property', $name, $result );
+	}
+
+	if ( ! $actions ) {
+		$actions[] = array( 'action' => 'none', 'target' => '', 'result' => 'skipped', 'message' => 'No superseded property is left in the portal.' );
 	}
 
 	law_hubspot_log( '', 'properties', $actions, 'dry' === law_hubspot_mode() ? 'dry' : 'ok' );

@@ -110,7 +110,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 	}
 
 	public function test_missing_property_wrong_type_and_missing_option_are_each_reported(): void {
-		unset( $this->portal['law_dietary'] );
+		unset( $this->portal['law26_dietary'] );
 		$this->portal['law_events_registered_count']['type'] = 'string';
 		$this->portal['law_events_attending']['options']     = law_hubspot_options_from_values( array( '2026 Flagship', '2025 Flagship' ) );
 		$this->group_exists                                  = false;
@@ -119,7 +119,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 
 		$this->assertFalse( $report['ok'] );
 		$this->assertFalse( $report['group']['exists'] );
-		$this->assertFalse( $report['properties']['law_dietary']['exists'] );
+		$this->assertFalse( $report['properties']['law26_dietary']['exists'] );
 		$this->assertFalse( $report['properties']['law_events_registered_count']['type_ok'] );
 		$this->assertSame(
 			array( '2026 Monday reception', '2026 Wednesday reception', '2026 Friday reception' ),
@@ -232,7 +232,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 
 	public function test_create_adds_only_what_is_missing_and_keeps_existing_options(): void {
 		$this->group_exists = false;
-		unset( $this->portal['law_dietary'] );
+		unset( $this->portal['law26_dietary_other'] );
 		$this->portal['law_events_attending']['options'] = array(
 			array( 'label' => 'Flagship 2026', 'value' => '2026 Flagship', 'displayOrder' => 3, 'hidden' => false, 'description' => 'kept' ),
 			array( 'label' => '2025 Flagship', 'value' => '2025 Flagship', 'displayOrder' => 0, 'hidden' => true ),
@@ -246,7 +246,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		}
 		$this->assertSame( 'done', $by_action['create_group'][0]['result'] );
 		$this->assertCount( 1, $by_action['create_property'] );
-		$this->assertSame( 'law_dietary', $by_action['create_property'][0]['target'] );
+		$this->assertSame( 'law26_dietary_other', $by_action['create_property'][0]['target'] );
 		$this->assertCount( 1, $by_action['add_options'] );
 
 		$this->assertCount( 3, $this->writes );
@@ -258,7 +258,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 			$by_path[ $write['method'] . ' ' . $write['path'] ] = $write;
 		}
 		$create = $by_path['POST /crm/v3/properties/contacts'];
-		$this->assertSame( 'law_dietary', $create['body']['name'] );
+		$this->assertSame( 'law26_dietary_other', $create['body']['name'] );
 		$this->assertSame( 'law_site', $create['body']['groupName'] );
 		$this->assertSame( 'string', $create['body']['type'] );
 
@@ -291,7 +291,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 
 	public function test_create_in_dry_mode_sends_nothing_and_says_what_it_would_do(): void {
 		$this->mode = 'dry';
-		unset( $this->portal['law_accessibility'], $this->portal['law_sync_updated'] );
+		unset( $this->portal['law26_access_other'], $this->portal['law_sync_updated'] );
 		// The local site's own dry-run rows would otherwise be counted below
 		// (rolled back with the test's transaction).
 		$GLOBALS['wpdb']->query( 'DELETE FROM ' . law_hubspot_log_table() );
@@ -304,7 +304,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 			$this->assertSame( 'dry', $row['result'] );
 			$this->assertSame( 'create_property', $row['action'] );
 		}
-		$this->assertSame( array( 'law_accessibility', 'law_sync_updated' ), array_column( $actions, 'target' ) );
+		$this->assertSame( array( 'law26_access_other', 'law_sync_updated' ), array_column( $actions, 'target' ) );
 
 		$dry = array_filter( law_hubspot_log_recent( 10 ), fn( $r ) => 'dry-write' === $r->action );
 		$this->assertCount( 2, $dry );
@@ -352,20 +352,120 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 	public function test_definitions_follow_the_plan(): void {
 		$definitions = law_hubspot_property_definitions();
 		$this->assertSame(
-			array( 'law_events_attending', 'law_delegate_type', 'law_dietary', 'law_accessibility', 'law_events_registered_count', 'law_events_registered', 'law_event_sectors', 'law_sync_updated' ),
+			array(
+				'law_events_attending',
+				'law26_ec_passtype',
+				'law26_dietary_icon',
+				'law26_dietary',
+				'law26_dietary_other',
+				'law26_access',
+				'law26_access_other',
+				'law26_badge_manual',
+				'law_events_registered_count',
+				'law_events_registered',
+				'law_event_sectors',
+				'law_sync_updated',
+			),
 			array_keys( $definitions )
 		);
 		$this->assertSame( 'checkbox', $definitions['law_events_attending']['fieldType'] );
-		$this->assertSame( 'select', $definitions['law_delegate_type']['fieldType'] );
-		$this->assertSame( array( 'Delegate', 'Sponsor', 'Speaker', 'Exhibitor', 'Committee' ), array_column( $definitions['law_delegate_type']['options'], 'value' ) );
+		$this->assertSame( 'select', $definitions['law26_ec_passtype']['fieldType'] );
+		$this->assertSame( array( 'Delegate', 'Sponsor', 'Speaker', 'Committee', 'Press', 'Patron' ), array_column( $definitions['law26_ec_passtype']['options'], 'value' ), 'Exhibitor is retired; Press and Patron added (Emily, 4 November 2026).' );
+		$this->assertSame( 'select', $definitions['law26_dietary_icon']['fieldType'] );
+		$this->assertSame( array( 'Allergy or intolerance', 'Vegetarian or vegan', 'Pescatarian' ), array_column( $definitions['law26_dietary_icon']['options'], 'value' ) );
+		$this->assertSame( 'checkbox', $definitions['law26_dietary']['fieldType'] );
+		$this->assertSame( array( 'Vegetarian', 'Vegan', 'Pescatarian', 'Gluten free', 'Dairy free', 'Coeliac', 'Lactose free', 'Nut allergy' ), array_column( $definitions['law26_dietary']['options'], 'value' ), 'The site\'s own choices, minus Other (its text has its own property).' );
+		$this->assertSame( 'checkbox', $definitions['law26_access']['fieldType'] );
+		$this->assertSame( array( 'Captions', 'Sign language', 'Animal / PCA', 'Wheelchair' ), array_column( $definitions['law26_access']['options'], 'value' ) );
+		$this->assertSame( 'booleancheckbox', $definitions['law26_badge_manual']['fieldType'] );
+		$this->assertSame( array( 'true', 'false' ), array_column( $definitions['law26_badge_manual']['options'], 'value' ) );
 		$this->assertSame( 'number', $definitions['law_events_registered_count']['type'] );
 		$this->assertSame( 'datetime', $definitions['law_sync_updated']['type'] );
 		foreach ( $definitions as $name => $definition ) {
-			$this->assertStringStartsWith( 'law_', $name );
+			$this->assertMatchesRegularExpression( '/^law(\d\d)?_/', $name );
+			if ( 'law26_badge_manual' === $name ) {
+				continue; // HubSpot's own Yes/No pair: label and value differ by design.
+			}
 			foreach ( (array) ( $definition['options'] ?? array() ) as $option ) {
 				$this->assertSame( $option['label'], $option['value'], $name . ': the module never lets label and value differ.' );
 			}
 		}
+	}
+
+	public function test_the_badging_set_is_named_for_the_events_year(): void {
+		$this->isolate_option( LAW_EVENTS_SETTINGS_OPTION, array( 'year' => 2027 ) );
+		$this->assertSame( 'law27', law_hubspot_year_prefix() );
+		$this->assertSame( 'law27_ec_passtype', law_hubspot_property_name( 'passtype' ) );
+		$this->assertSame( 'law27_badge_manual', law_hubspot_property_name( 'badge_manual' ) );
+		$this->assertSame( 'law_events_attending', law_hubspot_property_name( 'events_attending' ), 'The un-prefixed ones carry the year in their values instead.' );
+		$definitions = law_hubspot_property_definitions();
+		$this->assertArrayHasKey( 'law27_dietary_icon', $definitions );
+		$this->assertStringStartsWith( '2027 ', $definitions['law27_dietary_icon']['label'] );
+	}
+
+	public function test_superseded_properties_are_reported_and_archived_only_on_request(): void {
+		$this->portal['law_delegate_type'] = $this->enumeration( 'law_delegate_type', 'Delegate type (current year)', array( 'Delegate' ) );
+		$this->portal['law_dietary']       = array( 'name' => 'law_dietary', 'label' => 'Dietary requirements', 'type' => 'string', 'fieldType' => 'text' );
+
+		$report = law_hubspot_properties_check();
+		$this->assertTrue( $report['ok'], 'A leftover property is not a failure.' );
+		$this->assertSame( array( 'law_delegate_type', 'law_dietary' ), array_keys( $report['superseded'] ) );
+		$this->assertSame( 'Dietary requirements', $report['superseded']['law_dietary']['label'] );
+		$this->assertSame( array(), $this->writes, 'The check never archives.' );
+
+		law_hubspot_properties_create( $report );
+		$this->assertSame( array(), $this->writes, 'Nor does create.' );
+
+		$actions = law_hubspot_properties_archive( $report );
+		$this->assertSame( array( 'archive_property', 'archive_property' ), array_column( $actions, 'action' ) );
+		$this->assertSame( array( 'done', 'done' ), array_column( $actions, 'result' ) );
+		$this->assertSame(
+			array( 'DELETE /crm/v3/properties/contacts/law_delegate_type', 'DELETE /crm/v3/properties/contacts/law_dietary' ),
+			array_map( fn( $w ) => $w['method'] . ' ' . $w['path'], $this->writes )
+		);
+	}
+
+	public function test_archive_in_dry_mode_sends_nothing(): void {
+		$this->mode                        = 'dry';
+		$this->portal['law_accessibility'] = array( 'name' => 'law_accessibility', 'label' => 'Access requirements', 'type' => 'string', 'fieldType' => 'text' );
+
+		$actions = law_hubspot_properties_archive();
+		$this->assertSame( array(), $this->writes );
+		$this->assertCount( 1, $actions );
+		$this->assertSame( 'dry', $actions[0]['result'] );
+		$this->assertSame( 'law_accessibility', $actions[0]['target'] );
+	}
+
+	public function test_archive_never_touches_a_property_the_module_still_writes(): void {
+		// A config that (wrongly) lists a live property as superseded.
+		$filter = function ( $config ) {
+			$config['superseded_properties'][] = 'law_events_attending';
+			return $config;
+		};
+		add_filter( 'law_hubspot_config', $filter );
+		try {
+			$actions = law_hubspot_properties_archive();
+		} finally {
+			remove_filter( 'law_hubspot_config', $filter );
+		}
+		$this->assertSame( array(), $this->writes );
+		$this->assertSame( 'skipped', $actions[0]['result'] );
+		$this->assertSame( 'law_events_attending', $actions[0]['target'] );
+	}
+
+	public function test_a_check_remembers_which_site_properties_the_portal_has(): void {
+		unset( $this->portal['law26_ec_passtype'], $this->portal['law26_badge_manual'] );
+		$this->isolate_option( 'law_hubspot_portal_properties' );
+
+		law_hubspot_properties_check();
+
+		$this->assertFalse( law_hubspot_portal_has_property( 'passtype' ), 'Not created yet (Kitty has to confirm the name), so the plan must not read or write it.' );
+		$this->assertFalse( law_hubspot_portal_has_property( 'badge_manual' ) );
+		$this->assertTrue( law_hubspot_portal_has_property( 'dietary_icon' ) );
+		$this->assertTrue( law_hubspot_portal_has_property( 'events_attending' ) );
+		$this->assertNotContains( 'law26_ec_passtype', law_hubspot_read_properties() );
+		$this->assertContains( 'law26_dietary_icon', law_hubspot_read_properties() );
+		$this->assertNotContains( 'law_sync_updated', law_hubspot_read_properties(), 'Written on every push; never worth reading back.' );
 	}
 
 	public function test_sector_options_are_decoded_term_names(): void {

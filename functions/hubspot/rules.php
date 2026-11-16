@@ -13,7 +13,8 @@
  * computed from everything the site knows about that address.
  *
  * Phase 2 covers the standard properties, the Contact type tags and legal
- * basis. The badging properties (§5.2) are phase 3 and are not computed yet.
+ * basis. Phase 3 (12 November 2026) adds the site-owned properties (§5.2):
+ * the badging set for Event Connections and the segmentation counts.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -203,6 +204,7 @@ function law_hubspot_speaker_events( $speaker_id ) {
  *     'properties'       => array( 'firstname' => ..., ... ),   // standard, full values
  *     'contact_type_add' => array( '2026 Attendee', ... ),
  *     'legal_basis_min'  => 'customer' | 'other' | '',
+ *     'site_properties'  => law_hubspot_site_properties() result (config key => value),
  *     'sources'          => array( 'user' => 12, 'speaker' => 0, 'bookings' => array(...), ... ),
  *   )
  */
@@ -232,6 +234,7 @@ function law_hubspot_desired_state( $email ) {
 		'reception_tags'  => array(),
 	);
 	$properties = array( 'email' => $email );
+	$site       = array();
 	$customer   = false;
 
 	if ( $user ) {
@@ -243,12 +246,17 @@ function law_hubspot_desired_state( $email ) {
 		$properties['company']   = trim( (string) get_user_meta( $user->ID, 'organisation', true ) );
 		$properties['country']   = trim( (string) get_user_meta( $user->ID, 'country', true ) );
 
-		foreach ( law_hubspot_user_bookings( $user->ID ) as $booking ) {
+		$bookings = law_hubspot_user_bookings( $user->ID );
+		$site     = law_hubspot_site_properties( $bookings );
+
+		foreach ( $bookings as $booking ) {
 			$event_id              = (int) $booking->post_parent;
 			$sources['bookings'][] = (int) $booking->ID;
 			$customer              = true;
 			$tags[]                = $config['tags']['attendee'];
-			if ( law_event_meta( $booking->ID, '_law_is_press' ) ) {
+			// Press is the committee-issued flag OR the Press ticket type; the
+			// two are kept in step on write, but either alone is enough here.
+			if ( law_event_meta( $booking->ID, '_law_is_press' ) || 'press' === (string) law_event_meta( $booking->ID, '_law_ticket_type' ) ) {
 				$sources['press'] = true;
 				$tags[]           = $config['tags']['press'];
 			}
@@ -325,7 +333,200 @@ function law_hubspot_desired_state( $email ) {
 		'properties'       => $properties,
 		'contact_type_add' => array_values( array_unique( array_filter( $tags ) ) ),
 		'legal_basis_min'  => $customer ? 'customer' : ( $user ? 'other' : '' ),
+		'site_properties'  => $site,
 		'sources'          => $sources,
+	);
+}
+
+/* -------------------------------------------------------------------------
+ * The site-owned properties (phase 3, HUBSPOT_SYNC.md §5.2)
+ * ---------------------------------------------------------------------- */
+
+/** Is this a confirmed place at an event LAW runs itself (flagship or reception)? */
+function law_hubspot_booking_is_law_run( $booking ) {
+	return in_array( law_booking_kind( $booking ), array( 'flagship', 'reception' ), true );
+}
+
+/** The LAW year an event belongs to (its law_year term), or 0 when it has none. */
+function law_hubspot_event_year( $event_id ) {
+	$terms = get_the_terms( (int) $event_id, 'law_year' );
+	if ( ! is_array( $terms ) || ! $terms ) {
+		return 0;
+	}
+	return (int) $terms[0]->name;
+}
+
+/**
+ * The law_events_attending option a confirmed place at this event earns,
+ * or '' when the event is not one of the four (config `attending_options`:
+ * the flagship, or a reception by its seed slug).
+ */
+function law_hubspot_attending_option_for_event( $event_id ) {
+	$event_id = (int) $event_id;
+	$options  = (array) law_hubspot_setting( 'attending_options', array() );
+	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
+		return (string) ( $options['flagship'] ?? '' );
+	}
+	$post = get_post( $event_id );
+	if ( ! $post || ! law_event_meta( $event_id, '_law_is_reception' ) ) {
+		return '';
+	}
+	return (string) ( $options[ $post->post_name ] ?? '' );
+}
+
+/**
+ * The badge's pass type from a set of ticket-type slugs: the first of the
+ * config's `passtype_precedence` that is present, as its label. '' when none
+ * is (an unclassified booking sends nothing, never a blank: a value LAW typed
+ * by hand must survive a sync).
+ *
+ * @param string[] $slugs Ticket types held (law_booking_ticket_types() keys).
+ */
+function law_hubspot_passtype_from_types( array $slugs ) {
+	$slugs  = array_filter( array_map( 'strval', $slugs ) );
+	$labels = (array) law_hubspot_setting( 'passtype_values', array() );
+	foreach ( (array) law_hubspot_setting( 'passtype_precedence', array() ) as $slug ) {
+		if ( in_array( $slug, $slugs, true ) && isset( $labels[ $slug ] ) ) {
+			return (string) $labels[ $slug ];
+		}
+	}
+	return '';
+}
+
+/**
+ * The one dietary icon for a set of the site's dietary choices: each choice
+ * folded through config `dietary_icon_map`, and when more than one icon
+ * results, the first in `dietary_icon_precedence` (an allergy beats a
+ * preference). '' when no choice earns an icon.
+ *
+ * @param string[] $choices law_registration_dietary_choices() values.
+ */
+function law_hubspot_dietary_icon( array $choices ) {
+	$map   = (array) law_hubspot_setting( 'dietary_icon_map', array() );
+	$icons = array();
+	foreach ( $choices as $choice ) {
+		$choice = (string) $choice;
+		if ( isset( $map[ $choice ] ) && '' !== (string) $map[ $choice ] ) {
+			$icons[ (string) $map[ $choice ] ] = true;
+		}
+	}
+	if ( ! $icons ) {
+		return '';
+	}
+	foreach ( (array) law_hubspot_setting( 'dietary_icon_precedence', array() ) as $icon ) {
+		if ( isset( $icons[ (string) $icon ] ) ) {
+			return (string) $icon;
+		}
+	}
+	// Every icon found is one the precedence list does not know: take the
+	// first, so a map edit without a matching precedence edit still sends
+	// something sensible rather than nothing.
+	return (string) array_key_first( $icons );
+}
+
+/**
+ * The site-owned property values for one account, from its confirmed
+ * bookings (law_hubspot_user_bookings()). Keyed by CONFIG key, not internal
+ * name; the sync step maps and diffs them (sync.php). Values are strings as
+ * HubSpot takes them: multi-checkbox values `;`-joined.
+ *
+ * The badging values are facts about THIS YEAR's LAW-run places only
+ * (§5.2, §7.3): a booking on another year's flagship, or on a hosted event,
+ * contributes nothing to the pass type, icon, dietary or access properties.
+ *
+ *  - `events_attending`: the options this year's confirmed LAW-run places
+ *    earn (the sync merges them with other years' options, which it keeps).
+ *  - `passtype`: the winning ticket type's label, or '' = SEND NOTHING.
+ *  - `dietary_icon`, `dietary`, `dietary_other`, `access`, `access_other`:
+ *    only for someone with a LAW-run place this year, the union across those
+ *    places of the account's answers with the booking's as fallback
+ *    (law_booking_profile_values(), BOOK_ON_BEHALF.md A3). A person with a
+ *    place and nothing ticked gets '' = CLEAR, so a requirement removed on
+ *    the site goes from the badge too. A person with no LAW-run place this
+ *    year gets '' for all five as well: the disclosure that justified
+ *    sending them has ended.
+ *  - `events_registered_count`, `events_registered`: this year's confirmed
+ *    places on hosted events (everything that is not LAW-run), count and
+ *    titles one per line. `event_sectors`: the sector terms of every event
+ *    with a confirmed place, any year, `;`-joined.
+ *
+ * @param WP_Post[] $bookings Confirmed bookings, attendee = author.
+ * @return array<string,mixed> Config key => value; `events_attending` is a string[].
+ */
+function law_hubspot_site_properties( array $bookings ) {
+	$year      = law_hubspot_year();
+	$attending = array();
+	$types     = array();
+	$law_run   = array();
+	$hosted    = array();
+	$sectors   = array();
+
+	foreach ( $bookings as $booking ) {
+		$event_id = (int) $booking->post_parent;
+		if ( $event_id < 1 ) {
+			continue;
+		}
+		foreach ( law_events_post_term_names( $event_id, 'law_sector' ) as $sector ) {
+			// Decoded as law_hubspot_sector_values() decodes the option values.
+			$sectors[ html_entity_decode( (string) $sector, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) ] = true;
+		}
+		if ( law_hubspot_event_year( $event_id ) !== $year ) {
+			continue;
+		}
+		if ( law_hubspot_booking_is_law_run( $booking ) ) {
+			$law_run[] = $booking;
+			$option    = law_hubspot_attending_option_for_event( $event_id );
+			if ( '' !== $option ) {
+				$attending[ $option ] = true;
+			}
+			$type = (string) law_event_meta( $booking->ID, '_law_ticket_type' );
+			if ( '' !== $type ) {
+				$types[] = $type;
+			}
+			if ( law_event_meta( $booking->ID, '_law_is_press' ) ) {
+				$types[] = 'press';
+			}
+		} else {
+			$hosted[ $event_id ] = html_entity_decode( get_the_title( $event_id ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		}
+	}
+
+	$dietary = array();
+	$access  = array();
+	$d_other = array();
+	$a_other = array();
+	foreach ( $law_run as $booking ) {
+		$profile = law_booking_profile_values( $booking );
+		foreach ( (array) ( $profile['dietary'] ?? array() ) as $choice ) {
+			$dietary[ (string) $choice ] = true;
+		}
+		foreach ( (array) ( $profile['accessibility'] ?? array() ) as $choice ) {
+			$access[ (string) $choice ] = true;
+		}
+		if ( '' !== trim( (string) ( $profile['dietary_other'] ?? '' ) ) ) {
+			$d_other[ trim( (string) $profile['dietary_other'] ) ] = true;
+		}
+		if ( '' !== trim( (string) ( $profile['accessibility_other'] ?? '' ) ) ) {
+			$a_other[ trim( (string) $profile['accessibility_other'] ) ] = true;
+		}
+	}
+	// "Other" is a tick that says "see the text"; the text goes on its own.
+	unset( $dietary['Other'], $access['Other'] );
+
+	$sector_values = array_keys( $sectors );
+	sort( $sector_values, SORT_NATURAL | SORT_FLAG_CASE );
+
+	return array(
+		'events_attending'        => array_keys( $attending ),
+		'passtype'                => law_hubspot_passtype_from_types( $types ),
+		'dietary_icon'            => law_hubspot_dietary_icon( array_keys( $dietary ) ),
+		'dietary'                 => implode( ';', array_keys( $dietary ) ),
+		'dietary_other'           => implode( ' / ', array_keys( $d_other ) ),
+		'access'                  => implode( ';', array_keys( $access ) ),
+		'access_other'            => implode( ' / ', array_keys( $a_other ) ),
+		'events_registered_count' => (string) count( $hosted ),
+		'events_registered'       => implode( "\n", array_values( $hosted ) ),
+		'event_sectors'           => implode( ';', $sector_values ),
 	);
 }
 

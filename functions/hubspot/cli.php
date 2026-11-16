@@ -71,26 +71,34 @@ class LAW_HubSpot_CLI {
 	 * [--contact-type]
 	 * : Also add the missing Contact type option values (the shared property).
 	 *
+	 * [--archive]
+	 * : Archive the superseded site-owned properties the portal still has
+	 * (config `superseded_properties`: the pre-November law_delegate_type,
+	 * law_dietary and law_accessibility). HubSpot archives rather than
+	 * destroys, but the values leave every contact record, so this asks for
+	 * confirmation on its own; pass --yes to skip. Dry mode logs instead.
+	 *
 	 * [--live]
-	 * : Send the --create / --contact-type writes for real even when the mode
-	 * is dry (including a local site, where live is always downgraded). Only
-	 * property DEFINITIONS are written by this command, never contact data,
-	 * which is why this one override exists and the worker has none. Asks for
-	 * confirmation; pass --yes to skip.
+	 * : Send the --create / --contact-type / --archive writes for real even
+	 * when the mode is dry (including a local site, where live is always
+	 * downgraded). Only property DEFINITIONS are written by this command,
+	 * never contact data, which is why this one override exists and the
+	 * worker has none. Asks for confirmation; pass --yes to skip.
 	 *
 	 * [--yes]
-	 * : Answer yes to the --live confirmation.
+	 * : Answer yes to the confirmations.
 	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp law hubspot check-properties
 	 *     wp law hubspot check-properties --create --live
+	 *     wp law hubspot check-properties --archive --live
 	 *
 	 * @subcommand check-properties
 	 * @when after_wp_load
 	 */
 	public function check_properties( $args, $assoc_args ) {
-		$force_live = ! empty( $assoc_args['live'] ) && ( ! empty( $assoc_args['create'] ) || ! empty( $assoc_args['contact-type'] ) );
+		$force_live = ! empty( $assoc_args['live'] ) && ( ! empty( $assoc_args['create'] ) || ! empty( $assoc_args['contact-type'] ) || ! empty( $assoc_args['archive'] ) );
 		if ( $force_live && 'live' !== law_hubspot_mode() ) {
 			if ( '' === law_hubspot_token() ) {
 				WP_CLI::error( 'LAW_HUBSPOT_TOKEN is not set; nothing can be written.' );
@@ -121,6 +129,14 @@ class LAW_HubSpot_CLI {
 		}
 		WP_CLI\Utils\format_items( 'table', $rows, array( 'property', 'exists', 'type_ok', 'missing_options' ) );
 
+		if ( ! empty( $report['superseded'] ) ) {
+			WP_CLI::log( '' );
+			WP_CLI::log( 'Superseded properties still in the portal (archive with --archive):' );
+			foreach ( $report['superseded'] as $name => $row ) {
+				WP_CLI::log( sprintf( '  %s (%s, %s)', $name, $row['label'], $row['type'] ) );
+			}
+		}
+
 		foreach ( array( 'contact_type', 'legal_basis' ) as $key ) {
 			$shared = $report[ $key ];
 			WP_CLI::log( '' );
@@ -140,6 +156,18 @@ class LAW_HubSpot_CLI {
 		if ( ! empty( $assoc_args['contact-type'] ) ) {
 			WP_CLI::log( '' );
 			$this->print_actions( law_hubspot_contact_type_add_options( $report ) );
+		}
+		if ( ! empty( $assoc_args['archive'] ) ) {
+			WP_CLI::log( '' );
+			if ( empty( $report['superseded'] ) ) {
+				WP_CLI::log( 'No superseded property is left in the portal.' );
+			} else {
+				WP_CLI::confirm(
+					sprintf( 'Archive %s? The values leave every contact record (HubSpot support can restore an archived property for a time).', implode( ', ', array_keys( $report['superseded'] ) ) ),
+					$assoc_args
+				);
+				$this->print_actions( law_hubspot_properties_archive( $report ) );
+			}
 		}
 
 		if ( $force_live ) {
@@ -394,6 +422,113 @@ class LAW_HubSpot_CLI {
 			WP_CLI::warning( sprintf( '%d failed and will retry on the worker schedule; see `wp law hubspot log`.', $totals['failed'] ) );
 		}
 		WP_CLI::success( sprintf( '%s: %d processed, %d succeeded.', $mode, $totals['processed'], $totals['succeeded'] ) );
+	}
+
+	/**
+	 * Take one value out of a multi-checkbox property, leaving every other value.
+	 *
+	 * The one-off correction before the backfill (HUBSPOT_SYNC.md §13, 12
+	 * November 2026): "2026 Attendee" should mean "has a confirmed booking",
+	 * so it comes off everyone the website holds no confirmed booking for, and
+	 * the backfill puts it back on everyone who qualifies.
+	 *
+	 * A dry run by default: it lists every contact it would change, with the
+	 * property before and after, and writes nothing. Add --apply to write. In
+	 * dry MODE (LAW_HUBSPOT_MODE=dry) --apply still sends nothing; the payloads
+	 * are logged as `dry`, which is the rehearsal.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <property>
+	 * : Internal property name, e.g. contact_type.
+	 *
+	 * <value>
+	 * : The option's internal value, e.g. "2026 Attendee".
+	 *
+	 * [--unless-booked]
+	 * : Leave the value on anyone whose website account has a confirmed booking.
+	 *
+	 * [--apply]
+	 * : Write the change. Without it, nothing is written.
+	 *
+	 * [--yes]
+	 * : Skip the confirmation (--apply only).
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp law hubspot remove-option contact_type "2026 Attendee" --unless-booked
+	 *     wp law hubspot remove-option contact_type "2026 Attendee" --unless-booked --apply
+	 *
+	 * @subcommand remove-option
+	 * @when after_wp_load
+	 */
+	public function remove_option( $args, $assoc_args ) {
+		if ( ! law_hubspot_enabled() ) {
+			WP_CLI::error( 'The HubSpot mode is off; set LAW_HUBSPOT_MODE to dry to read.' );
+		}
+		$property      = (string) ( $args[0] ?? '' );
+		$value         = (string) ( $args[1] ?? '' );
+		$unless_booked = ! empty( $assoc_args['unless-booked'] );
+		$apply         = ! empty( $assoc_args['apply'] );
+
+		WP_CLI::log( sprintf( 'Searching the portal for contacts with %s = "%s"…', $property, $value ) );
+		$plan = law_hubspot_remove_option_plan( $property, $value, $unless_booked );
+		if ( $plan['error'] ) {
+			WP_CLI::error( $plan['error']->get_error_message() );
+		}
+
+		$found = count( $plan['rows'] ) + count( $plan['skipped'] );
+		WP_CLI::log( sprintf( '%d contact(s) hold the value.', $found ) );
+		if ( $plan['skipped'] ) {
+			WP_CLI::log( sprintf( '%d kept it: their website account has a confirmed booking.', count( $plan['skipped'] ) ) );
+		}
+		if ( ! $plan['rows'] ) {
+			WP_CLI::success( 'Nothing to remove.' );
+			return;
+		}
+
+		$table = array();
+		foreach ( $plan['rows'] as $row ) {
+			$table[] = array(
+				'hubspot_id'   => $row['hubspot_id'],
+				'email'        => $row['email'],
+				'in_wordpress' => $row['in_wordpress'] ? 'yes' : 'no',
+				'before'       => $row['before'],
+				'after'        => '' !== $row['after'] ? $row['after'] : '(empty)',
+			);
+		}
+		WP_CLI\Utils\format_items( 'table', $table, array( 'hubspot_id', 'email', 'in_wordpress', 'before', 'after' ) );
+		WP_CLI::log( sprintf( '%d contact(s) would lose "%s". Every other value stays.', count( $plan['rows'] ), $value ) );
+
+		if ( ! $apply ) {
+			WP_CLI::success( 'Dry run: nothing written. Add --apply to make the change.' );
+			return;
+		}
+
+		$mode = law_hubspot_mode();
+		WP_CLI::confirm(
+			sprintf(
+				'%s "%s" from %d contact(s) %s. Continue?',
+				'live' === $mode ? 'Remove' : 'Dry-run removing',
+				$value,
+				count( $plan['rows'] ),
+				'live' === $mode ? 'in the live portal ' . LAW_HUBSPOT_PORTAL_ID : '(writes logged, not sent)'
+			),
+			$assoc_args
+		);
+
+		$totals = law_hubspot_remove_option_apply( $property, $plan['rows'] );
+		foreach ( $totals['errors'] as $line ) {
+			WP_CLI::warning( $line );
+		}
+		if ( $totals['dry'] ) {
+			WP_CLI::success( sprintf( 'Dry mode: %d write(s) logged, none sent. See `wp law hubspot log`.', $totals['dry'] ) );
+			return;
+		}
+		if ( $totals['failed'] ) {
+			WP_CLI::warning( sprintf( '%d failed; see `wp law hubspot log`.', $totals['failed'] ) );
+		}
+		WP_CLI::success( sprintf( '%d contact(s) updated; before and after are in the log.', $totals['written'] ) );
 	}
 
 	private function print_actions( array $actions ) {

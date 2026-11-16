@@ -20,10 +20,115 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-/** The shared properties the plan reads back before merging. */
+/**
+ * The properties the plan reads back before merging: the shared pair, and
+ * every site-owned property the portal is known to have (a batch read that
+ * names a property the portal lacks fails whole, and the badging set is not
+ * created until Event Connections confirm the names; properties.php).
+ */
 function law_hubspot_read_properties() {
 	$config = law_hubspot_config();
-	return array( 'email', $config['contact_type_property'], $config['legal_basis_property'] );
+	$names  = array( 'email', $config['contact_type_property'], $config['legal_basis_property'] );
+	if ( null === law_hubspot_known_portal_properties() ) {
+		// First run since deploy and no property check yet: one GET, so the
+		// read below cannot name a property the portal does not have.
+		law_hubspot_fetch_properties();
+	}
+	foreach ( array_keys( $config['properties'] ) as $key ) {
+		if ( 'sync_updated' !== $key && law_hubspot_portal_has_property( $key ) ) {
+			$names[] = $config['properties'][ $key ];
+		}
+	}
+	return array_values( array_unique( $names ) );
+}
+
+/**
+ * The site-owned property writes for one person: desired values from the
+ * rules against what the contact holds, only the differences
+ * (HUBSPOT_SYNC.md §5.2).
+ *
+ *  - A property the portal does not have yet is never written.
+ *  - `events_attending` is a merge: the contact's options for OTHER years
+ *    stay, this year's are replaced by the desired set.
+ *  - `passtype` is never blanked: '' from the rules means "send nothing".
+ *  - While the contact's `badge_manual` is Yes, `passtype` and `dietary_icon`
+ *    are left alone: a human decided this badge (config `owned_by_law`).
+ *  - Everything in `owned_by_law` is never written at all.
+ *  - `sync_updated` is stamped on every push that writes anything.
+ *
+ * @param array<string,mixed>  $desired  law_hubspot_site_properties() result.
+ * @param array<string,string> $existing The read-back properties, by internal name.
+ * @return array<string,string> Internal name => value to write.
+ */
+function law_hubspot_site_property_writes( array $desired, array $existing ) {
+	$config = law_hubspot_config();
+	$names  = $config['properties'];
+	$year   = (string) $config['year'];
+	$writes = array();
+
+	$manual_name = $names['badge_manual'] ?? '';
+	$manual      = '' !== $manual_name && 'true' === strtolower( (string) ( $existing[ $manual_name ] ?? '' ) );
+
+	foreach ( $desired as $key => $value ) {
+		if ( ! isset( $names[ $key ] ) || in_array( $key, (array) ( $config['owned_by_law'] ?? array() ), true ) ) {
+			continue;
+		}
+		if ( ! law_hubspot_portal_has_property( $key ) ) {
+			continue;
+		}
+		$name    = $names[ $key ];
+		$current = (string) ( $existing[ $name ] ?? '' );
+
+		if ( 'events_attending' === $key ) {
+			$kept = array_filter( law_hubspot_split_multi( $current ), fn( $option ) => ! str_starts_with( $option, $year . ' ' ) );
+			$new  = array_values( array_unique( array_merge( $kept, array_map( 'strval', (array) $value ) ) ) );
+			$old  = law_hubspot_split_multi( $current );
+			sort( $new );
+			sort( $old );
+			if ( $new !== $old ) {
+				$writes[ $name ] = implode( ';', $new );
+			}
+			continue;
+		}
+
+		$value = (string) $value;
+		if ( 'passtype' === $key && '' === $value ) {
+			continue;
+		}
+		if ( $manual && in_array( $key, array( 'passtype', 'dietary_icon' ), true ) ) {
+			continue;
+		}
+		// A count of nought and no value at all say the same thing; writing
+		// "0" to every contact who never booked a hosted event would be the
+		// backfill's biggest write for no information.
+		$same = 'events_registered_count' === $key
+			? law_hubspot_zero_or_blank( $value ) === law_hubspot_zero_or_blank( $current )
+			: law_hubspot_multi_equal( $value, $current, in_array( $key, array( 'dietary', 'access', 'event_sectors' ), true ) );
+		if ( $same ) {
+			continue;
+		}
+		$writes[ $name ] = $value;
+	}
+
+	return $writes;
+}
+
+/** '' for nought or blank, the number otherwise. */
+function law_hubspot_zero_or_blank( $value ) {
+	$value = trim( (string) $value );
+	return ( '' === $value || 0 === (int) $value ) ? '' : (string) (int) $value;
+}
+
+/** Are two values the same, ignoring option order when $multi? */
+function law_hubspot_multi_equal( $a, $b, $multi ) {
+	if ( ! $multi ) {
+		return (string) $a === (string) $b;
+	}
+	$a = law_hubspot_split_multi( $a );
+	$b = law_hubspot_split_multi( $b );
+	sort( $a );
+	sort( $b );
+	return $a === $b;
 }
 
 /* -------------------------------------------------------------------------
@@ -136,15 +241,21 @@ function law_hubspot_plan_batch( array $emails ) {
 			$properties[ $lb_prop ] = $lb_new;
 		}
 
+		// The site-owned set (phase 3): only the differences, with the
+		// merge and the hands-off rules in law_hubspot_site_property_writes().
+		$site_writes = law_hubspot_site_property_writes( (array) ( $state['site_properties'] ?? array() ), $existing );
+		$properties  = $properties + $site_writes;
+
 		$plans[ $email ] = array(
-			'state'      => $state,
-			'exists'     => (bool) $found,
-			'hubspot_id' => $found ? $found['id'] : '',
-			'current'    => $existing,
-			'properties' => $properties,
-			'before'     => array( 'contact_type' => $ct_old, 'legal_basis' => $lb_old ),
-			'after'      => array( 'contact_type' => $ct_new, 'legal_basis' => null !== $lb_new ? $lb_new : $lb_old ),
-			'added_tags' => array_values( array_diff( law_hubspot_split_multi( $ct_new ), law_hubspot_split_multi( $ct_old ) ) ),
+			'state'       => $state,
+			'exists'      => (bool) $found,
+			'hubspot_id'  => $found ? $found['id'] : '',
+			'current'     => $existing,
+			'properties'  => $properties,
+			'before'      => array( 'contact_type' => $ct_old, 'legal_basis' => $lb_old ),
+			'after'       => array( 'contact_type' => $ct_new, 'legal_basis' => null !== $lb_new ? $lb_new : $lb_old ),
+			'added_tags'  => array_values( array_diff( law_hubspot_split_multi( $ct_new ), law_hubspot_split_multi( $ct_old ) ) ),
+			'site_writes' => $site_writes,
 		);
 	}
 
@@ -344,6 +455,20 @@ function law_hubspot_preview_columns() {
 		'company',
 		'jobtitle',
 		'country',
+		// The site-owned set (phase 3): what the rules want, whether or not
+		// the portal has the property yet, then what this push would write.
+		'events_attending',
+		'passtype',
+		'dietary_icon',
+		'dietary',
+		'dietary_other',
+		'access',
+		'access_other',
+		'badge_manual',
+		'hosted_count',
+		'hosted_titles',
+		'event_sectors',
+		'site_writes',
 		'sources',
 	);
 }
@@ -381,7 +506,21 @@ function law_hubspot_preview( ?array $emails = null ) {
 				$tags[ 'total ' . $tag ] = ( $tags[ 'total ' . $tag ] ?? 0 ) + 1;
 			}
 			$sources = $plan['state']['sources'];
+			$site    = (array) ( $plan['state']['site_properties'] ?? array() );
+			$manual  = law_hubspot_property_name( 'badge_manual' );
 			$rows[]  = array(
+				'events_attending'    => implode( ';', (array) ( $site['events_attending'] ?? array() ) ),
+				'passtype'            => (string) ( $site['passtype'] ?? '' ),
+				'dietary_icon'        => (string) ( $site['dietary_icon'] ?? '' ),
+				'dietary'             => (string) ( $site['dietary'] ?? '' ),
+				'dietary_other'       => (string) ( $site['dietary_other'] ?? '' ),
+				'access'              => (string) ( $site['access'] ?? '' ),
+				'access_other'        => (string) ( $site['access_other'] ?? '' ),
+				'badge_manual'        => '' !== $manual ? (string) ( $plan['current'][ $manual ] ?? '' ) : '',
+				'hosted_count'        => (string) ( $site['events_registered_count'] ?? '' ),
+				'hosted_titles'       => str_replace( "\n", ' | ', (string) ( $site['events_registered'] ?? '' ) ),
+				'event_sectors'       => (string) ( $site['event_sectors'] ?? '' ),
+				'site_writes'         => implode( ' | ', array_map( fn( $k, $v ) => $k . '=' . str_replace( "\n", ' / ', (string) $v ), array_keys( (array) ( $plan['site_writes'] ?? array() ) ), (array) ( $plan['site_writes'] ?? array() ) ) ),
 				'email'               => $email,
 				'in_wordpress'        => implode( ' ', array_filter( array( $sources['user'] ? 'user' : '', $sources['speaker'] ? 'speaker' : '' ) ) ),
 				'exists_in_hubspot'   => $plan['exists'] ? 'yes' : 'no',
@@ -432,4 +571,175 @@ function law_hubspot_preview_to_csv( $handle, array $rows ) {
 		}
 		fputcsv( $handle, $line, ',', '"', '\\' );
 	}
+}
+
+/* -------------------------------------------------------------------------
+ * One-off clean-up: take one value out of a multi-checkbox property
+ * ---------------------------------------------------------------------- */
+
+/**
+ * Every contact holding $value in the multi-checkbox $property, read through
+ * the search API, with what the property would hold once the value is gone.
+ *
+ * Built for the "2026 Attendee" correction before the backfill (Emily, 13
+ * October 2026): the tag had been handed out in September to everyone who
+ * ticked the attendee box, and should mean "has a confirmed booking". The
+ * backfill re-adds it for everyone who qualifies, so the clean-up only has to
+ * take it away; with $unless_booked, only from people the site holds no
+ * confirmed booking for, so nobody who has booked loses it for even a minute.
+ *
+ * Reads only. HubSpot's search answers 100 at a time and at most 10,000 in
+ * total, which is plenty for one tag's holders. The search filter is HubSpot's
+ * own idea of "includes this option"; the exact token is checked again here,
+ * so a near-miss match can never be edited.
+ *
+ * @param string $property      Internal property name (e.g. contact_type).
+ * @param string $value         The option's internal value (e.g. "2026 Attendee").
+ * @param bool   $unless_booked Skip contacts whose account has a confirmed booking.
+ * @return array{rows:array[],skipped:array[],error:WP_Error|null} Each row:
+ *         hubspot_id, email, before, after, booked (bool), in_wordpress (bool).
+ *         `skipped` holds the same shape for contacts kept because of a booking.
+ */
+function law_hubspot_remove_option_plan( $property, $value, $unless_booked = true ) {
+	$property = sanitize_key( $property );
+	$value    = trim( (string) $value );
+	if ( '' === $property || '' === $value ) {
+		return array( 'rows' => array(), 'skipped' => array(), 'error' => new WP_Error( 'law_hubspot_bad_args', 'Give a property name and a value.' ) );
+	}
+
+	$rows    = array();
+	$skipped = array();
+	$after   = null;
+	$pages   = 0;
+	do {
+		$body = array(
+			'filterGroups' => array(
+				array(
+					'filters' => array(
+						array( 'propertyName' => $property, 'operator' => 'IN', 'values' => array( $value ) ),
+					),
+				),
+			),
+			'properties'   => array( 'email', $property ),
+			'sorts'        => array( array( 'propertyName' => 'hs_object_id', 'direction' => 'ASCENDING' ) ),
+			'limit'        => 100,
+		);
+		if ( null !== $after ) {
+			$body['after'] = (string) $after;
+		}
+		$result = law_hubspot_request( 'POST', '/crm/v3/objects/contacts/search', $body );
+		if ( is_wp_error( $result ) ) {
+			return array( 'rows' => $rows, 'skipped' => $skipped, 'error' => $result );
+		}
+
+		foreach ( (array) ( $result['results'] ?? array() ) as $contact ) {
+			$props  = (array) ( $contact['properties'] ?? array() );
+			$before = law_hubspot_split_multi( $props[ $property ] ?? '' );
+			if ( ! in_array( $value, $before, true ) ) {
+				continue; // The search was generous; the token is not there.
+			}
+			$email  = law_hubspot_normalise_email( (string) ( $props['email'] ?? '' ) );
+			$user   = '' !== $email ? law_hubspot_user_for_email( $email ) : null;
+			$booked = $user ? (bool) law_hubspot_user_bookings( $user->ID ) : false;
+			$row    = array(
+				'hubspot_id'   => (string) ( $contact['id'] ?? '' ),
+				'email'        => $email,
+				'before'       => implode( ';', $before ),
+				'after'        => implode( ';', array_values( array_diff( $before, array( $value ) ) ) ),
+				'booked'       => $booked,
+				'in_wordpress' => (bool) $user,
+			);
+			if ( $unless_booked && $booked ) {
+				$skipped[] = $row;
+			} else {
+				$rows[] = $row;
+			}
+		}
+
+		$after = $result['paging']['next']['after'] ?? null;
+		$pages++;
+	} while ( null !== $after && '' !== (string) $after && $pages < 100 );
+
+	return array( 'rows' => $rows, 'skipped' => $skipped, 'error' => null );
+}
+
+/**
+ * Write a remove-option plan: each contact's property becomes its `after`.
+ *
+ * Updates by record ID in batches of 100, through the same client as the
+ * sync, so dry mode logs the payloads without sending them and live mode
+ * writes to the portal. One log line per contact, action `remove_option`,
+ * with before and after, result `dry`, `ok` or `error`.
+ *
+ * @param string  $property Internal property name.
+ * @param array[] $rows     law_hubspot_remove_option_plan()['rows'].
+ * @return array{written:int,dry:int,failed:int,errors:string[]}
+ */
+function law_hubspot_remove_option_apply( $property, array $rows ) {
+	$property = sanitize_key( $property );
+	$totals   = array( 'written' => 0, 'dry' => 0, 'failed' => 0, 'errors' => array() );
+
+	foreach ( law_hubspot_chunk( $rows ) as $chunk ) {
+		$inputs = array();
+		foreach ( $chunk as $row ) {
+			$inputs[] = array( 'id' => $row['hubspot_id'], 'properties' => array( $property => $row['after'] ) );
+		}
+		$result = law_hubspot_batch_update( $inputs );
+
+		if ( is_wp_error( $result ) ) {
+			// A whole-batch failure: try each contact on its own, as the sync
+			// does, so one bad record cannot hold the other 99 back.
+			if ( count( $chunk ) > 1 ) {
+				foreach ( $chunk as $row ) {
+					$single = law_hubspot_batch_update( array( array( 'id' => $row['hubspot_id'], 'properties' => array( $property => $row['after'] ) ) ) );
+					law_hubspot_remove_option_log( $property, $row, $single, $totals );
+				}
+			} else {
+				law_hubspot_remove_option_log( $property, $chunk[0], $result, $totals );
+			}
+			continue;
+		}
+
+		// A 207 names the records it rejected in errors[].context.
+		$failed = array();
+		foreach ( (array) ( $result['errors'] ?? array() ) as $error ) {
+			$message = (string) ( $error['message'] ?? 'HubSpot rejected this contact.' );
+			foreach ( (array) ( $error['context'] ?? array() ) as $refs ) {
+				foreach ( (array) $refs as $ref ) {
+					$failed[ (string) $ref ] = $message;
+				}
+			}
+		}
+		foreach ( $chunk as $row ) {
+			$outcome = isset( $failed[ $row['hubspot_id'] ] ) ? new WP_Error( 'law_hubspot_item_error', 'HubSpot: ' . $failed[ $row['hubspot_id'] ] ) : $result;
+			law_hubspot_remove_option_log( $property, $row, $outcome, $totals );
+		}
+	}
+
+	return $totals;
+}
+
+/** One log line for one contact in a remove-option write, and the running totals. */
+function law_hubspot_remove_option_log( $property, array $row, $result, array &$totals ) {
+	$detail = array(
+		'hubspot_id' => $row['hubspot_id'],
+		'property'   => $property,
+		'before'     => $row['before'],
+		'after'      => $row['after'],
+		'booked'     => $row['booked'],
+	);
+	if ( is_wp_error( $result ) ) {
+		$detail['error']   = $result->get_error_message();
+		$totals['failed']++;
+		$totals['errors'][] = $row['email'] . ': ' . $result->get_error_message();
+		law_hubspot_log( $row['email'], 'remove_option', $detail, 'error' );
+		return;
+	}
+	if ( law_hubspot_result_is_dry( $result ) ) {
+		$totals['dry']++;
+		law_hubspot_log( $row['email'], 'remove_option', $detail, 'dry' );
+		return;
+	}
+	$totals['written']++;
+	law_hubspot_log( $row['email'], 'remove_option', $detail, 'ok' );
 }

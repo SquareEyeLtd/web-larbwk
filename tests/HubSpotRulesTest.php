@@ -24,6 +24,8 @@ class HubSpotRulesTest extends LAW_Test_Case {
 		remove_filter( 'law_hubspot_mode', array( $this, 'dry_mode' ) );
 		remove_all_filters( 'pre_option_law_events_source' );
 		remove_all_filters( 'law_hubspot_config' );
+		remove_all_filters( 'law_flagship_event_id' );
+		law_flagship_event_id( true );
 		parent::tearDown();
 	}
 
@@ -474,5 +476,250 @@ class HubSpotRulesTest extends LAW_Test_Case {
 		$this->assertSame( array( 'a', 'b' ), law_hubspot_split_multi( ' a ; b ;;a' ) );
 		$this->assertSame( array(), law_hubspot_split_multi( '' ) );
 		$this->assertSame( array(), law_hubspot_split_multi( null ) );
+	}
+
+	/* ---- phase 3: the site-owned properties ------------------------------- */
+
+	/** A published LAW-run event in this year: the flagship (filtered in) or a reception. */
+	private function make_law_run( string $kind = 'reception', int $year = 2026 ): int {
+		add_filter( 'pre_option_law_events_source', fn() => 'cpt' );
+		$meta = 'flagship' === $kind
+			? array( '_law_is_flagship' => 1, '_law_flagship_date' => $year . '-12-02', '_law_flagship_price_pence' => 55000 )
+			: array( '_law_is_reception' => 1 );
+		$event_id = $this->make_bookable( $meta );
+		wp_set_object_terms( $event_id, (string) $year, 'law_year', false );
+		if ( 'flagship' === $kind ) {
+			remove_all_filters( 'law_flagship_event_id' );
+			add_filter( 'law_flagship_event_id', fn() => $event_id );
+			law_flagship_event_id( true );
+		}
+		return $event_id;
+	}
+
+	/** A hosted (not LAW-run) published event in this year, optionally with sectors. */
+	private function make_hosted( int $year = 2026, array $sectors = array() ): int {
+		$event_id = $this->make_bookable();
+		wp_set_object_terms( $event_id, (string) $year, 'law_year', false );
+		$ids = array();
+		foreach ( $sectors as $name ) {
+			$term  = get_term_by( 'name', $name, 'law_sector' );
+			$ids[] = $term ? (int) $term->term_id : (int) wp_insert_term( $name, 'law_sector' )['term_id'];
+		}
+		if ( $ids ) {
+			wp_set_object_terms( $event_id, $ids, 'law_sector', false );
+		}
+		return $event_id;
+	}
+
+	private function site( string $email ): array {
+		return law_hubspot_desired_state( $email )['site_properties'];
+	}
+
+	public function test_pass_type_follows_the_precedence_across_law_run_bookings(): void {
+		[ $user_id, $email ] = $this->make_person();
+		$reception_a = $this->make_law_run();
+		$reception_b = $this->make_law_run();
+
+		$this->assertSame( '', $this->site( $email )['passtype'], 'No LAW-run booking: nothing to say.' );
+
+		$a = $this->insert_booking( $reception_a, $user_id );
+		$this->assertSame( '', $this->site( $email )['passtype'], 'Unclassified: send nothing, never a blank.' );
+
+		law_event_update_meta( $a, '_law_ticket_type', 'delegate' );
+		$this->assertSame( 'Delegate', $this->site( $email )['passtype'] );
+
+		$b = $this->insert_booking( $reception_b, $user_id );
+		law_event_update_meta( $b, '_law_ticket_type', 'sponsor' );
+		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'], 'Sponsor beats Delegate.' );
+
+		law_event_update_meta( $a, '_law_ticket_type', 'speaker' );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'], 'Speaker beats Sponsor.' );
+
+		law_event_update_meta( $b, '_law_ticket_type', 'committee' );
+		$this->assertSame( 'Committee', $this->site( $email )['passtype'], 'Committee beats everything.' );
+
+		// A cancelled place no longer counts (the status guard only lets the
+		// engine move a booking, so the engine's own path is used).
+		$GLOBALS['law_booking_transitioning'] = true;
+		try {
+			wp_update_post( array( 'ID' => $b, 'post_status' => 'law-cancelled' ) );
+		} finally {
+			$GLOBALS['law_booking_transitioning'] = false;
+		}
+		$this->assertSame( 'law-cancelled', get_post_status( $b ) );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'] );
+	}
+
+	public function test_pass_type_precedence_is_one_config_edit(): void {
+		[ $user_id, $email ] = $this->make_person();
+		$a = $this->insert_booking( $this->make_law_run(), $user_id );
+		$b = $this->insert_booking( $this->make_law_run(), $user_id );
+		law_event_update_meta( $a, '_law_ticket_type', 'speaker' );
+		law_event_update_meta( $b, '_law_ticket_type', 'sponsor' );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'] );
+
+		add_filter(
+			'law_hubspot_config',
+			function ( array $config ) {
+				$config['passtype_precedence'] = array( 'sponsor', 'speaker' );
+				return $config;
+			}
+		);
+		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'], 'Event Connections can have the order they like.' );
+	}
+
+	public function test_press_flag_and_press_type_both_read_as_press(): void {
+		[ $user_id, $email ] = $this->make_person();
+		$this->insert_booking( $this->make_law_run(), $user_id, 'publish', true );
+
+		$state = law_hubspot_desired_state( $email );
+		$this->assertSame( 'Press', $state['site_properties']['passtype'] );
+		$this->assertContains( $this->config['tags']['press'], $state['contact_type_add'] );
+
+		[ $user_b, $email_b ] = $this->make_person();
+		$booking = $this->insert_booking( $this->make_law_run(), $user_b );
+		law_event_update_meta( $booking, '_law_ticket_type', 'press' );
+		$state = law_hubspot_desired_state( $email_b );
+		$this->assertSame( 'Press', $state['site_properties']['passtype'] );
+		$this->assertContains( $this->config['tags']['press'], $state['contact_type_add'], 'The type alone earns the tag too.' );
+	}
+
+	public function test_setting_the_ticket_type_keeps_the_press_flag_in_step(): void {
+		[ $user_id ] = $this->make_person();
+		$booking     = $this->insert_booking( $this->make_law_run(), $user_id );
+
+		law_booking_set_ticket_type( $booking, 'press', 0 );
+		$this->assertSame( 1, (int) law_event_meta( $booking, '_law_is_press' ), 'Press type raises the flag.' );
+
+		law_booking_set_ticket_type( $booking, 'delegate', 0 );
+		$this->assertSame( '', (string) law_event_meta( $booking, '_law_is_press' ), 'Moving off Press lowers it.' );
+
+		// The other direction: a press pass issued by the committee classifies
+		// the seat, unless the committee already said something.
+		law_booking_write_attendee( $booking, law_booking_attendee( $booking ), $user_id, true );
+		$this->assertSame( 'delegate', (string) law_event_meta( $booking, '_law_ticket_type' ), 'An existing type is respected.' );
+		law_event_update_meta( $booking, '_law_ticket_type', '' );
+		law_booking_write_attendee( $booking, law_booking_attendee( $booking ), $user_id, true );
+		$this->assertSame( 'press', (string) law_event_meta( $booking, '_law_ticket_type' ) );
+		law_booking_write_attendee( $booking, law_booking_attendee( $booking ), $user_id, false );
+		$this->assertSame( '', (string) law_event_meta( $booking, '_law_ticket_type' ), 'Withdrawing the pass withdraws the Press type it implied.' );
+	}
+
+	public function test_a_reception_booking_can_take_a_ticket_type_but_a_hosted_one_cannot(): void {
+		[ $user_id ] = $this->make_person();
+		$reception   = $this->insert_booking( $this->make_law_run(), $user_id );
+		$hosted      = $this->insert_booking( $this->make_hosted(), $user_id );
+
+		$this->assertSame( 'Patron', law_booking_set_ticket_type( $reception, 'patron', 0 )['label'] );
+		$this->assertInstanceOf( WP_Error::class, law_booking_set_ticket_type( $hosted, 'patron', 0 ) );
+		$this->assertInstanceOf( WP_Error::class, law_booking_set_ticket_type( $reception, 'exhibitor', 0 ), 'Retired.' );
+	}
+
+	public function test_dietary_icon_folds_the_choices_and_allergy_wins(): void {
+		$this->assertSame( '', law_hubspot_dietary_icon( array() ) );
+		$this->assertSame( '', law_hubspot_dietary_icon( array( 'Other' ) ), 'Other earns no icon; its text has its own property.' );
+		$this->assertSame( 'Vegetarian or vegan', law_hubspot_dietary_icon( array( 'Vegan' ) ) );
+		$this->assertSame( 'Vegetarian or vegan', law_hubspot_dietary_icon( array( 'Vegetarian' ) ) );
+		$this->assertSame( 'Pescatarian', law_hubspot_dietary_icon( array( 'Pescatarian' ) ) );
+		$this->assertSame( 'Allergy or intolerance', law_hubspot_dietary_icon( array( 'Nut allergy' ) ) );
+		$this->assertSame( 'Allergy or intolerance', law_hubspot_dietary_icon( array( 'Coeliac', 'Vegetarian' ) ), 'An allergy beats a preference.' );
+		$this->assertSame( 'Allergy or intolerance', law_hubspot_dietary_icon( array( 'Pescatarian', 'Lactose free', 'Vegan' ) ) );
+		$this->assertSame( 'Vegetarian or vegan', law_hubspot_dietary_icon( array( 'Pescatarian', 'Vegetarian' ) ), 'Then vegetarian beats pescatarian.' );
+
+		add_filter(
+			'law_hubspot_config',
+			function ( array $config ) {
+				$config['dietary_icon_map']['Pescatarian'] = 'Vegetarian or vegan';
+				return $config;
+			}
+		);
+		$this->assertSame( 'Vegetarian or vegan', law_hubspot_dietary_icon( array( 'Pescatarian' ) ), 'The folding is one config edit.' );
+	}
+
+	public function test_dietary_and_access_come_only_with_a_law_run_place_this_year(): void {
+		[ $user_id, $email ] = $this->make_person();
+		update_user_meta( $user_id, 'dietary', array( 'Vegan', 'Nut allergy', 'Other' ) );
+		update_user_meta( $user_id, 'dietary_other', 'No coriander' );
+		update_user_meta( $user_id, 'accessibility', array( 'Wheelchair' ) );
+		update_user_meta( $user_id, 'accessibility_other', 'Step-free route please' );
+
+		$site = $this->site( $email );
+		$this->assertSame( '', $site['dietary'], 'No booking anywhere: nothing is disclosed.' );
+		$this->assertSame( '', $site['dietary_icon'] );
+		$this->assertSame( '', $site['access_other'] );
+
+		$this->insert_booking( $this->make_hosted(), $user_id );
+		$this->assertSame( '', $this->site( $email )['dietary'], 'A hosted booking is not the badging need (§7.3).' );
+
+		$this->insert_booking( $this->make_law_run( 'reception', 2025 ), $user_id );
+		$this->assertSame( '', $this->site( $email )['dietary'], 'Nor is last year\'s reception.' );
+
+		$this->insert_booking( $this->make_law_run(), $user_id );
+		$site = $this->site( $email );
+		$this->assertSame( 'Vegan;Nut allergy', $site['dietary'], 'Other is a tick that says "see the text".' );
+		$this->assertSame( 'No coriander', $site['dietary_other'] );
+		$this->assertSame( 'Allergy or intolerance', $site['dietary_icon'] );
+		$this->assertSame( 'Wheelchair', $site['access'] );
+		$this->assertSame( 'Step-free route please', $site['access_other'] );
+	}
+
+	public function test_dietary_falls_back_to_the_answers_stored_on_the_booking(): void {
+		// A partner registered by their PA against an existing account
+		// (BOOK_ON_BEHALF.md A3): the answers stay on the booking.
+		[ $user_id, $email ] = $this->make_person();
+		$booking = $this->insert_booking( $this->make_law_run(), $user_id );
+		law_event_update_meta( $booking, '_law_attendee_profile', array( 'dietary' => array( 'Pescatarian' ), 'dietary_other' => '', 'accessibility' => array( 'Captions' ), 'accessibility_other' => '' ) );
+
+		$site = $this->site( $email );
+		$this->assertSame( 'Pescatarian', $site['dietary'] );
+		$this->assertSame( 'Pescatarian', $site['dietary_icon'] );
+		$this->assertSame( 'Captions', $site['access'] );
+
+		// The account's own answer, once there is one, wins over the booking's.
+		update_user_meta( $user_id, 'dietary', array( 'Vegan' ) );
+		$this->assertSame( 'Vegan', $this->site( $email )['dietary'] );
+	}
+
+	public function test_events_attending_hosted_counts_and_sectors(): void {
+		[ $user_id, $email ] = $this->make_person();
+		$flagship = $this->make_law_run( 'flagship' );
+		$hosted_a = $this->make_hosted( 2026, array( 'Energy' ) );
+		$hosted_b = $this->make_hosted( 2026, array( 'Energy', 'Banking &amp; Finance' ) );
+		$old      = $this->make_hosted( 2025, array( 'Shipping' ) );
+
+		$this->insert_booking( $flagship, $user_id );
+		$this->insert_booking( $hosted_a, $user_id );
+		$this->insert_booking( $hosted_b, $user_id );
+		$this->insert_booking( $old, $user_id );
+		$this->insert_booking( $this->make_hosted(), $user_id, 'law-cancelled' );
+
+		$site = $this->site( $email );
+		$this->assertSame( array( '2026 Flagship' ), $site['events_attending'] );
+		$this->assertSame( '2', $site['events_registered_count'], 'This year\'s confirmed hosted places; not the flagship, not 2025, not the cancelled one.' );
+		$this->assertSame( get_the_title( $hosted_a ) . "\n" . get_the_title( $hosted_b ), $site['events_registered'] );
+		$this->assertSame( 'Banking & Finance;Energy;Shipping', $site['event_sectors'], 'Every year, decoded, sorted, unique.' );
+	}
+
+	public function test_events_attending_names_the_reception_by_its_slug(): void {
+		[ $user_id, $email ] = $this->make_person();
+		$reception = $this->make_law_run();
+		add_filter(
+			'law_hubspot_config',
+			function ( array $config ) use ( $reception ) {
+				$config['attending_options'][ get_post_field( 'post_name', $reception ) ] = '2026 Test reception';
+				return $config;
+			}
+		);
+		$this->insert_booking( $reception, $user_id );
+		$this->assertSame( array( '2026 Test reception' ), $this->site( $email )['events_attending'] );
+
+		// A reception the config does not name earns nothing (but still counts
+		// for the badging data: it is LAW-run).
+		[ $user_b, $email_b ] = $this->make_person();
+		$this->insert_booking( $this->make_law_run(), $user_b );
+		update_user_meta( $user_b, 'dietary', array( 'Vegan' ) );
+		$site = $this->site( $email_b );
+		$this->assertSame( array(), $site['events_attending'] );
+		$this->assertSame( 'Vegan', $site['dietary'] );
 	}
 }

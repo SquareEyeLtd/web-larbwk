@@ -78,6 +78,15 @@ function law_hubspot_admin_handle_action() {
 			$notice['text']    = 'Contact type options:';
 			break;
 
+		case 'archive_superseded':
+			$actions = law_hubspot_properties_archive();
+			$report  = law_hubspot_properties_check();
+			set_transient( 'law_hubspot_property_report', $report, HOUR_IN_SECONDS );
+			$notice['actions'] = $actions;
+			$notice['type']    = law_hubspot_admin_actions_type( $actions );
+			$notice['text']    = 'dry' === law_hubspot_mode() ? 'Dry run: these are the properties a live run would archive.' : 'Superseded properties archived.';
+			break;
+
 		case 'process_queue':
 			$summary = law_hubspot_process_queue();
 			if ( is_wp_error( $summary ) ) {
@@ -449,6 +458,20 @@ function law_hubspot_admin_page() {
 						<?php endforeach; ?>
 					</tbody>
 				</table>
+
+				<?php if ( ! empty( $report['superseded'] ) ) : ?>
+					<h3>Superseded (the pre-November badging properties)</h3>
+					<p class="description">Replaced by the year-prefixed set above and no longer written. Archiving removes them, and their values, from every contact record; HubSpot support can restore an archived property for a time. Ask before pressing this.</p>
+					<table class="widefat striped" style="max-width:900px">
+						<thead><tr><th>Internal name</th><th>Label</th><th>Type</th></tr></thead>
+						<tbody>
+							<?php foreach ( $report['superseded'] as $name => $row ) : ?>
+								<tr><td><code><?php echo esc_html( $name ); ?></code></td><td><?php echo esc_html( $row['label'] ); ?></td><td><?php echo esc_html( $row['type'] ); ?></td></tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+					<p><?php law_hubspot_admin_button( 'archive_superseded', 'Archive superseded properties', false, ! $enabled, 'Archive ' . implode( ', ', array_keys( $report['superseded'] ) ) . '? Their values leave every contact record.' ); ?></p>
+				<?php endif; ?>
 
 				<?php foreach ( array( 'contact_type' => 'Contact type (shared: LAW staff edit this too; the website only adds options)', 'legal_basis' => 'Legal basis (shared: the website only fills or upgrades it)' ) as $key => $heading ) : ?>
 					<?php $shared = $report[ $key ]; ?>

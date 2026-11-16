@@ -33,6 +33,9 @@ class HubSpotSyncTest extends LAW_Test_Case {
 		$this->mode           = 'live';
 		$this->write_response = null;
 		$this->isolate_option( LAW_EVENTS_SETTINGS_OPTION, array( 'year' => 2026 ) );
+		// The fake portal has every site-owned property, whatever the last
+		// real check on this machine recorded.
+		$this->isolate_option( 'law_hubspot_portal_properties', array_values( law_hubspot_setting( 'properties' ) ) );
 		add_filter( 'law_hubspot_mode', array( $this, 'mode' ) );
 		add_filter( 'law_hubspot_request_mock', array( $this, 'portal' ), 10, 4 );
 	}
@@ -40,6 +43,7 @@ class HubSpotSyncTest extends LAW_Test_Case {
 	protected function tearDown(): void {
 		remove_filter( 'law_hubspot_mode', array( $this, 'mode' ) );
 		remove_filter( 'law_hubspot_request_mock', array( $this, 'portal' ), 10 );
+		remove_all_filters( 'law_hubspot_config' );
 		parent::tearDown();
 	}
 
@@ -65,6 +69,26 @@ class HubSpotSyncTest extends LAW_Test_Case {
 	}
 
 	public function portal( $mocked, $method, $path, $body ) {
+		if ( '/crm/v3/objects/contacts/search' === $path ) {
+			// One filter, operator IN on a multi-checkbox: "includes any of".
+			// Deliberately generous, as HubSpot's own matching can be: a
+			// contact whose value merely CONTAINS the token as a substring is
+			// returned too, so the caller's exact-token check is exercised.
+			$this->reads[] = $body;
+			$filter        = $body['filterGroups'][0]['filters'][0];
+			$results       = array();
+			foreach ( $this->contacts as $id => $contact ) {
+				$held = (string) ( $contact['properties'][ $filter['propertyName'] ] ?? '' );
+				foreach ( (array) $filter['values'] as $wanted ) {
+					if ( '' !== $held && str_contains( $held, (string) $wanted ) ) {
+						$results[] = array( 'id' => $id, 'properties' => array_intersect_key( $contact['properties'], array_flip( $body['properties'] ) ) );
+						break;
+					}
+				}
+			}
+			return array( 'total' => count( $results ), 'results' => $results );
+		}
+
 		if ( '/crm/v3/objects/contacts/batch/read' === $path ) {
 			$this->reads[] = $body;
 			$results       = array();
@@ -406,5 +430,207 @@ class HubSpotSyncTest extends LAW_Test_Case {
 		$this->assertSame( law_hubspot_preview_columns(), $header );
 		$this->assertSame( $email, $row[0] );
 		$this->assertSame( "'=HYPERLINK(\"x\")", $row[ array_search( 'firstname', $header, true ) ] );
+	}
+
+	/* ---- the site-owned properties (phase 3) ------------------------------ */
+
+	/** A confirmed place at a published reception in 2026, with the committee's type. */
+	private function book_reception( int $user_id, string $type = '', string $slug_option = '' ): int {
+		$event = $this->make_event( array( '_law_tickets_available' => 5, '_law_is_reception' => 1 ), 'publish' );
+		wp_set_object_terms( $event, '2026', 'law_year', false );
+		if ( '' !== $slug_option ) {
+			$slug = get_post_field( 'post_name', $event );
+			add_filter(
+				'law_hubspot_config',
+				function ( array $config ) use ( $slug, $slug_option ) {
+					$config['attending_options'][ $slug ] = $slug_option;
+					return $config;
+				}
+			);
+		}
+		$booking = wp_insert_post( array( 'post_type' => LAW_BOOKING_CPT, 'post_status' => 'publish', 'post_title' => 'b', 'post_author' => $user_id, 'post_parent' => $event ) );
+		$this->posts[] = $booking;
+		if ( '' !== $type ) {
+			law_event_update_meta( $booking, '_law_ticket_type', $type );
+		}
+		return (int) $booking;
+	}
+
+	public function test_site_properties_are_written_as_differences_only(): void {
+		list( $user_id, $email ) = $this->make_person();
+		update_user_meta( $user_id, 'dietary', array( 'Vegan' ) );
+		$this->book_reception( $user_id, 'speaker', '2026 Test reception' );
+		$this->seed_contact(
+			$email,
+			array(
+				'law_events_attending' => '2025 Flagship;2025 Monday reception',
+				'law26_ec_passtype'    => 'Delegate',
+				'law26_dietary'        => 'Vegan',
+				'law26_dietary_icon'   => '',
+				'law26_access'         => 'Wheelchair',
+			)
+		);
+
+		$plan = law_hubspot_plan_batch( array( $email ) )['plans'][ $email ];
+		$w    = $plan['site_writes'];
+
+		$this->assertSame( '2025 Flagship;2025 Monday reception;2026 Test reception', $w['law_events_attending'], 'Other years kept, this year replaced.' );
+		$this->assertSame( 'Speaker', $w['law26_ec_passtype'] );
+		$this->assertSame( 'Vegetarian or vegan', $w['law26_dietary_icon'] );
+		$this->assertArrayNotHasKey( 'law26_dietary', $w, 'Unchanged: not written.' );
+		$this->assertSame( '', $w['law26_access'], 'A requirement removed on the site is cleared.' );
+		$this->assertArrayNotHasKey( 'law_events_registered_count', $w, 'Nought and blank say the same thing.' );
+		$this->assertArrayNotHasKey( 'law26_badge_manual', $w, 'LAW-owned: never written.' );
+		foreach ( $w as $name => $value ) {
+			$this->assertSame( $value, $plan['properties'][ $name ], 'Every site write is in the push.' );
+		}
+	}
+
+	public function test_pass_type_is_never_blanked_and_badge_manual_protects_the_badge(): void {
+		list( $user_id, $email ) = $this->make_person();
+		update_user_meta( $user_id, 'dietary', array( 'Nut allergy' ) );
+		$this->book_reception( $user_id ); // unclassified
+		$this->seed_contact( $email, array( 'law26_ec_passtype' => 'Patron', 'law26_dietary_icon' => 'Pescatarian', 'law26_dietary' => '' ) );
+
+		$w = law_hubspot_plan_batch( array( $email ) )['plans'][ $email ]['site_writes'];
+		$this->assertArrayNotHasKey( 'law26_ec_passtype', $w, 'A value LAW typed survives an unclassified booking.' );
+		$this->assertSame( 'Allergy or intolerance', $w['law26_dietary_icon'], 'The icon follows the site while nobody has set the badge by hand.' );
+		$this->assertSame( 'Nut allergy', $w['law26_dietary'] );
+
+		// Now a human has decided this badge.
+		$id = $this->contact_by_email( $email );
+		$this->contacts[ $id ]['properties']['law26_badge_manual'] = 'true';
+		$this->book_reception( $user_id, 'committee' );
+
+		$w = law_hubspot_plan_batch( array( $email ) )['plans'][ $email ]['site_writes'];
+		$this->assertArrayNotHasKey( 'law26_ec_passtype', $w, 'Committee would win, but the badge is set by hand.' );
+		$this->assertArrayNotHasKey( 'law26_dietary_icon', $w );
+		$this->assertSame( 'Nut allergy', $w['law26_dietary'], 'The detail still flows; only the two badge fields are frozen.' );
+	}
+
+	public function test_site_properties_the_portal_lacks_are_neither_read_nor_written(): void {
+		list( $user_id, $email ) = $this->make_person();
+		$this->book_reception( $user_id, 'speaker' );
+		// As on the live portal until Kitty confirms the names: the old set
+		// is there, the law26 set is not (setUp isolated the option).
+		update_option( 'law_hubspot_portal_properties', array( 'law_events_attending', 'law_events_registered_count', 'law_events_registered', 'law_event_sectors', 'law_sync_updated' ) );
+		$this->seed_contact( $email );
+
+		$plan = law_hubspot_plan_batch( array( $email ) )['plans'][ $email ];
+
+		$this->assertNotContains( 'law26_ec_passtype', $this->reads[0]['properties'], 'Naming it would fail the whole batch read.' );
+		$this->assertContains( 'law_events_attending', $this->reads[0]['properties'] );
+		$this->assertArrayNotHasKey( 'law26_ec_passtype', $plan['properties'] );
+		$this->assertSame( 'Speaker', $plan['state']['site_properties']['passtype'], 'The rules still say what it would be, for the preview.' );
+	}
+
+	public function test_preview_carries_the_badging_columns(): void {
+		list( $user_id, $email ) = $this->make_person();
+		update_user_meta( $user_id, 'dietary', array( 'Coeliac' ) );
+		$this->book_reception( $user_id, 'sponsor', '2026 Test reception' );
+		$this->seed_contact( $email, array( 'law26_badge_manual' => 'false' ) );
+
+		$rows = array_column( law_hubspot_preview( array( $email ) )['rows'], null, 'email' );
+		$row  = $rows[ $email ];
+		$this->assertSame( '2026 Test reception', $row['events_attending'] );
+		$this->assertSame( 'Sponsor', $row['passtype'] );
+		$this->assertSame( 'Allergy or intolerance', $row['dietary_icon'] );
+		$this->assertSame( 'Coeliac', $row['dietary'] );
+		$this->assertSame( 'false', $row['badge_manual'] );
+		$this->assertStringContainsString( 'law26_ec_passtype=Sponsor', $row['site_writes'] );
+		$this->assertStringContainsString( 'law_events_attending=2026 Test reception', $row['site_writes'] );
+	}
+
+	/* ---- remove-option (the "2026 Attendee" clean-up) --------------------- */
+
+	/** Four contacts: booked, not booked, not in WordPress, and a near-miss the search over-matches. */
+	private function seed_attendee_cleanup(): array {
+		list( $booked_user, $booked ) = $this->make_person();
+		list( , $unbooked )           = $this->make_person();
+		$event = $this->make_event( array( '_law_tickets_available' => 5 ), 'publish' );
+		$this->posts[] = wp_insert_post( array( 'post_type' => LAW_BOOKING_CPT, 'post_status' => 'publish', 'post_title' => 'b', 'post_author' => $booked_user, 'post_parent' => $event ) );
+
+		return array(
+			'booked'    => array( $booked, $this->seed_contact( $booked, array( 'contact_type' => '2026 Attendee;2026 Registered user' ) ) ),
+			'unbooked'  => array( $unbooked, $this->seed_contact( $unbooked, array( 'contact_type' => 'Mailchimp;2026 Attendee;2026 Registered user' ) ) ),
+			'ghost'     => array( 'ghost@example.test', $this->seed_contact( 'ghost@example.test', array( 'contact_type' => '2026 Attendee' ) ) ),
+			'near_miss' => array( 'near@example.test', $this->seed_contact( 'near@example.test', array( 'contact_type' => '2026 Attendee plus;Mailchimp' ) ) ),
+		);
+	}
+
+	public function test_remove_option_plan_keeps_booked_people_and_ignores_near_misses(): void {
+		$c = $this->seed_attendee_cleanup();
+
+		$plan = law_hubspot_remove_option_plan( 'contact_type', '2026 Attendee', true );
+
+		$this->assertNull( $plan['error'] );
+		$this->assertSame( array( $c['unbooked'][1], $c['ghost'][1] ), array_column( $plan['rows'], 'hubspot_id' ) );
+		$this->assertSame( array( $c['booked'][1] ), array_column( $plan['skipped'], 'hubspot_id' ) );
+		$this->assertSame( 'Mailchimp;2026 Attendee;2026 Registered user', $plan['rows'][0]['before'] );
+		$this->assertSame( 'Mailchimp;2026 Registered user', $plan['rows'][0]['after'], 'Only the one value goes; order of the rest is kept.' );
+		$this->assertSame( '', $plan['rows'][1]['after'], 'The only value: the property empties.' );
+		$this->assertFalse( $plan['rows'][1]['in_wordpress'] );
+		$this->assertSame( array(), $this->writes, 'The plan reads only.' );
+	}
+
+	public function test_remove_option_plan_without_the_flag_takes_it_from_everyone(): void {
+		$c = $this->seed_attendee_cleanup();
+
+		$plan = law_hubspot_remove_option_plan( 'contact_type', '2026 Attendee', false );
+
+		$this->assertSame( array( $c['booked'][1], $c['unbooked'][1], $c['ghost'][1] ), array_column( $plan['rows'], 'hubspot_id' ) );
+		$this->assertSame( array(), $plan['skipped'] );
+	}
+
+	public function test_remove_option_apply_writes_the_after_values_and_logs_before_and_after(): void {
+		$c    = $this->seed_attendee_cleanup();
+		$plan = law_hubspot_remove_option_plan( 'contact_type', '2026 Attendee', true );
+
+		$totals = law_hubspot_remove_option_apply( 'contact_type', $plan['rows'] );
+
+		$this->assertSame( array( 'written' => 2, 'dry' => 0, 'failed' => 0, 'errors' => array() ), $totals );
+		$this->assertSame( 'Mailchimp;2026 Registered user', $this->contacts[ $c['unbooked'][1] ]['properties']['contact_type'] );
+		$this->assertSame( '', $this->contacts[ $c['ghost'][1] ]['properties']['contact_type'] );
+		$this->assertSame( '2026 Attendee;2026 Registered user', $this->contacts[ $c['booked'][1] ]['properties']['contact_type'], 'Untouched.' );
+		$this->assertSame( '2026 Attendee plus;Mailchimp', $this->contacts[ $c['near_miss'][1] ]['properties']['contact_type'], 'Untouched.' );
+
+		$log = law_hubspot_log_recent( 5, $c['unbooked'][0] )[0];
+		$this->assertSame( 'remove_option', $log->action );
+		$this->assertSame( 'ok', $log->result );
+		$detail = json_decode( $log->detail, true );
+		$this->assertSame( 'Mailchimp;2026 Attendee;2026 Registered user', $detail['before'] );
+		$this->assertSame( 'Mailchimp;2026 Registered user', $detail['after'] );
+	}
+
+	public function test_remove_option_apply_in_dry_mode_sends_nothing(): void {
+		$this->mode = 'dry';
+		$c          = $this->seed_attendee_cleanup();
+		$plan       = law_hubspot_remove_option_plan( 'contact_type', '2026 Attendee', true );
+
+		$totals = law_hubspot_remove_option_apply( 'contact_type', $plan['rows'] );
+
+		$this->assertSame( 2, $totals['dry'] );
+		$this->assertSame( 0, $totals['written'] );
+		$this->assertSame( array(), $this->writes );
+		$this->assertSame( 'Mailchimp;2026 Attendee;2026 Registered user', $this->contacts[ $c['unbooked'][1] ]['properties']['contact_type'] );
+		$this->assertSame( 'dry', law_hubspot_log_recent( 1, $c['unbooked'][0] )[0]->result );
+	}
+
+	public function test_remove_option_apply_attributes_a_partial_failure_to_the_right_contact(): void {
+		$c    = $this->seed_attendee_cleanup();
+		$plan = law_hubspot_remove_option_plan( 'contact_type', '2026 Attendee', true );
+		$this->write_response = fn( $path, $body ) => array(
+			'status'  => 'COMPLETE',
+			'results' => array( array( 'id' => $c['unbooked'][1], 'properties' => array() ) ),
+			'errors'  => array( array( 'message' => 'Record is locked', 'context' => array( 'ids' => array( $c['ghost'][1] ) ) ) ),
+		);
+
+		$totals = law_hubspot_remove_option_apply( 'contact_type', $plan['rows'] );
+
+		$this->assertSame( 1, $totals['written'] );
+		$this->assertSame( 1, $totals['failed'] );
+		$this->assertSame( array( 'ghost@example.test: HubSpot: Record is locked' ), $totals['errors'] );
+		$this->assertSame( 'error', law_hubspot_log_recent( 1, 'ghost@example.test' )[0]->result );
+		$this->assertSame( 'ok', law_hubspot_log_recent( 1, $c['unbooked'][0] )[0]->result );
 	}
 }

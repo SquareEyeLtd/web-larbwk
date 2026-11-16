@@ -97,6 +97,22 @@ function law_hubspot_year() {
 }
 
 /**
+ * The prefix on the badging properties' internal names: `law26` for 2026,
+ * `law27` for 2027 (HUBSPOT_SYNC.md §5.2). A contact's pass type and dietary
+ * icon are facts about ONE year's badge, and a property cannot hold two
+ * years' worth at once, so each year has its own set and the badging company
+ * reads the current year's. Everything that is not a badge fact
+ * (law_events_attending, the registered counts) stays un-prefixed and
+ * year-prefixes its VALUES instead.
+ *
+ * @param int|null $year Defaults to law_hubspot_year().
+ */
+function law_hubspot_year_prefix( $year = null ) {
+	$year = null === $year ? law_hubspot_year() : (int) $year;
+	return 'law' . substr( (string) $year, -2 );
+}
+
+/**
  * Every string the module writes to or reads from HubSpot, in one place.
  *
  * Tag strings keep the vocabulary functions/hubspot.php and
@@ -112,7 +128,8 @@ function law_hubspot_year() {
  * @return array<string,mixed>
  */
 function law_hubspot_config() {
-	$year = law_hubspot_year();
+	$year   = law_hubspot_year();
+	$prefix = law_hubspot_year_prefix( $year );
 
 	$config = array(
 		'year'                  => $year,
@@ -159,17 +176,43 @@ function law_hubspot_config() {
 
 		// Site-owned properties (HUBSPOT_SYNC.md §5.2): internal names, and the
 		// group they are created in so they sit together on the contact record.
+		//
+		// The badging set is year-prefixed (law_hubspot_year_prefix()): the
+		// `_ec_` ones are what Event Connections' badging app reads, the rest
+		// are LAW's own view of the same facts. Internal names are PENDING
+		// Kitty's confirmation (Event Connections, November 2026): HubSpot
+		// cannot rename a property once created, so none is created in the
+		// live portal until she has. Changing a name here is the whole change.
 		'property_group'        => array( 'name' => 'law_site', 'label' => 'LAW site' ),
 		'properties'            => array(
 			'events_attending'        => 'law_events_attending',
-			'delegate_type'           => 'law_delegate_type',
-			'dietary'                 => 'law_dietary',
-			'accessibility'           => 'law_accessibility',
+			'passtype'                => $prefix . '_ec_passtype',
+			'dietary_icon'            => $prefix . '_dietary_icon',
+			'dietary'                 => $prefix . '_dietary',
+			'dietary_other'           => $prefix . '_dietary_other',
+			'access'                  => $prefix . '_access',
+			'access_other'            => $prefix . '_access_other',
+			'badge_manual'            => $prefix . '_badge_manual',
 			'events_registered_count' => 'law_events_registered_count',
 			'events_registered'       => 'law_events_registered',
 			'event_sectors'           => 'law_event_sectors',
 			'sync_updated'            => 'law_sync_updated',
 		),
+
+		// Properties the site creates in the portal but NEVER writes: LAW staff
+		// own the value. `badge_manual` is "a human has set this contact's badge
+		// by hand" (Emily, November 2026): while it is Yes the sync leaves the
+		// pass type and the dietary icon alone, so a correction made in HubSpot
+		// is not undone by the next booking. (Reading of the brief; see
+		// HUBSPOT_SYNC.md §11.4.)
+		'owned_by_law'          => array( 'badge_manual' ),
+
+		// The earlier Phase 3 design's properties (HUBSPOT_SYNC.md §5.2 before
+		// 12 November 2026), created in the portal on 4 October and now
+		// replaced by the year-prefixed set. The property check reports them
+		// while they exist; law_hubspot_properties_archive() removes them,
+		// and only when asked (wp law hubspot check-properties --archive).
+		'superseded_properties' => array( 'law_delegate_type', 'law_dietary', 'law_accessibility' ),
 
 		// law_events_attending options, keyed by the reception seed slug
 		// (law_reception_seed_map()) or 'flagship'. Year-prefixed so 2027 adds
@@ -181,10 +224,45 @@ function law_hubspot_config() {
 			'friday-reception'    => $year . ' Friday reception',
 		),
 
-		// law_delegate_type options: the committee's own ticket types
-		// (law_booking_ticket_types()), label as value so the badging vendor
-		// reads "Speaker", not "speaker".
-		'delegate_types'        => array_values( law_booking_ticket_types() ),
+		// The pass type (law26_ec_passtype) options: the committee's own
+		// ticket types (law_booking_ticket_types()), slug => label, label as
+		// value so the badging app reads "Speaker", not "speaker".
+		'passtype_values'       => law_booking_ticket_types(),
+
+		// A person with places at several LAW-run events can hold several
+		// ticket types; the badge takes ONE. This is the order they win in,
+		// first wins (Emily, 4 November 2026 -- NOT YET CONFIRMED by Event
+		// Connections; to change it, reorder this list). A type not listed
+		// here never wins, and a person whose only types are unlisted sends
+		// nothing. `press` here is the ticket type OR the _law_is_press flag.
+		'passtype_precedence'   => array( 'committee', 'speaker', 'sponsor', 'press', 'patron', 'delegate' ),
+
+		// The dietary icon (law26_dietary_icon): the site's dietary choices
+		// (law_registration_dietary_choices()) folded into the three icons
+		// Event Connections print, choice => icon. A choice absent here
+		// ("Other") earns no icon. NOT YET CONFIRMED by Event Connections;
+		// to change the folding, edit this map.
+		'dietary_icon_map'      => array(
+			'Vegetarian'   => 'Vegetarian or vegan',
+			'Vegan'        => 'Vegetarian or vegan',
+			'Pescatarian'  => 'Pescatarian',
+			'Gluten free'  => 'Allergy or intolerance',
+			'Dairy free'   => 'Allergy or intolerance',
+			'Coeliac'      => 'Allergy or intolerance',
+			'Lactose free' => 'Allergy or intolerance',
+			'Nut allergy'  => 'Allergy or intolerance',
+		),
+
+		// When one person's choices map to more than one icon, the first of
+		// these wins: an allergy is the one a caterer must not miss (Emily,
+		// 4 November 2026). Also the option list of the property, in order.
+		'dietary_icon_precedence' => array( 'Allergy or intolerance', 'Vegetarian or vegan', 'Pescatarian' ),
+
+		// The dietary and access properties' options: the site's own choice
+		// lists as stored (functions/events/registration.php), "Other"
+		// excluded from each because its free text goes to the _other property.
+		'dietary_values'        => array_values( array_diff( law_registration_dietary_choices(), array( 'Other' ) ) ),
+		'access_values'         => array_values( array_diff( array_keys( law_registration_accessibility_choices() ), array( 'Other' ) ) ),
 
 		// Where the HubSpot record ID is remembered after the first sync, on
 		// the user (user meta) or the speaker (post meta).

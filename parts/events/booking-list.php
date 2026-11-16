@@ -100,6 +100,18 @@ $law_bl_can_register = true === law_booking_guard_form_open( $law_bl_event_id, a
 	&& 0 !== law_event_tickets_remaining( $law_bl_event_id );
 $law_bl_is_committee = law_user_is_committee();
 $law_bl_form_state   = law_booking_form_state();
+
+// The committee's ticket type on a RECEPTION's bookings (12 November 2026):
+// the badging list needs a pass type for reception-only guests, and the
+// receptions never ask for one. Committee only, like the flagship's column;
+// hosted events never carry a type. The cell, the dialog and the handler are
+// the flagship dashboard's (law_flagship_ticket_type_cell(),
+// parts/events/flagship-ticket-type.php, law_flagship_ticket_type_handler()).
+$law_bl_ticket_column = $law_bl_is_committee && function_exists( 'law_reception_is' ) && law_reception_is( $law_bl_event_id );
+if ( $law_bl_ticket_column ) {
+	law_booking_form_enqueue();
+	wp_enqueue_script( 'law-flagship-ticket-type', get_theme_file_uri( 'assets/js/flagship-ticket-type.js' ), array( 'law-modal', 'law-booking-form' ), filemtime( get_theme_file_path( 'assets/js/flagship-ticket-type.js' ) ), true );
+}
 $law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );
 $law_bl_register_modal = 'law-booking-register';
 
@@ -163,11 +175,14 @@ $law_bl_register_hidden = function () use ( $law_bl_event_id ) {
  * @param bool      $law_bl_waiting    Waitlist mode: a Position column and the
  *                                     reorder / promote controls.
  */
-$law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl_waiting = false ) use ( $law_bl_event_id, $law_bl_is_committee ) {
+$law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl_waiting = false ) use ( $law_bl_event_id, $law_bl_is_committee, $law_bl_ticket_column ) {
 	$law_bl_last = count( $law_bl_set ) - 1;
 	// The money, only where there is any: on a free event these three would be
 	// three empty columns on an already wide table (RECEPTIONS.md §8.3).
 	$law_bl_priced = law_event_is_priced( $law_bl_event_id );
+	// The ticket type is editable on the active table only; the waitlist and
+	// the cancelled table show whatever was set, read-only.
+	$law_bl_ticket_edit = $law_bl_ticket_column && $law_bl_actionable && ! $law_bl_waiting;
 	// Cancel is committee only; Promote now is not, so the waitlist keeps its
 	// actions column for a host while the active table drops it entirely.
 	$law_bl_can_cancel  = $law_bl_actionable && $law_bl_is_committee;
@@ -179,6 +194,7 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 				<?php if ( $law_bl_waiting ) : ?><th><?php esc_html_e( 'Position', 'law' ); ?></th><?php endif; ?>
 				<th><?php esc_html_e( 'Booking', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Attendee', 'law' ); ?></th>
+				<?php if ( $law_bl_ticket_column ) : ?><th class="law-flagship-bookings__ticket"><?php esc_html_e( 'Ticket type', 'law' ); ?></th><?php endif; ?>
 				<th><?php esc_html_e( 'Email', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Organisation', 'law' ); ?></th>
 				<th><?php esc_html_e( 'Job title', 'law' ); ?></th>
@@ -258,6 +274,22 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 							echo '<span class="law-booking-table__sub law-booking-table__sub--passed-over">' . esc_html( $law_bl_passed ) . '</span>';
 						}
 					?></td>
+					<?php if ( $law_bl_ticket_column ) : ?>
+						<?php
+						// The flagship dashboard's own cell and dialog (one dialog for
+						// the whole page, filled from the pencil that was pressed), so
+						// the two screens cannot classify people differently. Blank
+						// until the committee says otherwise: the receptions never
+						// asked for a type, so nothing is assumed.
+						?>
+						<td class="law-flagship-bookings__ticket" data-law-ticket-cell="<?php echo esc_attr( (string) $law_bl_booking->ID ); ?>"><?php
+							if ( $law_bl_ticket_edit ) {
+								echo law_flagship_ticket_type_cell( (int) $law_bl_booking->ID ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in the renderer.
+							} else {
+								echo esc_html( law_booking_ticket_type_label( (string) law_event_meta( $law_bl_booking->ID, '_law_ticket_type' ) ) ?: '—' );
+							}
+						?></td>
+					<?php endif; ?>
 					<td><?php echo esc_html( $law_bl_person['email'] ); ?></td>
 					<td><?php echo esc_html( $law_bl_person['organisation'] ?: '—' ); ?></td>
 					<td><?php echo esc_html( $law_bl_person['job_title'] ?: '—' ); ?></td>

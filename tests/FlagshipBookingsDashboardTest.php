@@ -491,11 +491,25 @@ class FlagshipBookingsDashboardTest extends LAW_Test_Case {
 		$this->assertStringContainsString( 'data-law-ticket-open', $empty );
 		$this->assertStringContainsString( '<noscript>', $empty, 'The column is not read-only without JavaScript.' );
 
-		law_flagship_set_ticket_type( $booking, 'exhibitor', 0 );
+		law_flagship_set_ticket_type( $booking, 'patron', 0 );
 		$set = law_flagship_ticket_type_cell( $booking );
-		$this->assertStringContainsString( 'Exhibitor', $set );
+		$this->assertStringContainsString( 'Patron', $set );
 		$this->assertStringNotContainsString( 'Add type', $set );
-		$this->assertStringContainsString( 'data-law-ticket-value="exhibitor"', $set );
+		$this->assertStringContainsString( 'data-law-ticket-value="patron"', $set );
+
+		// A type retired after it was set (Exhibitor, 12 November 2026) still
+		// reads as what it was, rather than blanking to "Add type". The row is
+		// written straight to the table: the registered sanitiser refuses the
+		// value on every API path, which is the point.
+		global $wpdb;
+		$wpdb->update( $wpdb->postmeta, array( 'meta_value' => 'exhibitor' ), array( 'post_id' => $booking, 'meta_key' => '_law_ticket_type' ) );
+		wp_cache_delete( $booking, 'post_meta' );
+		$this->assertSame( 'exhibitor', get_post_meta( $booking, '_law_ticket_type', true ) );
+		$this->assertStringContainsString( 'Exhibitor', law_flagship_ticket_type_cell( $booking ) );
+		$this->assertSame( 'Exhibitor', law_booking_ticket_type_label( 'exhibitor' ) );
+		$this->assertArrayNotHasKey( 'exhibitor', law_booking_ticket_types() );
+		$this->assertInstanceOf( WP_Error::class, law_flagship_set_ticket_type( $booking, 'exhibitor', 0 ), 'Nothing new can take the retired type.' );
+		law_flagship_set_ticket_type( $booking, 'patron', 0 );
 
 		ob_start();
 		get_template_part( 'parts/events/flagship-bookings-list' );

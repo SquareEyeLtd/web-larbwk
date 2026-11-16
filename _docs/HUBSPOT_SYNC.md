@@ -119,22 +119,54 @@ These serve the badging integration (Emily, 1 and 21 September) and event-level 
 (Emily, 1 September purposes 3 and 4) without the bloat of one option per hosted event, which
 Trevor ruled out on 1 September because custom objects need Enterprise.
 
+Revised 12 November 2026 for the badging decisions (Emily, 4 November; Event Connections'
+badging app reads HubSpot directly). The badging set is **year-prefixed**: `law26_…` for 2026,
+`law27_…` for 2027, the prefix from `law_events_setting( 'year' )`
+(`law_hubspot_year_prefix()`). A pass type is a fact about one year's badge, a property cannot
+hold two years' worth, and HubSpot cannot rename a property once created, so each year gets a
+fresh set and Event Connections read the current year's. The `_ec_` names are the ones their
+app reads. **Internal names are pending Kitty's confirmation and none of the `law26_` set is
+created in the live portal until she has confirmed them.** Changing a name is one line in
+`law_hubspot_config()`.
+
 | Internal name | Label | Type | Content |
 |---|---|---|---|
-| `law_events_attending` | LAW-run events | multi-checkbox | Year-prefixed options: `2026 Flagship`, `2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`. One option per **confirmed** booking (paid where paid). Removed on cancel. |
-| `law_delegate_type` | Delegate type (current year) | dropdown | Speaker, Sponsor, Delegate, Committee, Exhibitor (Emily, 4 September). From the flagship booking; see 11.4 for reception-only people. |
-| `law_dietary` | Dietary requirements | single-line text | ACF `dietary` plus `dietary_other`, joined. Only for people with an LAW-run booking (7.3). |
-| `law_accessibility` | Access requirements | single-line text | ACF `accessibility` plus `accessibility_other`. Same limit. |
-| `law_events_registered_count` | Hosted events booked (current year) | number | Count of confirmed hosted-event bookings this year (Emily, purpose 4). |
-| `law_events_registered` | Hosted events booked (current year) | multi-line text | Titles, one per line. HubSpot segment filters can use "contains". |
-| `law_event_sectors` | Event sectors of interest | multi-checkbox | Union of the sector taxonomy terms of events booked (Emily's own suggestion, 1 September). Options mirror the sector list; the module adds a missing option. |
+| `law_events_attending` | LAW-run events | multi-checkbox | Year-prefixed options: `2026 Flagship`, `2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`. One option per **confirmed** booking (paid where paid). This year's options are replaced on every sync (so a cancelled place drops off); other years' options are kept. |
+| `law26_ec_passtype` | 2026 pass type (badge) | dropdown | Delegate, Speaker, Sponsor, Committee, Press, Patron: the committee's ticket types (`law_booking_ticket_types()`; Exhibitor retired). From `_law_ticket_type` on this year's **confirmed LAW-run** bookings (flagship and receptions); a `_law_is_press` flag counts as Press. One person, several bookings, several types: the first in the config's `passtype_precedence` wins — **Committee > Speaker > Sponsor > Press > Patron > Delegate** (not yet confirmed by Event Connections; reorder one array to change it). **Never blanked**: an unclassified booking sends nothing, so a value LAW typed by hand survives. |
+| `law26_dietary_icon` | 2026 dietary icon (badge) | dropdown | The one icon Event Connections print: `Vegetarian or vegan`, `Pescatarian`, `Allergy or intolerance`. Folded from the site's dietary choices through the config's `dietary_icon_map` (Vegetarian, Vegan → Vegetarian or vegan; Pescatarian → Pescatarian; Gluten free, Dairy free, Coeliac, Lactose free, Nut allergy → Allergy or intolerance; Other → no icon); when several icons result, `dietary_icon_precedence` picks one, **allergy first**. Not yet confirmed by Event Connections; both are one-line config edits. |
+| `law26_dietary` | 2026 dietary requirements | multi-checkbox | The site's own choices as options (`law_registration_dietary_choices()` minus Other). The detail behind the icon. |
+| `law26_dietary_other` | 2026 dietary requirements (other) | single-line text | The free text. |
+| `law26_access` | 2026 access requirements | multi-checkbox | The site's stored accessibility values (Captions, Sign language, Animal / PCA, Wheelchair). |
+| `law26_access_other` | 2026 access requirements (other) | single-line text | The free text. |
+| `law26_badge_manual` | 2026 badge set by hand | yes/no | **LAW-owned: the site creates it and never writes it.** While Yes, the sync leaves `law26_ec_passtype` and `law26_dietary_icon` alone for that contact, so a decision made in HubSpot is not undone by the next booking. The detail properties keep flowing. (Our reading of the brief; see 11.4.) |
+| `law_events_registered_count` | Hosted events booked (count, current year) | number | Confirmed bookings on hosted events (not LAW-run) this year (Emily, purpose 4). Nought is not written over a blank. |
+| `law_events_registered` | Hosted events booked (titles, current year) | multi-line text | Titles, one per line. HubSpot segment filters can use "contains". |
+| `law_event_sectors` | Event sectors of interest | multi-checkbox | Union of the sector taxonomy terms of every event booked, any year (Emily's own suggestion, 1 September). Options mirror the sector list; the module adds a missing option. |
 | `law_sync_updated` | LAW site last synced | datetime | Set on every successful push. Useful for checking the backfill. |
 
-Year handling: the multi-checkbox options carry the year (matching the existing Contact type
-pattern), so 2027 adds options rather than overwriting 2026. The single-value properties
-(`law_delegate_type`, counts, dietary, access) are **current year** and are overwritten when the
-year setting changes. That is right for badging. If the client wants history for those, add a
-year to the internal name later.
+The dietary and access properties (icon, detail and other) are computed **only for people with
+a confirmed place at a LAW-run event this year** (7.3). Values come from the account's profile
+with the booking's stored answers (`_law_attendee_profile`) as the fallback, through
+`law_booking_profile_values()`, and are the union across that person's LAW-run places. A person
+with a place and nothing ticked gets the properties cleared (a requirement removed on the site
+leaves the badge); a person with no LAW-run place this year gets them cleared too, because the
+disclosure that justified sending them has ended.
+
+Site-owned properties are written **as differences only**: the plan reads them back with the
+shared pair and writes a property only when the desired value differs from what the contact
+holds. A property the portal does not have yet (the `law26_` set, until Kitty confirms) is
+neither read nor written; the property check records which exist
+(`law_hubspot_portal_has_property()`), and the first sync after a deploy fetches the list itself.
+
+**Superseded:** `law_delegate_type`, `law_dietary` and `law_accessibility` (created 4 October)
+are replaced by the set above. The property check reports them while they remain;
+`wp law hubspot check-properties --archive` (or the admin button) archives them, and only when
+asked.
+
+Year handling: the un-prefixed multi-checkbox properties carry the year in their option VALUES
+(matching the existing Contact type pattern), so 2027 adds options rather than overwriting 2026.
+The badging properties carry the year in their NAMES. The counts are current year and are
+overwritten when the year setting changes.
 
 ### 5.3 Contact type (shared, add only)
 
@@ -238,9 +270,19 @@ Hook as generically as possible so new code paths cannot bypass the sync:
 - Co-owner changes on an event (whatever `law_event_set_co_owner_ids()` writes): enqueue added
   and removed people.
 - Speaker save and speaker-to-event linking: enqueue the speaker's email.
-- ACF saves of `dietary` / `accessibility` on a user are covered by `profile_update` only if the
-  profile handler triggers it; the on-behalf writes in
-  `law_registration_apply_attendee_profile()` may not. Confirm and add an explicit enqueue.
+- `law_speakers_merged` (fired by `law_events_merge_speakers_apply()` after the second record
+  is trashed): enqueue both records' addresses.
+- Speaker removal (phase 3): `before_delete_post` at priority 5 on a speaker record (the address
+  is read before the meta goes with the post); `delete_post_meta` on `_law_speakers` (the OLD
+  rows, read before the last one leaves a post — a delete hands the handler nothing useful).
+  Trashing needs nothing extra: it is a post update.
+- User meta `dietary`, `dietary_other`, `accessibility`, `accessibility_other` (phase 3): added,
+  updated and **deleted** — unticking the last box deletes the key, and the icon must go with it.
+  ACF stores the two fields under those plain names, so an ACF save and a custom-form save look
+  alike. Not during `wp_delete_user()`, which strips every key first (`delete_user` /
+  `deleted_user` bracket it).
+- Booking meta `_law_ticket_type`, `_law_is_press`, `_law_attendee_profile` (phase 3): added,
+  updated and deleted (a cleared ticket type is a delete) — enqueue the attendee.
 - `delete_user`: do nothing in HubSpot. Deleting contacts is for LAW to do by hand.
 
 ### 6.5 Admin screen (`admin.php`), LAW > HubSpot
@@ -253,9 +295,17 @@ backfill** (dry-run CSV, section 8), **Queue everyone**, **Process queue now**, 
 
 ### 6.6 WP-CLI (`cli.php`)
 
-`wp law hubspot status | check-properties [--create] | preview [--out=file.csv] | backfill [--limit=N] | process | person <email>`.
+`wp law hubspot status | check-properties [--create] [--contact-type] [--archive] [--live] | preview [--out=file.csv] | backfill [--limit=N] | process | person <email>`.
 `person` prints the desired state and the current HubSpot state for one email, which is the
-quickest way to answer "why is X not in the list".
+quickest way to answer "why is X not in the list". `check-properties --archive` archives the
+superseded properties the check lists (§5.2), after a confirmation of its own; dry mode logs
+instead.
+
+One-off clean-up: `wp law hubspot remove-option <property> <value> [--unless-booked] [--apply]`
+takes one value out of a multi-checkbox property on every contact holding it, leaving every
+other value. Dry run by default (lists the contacts, before and after, writes nothing);
+`--unless-booked` leaves it on anyone whose account has a confirmed booking. Built for clearing
+"2026 Attendee" before the backfill (§8, §13).
 
 ### 6.7 Logging
 
@@ -298,7 +348,11 @@ marketing contacts. The Mailchimp import landed as non-marketing on 4 June.
 Dietary and access requirements can reveal health information. Sending them to HubSpot, and on
 to the badging vendor, is a new disclosure. Limit it to people with an LAW-run booking (the
 badging need), mention HubSpot and the badging tool in the privacy notice, and consider clearing
-the two properties after the week. Fred to confirm before go-live of phase 3.
+the two properties after the week. **Peter signed off on sending dietary and access data to
+HubSpot and Event Connections (November 2026).** The rules enforce the limit: the dietary and
+access properties are computed only for people with a confirmed LAW-run place this year, and
+are cleared when that stops being true (5.2). Clearing after the week is a one-off for LAW to
+decide; the `law26_` names make a later year's set independent of this one.
 
 ---
 
@@ -397,10 +451,16 @@ This plan names these from reading part of the tree; check each one.
    and co-owners of approved sponsor-tier events. Existing `2026 Sponsor` tags stay (add-only).
    Alternative: a committee-maintained list.
 3. **Attendee meaning for 2026** and whether to clear the September manual tags first (section 8).
-4. **Delegate type for people with only a reception booking.** Default: `Delegate` until the
-   receptions carry their own delegate type (Emily asked for that on 21 September; it is a booking
-   form change, not part of this connector).
-5. **Subscription status** (7.2) and **dietary/access data** (7.3): Fred.
+4. **Pass type for people with only a reception booking.** Settled 12 November 2026: the
+   reception bookings lists carry the same committee-only Ticket type column as the flagship
+   dashboard (blank by default, nothing assumed), so a reception-only guest is classified the
+   same way, and the HubSpot pass type reads every LAW-run booking. Two things remain our reading
+   of the brief rather than confirmed: the **precedence order** when one person holds several
+   types, and the **dietary icon folding** (both in `law_hubspot_config()`, one edit each); and
+   that `law26_badge_manual` = Yes means "leave this contact's pass type and dietary icon alone".
+   Emily also mentioned an "arrived yes/no" column (`law26_ec_arrived`): not created; it is
+   Event Connections' field to write, and we have asked whether they want the site to create it.
+5. **Subscription status** (7.2): Fred. **Dietary/access data** (7.3): signed off by Peter.
 6. **Sponsor attendee, Supporting organisation attendee, survey responses**: not built until
    defined.
 7. **Lifecycle stage and lead status**: default, hide them in HubSpot (Trevor's 1 September
@@ -420,7 +480,9 @@ to after year one; "the existing sponsor/host HubSpot sync from earlier phases i
 - **Phase 3 is a change request** under Appendix A §2 of the Phase 4.1/4.2 proposal ("will
   normally be treated as a change request", estimate before work proceeds). It is the booking
   and attendee sync the spec deferred, requested now to feed the third-party badging tool.
-  Estimate and agree it before building Phase 3.
+  Estimated at 12–16 hours on 5 October 2026 (Basecamp "HubSpot" thread, "HS3"); **approved by
+  Emily on 13 October 2026** (16 hours of top-up development requested). The open decisions it
+  still needs are in §13, "Phase 3 to-do".
 
 ---
 
@@ -568,6 +630,177 @@ Decisions made while building:
 
 Outside the code, still to do before go-live: switch off the dormant Make scenario (Trevor);
 `LAW_HUBSPOT_MODE=dry` on staging, review the preview CSV with Emily, then `live`.
+
+### Catching up with master (12 November 2026)
+
+Master gained three features after the hooks were written (21–26 October 2026): deleting a
+speaker record, merging two speaker records, and booking a place for someone else. Merged
+master into `hubspot` (no conflicts) and checked each against the hooks:
+
+- **Speaker deletion** is caught. Trashing is a `wp_update_post`, so `save_post_law_speaker`
+  queues the trashed speaker; the detach rewrites `_law_speakers`, so the speakers who remain
+  are queued through the meta hook. A trashed record is excluded from `law_hubspot_people()`
+  and never matched by `law_speaker_find_existing()` (`post_status => any` excludes trash), so
+  a speaker with no account resolves to nobody and is skipped as `unknown`; one with an account
+  is re-synced. The `2026 Speaker` tag stays, as add-only intends. Not caught: a permanent
+  delete (`before_delete_post`, no `save_post`) and the `deleted_post_meta` that fires when the
+  last row goes. Neither matters while tags are add-only; see the Phase 3 to-do.
+- **Speaker merge** had a real hole, now fixed in `law_events_merge_speakers_apply()`: it moved
+  rows, entry IDs, years and old slugs to the kept record but not `_law_speaker_email` or
+  `law_hubspot_id`. When the merged record was the one with the address, the kept record was
+  left with none, the person dropped out of every email-keyed lookup, and the HubSpot contact
+  created from the merged record could never be reached again. Now a blank email on the kept
+  record takes the merged record's, and the HubSpot ID follows when the kept record has none
+  and the emails match (or the email just moved). The kept record's own address is never
+  overwritten. New `do_action( 'law_speakers_merged', $main_id, $merged_id )` after the trash;
+  the module queues both addresses (`speaker_merged`). Two records with different addresses are
+  two HubSpot contacts; merging those is for LAW to do in HubSpot, and the module copes with
+  whichever ID then disappears (`law_hubspot_forget_id()`).
+- **Bookings for someone else** are caught cleanly because the attendee is still the booking's
+  `post_author` (BOOK_ON_BEHALF.md D5): `law_booking_attendee_email()` and
+  `law_hubspot_user_bookings()` find them, the booker (`_law_booked_by`) is correctly not
+  queued, and a new attendee's account goes through `wp_insert_user` (`user_register`) plus
+  `update_user_meta` for organisation and job title (watched).
+
+Tests added to `HubSpotHooksTest`: trashing a speaker (the trashed and the remaining speaker
+both queued), merging two speakers (identity carried over, both queued; and with different
+addresses, the kept address untouched and the ID left behind), booking for a new person (account
+queued, then the attendee on confirmation, never the booker) and for an existing account
+(nothing on match, per A3; the attendee on confirmation). Full suite: the same 37 failures with
+and without these changes, all in Stripe/email/webhook classes that depend on the local
+environment; every HubSpot and speaker test green.
+
+**`wp law hubspot remove-option`** added (`sync.php`: `law_hubspot_remove_option_plan()` /
+`_apply()`; `cli.php`). Emily's 13 October decision: "2026 Attendee" should mean "has booked".
+The sync is add-only so cannot take the tag away itself; this command does it once, before the
+backfill, and the backfill re-adds it for everyone with a confirmed booking. It searches the
+portal for contacts holding the value (search API, operator `IN`, re-checked for the exact
+token so a near-miss is never edited), lists them with the property before and after, and
+writes nothing unless `--apply`. `--unless-booked` leaves the value on anyone whose account has
+a confirmed booking (`law_hubspot_user_bookings()`), so nobody who has booked loses it even
+briefly. Writes go by record ID through the same client as the sync (dry mode logs, live
+writes), 100 at a time, whole-batch failures retried singly and 207 errors attributed to the
+contact named. One log line per contact, action `remove_option`, before and after, result
+`dry` / `ok` / `error`. Tests in `HubSpotSyncTest` (plan with and without the flag, apply,
+dry mode, partial failure). The planned order for go-live:
+
+```
+wp law hubspot remove-option contact_type "2026 Attendee" --unless-booked          # review the list
+wp law hubspot remove-option contact_type "2026 Attendee" --unless-booked --apply  # live mode
+wp law hubspot backfill
+```
+
+### Phase 3 (built 12 November 2026, dry mode; not yet in the live portal)
+
+The badging decisions (Emily, 4 November; Peter's sign-off on dietary and access data) turned
+the §5.2 design into the year-prefixed set and this build. Everything runs and is tested in
+dry mode; **no `law26_` property has been created in the live portal**, because Kitty (Event
+Connections) has to confirm the internal names first and HubSpot cannot rename a property.
+
+**Ticket types** (`functions/events/statuses.php`): Press and Patron added, Exhibitor retired.
+No booking on the local database held Exhibitor (checked before retiring; production to be
+checked the same way before deploy: `SELECT COUNT(*) FROM wp_postmeta WHERE
+meta_key='_law_ticket_type' AND meta_value='exhibitor'`). A retired type keeps its label
+(`law_booking_retired_ticket_types()`), so a booking classified before the change still reads
+"Exhibitor" in the lists and exports; the registered sanitiser refuses it on every write path,
+so nothing new can take it.
+
+**Press reconciled.** `_law_is_press` (the committee-issued complimentary pass) and the Press
+ticket type are kept in step both ways: `law_booking_set_ticket_type()` raises the flag on
+Press and lowers it when the type moves off Press; `law_booking_write_attendee()` and the
+flagship add-attendee path set the type to `press` when a pass is issued and the type is blank
+(an existing type is respected), and clear a `press` type when the pass is withdrawn. The rules
+read either as Press, for the pass type and the `2026 Press` tag.
+
+**Receptions classified.** `law_flagship_set_ticket_type()` became `law_booking_set_ticket_type()`
+(the old name is a wrapper) and accepts flagship **and reception** bookings; the handler,
+`law_flagship_require_committee_booking()` and the wp-admin meta box follow. The reception
+bookings list (`parts/events/booking-list.php`) gained a committee-only "Ticket type" column
+using the flagship dashboard's own cell, dialog and script, editable on the active table and
+read-only on the waitlist and cancelled tables; blank by default. The no-JS form returns to the
+list with a saved notice. Hosted bookings are still refused.
+
+**Config** (`config.php`): `law_hubspot_year_prefix()`; the `properties` map with the `law26_`
+names; `owned_by_law` (`badge_manual`); `superseded_properties`; `passtype_values`;
+`passtype_precedence`; `dietary_icon_map`; `dietary_icon_precedence`; `dietary_values`;
+`access_values` (the last two derived from the site's own choice lists).
+
+**Properties** (`properties.php`): definitions for the seven new properties (labels carry the
+year); the check reports superseded properties under `superseded` without failing;
+`law_hubspot_properties_archive()` (DELETE, gated by dry mode, never run by the check or create);
+the property fetch remembers which site-owned names the portal has
+(`law_hubspot_portal_properties` option) so the sync's read-back can skip the ones not created
+yet — a batch read that names a missing property fails whole.
+
+**Rules** (`rules.php`): `law_hubspot_site_properties()` and the helpers
+`law_hubspot_passtype_from_types()`, `law_hubspot_dietary_icon()`,
+`law_hubspot_attending_option_for_event()`, `law_hubspot_event_year()`; the desired state
+carries `site_properties`. Badging values come from this year's confirmed LAW-run bookings
+only; dietary and access through `law_booking_profile_values()` (account first, booking's
+stored answers as fallback), union across places.
+
+**Sync** (`sync.php`): `law_hubspot_site_property_writes()` — differences only, this year's
+`law_events_attending` options replaced and other years' kept, pass type never blanked,
+`badge_manual` = true freezes pass type and icon, LAW-owned never written, nought not written
+over a blank count. Plans carry `site_writes`; the preview CSV gained `events_attending`,
+`passtype`, `dietary_icon`, `dietary`, `dietary_other`, `access`, `access_other`,
+`badge_manual`, `hosted_count`, `hosted_titles`, `event_sectors`, `site_writes`.
+
+**Hooks** (`hooks.php`): user meta `dietary`, `dietary_other`, `accessibility`,
+`accessibility_other` (added, updated, deleted; not during `wp_delete_user()`); booking meta
+`_law_ticket_type`, `_law_is_press`, `_law_attendee_profile` (added, updated, deleted);
+`delete_post_meta` on `_law_speakers` reading the old rows; `before_delete_post` on a speaker
+at priority 5. The deletion items from the earlier to-do are done.
+
+**CLI and admin**: `check-properties --archive` (own confirmation, `--live` to send from a dry
+site); the admin screen lists superseded properties with an "Archive superseded properties"
+button (confirm dialog). Neither has been run against the live portal.
+
+Tests: `HubSpotRulesTest` (precedence, config-edit precedence, press flag and type, flag kept
+in step, reception vs hosted setter, icon folding and allergy-first, LAW-run-only disclosure,
+booking fallback, attending/hosted/sectors, reception slug), `HubSpotSyncTest` (differences
+only, never-blank and `badge_manual`, missing portal properties neither read nor written,
+preview columns), `HubSpotPropertiesTest` (definitions, year prefix, superseded report and
+archive, dry archive, archive refuses a live name, portal property memory), `HubSpotHooksTest`
+(dietary edits including the last box, booking meta, last speaker row, permanent delete),
+`FlagshipBookingsDashboardTest` (retired type still reads). The same three environment
+failures as before (`BookingEmailsTest`, `BookingsDashboardTest`, `ReceptionWaitlistTest`)
+with and without these changes; every HubSpot, flagship, reception and booking test green.
+
+**Dry preview against the real portal, 12 November 2026** (local database, reads only,
+`wp law hubspot preview --out=…`): the property check first (group present; the five
+un-prefixed properties present; the seven `law26_` ones absent, as intended; the three
+superseded ones still present; every Contact type and legal-basis value present). Then 1,720
+addresses: 793 in HubSpot, 927 new. The plan read back only the properties the portal has, so
+no `law26_` value was in any write; the site writes were `law_events_registered_count` and
+`law_events_registered` (871 people), `law_event_sectors` (869) and `law_events_attending`
+(142: Monday and Wednesday reception places, no flagship places on the local copy). The rules'
+own columns were filled regardless: 32 people with dietary choices, 6 with other text, 4 with
+access needs, 1 with other text — all holders of a LAW-run place this year; icons
+`Vegetarian or vegan` 22, `Allergy or intolerance` 8, `Pescatarian` 2. Pass type was empty for
+everyone, correctly: no local booking carries a ticket type yet, and an unclassified booking
+sends nothing.
+
+### Phase 3 to-do
+
+Approved 13 October 2026 (16 hours). What is left after the 12 November build:
+
+1. **Kitty to confirm the internal names** (`law26_ec_passtype`, `law26_dietary_icon`,
+   `law26_dietary`, `law26_dietary_other`, `law26_access`, `law26_access_other`,
+   `law26_badge_manual`), the pass-type precedence and the icon folding. Then, on production:
+   `wp law hubspot check-properties --create`, then `--archive` for the three superseded
+   properties (ask first), then the Contact type check.
+2. **`law26_ec_arrived`** (Emily's "arrived yes/no"): ask before creating. If wanted, it is a
+   LAW-owned yes/no like `badge_manual` (Event Connections write it, the site never does).
+3. Confirm the `badge_manual` reading with Emily: "Yes" freezes the pass type and the icon,
+   the detail keeps flowing.
+4. The "LAW 2026 badging" active list in HubSpot (everyone with a confirmed place at a LAW-run
+   event), and the property list for Event Connections.
+5. Second backfill preview with the new columns (`wp law hubspot preview --out=…`) from
+   staging, for Emily to check before anything goes live (the 12 November one above ran on the
+   local copy).
+6. Privacy notice update if Peter wants one (§7.3).
+7. Production check for Exhibitor bookings before the deploy that retires the type (above).
 
 ---
 

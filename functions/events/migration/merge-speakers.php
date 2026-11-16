@@ -9,8 +9,11 @@
  * two records sharing one address. A typo can sit in the name just as well, so
  * no automatic match is precise enough: an administrator picks the pair.
  *
- * The MAIN speaker is kept exactly as it is: title, name parts, email, website,
- * biography and featured image are never touched. The SECOND speaker's rows,
+ * The MAIN speaker is kept as it is: title, name parts, email, website,
+ * biography and featured image are never overwritten. The one exception is a
+ * BLANK email on the main record, which takes the second record's address (and
+ * with it the stored HubSpot contact ID) so the person stays reachable by
+ * email after the only record that knew it is trashed. The SECOND speaker's rows,
  * on every event and session in any status, are re-pointed at the main speaker
  * with their per-event details (role, organisation, job title, photo, bio)
  * intact, because those are what each host typed for that event (Denis). A
@@ -183,9 +186,40 @@ function law_events_merge_speakers_apply( $main_id, $merged_id, $actor = 0 ) {
 		}
 	}
 
+	// Identity the site needs to keep reaching this person. The main record's
+	// own email is never changed, but a blank one takes the second record's:
+	// otherwise the person vanishes from every email-keyed lookup (the HubSpot
+	// sync's law_hubspot_people() and law_speaker_find_existing() among them)
+	// the moment the only record that knew their address is trashed. The
+	// HubSpot contact ID moves on the same terms, so the contact created from
+	// the second record stays attached to the person rather than being
+	// re-found (or duplicated) by address later.
+	$main_email   = mb_strtolower( trim( (string) law_event_meta( $main_id, '_law_speaker_email' ) ) );
+	$merged_email = mb_strtolower( trim( (string) law_event_meta( $merged_id, '_law_speaker_email' ) ) );
+	$email_moved  = false;
+	if ( '' === $main_email && '' !== $merged_email ) {
+		law_event_update_meta( $main_id, '_law_speaker_email', $merged_email );
+		$email_moved = true;
+	}
+	$id_key    = function_exists( 'law_hubspot_setting' ) ? law_hubspot_setting( 'id_meta_key', 'law_hubspot_id' ) : 'law_hubspot_id';
+	$merged_hs = trim( (string) get_post_meta( $merged_id, $id_key, true ) );
+	if ( '' !== $merged_hs && '' === trim( (string) get_post_meta( $main_id, $id_key, true ) )
+		&& ( $email_moved || $main_email === $merged_email ) ) {
+		update_post_meta( $main_id, $id_key, $merged_hs );
+	}
+
 	// Speakers carry no log of their own, so the record says where it went.
 	update_post_meta( $merged_id, LAW_SPEAKER_MERGED_INTO_META, $main_id );
 	$trashed = (bool) wp_trash_post( $merged_id );
+
+	/**
+	 * Two speaker records have become one. Fires after the second record is
+	 * trashed, so anything email-keyed sees the final state of both.
+	 *
+	 * @param int $main_id   The speaker that was kept.
+	 * @param int $merged_id The speaker merged into it, now in the trash.
+	 */
+	do_action( 'law_speakers_merged', $main_id, $merged_id );
 
 	return array(
 		'events'  => count( $events ),
