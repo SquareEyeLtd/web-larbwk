@@ -113,6 +113,17 @@ class SpeakersDashboardTest extends LAW_Test_Case {
 		return array_map( fn( $row ) => $row['id'], $rows );
 	}
 
+	public function test_a_keyword_reaches_speakers_beyond_the_cap(): void {
+		// The same flaw as the bookings dashboard (16 November 2026): the cap
+		// took the first speakers by name and the keyword searched only those.
+		$token   = 'Capreach' . wp_generate_password( 6, false, false );
+		$speaker = $this->make_speaker( 'Zzzz ' . $token );
+
+		$rows = law_speakers_dashboard_rows( $this->filters( array( 'law_kw' => $token ) ), 2 )['rows'];
+		$this->assertSame( array( $speaker ), array_column( $rows, 'id' ), 'The last speaker by name is found past a cap of two.' );
+		$this->assertTrue( law_speakers_dashboard_rows( $this->filters(), 2 )['truncated'] );
+	}
+
 	public function test_event_filter_narrows_to_that_events_appearance(): void {
 		$f    = $this->fixture();
 		$data = law_speakers_dashboard_rows( $this->filters( array( 'law_event' => $f['proposed'] ) ) );

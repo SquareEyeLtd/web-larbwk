@@ -182,25 +182,15 @@ function law_speakers_dashboard_appearances( $speaker_id ) {
  * archive card uses, so the list reads like the archive it maintains. The
  * keyword matches (case-insensitively) the name, email, website, every
  * appearance's organisation and job title, and every event title; it is applied
- * in PHP over the fetched set rather than as a LIKE over serialised meta, which
- * the module never does.
+ * in PHP rather than as a LIKE over serialised meta, which the module never
+ * does, and the cap counts the speakers that MATCH, so a search reaches every
+ * speaker however many there are.
  *
  * @param array $filters law_speakers_dashboard_filters().
- * @param int   $limit   Speaker cap (-1 for the export).
+ * @param int   $limit   Rows cap (-1 for the export).
  * @return array{rows:array[],speakers:int,appearances:int,truncated:bool}
  */
 function law_speakers_dashboard_rows( array $filters, $limit = LAW_SPEAKERS_DASHBOARD_SCREEN_CAP ) {
-	$speakers = get_posts(
-		array(
-			'post_type'      => LAW_SPEAKER_CPT,
-			'post_status'    => 'publish',
-			'posts_per_page' => (int) $limit,
-			'orderby'        => 'title',
-			'order'          => 'ASC',
-		)
-	);
-	$truncated = $limit > 0 && count( $speakers ) >= $limit;
-
 	$year_events = law_speakers_dashboard_year_event_ids( $filters['year'] );
 	if ( '' !== $filters['year'] && ! $year_events ) {
 		return array( 'rows' => array(), 'speakers' => 0, 'appearances' => 0, 'truncated' => false );
@@ -208,28 +198,25 @@ function law_speakers_dashboard_rows( array $filters, $limit = LAW_SPEAKERS_DASH
 
 	$needle = function_exists( 'mb_strtolower' ) ? mb_strtolower( $filters['kw'] ) : strtolower( $filters['kw'] );
 	$needle = trim( $needle );
-	$rows   = array();
-	$total  = 0;
 
-	foreach ( $speakers as $speaker ) {
+	$row_for = function ( WP_Post $speaker ) use ( $filters, $year_events, $needle ) {
 		$appearances = law_speakers_dashboard_appearances( (int) $speaker->ID );
 
 		if ( $filters['event'] ) {
 			$appearances = array_values( array_filter( $appearances, fn( $a ) => (int) $a['event_id'] === $filters['event'] ) );
 			if ( ! $appearances ) {
-				continue;
+				return null;
 			}
 		}
 		if ( $year_events ) {
 			$appearances = array_values( array_filter( $appearances, fn( $a ) => in_array( (int) $a['event_id'], $year_events, true ) ) );
 			if ( ! $appearances ) {
-				continue;
+				return null;
 			}
 		}
 
-		$headline = law_speaker_first_appearance( (int) $speaker->ID, law_speakers_dashboard_statuses() );
-		$email    = (string) law_event_meta( $speaker->ID, '_law_speaker_email' );
-		$website  = (string) law_event_meta( $speaker->ID, '_law_website' );
+		$email   = (string) law_event_meta( $speaker->ID, '_law_speaker_email' );
+		$website = (string) law_event_meta( $speaker->ID, '_law_website' );
 
 		if ( '' !== $needle ) {
 			$haystack = array( $speaker->post_title, $email, $website );
@@ -241,13 +228,14 @@ function law_speakers_dashboard_rows( array $filters, $limit = LAW_SPEAKERS_DASH
 			$haystack = implode( "\n", $haystack );
 			$haystack = function_exists( 'mb_strtolower' ) ? mb_strtolower( $haystack ) : strtolower( $haystack );
 			if ( false === strpos( $haystack, $needle ) ) {
-				continue;
+				return null;
 			}
 		}
 
+		$headline = law_speaker_first_appearance( (int) $speaker->ID, law_speakers_dashboard_statuses() );
 		$photo_id = law_speaker_display_photo_id( (int) $speaker->ID, (int) $headline['photo_id'] );
 		$name     = law_speaker_name_parts( (int) $speaker->ID );
-		$rows[]   = array(
+		return array(
 			'id'           => (int) $speaker->ID,
 			'name'         => $speaker->post_title,
 			'first_name'   => $name['first'],
@@ -260,14 +248,31 @@ function law_speakers_dashboard_rows( array $filters, $limit = LAW_SPEAKERS_DASH
 			'photo'        => law_speaker_photo_url( (int) $speaker->ID, $photo_id, 'thumbnail' ),
 			'appearances'  => $appearances,
 		);
-		$total += count( $appearances );
+	};
+
+	// The event, year and keyword tests run in PHP, so the cap counts the
+	// speakers that pass them rather than the first $limit by name
+	// (law_events_scan_posts()).
+	$scan = law_events_scan_posts(
+		array(
+			'post_type'   => LAW_SPEAKER_CPT,
+			'post_status' => 'publish',
+			'orderby'     => array( 'title' => 'ASC', 'ID' => 'ASC' ),
+		),
+		$limit,
+		$row_for
+	);
+
+	$total = 0;
+	foreach ( $scan['rows'] as $row ) {
+		$total += count( $row['appearances'] );
 	}
 
 	return array(
-		'rows'        => $rows,
-		'speakers'    => count( $rows ),
+		'rows'        => $scan['rows'],
+		'speakers'    => count( $scan['rows'] ),
 		'appearances' => $total,
-		'truncated'   => $truncated,
+		'truncated'   => $scan['truncated'],
 	);
 }
 

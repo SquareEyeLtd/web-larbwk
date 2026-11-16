@@ -347,6 +347,21 @@ class PaymentReconcileTest extends LAW_Test_Case {
 		);
 	}
 
+	public function test_each_run_reads_the_events_read_longest_ago(): void {
+		// 16 November 2026: the batch was the first 60 candidates by ID, so with
+		// more than 60 the newest events were never read at all.
+		$old   = $this->make_invoiced_event();
+		$fresh = $this->make_invoiced_event();
+		$never = $this->make_invoiced_event();
+		update_post_meta( $old, LAW_RECONCILE_SWEPT_META, time() - DAY_IN_SECONDS );
+		update_post_meta( $fresh, LAW_RECONCILE_SWEPT_META, time() );
+
+		$this->assertSame( array( $never, $old, $fresh ), law_stripe_reconcile_next_batch( array( $fresh, $old, $never ) ) );
+
+		$many = range( 1, LAW_RECONCILE_SWEEP_BATCH + 5 );
+		$this->assertCount( LAW_RECONCILE_SWEEP_BATCH, law_stripe_reconcile_next_batch( $many ), 'Still one bounded batch per run.' );
+	}
+
 	public function test_the_sweep_settles_a_missed_delivery_and_emails(): void {
 		$event = $this->make_invoiced_event();
 		// Four reads: the sweep's own check, the check law_stripe_reconcile_settle()
@@ -374,6 +389,10 @@ class PaymentReconcileTest extends LAW_Test_Case {
 		$GLOBALS['law_test_stripe_queue'] = array( $this->invoice( array( 'status' => 'void', 'amount_paid' => 0 ) ) );
 		$first = law_stripe_reconcile_run_sweep();
 
+		// The morning its turn comes round again. Each run reads whichever
+		// events were read longest ago, so on a live install the second run
+		// would otherwise start with real events nobody has read yet.
+		delete_post_meta( $event, LAW_RECONCILE_SWEPT_META );
 		$GLOBALS['law_test_stripe_queue'] = array( $this->invoice( array( 'status' => 'void', 'amount_paid' => 0 ) ) );
 		$second = law_stripe_reconcile_run_sweep();
 

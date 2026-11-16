@@ -83,9 +83,16 @@ repair-references, backfill-session-agenda).
 - `law_events_settings_defaults()`, `law_events_settings()`,
   `law_events_setting()`, `law_events_update_settings()`: one option,
   `law_events_settings`, holds the fee tiers, the programme year, the date/time
-  slots, the committee recipient emails, the Stripe `tax_rate_id` and
-  `rendering_template_id`, the `speakers_archive_public` switch and the
-  reserved `host_edit_review` mode.
+  slots, the committee recipient emails, the `contact_email` for LAW-run
+  events, the Stripe `tax_rate_id` and `rendering_template_id`, the
+  `speakers_archive_public` switch and the reserved `host_edit_review` mode.
+- `contact_email` (16 November 2026), read through
+  `law_events_contact_email()`: the shared address attendees of the flagship,
+  the receptions and external events are told to contact, defaulting to
+  `website@londonarbitrationweek.co.uk`. It is a default in
+  `law_events_settings_defaults()`, so it is live on deploy with no migration.
+  Saving the field empty or invalid stores `''`, and `law_event_contact_email()`
+  (`notifications.php`) then falls back to the event's author.
 - `speakers_archive_public` (Denis, 17 September 2026): whether the Speakers
   archive is public. **Off by default.** The archive is assembled from Confirmed
   events as soon as they exist, which is long before LAW wants the line-up
@@ -1275,6 +1282,11 @@ block the queue. Joining is refused while places are free.
   consecutive positions. It emails the joiner the whole party, each colleague
   their own entry, and the host once, the first time a queue forms
   (`host_waitlist_activated`, spec §4.4).
+- `law_waitlist_for_event( $event_id, $limit )` fetches the WHOLE queue, sorts
+  it by position in PHP and only then takes the first `$limit`. Limiting the
+  query took the oldest bookings by ID before sorting, so a queue longer than
+  the 30-entry pass window promoted by booking number rather than the host's
+  order (fixed 16 November 2026).
 - `law_waitlist_process( $event_id, $source )` walks the queue in order while
   places remain, seating each entry that still passes the duplicate and clash
   guards. An entry the guards refuse is **skipped in place**: it keeps its
@@ -1694,6 +1706,21 @@ then follows the link that appears and writes that event's confirmation.
   account links `{bookings_link}`, `{profile_link}` and `{submit_link}` (via
   `law_account_url( 'submit' )`) are set unconditionally, so the event-less
   registration emails resolve them.
+- `law_event_contact_email( $event_id )` (16 November 2026): the value of
+  `{host_email}`, the address the four "if you think this is a mistake,
+  contact the host at …" attendee emails give (booking cancelled by the
+  committee or by whoever booked it, taken off the waitlist by the committee
+  or by whoever added you). A hosted event gives its host's own email. An
+  event `law_event_is_managed_by_law()` (the flagship, a reception, an
+  external event) gives the shared **Contact email for LAW-run events** from
+  Events → Settings instead, because its author is whichever committee member
+  ran the setup and attendees were being sent to one person's inbox (client
+  request, 13 November 2026). With that setting empty it falls back to the
+  author, as before. `law_booking_cancel()` used to override `{host_email}`
+  with the author's address itself; it now leaves the tag to this helper, so
+  there is one rule. The "Email to host" notifications (`'to' => 'host'` in
+  `law_events_email_recipients()`) still go to the event's author: this
+  changes what attendees are told, not who the internal alerts reach.
 - `law_events_email_sample_placeholders()`: **the one place every tag's sample
   value lives**, used by every test send in place of a real event. A new tag
   in `law_events_email_placeholders()` needs its sample here in the same
@@ -11147,6 +11174,107 @@ Touched: `functions/events/bookings.php`, `functions/account-bookings.php`,
 on a local event with four bookings and two waitlist entries: bulk remove with
 a reason, bulk cancel of two places (one waitlist promotion pass, the right
 emails in Mailpit), and the no-JS path for both a ticked and an empty selection.
+
+## Long waitlists promote in the host's order (16 November 2026)
+
+Reported on Evensong (a reception, 91 waiting): cancelled places went to the
+oldest bookings rather than the order the host had set. `law_waitlist_for_event()`
+asked the database for the first `$limit` entries by post ID and sorted only
+those by `_law_waitlist_position`. A promotion pass asks for 30
+(`LAW_WAITLIST_PASS_WINDOW`), so on any queue longer than that the pass never
+saw people the host had moved up from further back, and seated the front of the
+30 oldest instead. On the local Evensong copy the pass would have seated
+position 20 (booking #8598) ahead of position 1 (#9888).
+
+It now fetches every waitlisted entry, sorts, then slices. This one function
+feeds every promotion route (cancel, bulk cancel, raised places, reorder,
+Promote now's follow-up pass, the resume cron and the hourly sweep) for hosted
+events and receptions alike, and the bookings list's 200-row waitlist table,
+which had the same flaw past 200 entries. The flagship has no waitlist.
+
+Touched: `functions/events/waitlist.php`, `tests/WaitlistTest.php` (1 new:
+a queue longer than the window with its newest entry moved to the top).
+
+## A flagship approval that approves nothing says so (16 November 2026)
+
+Seen on staging, where a live tax rate ID left in Events → Settings refused
+every charge under the test key. The approve dialog came back headed
+"Registrations approved", read "0 registrations approved. 1 could not be:
+No such tax rate…", still promised "They will be emailed a confirmation…",
+and kept its buttons up with the confirm one stuck on "Charging…" until the
+reload.
+
+- `law_flagship_review_bulk()`: when nothing was decided, nothing failed
+  over-booking and nothing is left for cron, the message is "The
+  registration could not be approved. {reason}" (or "None of the N
+  registrations could be …").
+- `law_flagship_review_handler()` answers that case as a refusal, so the
+  dialog stays open with the reason in its error line and the confirm button
+  back to its label. No-JS keeps the `flagship-partly-done` notice.
+- `booking-form.js`, the shared confirmed-in-a-dialog success branch: once
+  the outcome is written into the lead copy, every other child of the dialog
+  (later copy, list, field, actions) is removed, and focus moves to the dialog.
+  This applies to every dialog on that path, because their future-tense copy
+  and busy button are never true of the outcome. A partial batch still shows
+  its failures for only the 2.5 seconds before the reload.
+
+Touched: `functions/events/flagship-bookings.php`, `assets/js/booking-form.js`,
+`tests/FlagshipPaymentsTest.php` (1 new).
+
+## Capped lists that hid what they were capped for (16 November 2026)
+
+A sweep after the waitlist fix, for the same shape of fault: a query capped
+at N and then sorted, filtered or worked through in PHP, so anything past the
+first N by the query's own order was never seen.
+
+- **Reception sweep** (`law_reception_sweep()`). Each stage took the oldest
+  100 bookings in a status and tested the payment state in PHP; with 1,304
+  confirmed reception places it never reached a confirmation that had not gone
+  out, a charge stuck at `processing` or a long-settling payment, and the
+  newest no-card waitlist entries were never closed. `law_reception_bookings()`
+  now takes a meta query, and each stage asks for exactly the bookings it acts
+  on (`law_reception_payment_is()`); stage 1 leaves `processing` holds out of
+  the query. Its docblock said "newest first" over an oldest-first query; it
+  now says oldest first, which is right for a work queue.
+- **Daily Stripe reconcile** (`law_stripe_reconcile_run_sweep()`). The batch
+  was the first 60 candidates by ID, of 92, so the 32 newest invoiced events
+  were never read. `law_stripe_reconcile_next_batch()` takes the 60 read
+  longest ago (new meta `_law_reconcile_swept_at`, never-read and newest
+  first), so the whole list is covered over consecutive days with the same
+  Stripe budget per run. A key of its own, not the migration panel's
+  `_law_reconcile_checked_at`, which stays the date a person checked it there.
+- **Committee bookings and speakers dashboards.** The keyword, payment, press,
+  event and year tests ran in PHP over the first 2,000 bookings (newest) or
+  1,000 speakers (by name), so a search could not find anybody past them.
+  New `law_events_scan_posts()` (meta.php) reads the query in batches until
+  the cap's worth of rows has PASSED the tests, so the cap limits what is
+  shown, not what is searched. Both orders gained an ID tie-break so the
+  batches page stably. A search that matches nobody reads all 10,000+
+  bookings locally in about 1.5 seconds and 79 MB, under the export's 118 MB.
+- **Programme** (`law_events_cpt_mapped_events()`). 500 events of every year,
+  by title; past 500 the alphabetically late events of the CURRENT programme
+  would have dropped off. Now newest first, so a full cap drops the oldest
+  years instead. The programme is not scoped to a year at all, which is a
+  product question for when 2027 events arrive.
+- **Linked organisations picker** on the committee's event panel. 200
+  organisations by title, and the save replaces the list wholesale, so past
+  200 a save would have unlinked the rest. Now 1,000, and every linked
+  organisation is printed whatever the cap.
+- **Unclaimed invited accounts** (`law_booking_forget_unclaimed_attendee()`).
+  Read only 20 of the person's bookings before deciding every one was
+  cancelled; one unread live place would have been cancelled by the account
+  deletion. Now reads them all.
+
+Left alone: the committee events list (300 by last edit) already prints
+"Showing N of M events" and filters in SQL, and the wp-admin session screen's
+event picker (300) cannot change a session's event when it misses one.
+
+Tests: `ReceptionWaitlistTest` (the two sweep tests had been failing on this
+install for exactly this reason; one now asserts on its own entry rather than
+the site-wide counter), `PaymentReconcileTest` (1 new; two had been failing
+for the same reason), `BookingsDashboardTest` and `SpeakersDashboardTest`
+(1 new each; one old assertion of "not truncated" across every event made
+event-scoped).
 
 ---
 

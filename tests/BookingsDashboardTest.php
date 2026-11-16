@@ -102,7 +102,9 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$this->assertTrue( $by_email[ $f['press_email'] ]['is_press'] );
 		$this->assertSame( 'Guest LLP', $by_email[ $f['guest_email'] ]['organisation'] );
 		$this->assertNotSame( '', $by_email[ $f['guest_email'] ]['invited_by'], 'A guest carries who invited them.' );
-		$this->assertFalse( $data['truncated'] );
+		// On one event: across all of them a live install can genuinely hold
+		// more than the cap.
+		$this->assertFalse( law_bookings_dashboard_rows( $this->filters( array( 'law_event' => $f['event_a'] ) ) )['truncated'] );
 	}
 
 	public function test_keyword_matches_email_name_and_booking_number(): void {
@@ -122,6 +124,26 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		foreach ( $rows as $row ) {
 			$this->assertStringContainsString( (string) $number, (string) $row['number'], 'A #N keyword matches the booking number.' );
 		}
+	}
+
+	public function test_a_keyword_reaches_bookings_beyond_the_cap(): void {
+		// 16 November 2026: the cap was applied to the query and the keyword
+		// to what it returned, so a search found nobody older than the newest
+		// LAW_BOOKINGS_DASHBOARD_SCREEN_CAP bookings.
+		$event = $this->make_bookable_event( '2026-12-03 10:00', '2026-12-03 12:00' );
+		$ids   = array();
+		for ( $i = 0; $i < 4; $i++ ) {
+			$ids[] = (int) $this->make_booking( $event, $this->make_user() )[0];
+		}
+		$oldest = law_booking_attendee( $ids[0] )['email'];
+
+		$rows = law_bookings_dashboard_rows( $this->filters( array( 'law_event' => $event, 'law_kw' => $oldest ) ), 2 )['rows'];
+		$this->assertSame( array( $ids[0] ), array_column( $rows, 'booking_id' ), 'The oldest booking is found past a cap of two.' );
+
+		$data = law_bookings_dashboard_rows( $this->filters( array( 'law_event' => $event ) ), 2 );
+		$this->assertSame( array( $ids[3], $ids[2] ), array_column( $data['rows'], 'booking_id' ), 'Unsearched, the cap shows the newest.' );
+		$this->assertTrue( $data['truncated'] );
+		$this->assertFalse( law_bookings_dashboard_rows( $this->filters( array( 'law_event' => $event ) ), 4 )['truncated'], 'Exactly the cap is not truncated.' );
 	}
 
 	public function test_event_status_and_press_filters(): void {

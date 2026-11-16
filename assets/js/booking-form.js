@@ -1016,7 +1016,26 @@
 					   anchor. */
 					if (scope !== form && scope.classList && scope.classList.contains('law-modal')) {
 						var copy = scope.querySelector('.law-modal__copy');
-						if (copy && payload.message) { copy.textContent = payload.message; }
+						if (copy && payload.message) {
+							copy.textContent = payload.message;
+							/* Everything else in the dialog described the
+							   action before it ran: the "they will be emailed"
+							   lines, the reason field, and the buttons, one of
+							   them stuck on "Charging…" with nothing left to
+							   press. None of it is true of the outcome, so only
+							   the heading and the outcome stay up until the
+							   reload. Removed rather than hidden: the actions
+							   row is display:flex, which beats [hidden]. */
+							var box = scope.querySelector('.law-modal__dialog');
+							if (box) {
+								Array.prototype.slice.call(box.children).forEach(function (child) {
+									if (child.contains(copy) || child.matches('.law-modal__title, .law-modal__close')) { return; }
+									child.remove();
+								});
+								/* The focused confirm button has just gone. */
+								box.focus();
+							}
+						}
 						var title = scope.querySelector('.law-modal__title');
 						if (title && payload.title) { title.textContent = payload.title; }
 						scope.classList.add('law-modal--busy');

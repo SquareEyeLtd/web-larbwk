@@ -23,6 +23,11 @@ function law_events_settings_defaults() {
 		// start/end (HH:MM, end '' = onwards), retired (bool).
 		'slots'                   => array(),
 		'committee_emails'        => array(),
+		// The address attendees are told to contact about an event LAW runs
+		// itself (the flagship, the receptions, external events), in place of
+		// the committee member whose account created it. A shared inbox, so
+		// several people can answer (client request, 13 November 2026).
+		'contact_email'           => 'website@londonarbitrationweek.co.uk',
 		// Tier key => [label, amount] in POUNDS. Mirrors form 2 field 53 (Event fee).
 		'fee_tiers'               => array(
 			'uk'            => array( 'label' => 'UK hosts: £1200 + VAT', 'amount' => 1200 ),
@@ -863,6 +868,16 @@ function law_events_committee_emails() {
 	return array_values( array_filter( array_map( 'sanitize_email', (array) $emails ), 'is_email' ) );
 }
 
+/**
+ * The shared contact address for events LAW runs itself, or '' when the
+ * setting holds nothing usable (law_event_contact_email() then falls back to
+ * the event's author, as before the setting existed).
+ */
+function law_events_contact_email() {
+	$email = sanitize_email( (string) law_events_setting( 'contact_email', '' ) );
+	return is_email( $email ) ? $email : '';
+}
+
 function law_events_stripe_mode() {
 	$key = defined( 'LAW_STRIPE_SECRET_KEY' ) ? LAW_STRIPE_SECRET_KEY : '';
 	if ( '' === $key ) {
@@ -982,6 +997,9 @@ function law_events_settings_page() {
 				<tr><th scope="row"><label for="law-committee">Committee recipients</label></th>
 					<td><textarea name="committee_emails" id="law-committee" rows="4" class="large-text code"><?php echo esc_textarea( implode( "\n", (array) $s['committee_emails'] ) ); ?></textarea>
 					<p class="description">One email per line. Used by the committee notifications.</p></td></tr>
+				<tr><th scope="row"><label for="law-contact-email">Contact email for LAW-run events</label></th>
+					<td><input name="contact_email" id="law-contact-email" type="email" class="regular-text" value="<?php echo esc_attr( $s['contact_email'] ); ?>">
+					<p class="description">Given to attendees of the flagship, the receptions and external events as the address to contact, for example in cancellation emails. Hosted events keep the host's own email.</p></td></tr>
 				<?php foreach ( $s['fee_tiers'] as $tier => $config ) : ?>
 				<tr><th scope="row">Fee tier: <?php echo esc_html( $tier ); ?></th>
 					<td>
@@ -1050,6 +1068,11 @@ function law_events_settings_save() {
 		}
 	}
 	$changes['committee_emails'] = $emails;
+
+	// An invalid or empty address saves as '', which law_event_contact_email()
+	// reads as "fall back to the event's author" rather than mailing nowhere.
+	$contact                  = sanitize_email( wp_unslash( $_POST['contact_email'] ?? '' ) );
+	$changes['contact_email'] = is_email( $contact ) ? $contact : '';
 
 	$tiers = law_events_setting( 'fee_tiers' );
 	foreach ( $tiers as $tier => $config ) {

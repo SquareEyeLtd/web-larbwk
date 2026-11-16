@@ -357,15 +357,18 @@ class ReceptionWaitlistTest extends LAW_Test_Case {
 		$this->fill( $event_id );
 		$entry = $this->join( $event_id )['booking'];
 
+		// Asserted on THIS entry, not the sweep's counter, which counts every
+		// reception on a live install (see the confirmation test below).
 		// Still pending, but not yet old enough.
-		$this->assertSame( 0, law_reception_sweep()['no_card'] );
+		law_reception_sweep();
+		$this->assertSame( 'law-waitlisted', get_post_status( $entry ) );
 
 		law_event_update_meta(
 			$entry,
 			'_law_waitlist_joined',
 			gmdate( 'Y-m-d H:i:s', strtotime( '-' . ( LAW_FLAGSHIP_SETUP_GRACE_HOURS + 1 ) . ' hours' ) )
 		);
-		$this->assertSame( 1, law_reception_sweep()['no_card'] );
+		law_reception_sweep();
 		$this->assertSame( 'law-cancelled', get_post_status( $entry ) );
 	}
 

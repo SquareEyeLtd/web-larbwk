@@ -41,6 +41,15 @@ const LAW_WAITLIST_SWEEP_SECONDS = 20;
 /**
  * An event's waitlist, in promotion order.
  *
+ * The WHOLE queue is fetched and sorted before $limit is applied. Limiting the
+ * query itself took the oldest $limit bookings by ID and only then sorted them,
+ * so once a queue outgrew the promotion window (30) a pass never saw anybody
+ * the host had moved up from further back, and seated the oldest bookings
+ * instead: promotion by booking number, not by the host's order (reported on
+ * Evensong, 13 November 2026). A queue is bounded by the people waiting, so
+ * fetching all of it is cheap.
+ *
+ * @param int $limit The first $limit entries of the queue; 0 for all of them.
  * @return WP_Post[]
  */
 function law_waitlist_for_event( $event_id, $limit = 500 ) {
@@ -49,9 +58,10 @@ function law_waitlist_for_event( $event_id, $limit = 500 ) {
 			'post_type'      => LAW_BOOKING_CPT,
 			'post_parent'    => (int) $event_id,
 			'post_status'    => 'law-waitlisted',
-			'posts_per_page' => (int) $limit,
+			'posts_per_page' => -1,
 			'orderby'        => 'ID',
 			'order'          => 'ASC',
+			'no_found_rows'  => true,
 		)
 	);
 	// Ordered in PHP, not by a meta_key orderby: that would INNER JOIN postmeta,
@@ -68,7 +78,7 @@ function law_waitlist_for_event( $event_id, $limit = 500 ) {
 			return $pa === $pb ? $a->ID <=> $b->ID : $pa <=> $pb;
 		}
 	);
-	return $entries;
+	return (int) $limit > 0 ? array_slice( $entries, 0, (int) $limit ) : $entries;
 }
 
 /**
