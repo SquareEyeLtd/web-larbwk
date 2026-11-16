@@ -116,7 +116,9 @@ class LAW_HubSpot_CLI {
 			WP_CLI::error( $report['error'] );
 		}
 
-		WP_CLI::log( sprintf( 'Group %s: %s', $report['group']['name'], $report['group']['exists'] ? 'exists' : 'MISSING' ) );
+		foreach ( $report['groups'] as $group ) {
+			WP_CLI::log( sprintf( 'Group %s ("%s"): %s', $group['name'], $group['label'], $group['exists'] ? 'exists' : 'MISSING' ) );
+		}
 
 		$rows = array();
 		foreach ( $report['properties'] as $name => $row ) {

@@ -358,7 +358,7 @@ function law_hubspot_admin_page() {
 						Standard properties (name, job title, company, country), Contact type tags
 						<code><?php echo implode( '</code> <code>', array_map( 'esc_html', array_merge( array_values( $config['tags'] ), array_values( $config['reception_tags'] ) ) ) ); ?></code>
 						(added, never removed) and the legal basis (filled when empty, "other" upgraded to "existing customer").
-						The badging properties in the <code><?php echo esc_html( $config['property_group']['name'] ); ?></code> group are created but not yet written (phase 3).
+						The year's properties sit in the <code><?php echo esc_html( $config['property_groups']['year']['name'] ); ?></code> group ("<?php echo esc_html( $config['property_groups']['year']['label'] ); ?>") on the contact record; the rest in <code><?php echo esc_html( $config['property_groups']['site']['name'] ); ?></code>.
 					</td>
 				</tr>
 			</tbody>
@@ -440,13 +440,15 @@ function law_hubspot_admin_page() {
 				<table class="widefat striped" style="max-width:900px">
 					<thead><tr><th>Internal name</th><th>Label</th><th>Type</th><th>Exists</th><th>Missing options</th></tr></thead>
 					<tbody>
-						<tr>
-							<td><code><?php echo esc_html( $report['group']['name'] ); ?></code></td>
-							<td>Property group</td>
-							<td>group</td>
-							<td><?php echo law_hubspot_admin_yes_no( $report['group']['exists'] ); ?></td>
-							<td></td>
-						</tr>
+						<?php foreach ( $report['groups'] as $group ) : ?>
+							<tr>
+								<td><code><?php echo esc_html( $group['name'] ); ?></code></td>
+								<td><?php echo esc_html( $group['label'] ); ?></td>
+								<td>group</td>
+								<td><?php echo law_hubspot_admin_yes_no( $group['exists'] ); ?></td>
+								<td></td>
+							</tr>
+						<?php endforeach; ?>
 						<?php foreach ( $report['properties'] as $name => $row ) : ?>
 							<tr>
 								<td><code><?php echo esc_html( $name ); ?></code></td>
