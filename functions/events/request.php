@@ -50,14 +50,58 @@ function law_events_rate_limit_ok( $surface, $user_id = 0, $max = 10, $window = 
 		$budgets[ 'law_rl_' . $surface . '_u' . (int) $user_id ] = $max;
 	}
 	foreach ( $budgets as $key => $budget ) {
-		if ( (int) get_transient( $key ) >= $budget ) {
+		if ( law_events_rate_state( $key )['count'] >= $budget ) {
 			return false;
 		}
 	}
+	// The window runs from the FIRST action in it. Writing the transient back
+	// with a fresh $window on every action made it a timer that restarted on
+	// each one, so somebody working steadily never got their budget back at
+	// all until they stopped for the whole window (the committee classifying
+	// reception delegates, 16 November 2026).
 	foreach ( array_keys( $budgets ) as $key ) {
-		set_transient( $key, (int) get_transient( $key ) + 1, $window );
+		$state = law_events_rate_state( $key );
+		set_transient(
+			$key,
+			array( 'count' => $state['count'] + 1, 'start' => $state['start'] ),
+			max( 1, $state['start'] + (int) $window - time() )
+		);
 	}
 	return true;
+}
+
+/**
+ * One budget's count and the time its window opened. A bare integer is the
+ * shape written before the window was fixed; its window counts from now.
+ *
+ * @return array{count:int,start:int}
+ */
+function law_events_rate_state( $key ) {
+	$state = get_transient( $key );
+	if ( is_array( $state ) ) {
+		return array( 'count' => (int) ( $state['count'] ?? 0 ), 'start' => (int) ( $state['start'] ?? time() ) );
+	}
+	return array( 'count' => (int) $state, 'start' => time() );
+}
+
+/**
+ * Whether a guarded post is within its surface's budget.
+ *
+ * The committee is not limited. The limiter is for public write surfaces;
+ * every committee action already sits behind a nonce and a capability check,
+ * and the bulk actions let one request do more than any run of single clicks,
+ * so a budget there only ever stopped real work: setting ticket types on a
+ * 551-booking reception one row at a time hit the flagship screens' 60 per ten
+ * minutes (16 November 2026).
+ *
+ * @param array $rate [surface, max, window, ip_max], as law_events_guard_post() takes it.
+ */
+function law_events_guard_rate_ok( array $rate ) {
+	if ( law_user_is_committee() ) {
+		return true;
+	}
+	list( $surface, $max, $window, $ip_max ) = array_pad( $rate, 4, null );
+	return law_events_rate_limit_ok( (string) $surface, get_current_user_id(), (int) ( $max ?? 10 ), (int) ( $window ?? 300 ), (int) ( $ip_max ?? 0 ) );
 }
 
 /**
@@ -123,11 +167,8 @@ function law_events_guard_post( $nonce_action, array $args = array() ) {
 		law_events_redirect_back( array( 'law_notice' => (string) ( $args['honeypot_notice'] ?? 'saved' ) ) );
 	}
 
-	if ( ! empty( $args['rate'] ) ) {
-		list( $surface, $max, $window, $ip_max ) = array_pad( (array) $args['rate'], 4, null );
-		if ( ! law_events_rate_limit_ok( (string) $surface, get_current_user_id(), (int) ( $max ?? 10 ), (int) ( $window ?? 300 ), (int) ( $ip_max ?? 0 ) ) ) {
-			law_events_respond( $is_ajax, false, array( 'message' => 'Too many actions in a short time; please wait a moment.', 'status' => 429 ), 'rate-limited' );
-		}
+	if ( ! empty( $args['rate'] ) && ! law_events_guard_rate_ok( (array) $args['rate'] ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => 'Too many actions in a short time; please wait a moment.', 'status' => 429 ), 'rate-limited' );
 	}
 
 	return $is_ajax;
