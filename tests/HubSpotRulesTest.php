@@ -525,29 +525,35 @@ class HubSpotRulesTest extends LAW_Test_Case {
 		$a = $this->insert_booking( $reception_a, $user_id );
 		$this->assertSame( '', $this->site( $email )['passtype'], 'Unclassified: send nothing, never a blank.' );
 
-		law_event_update_meta( $a, '_law_ticket_type', 'delegate' );
-		$this->assertSame( 'Delegate', $this->site( $email )['passtype'] );
+		// Emily's order (12 November 2026): Delegate and Press at the top (they
+		// never coincide), then Sponsor, Committee, Speaker, Patron. A paying
+		// delegate who also speaks is badged Delegate.
+		law_event_update_meta( $a, '_law_ticket_type', 'patron' );
+		$this->assertSame( 'Patron', $this->site( $email )['passtype'] );
 
 		$b = $this->insert_booking( $reception_b, $user_id );
+		law_event_update_meta( $b, '_law_ticket_type', 'speaker' );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'], 'Speaker beats Patron.' );
+
+		law_event_update_meta( $a, '_law_ticket_type', 'committee' );
+		$this->assertSame( 'Committee', $this->site( $email )['passtype'], 'Committee beats Speaker.' );
+
 		law_event_update_meta( $b, '_law_ticket_type', 'sponsor' );
-		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'], 'Sponsor beats Delegate.' );
+		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'], 'Sponsor beats Committee.' );
 
-		law_event_update_meta( $a, '_law_ticket_type', 'speaker' );
-		$this->assertSame( 'Speaker', $this->site( $email )['passtype'], 'Speaker beats Sponsor.' );
-
-		law_event_update_meta( $b, '_law_ticket_type', 'committee' );
-		$this->assertSame( 'Committee', $this->site( $email )['passtype'], 'Committee beats everything.' );
+		law_event_update_meta( $a, '_law_ticket_type', 'delegate' );
+		$this->assertSame( 'Delegate', $this->site( $email )['passtype'], 'Delegate beats everything: the paid place is the badge.' );
 
 		// A cancelled place no longer counts (the status guard only lets the
 		// engine move a booking, so the engine's own path is used).
 		$GLOBALS['law_booking_transitioning'] = true;
 		try {
-			wp_update_post( array( 'ID' => $b, 'post_status' => 'law-cancelled' ) );
+			wp_update_post( array( 'ID' => $a, 'post_status' => 'law-cancelled' ) );
 		} finally {
 			$GLOBALS['law_booking_transitioning'] = false;
 		}
-		$this->assertSame( 'law-cancelled', get_post_status( $b ) );
-		$this->assertSame( 'Speaker', $this->site( $email )['passtype'] );
+		$this->assertSame( 'law-cancelled', get_post_status( $a ) );
+		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'] );
 	}
 
 	public function test_pass_type_precedence_is_one_config_edit(): void {
@@ -556,16 +562,16 @@ class HubSpotRulesTest extends LAW_Test_Case {
 		$b = $this->insert_booking( $this->make_law_run(), $user_id );
 		law_event_update_meta( $a, '_law_ticket_type', 'speaker' );
 		law_event_update_meta( $b, '_law_ticket_type', 'sponsor' );
-		$this->assertSame( 'Speaker', $this->site( $email )['passtype'] );
+		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'] );
 
 		add_filter(
 			'law_hubspot_config',
 			function ( array $config ) {
-				$config['passtype_precedence'] = array( 'sponsor', 'speaker' );
+				$config['passtype_precedence'] = array( 'speaker', 'sponsor' );
 				return $config;
 			}
 		);
-		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'], 'Event Connections can have the order they like.' );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'], 'LAW can have the order they like.' );
 	}
 
 	public function test_press_flag_and_press_type_both_read_as_press(): void {
