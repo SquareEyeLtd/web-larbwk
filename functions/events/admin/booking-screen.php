@@ -29,10 +29,11 @@ add_action( 'add_meta_boxes_' . LAW_BOOKING_CPT, function ( $post ) {
 	remove_meta_box( 'slugdiv', LAW_BOOKING_CPT, 'normal' );
 	add_meta_box( 'law-booking-facts', 'Booking', 'law_booking_box_facts', LAW_BOOKING_CPT, 'normal', 'high' );
 	// Its own box rather than a field in the facts table, which is a read-only
-	// <table> and should stay one. Flagship bookings only: a hosted place and a
-	// reception ticket are not classified this way, and an empty select on
-	// every booking in the site would just be a question nobody can answer.
-	if ( 'flagship' === law_booking_kind( $post ) ) {
+	// <table> and should stay one. LAW-run bookings only (the flagship, and
+	// since 12 November 2026 the receptions, for the badging list): a hosted
+	// place is not classified this way, and an empty select on every booking
+	// in the site would just be a question nobody can answer.
+	if ( in_array( law_booking_kind( $post ), array( 'flagship', 'reception' ), true ) ) {
 		add_meta_box( 'law-booking-ticket-type', 'Ticket type', 'law_booking_box_ticket_type', LAW_BOOKING_CPT, 'side' );
 	}
 	add_meta_box( 'law-booking-activity', 'Activity', 'law_booking_box_activity', LAW_BOOKING_CPT, 'normal' );
@@ -52,7 +53,7 @@ function law_booking_box_ticket_type( $post ) {
 		law_booking_ticket_types(),
 		array( 'placeholder' => 'Not set' )
 	);
-	echo '<p class="description">' . esc_html__( 'For the committee\'s own records and exports. The delegate never sees it, and it changes nothing about their place or their price. The Flagship bookings dashboard sets the same field.', 'law' ) . '</p>';
+	echo '<p class="description">' . esc_html__( 'For the committee\'s own records, exports and the badge\'s pass type. The delegate never sees it, and it changes nothing about their place or their price. The Flagship bookings dashboard and the reception bookings lists set the same field.', 'law' ) . '</p>';
 }
 
 /**

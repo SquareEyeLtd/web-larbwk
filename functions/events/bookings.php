@@ -829,8 +829,18 @@ function law_booking_write_attendee( $booking_id, array $person, $booked_by, $pr
 	law_event_update_meta( $booking_id, '_law_attendee_job_title', (string) ( $person['job_title'] ?? '' ) );
 	if ( $press ) {
 		law_event_update_meta( $booking_id, '_law_is_press', 1 );
+		// A press pass IS the Press ticket type (law_booking_set_ticket_type()
+		// keeps the other direction), so a seat issued as press needs nobody to
+		// classify it again. An existing type is left: the committee may have
+		// said Committee about a press-passed seat on purpose.
+		if ( '' === (string) law_event_meta( $booking_id, '_law_ticket_type' ) ) {
+			law_event_update_meta( $booking_id, '_law_ticket_type', 'press' );
+		}
 	} else {
 		delete_post_meta( $booking_id, '_law_is_press' );
+		if ( 'press' === (string) law_event_meta( $booking_id, '_law_ticket_type' ) ) {
+			law_event_update_meta( $booking_id, '_law_ticket_type', '' );
+		}
 	}
 }
 

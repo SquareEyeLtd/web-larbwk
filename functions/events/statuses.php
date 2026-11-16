@@ -84,11 +84,15 @@ function law_flagship_application_statuses() {
 }
 
 /**
- * The ticket types the committee can classify a flagship registration with
- * (the client's own list, 15 September 2026). Back-office only: it is never
- * shown to the delegate, never reaches Stripe and changes no price, capacity
- * or guard. It exists so the committee's own records and their exports can
- * say who a name in the list actually is.
+ * The ticket types the committee can classify a registration with on the
+ * events LAW runs itself: the flagship and, since 12 November 2026, the
+ * receptions (the client's own list, 15 September 2026; Press and Patron
+ * added and Exhibitor retired for the badging integration, Emily 4 November
+ * 2026). Back-office only: it is never shown to the delegate, never reaches
+ * Stripe and changes no price, capacity or guard. It exists so the committee's
+ * own records and their exports can say who a name in the list actually is,
+ * and it is what the HubSpot sync turns into the badge's pass type
+ * (functions/hubspot/rules.php).
  *
  * One list, read by the dashboard cell, the dialog, the filter, the exports,
  * the wp-admin box and the meta sanitiser, so the five cannot drift apart.
@@ -103,18 +107,34 @@ function law_booking_ticket_types() {
 		'delegate'  => 'Delegate',
 		'sponsor'   => 'Sponsor',
 		'speaker'   => 'Speaker',
-		'exhibitor' => 'Exhibitor',
 		'committee' => 'Committee',
+		'press'     => 'Press',
+		'patron'    => 'Patron',
+	);
+}
+
+/**
+ * Ticket types no longer offered, kept so a booking classified before the
+ * retirement still reads correctly in the lists and exports rather than
+ * blanking to "Add type". The sanitiser refuses them on write, so no NEW
+ * booking can take one.
+ *
+ * @return array<string,string> slug => label.
+ */
+function law_booking_retired_ticket_types() {
+	return array(
+		'exhibitor' => 'Exhibitor',
 	);
 }
 
 /**
  * A ticket type's label, or '' when nothing is set or the slug is unknown.
+ * A retired type still has its label (law_booking_retired_ticket_types()).
  *
  * @param string $type A law_booking_ticket_types() key.
  */
 function law_booking_ticket_type_label( $type ) {
-	$types = law_booking_ticket_types();
+	$types = law_booking_ticket_types() + law_booking_retired_ticket_types();
 	return $types[ (string) $type ] ?? '';
 }
 

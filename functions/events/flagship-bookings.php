@@ -1732,6 +1732,10 @@ function law_flagship_add_complimentary( array $row, $actor_id ) {
 	// an argument to law_booking_write_attendee(), not a meta value.
 	if ( ! empty( $row['press'] ) ) {
 		law_event_update_meta( $booking_id, '_law_is_press', 1 );
+		// And the matching ticket type, as law_booking_write_attendee() does.
+		if ( '' === (string) law_event_meta( $booking_id, '_law_ticket_type' ) ) {
+			law_event_update_meta( $booking_id, '_law_ticket_type', 'press' );
+		}
 	}
 	update_post_meta( $booking_id, '_law_application_ready', 1 );
 	law_event_recount_attendees( $event_id, 'flagship' );
@@ -2574,26 +2578,34 @@ function law_flagship_send_substitution_emails( $booking_id, $event_id, array $p
 }
 
 /**
- * Set (or clear) the committee's ticket type on one flagship registration.
+ * Set (or clear) the committee's ticket type on one registration at an event
+ * LAW runs: the flagship, or a reception (since 12 November 2026, so the
+ * badging list can say what a reception-only guest is).
  *
  * Purely a classification the committee keeps for itself (Delegate, Sponsor,
- * Speaker, Exhibitor, Committee — the client's list, 15 September 2026). It is
- * never shown to the delegate, never sent to Stripe, and no price, capacity,
- * status or guard reads it. That is why this is the one booking value with a
- * wp-admin write path as well (admin/booking-screen.php): there is nothing for
- * the front-end engine to protect.
+ * Speaker, Committee, Press, Patron — the client's list, 15 September and
+ * 4 November 2026). It is never shown to the delegate, never sent to Stripe,
+ * and no price, capacity, status or guard reads it. That is why this is the
+ * one booking value with a wp-admin write path as well
+ * (admin/booking-screen.php): there is nothing for the front-end engine to
+ * protect. The HubSpot sync reads it as the badge's pass type.
+ *
+ * Press is also a FLAG on the seat (_law_is_press, issued with a
+ * complimentary place), and the two are kept in step here: setting the type
+ * to Press raises the flag, moving it off Press lowers it. The other
+ * direction is law_booking_write_attendee().
  *
  * An empty $type clears it. The meta sanitiser deletes the key on '', so
- * "not set" is the absence of the value rather than a sixth vocabulary item.
+ * "not set" is the absence of the value rather than a seventh vocabulary item.
  *
- * @param int    $booking_id The flagship booking.
+ * @param int    $booking_id A flagship or reception booking.
  * @param string $type       A law_booking_ticket_types() key, or '' to clear.
  * @param int    $actor_id   Who changed it.
  * @return array{type:string,label:string}|WP_Error
  */
-function law_flagship_set_ticket_type( $booking_id, $type, $actor_id ) {
+function law_booking_set_ticket_type( $booking_id, $type, $actor_id ) {
 	$booking = get_post( (int) $booking_id );
-	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
+	if ( ! $booking || ! in_array( law_booking_kind( $booking ), array( 'flagship', 'reception' ), true ) ) {
 		return new WP_Error( 'law_flagship_not_found', 'That registration could not be found.' );
 	}
 
@@ -2605,6 +2617,12 @@ function law_flagship_set_ticket_type( $booking_id, $type, $actor_id ) {
 
 	$before = (string) law_event_meta( (int) $booking->ID, '_law_ticket_type' );
 	law_event_update_meta( (int) $booking->ID, '_law_ticket_type', $type );
+
+	if ( 'press' === $type ) {
+		law_event_update_meta( (int) $booking->ID, '_law_is_press', 1 );
+	} elseif ( 'press' === $before ) {
+		delete_post_meta( (int) $booking->ID, '_law_is_press' );
+	}
 
 	// Logged even when nothing moved is noise, so say nothing when the
 	// committee reopens the dialog and presses Apply on the same value.
@@ -2624,6 +2642,11 @@ function law_flagship_set_ticket_type( $booking_id, $type, $actor_id ) {
 	}
 
 	return array( 'type' => $type, 'label' => law_booking_ticket_type_label( $type ) );
+}
+
+/** The flagship-era name, kept for its callers; the setter now takes reception bookings too. */
+function law_flagship_set_ticket_type( $booking_id, $type, $actor_id ) {
+	return law_booking_set_ticket_type( $booking_id, $type, $actor_id );
 }
 
 /* Emails _____________________________________________________________________ */
@@ -2806,13 +2829,13 @@ function law_flagship_require_own_booking( $is_ajax, array $statuses = array() )
 }
 
 /** Load a booking the committee may act on, or respond and exit. */
-function law_flagship_require_committee_booking( $is_ajax ) {
+function law_flagship_require_committee_booking( $is_ajax, array $kinds = array( 'flagship' ) ) {
 	if ( ! law_user_is_committee() ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, reviewing registrations is for the committee.', 'status' => 403 ), 'flagship-denied' );
 	}
 	$booking_id = absint( $_POST['booking_id'] ?? 0 );
 	$booking    = $booking_id ? get_post( $booking_id ) : null;
-	if ( ! $booking || ! law_flagship_booking_is( $booking ) ) {
+	if ( ! $booking || ! in_array( law_booking_kind( $booking ), $kinds, true ) ) {
 		law_events_respond( $is_ajax, false, array( 'message' => 'That registration could not be found.', 'status' => 404 ), 'flagship-failed' );
 	}
 
@@ -3273,8 +3296,10 @@ function law_flagship_ticket_type_handler() {
 		array( 'rate' => array( 'flagship_review', 60, 600, 300 ), 'honeypot_json' => array( 'message' => 'Done.' ) )
 	);
 
-	$booking = law_flagship_require_committee_booking( $is_ajax );
-	$result  = law_flagship_set_ticket_type(
+	// A reception booking is allowed here too (the per-event list carries the
+	// same cell for the committee); the setter itself refuses anything else.
+	$booking = law_flagship_require_committee_booking( $is_ajax, array( 'flagship', 'reception' ) );
+	$result  = law_booking_set_ticket_type(
 		(int) $booking->ID,
 		sanitize_key( wp_unslash( (string) ( $_POST['law_ticket_type'] ?? '' ) ) ),
 		get_current_user_id()
@@ -3298,7 +3323,11 @@ function law_flagship_ticket_type_handler() {
 				'target' => '[data-law-ticket-cell="' . (int) $booking->ID . '"]',
 				'html'   => law_flagship_ticket_type_cell( (int) $booking->ID ),
 			),
-			'redirect' => law_flagship_bookings_url(),
+			// The no-JS form goes back to the list it came from: the Flagship
+			// bookings dashboard, or the reception's own per-event list.
+			'redirect' => law_flagship_booking_is( $booking )
+				? law_flagship_bookings_url()
+				: add_query_arg( 'law_notice', 'flagship-ticket-type', law_booking_list_url( (int) $booking->post_parent ) ),
 		),
 		'flagship-ticket-type'
 	);

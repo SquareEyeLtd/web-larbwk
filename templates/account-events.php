@@ -46,8 +46,22 @@ get_header();
 				?>
 				<?php // .law-dashboard: the table/badge light-section colour resets are scoped to it. ?>
 				<div class="law-dashboard law-booking-manage">
-					<?php get_template_part( 'parts/events/booking-list', null, array( 'event_id' => $law_bookings_list_id ) ); ?>
+					<?php
+					if ( 'flagship-ticket-type' === sanitize_key( $_GET['law_notice'] ?? '' ) ) {
+						// The no-JS ticket-type form on a reception's list lands back here.
+						echo '<div class="law-form-notice is-success" role="status">' . esc_html__( 'The ticket type has been saved.', 'law' ) . '</div>';
+					}
+					get_template_part( 'parts/events/booking-list', null, array( 'event_id' => $law_bookings_list_id ) );
+					?>
 				</div>
+				<?php
+				// The committee's ticket-type dialog for a reception's list, outside
+				// the table like the flagship dashboard keeps it. The part itself
+				// renders nothing for anyone but the committee.
+				if ( function_exists( 'law_reception_is' ) && law_reception_is( $law_bookings_list_id ) ) {
+					get_template_part( 'parts/events/flagship-ticket-type' );
+				}
+				?>
 
 			<?php elseif ( $law_thread_id && 'cpt' === law_events_source() ) : ?>
 

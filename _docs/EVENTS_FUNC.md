@@ -2704,11 +2704,25 @@ and two sets of actions that do not apply to each other.
   cell is one inline control: "Add type" with a pencil until somebody
   classifies the delegate, then the type with the same pencil. The vocabulary
   is `law_booking_ticket_types()` (`statuses.php`) and the value is
-  `_law_ticket_type` on the booking; `law_flagship_set_ticket_type()`
-  (`flagship-bookings.php`) is the only writer, and it logs the change against
-  the booking so the wp-admin Activity box picks it up. It classifies and
-  nothing more: no price, capacity, status, email or guard reads it, and the
-  delegate is never shown it.
+  `_law_ticket_type` on the booking; `law_booking_set_ticket_type()`
+  (`flagship-bookings.php`; `law_flagship_set_ticket_type()` is the old name,
+  kept as a wrapper) is the only writer, and it logs the change against the
+  booking so the wp-admin Activity box picks it up. It classifies and nothing
+  more: no price, capacity, status, email or guard reads it, and the delegate
+  is never shown it — but since 12 November 2026 the HubSpot sync reads it as
+  the badge's pass type (HUBSPOT_SYNC.md §5.2), which brought three changes
+  for the badging integration (Emily, 4 November 2026): **Press and Patron
+  added, Exhibitor retired** (a retired type keeps its label through
+  `law_booking_retired_ticket_types()` so an old booking still reads
+  correctly; the sanitiser refuses it on write); **Press kept in step with
+  `_law_is_press`** both ways (setting the type to Press raises the flag and
+  moving off it lowers it; issuing a press pass sets a blank type to Press
+  and withdrawing it clears a Press type); and **reception bookings can be
+  classified too** — the setter, the handler, the wp-admin box and
+  `parts/events/booking-list.php` (a committee-only "Ticket type" column
+  using this same cell, dialog and script; editable on the active table,
+  read-only on the waitlist and cancelled tables; blank by default) all take
+  a reception booking. Hosted bookings are still refused.
   - **One dialog for the whole table**, `parts/events/flagship-ticket-type.php`,
     rendered outside `#law-cal-events` beside the add-attendee dialog so a
     filter swapping the table cannot destroy it. Every other confirm dialog
@@ -4933,8 +4947,14 @@ they stay the same length.
   map and `_law_gf_entry_ids`) and `law_year` terms across, adds the second
   speaker's slug to the main speaker's `_wp_old_slug` (core 301s the old
   address), stamps `_law_speaker_merged_into` and trashes the second record.
-  The main speaker's own record is never written. See "Two speakers can be
-  merged (26 October 2026)" at the end.
+  The main speaker's own fields are never overwritten; the one thing written to
+  it (12 November 2026) is a BLANK `_law_speaker_email`, which takes the second
+  record's address, and with it the stored `law_hubspot_id` when the main record
+  has none, so the person stays reachable by email after the only record that
+  knew it is trashed. Fires `law_speakers_merged( $main_id, $merged_id )` after
+  the trash, which the HubSpot sync (`functions/hubspot/hooks.php`) uses to
+  queue both addresses. See "Two speakers can be merged (26 October 2026)" at
+  the end.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
