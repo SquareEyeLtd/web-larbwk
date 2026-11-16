@@ -11128,6 +11128,32 @@ on a local event with four bookings and two waitlist entries: bulk remove with
 a reason, bulk cancel of two places (one waitlist promotion pass, the right
 emails in Mailpit), and the no-JS path for both a ticked and an empty selection.
 
+## A flagship approval that approves nothing says so (16 November 2026)
+
+Seen on staging, where a live tax rate ID left in Events → Settings refused
+every charge under the test key. The approve dialog came back headed
+"Registrations approved", read "0 registrations approved. 1 could not be:
+No such tax rate…", still promised "They will be emailed a confirmation…",
+and kept its buttons up with the confirm one stuck on "Charging…" until the
+reload.
+
+- `law_flagship_review_bulk()`: when nothing was decided, nothing failed
+  over-booking and nothing is left for cron, the message is "The
+  registration could not be approved. {reason}" (or "None of the N
+  registrations could be …").
+- `law_flagship_review_handler()` answers that case as a refusal, so the
+  dialog stays open with the reason in its error line and the confirm button
+  back to its label. No-JS keeps the `flagship-partly-done` notice.
+- `booking-form.js`, the shared confirmed-in-a-dialog success branch: once
+  the outcome is written into the lead copy, every other child of the dialog
+  (later copy, list, field, actions) is removed, and focus moves to the dialog.
+  This applies to every dialog on that path, because their future-tense copy
+  and busy button are never true of the outcome. A partial batch still shows
+  its failures for only the 2.5 seconds before the reload.
+
+Touched: `functions/events/flagship-bookings.php`, `assets/js/booking-form.js`,
+`tests/FlagshipPaymentsTest.php` (1 new).
+
 ---
 
 The companion EVENTS_4.1_REBUILD.md remains the design contract;

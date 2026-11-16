@@ -3039,6 +3039,16 @@ function law_flagship_review_handler() {
 		);
 	}
 
+	// Nothing decided is a refusal, not a result. Answered as success, the
+	// dialog took the heading "Registrations approved", kept "They will be
+	// emailed a confirmation…" under the reason and reloaded the page out
+	// from under it. As a refusal it stays open with the reason above the
+	// buttons and the confirm button back to its label, so the committee can
+	// read it, fix the cause and try again.
+	if ( ! $result['done'] && $result['failed'] && ! $result['remaining'] ) {
+		law_events_respond( $is_ajax, false, array( 'message' => $result['message'] ), 'flagship-partly-done' );
+	}
+
 	law_events_respond(
 		$is_ajax,
 		true,
@@ -3117,17 +3127,33 @@ function law_flagship_review_bulk( array $booking_ids, $decision, $actor_id, $re
 		);
 	}
 
-	$message = sprintf(
-		/* translators: 1: number decided, 2: approved|declined */
-		_n( '%1$d registration %2$s.', '%1$d registrations %2$s.', $done, 'law' ),
-		$done,
-		'approve' === $decision ? 'approved' : 'declined'
-	);
-	if ( $failed ) {
-		$message .= ' ' . sprintf(
-			_n( '%d could not be: ', '%d could not be: ', $failed, 'law' ),
-			$failed
-		) . implode( ' ', array_unique( $messages ) );
+	$verb = 'approve' === $decision ? 'approved' : 'declined';
+	$why  = implode( ' ', array_unique( $messages ) );
+
+	if ( ! $done && $failed && ! $remaining ) {
+		// Nothing was decided, so say that rather than count a zero: "0
+		// registrations approved. 1 could not be: …" read as a result under a
+		// "Registrations approved" heading (16 November 2026).
+		$message = sprintf(
+			/* translators: 1: number that failed, 2: approved|declined, 3: Stripe's or the module's reason. */
+			_n( 'The registration could not be %2$s. %3$s', 'None of the %1$d registrations could be %2$s. %3$s', $failed, 'law' ),
+			$failed,
+			$verb,
+			$why
+		);
+	} else {
+		$message = sprintf(
+			/* translators: 1: number decided, 2: approved|declined */
+			_n( '%1$d registration %2$s.', '%1$d registrations %2$s.', $done, 'law' ),
+			$done,
+			$verb
+		);
+		if ( $failed ) {
+			$message .= ' ' . sprintf(
+				_n( '%d could not be: ', '%d could not be: ', $failed, 'law' ),
+				$failed
+			) . $why;
+		}
 	}
 	if ( $remaining ) {
 		$message .= ' ' . sprintf( 'The remaining %d will be processed in the background.', count( $remaining ) );
