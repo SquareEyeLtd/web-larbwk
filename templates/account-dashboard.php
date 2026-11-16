@@ -696,7 +696,16 @@ $law_email_mode = $law_detail
 						<select id="law-dash-orgs" name="law_organisation_ids[]" multiple size="5">
 							<?php
 							$law_linked_orgs = array_map( 'intval', law_event_meta( $law_id, '_law_organisation_ids' ) );
-							foreach ( get_posts( array( 'post_type' => 'organisation', 'post_status' => 'publish', 'posts_per_page' => 200, 'orderby' => 'title', 'order' => 'ASC' ) ) as $law_org ) :
+							// Saving replaces the linked list with what is ticked here, so
+							// an organisation this select fails to print is UNLINKED on the
+							// next save. Every linked one is printed whatever the cap, and
+							// the cap sits well above the list (109 in November 2026).
+							$law_org_choices = get_posts( array( 'post_type' => 'organisation', 'post_status' => 'publish', 'posts_per_page' => 1000, 'orderby' => 'title', 'order' => 'ASC' ) );
+							$law_org_missing = array_diff( $law_linked_orgs, array_map( 'intval', wp_list_pluck( $law_org_choices, 'ID' ) ) );
+							if ( $law_org_missing ) {
+								$law_org_choices = array_merge( $law_org_choices, get_posts( array( 'post_type' => 'organisation', 'post_status' => 'publish', 'post__in' => array_values( $law_org_missing ), 'posts_per_page' => count( $law_org_missing ), 'orderby' => 'title', 'order' => 'ASC' ) ) );
+							}
+							foreach ( $law_org_choices as $law_org ) :
 								?>
 								<option value="<?php echo esc_attr( (string) $law_org->ID ); ?>" <?php selected( in_array( $law_org->ID, $law_linked_orgs, true ) ); ?>><?php echo esc_html( $law_org->post_title ); ?></option>
 							<?php endforeach; ?>

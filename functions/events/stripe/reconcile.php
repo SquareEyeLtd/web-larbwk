@@ -54,6 +54,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 /** Events read from Stripe per daily sweep. One GET each. */
 const LAW_RECONCILE_SWEEP_BATCH = 60;
 
+/**
+ * Event meta: when the daily sweep last read this event (Unix time). Its own
+ * key, not the migration panel's LAW_RECONCILE_CHECKED_META, so the panel's
+ * "last checked" stays the date a person last checked it there.
+ */
+const LAW_RECONCILE_SWEPT_META = '_law_reconcile_swept_at';
+
 /** Option holding the last sweep's summary, for the settings screen. */
 const LAW_RECONCILE_LAST_RUN_OPTION = 'law_events_reconcile_last_run';
 
@@ -517,10 +524,13 @@ function law_stripe_reconcile_run_sweep() {
 		return $summary;
 	}
 
-	foreach ( array_slice( law_stripe_reconcile_sweep_candidates(), 0, LAW_RECONCILE_SWEEP_BATCH ) as $event_id ) {
+	foreach ( law_stripe_reconcile_next_batch( law_stripe_reconcile_sweep_candidates() ) as $event_id ) {
 		$event_id = (int) $event_id;
 		$check    = law_stripe_reconcile_check( $event_id );
 		++$summary['checked'];
+		// Whatever the verdict, including an unreadable one, so a single event
+		// Stripe will not answer for cannot hold its place at the front.
+		update_post_meta( $event_id, LAW_RECONCILE_SWEPT_META, time() );
 
 		if ( 'agreed' === $check['verdict'] ) {
 			// Whatever was wrong here has been dealt with; let it alert again
@@ -580,6 +590,33 @@ function law_stripe_reconcile_run_sweep() {
 	);
 
 	return $summary;
+}
+
+/**
+ * This run's share of the candidates: the LAW_RECONCILE_SWEEP_BATCH events
+ * read longest ago, never-read ones first and the newest first among those.
+ *
+ * The batch keeps one run's Stripe calls bounded. It used to be the first 60
+ * candidates by ID, so once more than 60 events carried an invoice the newest
+ * ones, whose payments are the ones actually moving, were never read at all
+ * (92 candidates, 16 November 2026). Taking whichever were read longest ago
+ * covers the whole list over consecutive runs instead.
+ *
+ * @param int[] $candidates law_stripe_reconcile_sweep_candidates().
+ * @return int[]
+ */
+function law_stripe_reconcile_next_batch( array $candidates ) {
+	$candidates = array_map( 'intval', $candidates );
+	if ( ! $candidates ) {
+		return array();
+	}
+	update_meta_cache( 'post', $candidates );
+	$read = array();
+	foreach ( $candidates as $event_id ) {
+		$read[ $event_id ] = (int) get_post_meta( $event_id, LAW_RECONCILE_SWEPT_META, true );
+	}
+	usort( $candidates, fn( $a, $b ) => ( $read[ $a ] <=> $read[ $b ] ) ?: ( $b <=> $a ) );
+	return array_slice( $candidates, 0, LAW_RECONCILE_SWEEP_BATCH );
 }
 
 /**

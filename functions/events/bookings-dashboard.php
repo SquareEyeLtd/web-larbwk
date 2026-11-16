@@ -133,11 +133,12 @@ function law_bookings_dashboard_excluded_events() {
  * rebuild is one row per person. The keyword
  * matches (case-insensitively) the attendee's name, email, organisation and
  * job title, the booking number ("#12" or "12") and the event title; it is
- * applied in PHP over the fetched set rather than as a LIKE over serialised
- * meta, which the module never does.
+ * applied in PHP rather than as a LIKE over serialised meta, which the module
+ * never does, and the cap counts the rows that MATCH, so a search reaches
+ * every booking however many there are (law_events_scan_posts()).
  *
  * @param array $filters law_bookings_dashboard_filters().
- * @param int   $limit   Bookings cap (-1 for the export).
+ * @param int   $limit   Rows cap (-1 for the export).
  * @return array{rows:array[],bookings:int,events:int,truncated:bool}
  */
 function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASHBOARD_SCREEN_CAP ) {
@@ -176,11 +177,9 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 		'all'        => array( 'publish', 'law-waitlisted', 'law-pending-payment', 'law-payment-failed', 'law-cancelled' ),
 	);
 	$query    = array(
-		'post_type'      => LAW_BOOKING_CPT,
-		'post_status'    => $statuses[ $filters['status'] ],
-		'posts_per_page' => (int) $limit,
-		'orderby'        => 'date',
-		'order'          => 'DESC',
+		'post_type'   => LAW_BOOKING_CPT,
+		'post_status' => $statuses[ $filters['status'] ],
+		'orderby'     => array( 'date' => 'DESC', 'ID' => 'DESC' ),
 	);
 	if ( null !== $parent_in ) {
 		$query['post_parent__in'] = $parent_in;
@@ -193,46 +192,49 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 	if ( $excluded ) {
 		$query['post_parent__not_in'] = $excluded;
 	}
-	$bookings  = get_posts( $query );
-	$truncated = $limit > 0 && count( $bookings ) >= $limit;
 
-	// One users + one usermeta query for the whole table (the per-event list's
+	// One users + one usermeta query per batch (the per-event list's
 	// precedent): country, dietary and accessibility read from each profile,
 	// and the "Invited by" tag resolves the booker.
-	$user_ids = array();
-	foreach ( $bookings as $booking ) {
-		$user_ids[] = (int) $booking->post_author;
-		$user_ids[] = (int) law_event_meta( $booking->ID, '_law_booked_by' );
-	}
-	$user_ids = array_values( array_unique( array_filter( $user_ids ) ) );
-	if ( $user_ids ) {
-		cache_users( $user_ids );
-	}
+	$prime_users = function ( array $bookings ) {
+		$user_ids = array();
+		foreach ( $bookings as $booking ) {
+			$user_ids[] = (int) $booking->post_author;
+			$user_ids[] = (int) law_event_meta( $booking->ID, '_law_booked_by' );
+		}
+		$user_ids = array_values( array_unique( array_filter( $user_ids ) ) );
+		if ( $user_ids ) {
+			cache_users( $user_ids );
+		}
+	};
 
 	$needle = function_exists( 'mb_strtolower' ) ? mb_strtolower( $filters['kw'] ) : strtolower( $filters['kw'] );
 	$needle = ltrim( trim( $needle ), '#' );
-	$rows   = array();
-	$seen_b = array();
-	$seen_e = array();
+	$labels = array(
+		'publish'             => 'active',
+		'law-waitlisted'      => 'waitlisted',
+		'law-pending-payment' => 'pending-payment',
+		'law-payment-failed'  => 'payment-failed',
+		'law-cancelled'       => 'cancelled',
+	);
 
-	// One booking is one attendee, so one booking is one row.
-	foreach ( $bookings as $booking ) {
+	// One booking is one attendee, so one booking is one row. The keyword,
+	// press and payment tests run here, in PHP, which is why the cap is applied
+	// to the rows that pass them rather than to the query
+	// (law_events_scan_posts()).
+	$row_for = function ( WP_Post $booking ) use ( $filters, $needle, $labels ) {
 		$event_id = (int) $booking->post_parent;
 		$event    = get_post( $event_id );
 		if ( ! $event || LAW_EVENT_CPT !== $event->post_type ) {
-			continue;
+			return null;
 		}
 		if ( $filters['press'] && ! law_event_meta( $booking->ID, '_law_is_press' ) ) {
-			continue;
+			return null;
 		}
 
 		$number     = (int) law_event_meta( $booking->ID, '_law_booking_number' );
 		$person     = law_booking_attendee( $booking );
 		$invited_by = law_booking_invited_by_label( $booking );
-		$user       = get_user_by( 'id', (int) $booking->post_author );
-		// The account's answers, blanks filled from what was typed by whoever
-		// booked them in (law_booking_profile_values(), BOOK_ON_BEHALF.md A3).
-		$profile    = $user ? law_booking_profile_values( $booking ) : array();
 
 		if ( '' !== $needle ) {
 			$haystack = implode(
@@ -249,27 +251,27 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			);
 			$haystack = function_exists( 'mb_strtolower' ) ? mb_strtolower( $haystack ) : strtolower( $haystack );
 			if ( false === strpos( $haystack, $needle ) ) {
-				continue;
+				return null;
 			}
 		}
 
 		$payment = (string) law_event_meta( $booking->ID, '_law_payment_status' );
 		if ( '' !== $filters['payment'] && $payment !== $filters['payment'] ) {
-			continue;
+			return null;
 		}
 
-		$statuses = array(
-			'publish'             => 'active',
-			'law-waitlisted'      => 'waitlisted',
-			'law-pending-payment' => 'pending-payment',
-			'law-payment-failed'  => 'payment-failed',
-			'law-cancelled'       => 'cancelled',
-		);
-		$price    = law_booking_price( (int) $booking->ID );
-		$rows[]   = array(
+		$user    = get_user_by( 'id', (int) $booking->post_author );
+		// The account's answers, blanks filled from what was typed by whoever
+		// booked them in (law_booking_profile_values(), BOOK_ON_BEHALF.md A3).
+		// After the tests, so a search does not read the profile of every
+		// booking it passes over.
+		$profile = $user ? law_booking_profile_values( $booking ) : array();
+		$price   = law_booking_price( (int) $booking->ID );
+
+		return array(
 			'booking_id'    => (int) $booking->ID,
 			'number'        => $number,
-			'status'        => $statuses[ $booking->post_status ] ?? 'active',
+			'status'        => $labels[ $booking->post_status ] ?? 'active',
 			// Why the queue is skipping a waitlisted row, in full: this
 			// dashboard is the committee's alone.
 			'passed_over'   => 'law-waitlisted' === $booking->post_status ? law_waitlist_passed_over_reason( $booking ) : '',
@@ -299,15 +301,15 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			'discount_code' => (string) law_event_meta( $booking->ID, '_law_discount_code' ),
 			'invoice_url'   => (string) law_event_meta( $booking->ID, '_law_stripe_invoice_url' ),
 		);
-		$seen_b[ (int) $booking->ID ] = true;
-		$seen_e[ $event_id ]          = true;
-	}
+	};
+
+	$scan = law_events_scan_posts( $query, $limit, $row_for, $prime_users );
 
 	return array(
-		'rows'      => $rows,
-		'bookings'  => count( $seen_b ),
-		'events'    => count( $seen_e ),
-		'truncated' => $truncated,
+		'rows'      => $scan['rows'],
+		'bookings'  => count( $scan['rows'] ),
+		'events'    => count( array_unique( array_column( $scan['rows'], 'event_id' ) ) ),
+		'truncated' => $scan['truncated'],
 	);
 }
 

@@ -2772,12 +2772,15 @@ function law_booking_forget_unclaimed_attendee( $attendee_id, $booker_id, $event
 	if ( $attendee_id < 1 || ! get_user_meta( $attendee_id, LAW_INVITATION_PENDING_META, true ) ) {
 		return false;
 	}
+	// Every booking they hold, not the first twenty: one unread past a cap
+	// could be a live place, and deleting the account would cancel it. One
+	// person's bookings, so the set is small.
 	$authored = get_posts(
 		array(
 			'post_type'      => LAW_BOOKING_CPT,
 			'post_status'    => array_keys( get_post_stati() ),
 			'author'         => $attendee_id,
-			'posts_per_page' => 20,
+			'posts_per_page' => -1,
 			'no_found_rows'  => true,
 		)
 	);
@@ -4298,7 +4301,6 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 		);
 	$email = law_booking_attendee_email( $booking );
 	if ( isset( $slugs[ $context ] ) && '' !== $email ) {
-		$host = get_user_by( 'id', (int) get_post_field( 'post_author', $event_id ) );
 		$args = array(
 			'to'           => array( $email ),
 			'placeholders' => array_merge(
@@ -4306,7 +4308,6 @@ function law_booking_cancel( $booking_id, $actor_id, $context = 'self', array $a
 				array(
 					'attendee_name'  => $person['name'],
 					'removal_reason' => $reason,
-					'host_email'     => $host ? $host->user_email : '',
 				)
 			),
 		);

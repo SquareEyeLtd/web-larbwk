@@ -1954,6 +1954,23 @@ class FlagshipPaymentsTest extends LAW_Test_Case {
 	}
 
 	/**
+	 * A batch where nothing was decided says so, rather than "0 registrations
+	 * approved. 1 could not be: …" under a "Registrations approved" heading
+	 * (16 November 2026). The handler answers it as a refusal on the strength
+	 * of done 0, failed > 0, nothing remaining.
+	 */
+	public function test_a_batch_that_decides_nothing_says_so(): void {
+		$one = law_flagship_review_bulk( array( 999991 ), 'approve', $this->make_committee_user() );
+		$this->assertSame( 0, $one['done'] );
+		$this->assertSame( 1, $one['failed'] );
+		$this->assertSame( 0, $one['remaining'] );
+		$this->assertSame( 'The registration could not be approved. That is not a flagship registration.', $one['message'] );
+
+		$two = law_flagship_review_bulk( array( 999991, 999992 ), 'decline', $this->make_committee_user() );
+		$this->assertSame( 'None of the 2 registrations could be declined. That is not a flagship registration.', $two['message'] );
+	}
+
+	/**
 	 * A settling payment cannot be approved a second time.
 	 *
 	 * The booking stays law-applied while the money travels, which is what

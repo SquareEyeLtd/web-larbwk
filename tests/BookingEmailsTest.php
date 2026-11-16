@@ -303,6 +303,62 @@ class BookingEmailsTest extends LAW_Test_Case {
 		$this->assertSame( 'law-cancelled', get_post_status( $ids[0] ) );
 	}
 
+	/**
+	 * "Contact the host at …" names the shared address on an event LAW runs
+	 * itself, not the committee member whose account created it, and keeps
+	 * the host's own address on a hosted event (client request, 13 November
+	 * 2026).
+	 */
+	public function test_cancel_email_gives_the_shared_contact_on_a_law_run_event(): void {
+		law_events_update_settings( array( 'contact_email' => 'shared-inbox@example.test' ) );
+		$creator   = $this->make_committee_user();
+		$reception = $this->make_event(
+			array(
+				'_law_is_reception'      => 1,
+				'_law_tickets_available' => 10,
+				'_law_start'             => '2026-12-01 18:30',
+				'_law_end'               => '2026-12-01 20:30',
+			),
+			'publish',
+			$creator
+		);
+		$host   = $this->make_user();
+		$hosted = $this->make_event(
+			array(
+				'_law_tickets_available' => 10,
+				'_law_start'             => '2026-12-02 10:00',
+				'_law_end'               => '2026-12-02 12:00',
+			),
+			'publish',
+			$host
+		);
+
+		$this->assertSame( 'shared-inbox@example.test', law_event_contact_email( $reception ) );
+		$this->assertSame( get_userdata( $host )->user_email, law_event_contact_email( $hosted ) );
+
+		$attendee   = $this->make_user();
+		$guest      = get_userdata( $attendee )->user_email;
+		$booking_id = law_booking_insert( $reception, $attendee, 'publish', array( 'name' => 'G One', 'email' => $guest ) );
+		$this->posts[] = $booking_id;
+		$this->mail    = array();
+
+		law_booking_cancel( $booking_id, $this->make_committee_user(), 'host_reject' );
+		$mail = $this->mail_to( $guest );
+		$this->assertCount( 1, $mail );
+		$body = wp_strip_all_tags( $mail[0]['message'] );
+		$this->assertStringContainsString( 'shared-inbox@example.test', $body );
+		$this->assertStringNotContainsString( get_userdata( $creator )->user_email, $body, 'Never the creator\'s own inbox.' );
+	}
+
+	/** With the setting emptied, a LAW-run event falls back to its author, as before. */
+	public function test_an_empty_contact_setting_falls_back_to_the_author(): void {
+		law_events_update_settings( array( 'contact_email' => '' ) );
+		$creator   = $this->make_committee_user();
+		$reception = $this->make_event( array( '_law_is_reception' => 1 ), 'publish', $creator );
+
+		$this->assertSame( get_userdata( $creator )->user_email, law_event_contact_email( $reception ) );
+	}
+
 	public function test_cancel_party_emails_each_person_with_their_number(): void {
 		$event  = $this->make_bookable_event();
 		$booker = $this->make_user();

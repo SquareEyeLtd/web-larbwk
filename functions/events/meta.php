@@ -903,3 +903,61 @@ add_action(
 	20,
 	2
 );
+
+/* Capped lists filtered in PHP _____________________________________________ */
+
+/**
+ * The first $limit rows a query yields once a PHP-side test has run, in the
+ * query's own order.
+ *
+ * For a screen that searches in PHP (a keyword over attendee snapshots, a
+ * payment state) and caps what it shows. Capping the QUERY and filtering
+ * afterwards only ever searched the first $limit posts, so anybody beyond them
+ * could not be found however narrow the search (the committee bookings
+ * dashboard, 16 November 2026: over 10,000 bookings behind a 2,000 cap). Here
+ * the query is read in batches until $limit rows have passed the test or the
+ * posts run out, so the cap limits what is SHOWN, never what is searched.
+ *
+ * @param array         $query        get_posts() arguments with their order;
+ *                                    posts_per_page and paged are set here.
+ * @param int           $limit        Rows wanted; 0 or -1 for every match in
+ *                                    one query (the exports).
+ * @param callable      $map          fn( WP_Post ): ?array, the row, or null
+ *                                    to leave the post out.
+ * @param callable|null $before_batch fn( WP_Post[] ), run on each batch before
+ *                                    its rows are built, to prime caches.
+ * @return array{rows:array[],truncated:bool} truncated when the cap was
+ *                                    reached with posts still unread.
+ */
+function law_events_scan_posts( array $query, $limit, callable $map, ?callable $before_batch = null ) {
+	$limit = (int) $limit;
+	$batch = $limit > 0 ? max( $limit, 500 ) : -1;
+	$rows  = array();
+	$seen  = array();
+	$page  = 1;
+
+	do {
+		$posts = get_posts( array_merge( $query, array( 'posts_per_page' => $batch, 'paged' => $page, 'no_found_rows' => true ) ) );
+		if ( $posts && $before_batch ) {
+			$before_batch( $posts );
+		}
+		foreach ( $posts as $post ) {
+			// A post created mid-walk pushes the next page along by one, so the
+			// first post of a page can be the last of the one before.
+			if ( isset( $seen[ $post->ID ] ) ) {
+				continue;
+			}
+			$seen[ $post->ID ] = true;
+			if ( $limit > 0 && count( $rows ) >= $limit ) {
+				return array( 'rows' => $rows, 'truncated' => true );
+			}
+			$row = $map( $post );
+			if ( null !== $row ) {
+				$rows[] = $row;
+			}
+		}
+		$page++;
+	} while ( $batch > 0 && count( $posts ) === $batch );
+
+	return array( 'rows' => $rows, 'truncated' => false );
+}
