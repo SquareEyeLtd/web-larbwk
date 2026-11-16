@@ -702,7 +702,7 @@ wp law hubspot remove-option contact_type "2026 Attendee" --unless-booked --appl
 wp law hubspot backfill
 ```
 
-### Phase 3 (built 12 November 2026, dry mode; not yet in the live portal)
+### Phase 3 (built 12 November 2026; live on production from 16 November 2026)
 
 The badging decisions (Emily, 4 November; Peter's sign-off on dietary and access data) turned
 the §5.2 design into the year-prefixed set and this build. Everything runs and is tested in
@@ -793,26 +793,54 @@ access needs, 1 with other text — all holders of a LAW-run place this year; ic
 everyone, correctly: no local booking carries a ticket type yet, and an unclassified booking
 sends nothing.
 
+### Go-live (16 November 2026)
+
+Production had never been configured: `wp law hubspot status` showed mode off, no token, worker
+never run, and no contact in the portal carried `law_sync_updated`. In order, on Kinsta:
+
+1. `LAW_HUBSPOT_TOKEN` and `LAW_HUBSPOT_MODE=dry` added to production's `wp-config.php`.
+   Status: token check ok, 4,161 people known (the local copy knew 1,720 — a stale copy, which
+   is why the §14.1 rail matters). `check-properties` green: both groups, all twelve site-owned
+   properties, every Contact type and legal-basis value.
+2. Exhibitor check: no booking carried the retired type.
+3. `preview --out=/tmp/hubspot-preview.csv`: 4,161 people, 1,241 already in HubSpot, 2,920 new
+   contacts; 3,068 would gain 2026 Attendee, 559 Monday reception, 417 Wednesday, 4 Friday, 494
+   Speaker, 50 Event Host, 99 Event contact, 29 Sponsor. Trevor reviewed the CSV.
+4. Make: the four LAW scenarios (two HubSpot, Stripe A and B) exported as blueprints and trashed;
+   the Stripe webhook endpoint that pointed at Make disabled.
+5. `LAW_HUBSPOT_MODE=live`. `remove-option contact_type "2026 Attendee" --unless-booked`
+   reviewed then `--apply`. `backfill`: 4,161 queued and processed in the same command, 100 a
+   batch: **4,154 succeeded, 7 failed**. All seven are `INVALID_EMAIL` from HubSpot — a
+   mistyped domain ending on the site (`.con` ×5, `.fom`, `.com.brbr`), so HubSpot will not
+   create the contact. They retry on the back-off schedule and will park. Emily to correct the
+   addresses on the site (user profile or speaker record); the change requeues the person and
+   the next sync creates the contact. Follow-up idea, not urgent: park an address HubSpot
+   rejects as invalid at once instead of retrying it.
+6. Still to do by hand in HubSpot: the "LAW 2026 badging" active segment (*LAW-run events* is
+   any of the four 2026 values), then a spot-check of one contact's LAW2026 section.
+
 ### Phase 3 to-do
 
-Approved 13 October 2026 (16 hours). What is left after the 12 November build:
+Approved 13 October 2026 (16 hours). What is left after the 12 November build and the
+16 November go-live:
 
 1. ~~Internal names~~ settled by Trevor, 16 November 2026 (the `law26_` set, in the `law26` /
    "LAW2026" group). ~~Precedence and icon folding~~ confirmed by Emily, 12 November 2026.
    ~~Create the properties~~ done 16 November 2026 (`check-properties --create --live` from the
-   local copy: group `law26` and the seven properties). Later: `--archive --live` for the three
-   superseded properties (ask first), then the Contact type check.
-2. **`law26_ec_arrived`** (Emily's "arrived yes/no"): ask before creating. If wanted, it is a
-   LAW-owned yes/no like `badge_manual` (Event Connections write it, the site never does).
+   local copy: group `law26` and the seven properties). ~~Backfill~~ run on production,
+   16 November. Later: `--archive --live` for the three superseded properties (ask first).
+2. **`law26_ec_arrived`**: Kitty says push-back is optional and is one date/time (first badge
+   print). Ask Emily whether LAW want it; if so, a LAW-owned datetime in the LAW2026 group.
 3. Confirm the `badge_manual` reading with Emily: "Yes" freezes the pass type and the icon,
    the detail keeps flowing.
-4. The "LAW 2026 badging" active list in HubSpot (everyone with a confirmed place at a LAW-run
-   event), and the property list for Event Connections.
-5. Second backfill preview with the new columns (`wp law hubspot preview --out=…`) from
-   staging, for Emily to check before anything goes live (the 12 November one above ran on the
-   local copy).
+4. The "LAW 2026 badging" active segment in HubSpot (everyone with a confirmed place at a
+   LAW-run event), and the property list for Event Connections (names, types, allowed values;
+   the two single-value fields her app reads are `law26_ec_passtype` and `law26_dietary_icon`).
+5. ~~Second backfill preview~~ done on production, 16 November (go-live above).
 6. Privacy notice update if Peter wants one (§7.3).
-7. Production check for Exhibitor bookings before the deploy that retires the type (above).
+7. ~~Production check for Exhibitor bookings~~ none, 16 November.
+8. Pass types: blank for everyone until the committee sets ticket types on the flagship and
+   reception booking lists. The first thing Emily will notice in the segment.
 
 ---
 
