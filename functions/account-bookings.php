@@ -259,6 +259,9 @@ function law_booking_notice_text( $key ) {
 		'waitlist-unchanged' => array( 'ok', __( 'The waitlist had already moved on, so nothing was changed. This is the current order.', 'law' ) ),
 		'waitlist-promoted'  => array( 'ok', __( 'The entry has been promoted and the attendee emailed their confirmation.', 'law' ) ),
 		'waitlist-failed'    => array( 'error', __( 'Sorry, that waitlist change could not be made.', 'law' ) ),
+		// Freezing the attendee list (client, 19 November 2026).
+		'attendee-list-frozen'   => array( 'ok', __( 'The attendee list is frozen. Nobody will be promoted from the waitlist automatically.', 'law' ) ),
+		'attendee-list-unfrozen' => array( 'ok', __( 'The attendee list is unfrozen. Free places are offered to the waitlist automatically again.', 'law' ) ),
 	);
 
 	/**

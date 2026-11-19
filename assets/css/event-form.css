@@ -908,9 +908,11 @@ p.law-pass-strength.is-strong { background: #b8e6bf; border-color: #68de7c; }
    is absolutely positioned by default. */
 .law-booking-table .law-cal-card__badge { position: static; display: inline-block; vertical-align: middle; margin-left: .35rem; }
 .law-booking-table__press { background: #1a1a3d; color: #fff; }
-/* "Register an attendee" on the per-event list: an opener above the table, with
-   the form itself in a dialog (parts/events/booking-list.php). */
-.law-booking-register__actions { margin: 0 0 1rem; }
+/* "Register an attendee" and "Freeze the attendee list" on the per-event list:
+   one row of openers above the table, each acting through a dialog
+   (parts/events/booking-list.php). The freeze button sits in its own form, so
+   the row is a flex container rather than a paragraph. */
+.law-booking-register__actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 1rem; }
 /* The opener ships with `hidden` and law-modal.js clears it. Removing the
    attribute hands the button back to whatever display the cascade last said,
    which on this page is a full-width block. State it, rather than relying on

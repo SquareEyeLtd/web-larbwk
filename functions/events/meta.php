@@ -109,6 +109,15 @@ function law_event_meta_schema() {
 		'_law_external_url'         => 'url',
 		'_law_session_agenda'       => 'flag',
 		'_law_booking_override'     => 'booking_override',
+		// _law_attendee_list_frozen: the host's "Freeze the attendee list"
+		// (client, 19 November 2026). No automatic waitlist promotion and no
+		// public booking of a freed place; joining the waitlist, Promote now
+		// and Register an attendee carry on. Read by
+		// law_event_attendee_list_frozen(), written only by
+		// law_event_set_attendee_list_frozen() so every change is logged.
+		// Operational state on the live site, so the content transfer does
+		// not carry it.
+		'_law_attendee_list_frozen' => 'flag',
 		'_law_disabled'             => 'flag',
 		'_law_no_sponsor_highlight' => 'flag',
 		// _law_private: off the public lists, and its page opens only with
