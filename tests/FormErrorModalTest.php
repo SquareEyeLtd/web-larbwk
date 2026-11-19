@@ -75,6 +75,8 @@ class FormErrorModalTest extends LAW_Test_Case {
 		// Speaker photos are keyed by row index, and the input is that row's
 		// file field (parts/events/event-form-speakers.php).
 		$this->assertSame( '[name="speaker_photo[3]"]', law_events_form_error_selector( 'speaker_photo_3' ) );
+		// A repeater's own errors jump to its first row.
+		$this->assertSame( '[name^="speakers["]:not([type="hidden"])', law_events_form_error_selector( 'speakers' ) );
 		// Nothing to point at rather than a selector that could match anything.
 		$this->assertSame( '', law_events_form_error_selector( 'not a key' ) );
 	}
@@ -94,6 +96,10 @@ class FormErrorModalTest extends LAW_Test_Case {
 		$host  = $this->make_user();
 		$event = get_post( $this->make_event( array(), 'law-submitted', $host ) );
 		wp_set_current_user( $host );
+		// One speaker row, so the repeater's own errors have a row to point at.
+		$speaker       = law_speaker_upsert( array( 'first_name' => 'Modal', 'last_name' => 'Testspeaker', 'email' => 'modal-speaker@example.test' ) );
+		$this->posts[] = $speaker;
+		law_event_update_meta( $event->ID, '_law_speakers', array( array( 'speaker_id' => $speaker ) ) );
 
 		ob_start();
 		get_template_part( 'parts/events/event-form-fields', null, array(
@@ -126,7 +132,8 @@ class FormErrorModalTest extends LAW_Test_Case {
 			// The selector is one or both of these two names; the form must
 			// carry at least one of them.
 			$found = false !== strpos( $form, 'name="' . $key . '"' )
-				|| false !== strpos( $form, 'name="' . $key . '[]"' );
+				|| false !== strpos( $form, 'name="' . $key . '[]"' )
+				|| ( 0 === strpos( $selector, '[name^="' . $key . '["]' ) && false !== strpos( $form, 'name="' . $key . '[' ) );
 			$this->assertTrue( $found, "The form has no control named {$key}" );
 		}
 	}

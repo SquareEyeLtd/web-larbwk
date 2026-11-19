@@ -730,7 +730,13 @@ deliberately typed 0 still waives the fee, and the help text says so).
   and new ID arrays in the context and the names in the message), private note
   and co-owner action is logged.
 - `law_event_log_entries()`, `law_event_log_context()`: read the log; the
-  context is stored as comment meta.
+  context is stored as comment meta, as JSON passed through `wp_slash()`
+  (19 November 2026). Before that, `add_comment_meta()` unslashed it and
+  stripped the backslashes out of the JSON escapes, so every context holding a
+  quote or a non-ASCII character (every speaker change, with its "→") was stored
+  as JSON that no longer parsed and `law_event_log_context()` returned an empty
+  array for it. Entries written before the fix stay unreadable as JSON;
+  `migration/repair-speakers.php` reads the speaker ID out of them by pattern.
 - Two filters exclude the `law_event_log` (and the `law_event_comment` thread
   type) from public comment queries and feeds, so log lines and the private
   committee thread never surface anywhere public.
@@ -1776,7 +1782,61 @@ then follows the link that appears and writes that event's confirmation.
   resolution inline.
 
 - `law_speaker_find_existing()`, `law_speaker_normalise_name()`: dedupe by email
-  first, then normalised name (the full name, i.e. the post title).
+  **and** name together, then (only with no email) by normalised name (the full
+  name, i.e. the post title). Since 19 November 2026 an address match counts
+  only when the name is the same person too (`law_speaker_same_person()`, below):
+  one address can belong to several people (a clerks' team inbox, a firm's events
+  address, a host's own address typed for several speakers), and matching on the
+  address alone merged them into one record whose name then flipped between the
+  rows on every save. Among the holders of the address, one with the **same
+  name** (`law_speaker_same_name()`) wins over a merely similar one, so once a
+  host has corrected "Noami" to "Naomi" the next "Naomi" links to the corrected
+  record. A third argument excludes one record (the one a replacement is
+  leaving), and a fourth, `$by_name`, switches the name-only fallback off: every
+  event form passes `false` (review of 19 November 2026), because a draft skips
+  validation, an address like "john@firm" passes the browser but not
+  `is_email()`, and the external-event form validates no speaker rows, and in
+  each case a name match attached the row to a namesake whose shared record the
+  next save then rewrote. From a form, a row without a usable email is a new
+  speaker; the fallback remains for the legacy sources. An empty `$name` is an
+  address lookup and returns the first record holding it.
+- `law_speaker_same_name( $a, $b )` (Denis, 19 November 2026): **the rule for
+  edits.** Two names are the same name when they are identical once capitals,
+  accents, spaces and punctuation are ignored (`law_speaker_name_key()`):
+  "NAOMI SMITH" / "Naomi Smith", "Noradele" / "Noradèle". Only such a change is
+  written to the shared record from an event form. Anything else, a fixed typo
+  or an added "KC" included, is a replacement. Denis chose this over a
+  similarity test so that nothing is guessed and a host can never change the
+  name another event shows. Measured on prod: of the 26 corrections hosts made
+  between 18 September and 19 November, 13 were capitals/accents/punctuation and
+  still correct everywhere; of the other 13, four were on speakers shared with
+  other events (Kathleen Donnelly KC, Toby Landau KC, Hussein Haeri KC, Roberto
+  Azevedo), which under this rule leave two profiles of one person for the
+  committee to merge, or to correct on Manage Speakers, which writes everywhere.
+- `law_speaker_same_person( $a, $b )` (19 November 2026): the **linking** test,
+  used only where a wrong answer cannot rename anybody: linking a newly added row
+  to an existing record (a match only fills gaps), spotting one person on two
+  rows, the address clash checks, keeping this event's photo when a replacement
+  only added to the name, and the repair panel. `law_speaker_name_tokens()` folds
+  case and accents, closes up a dotted abbreviation ("S.C." → "sc"), drops
+  anything in brackets, splits on any punctuation, and drops the titles,
+  post-nominals and particles in `LAW_SPEAKER_NAME_NOISE` plus
+  `LAW_SPEAKER_NAME_SUFFIXES`; initials are kept. Every token of the shorter
+  name must then appear **exactly** in the longer one, so an added or dropped
+  middle name or "KC" matches and nothing else does. **No typo allowance**: the
+  first version allowed one or two letters, which read Maria and Mario Rossi,
+  Christian and Christina, or two Cyrillic names (it counted bytes) as one
+  person, and with a shared inbox linked one to the other's record (review of
+  19 November 2026). A name with fewer than two identifying words ("Mr Justice
+  Smith", "Lord Gloster", a lone surname) must be `law_speaker_same_name()`
+  outright, because the titles set aside may be all that tells two people apart.
+  Placeholders (`law_speaker_is_placeholder_name()`: "TBC", "Other speakers to be
+  confirmed", "Law firm counsel (TBC)") only equal themselves. It errs towards
+  "different": a duplicate can be merged, a wrong match rewrites a real person.
+  `tests/SpeakerIdentityTest.php` holds all 80 distinct renames made on the prod
+  event form up to 19 November 2026 as fixtures: every replacement is a
+  different person, and of the 26 corrections only the five that fixed a typo or
+  rested on a lone surname are.
 - **The name is stored in two parts** (Denis, 9 September 2026). Every form that
   collects a speaker now asks for a **First name** and a **Last name**
   separately, which is the shape the legacy source always had (form 8,
@@ -1835,9 +1895,21 @@ then follows the link that appears and writes that event's confirmation.
     was data loss (Denis, 9 September 2026); the log is the safety net, since the
     profile is shared with every other event that speaker appears at. `post_name`
     is left alone, so an existing `/speakers/<slug>/` link keeps resolving.
-    The email is the dedupe key, so a new address that already belongs to another
-    record is skipped (the rest of the row still saves) rather than merging two
-    people, and **a blank email is skipped too** (15 September 2026): it means
+    **Only while it is the same name** (19 November 2026): when the posted name
+    is not the record's name once capitals, accents, spaces and punctuation are
+    ignored (`law_speaker_same_name()`), the upsert treats the row as a
+    **replacement**: the record is left exactly as it was, the data goes through
+    match-or-create like a newly added row, excluding the record it is leaving (so
+    a replacement who already has a record links to it, gap-filling only, and a
+    corrected spelling never links back to the misspelt record), and the event
+    logs `speaker_replaced` ("Speaker "X" replaced by "Y" on this event").
+    Before this, typing a new person over a row renamed the shared record on every
+    event (Domitille Baizeau became Noradèle Radjai; Campbell Herbert became
+    Kathleen Donnelly KC), and hosts do it far more often than they correct a name.
+    A new address that already belongs to another record **of the same person**
+    is skipped (the rest of the row still saves) rather than leaving two records
+    that match the same row; a differently named holder is a shared inbox and
+    does not block it. **A blank email is skipped too** (15 September 2026): it means
     "not given", never "delete the one on file". `law_event_update_meta()` turns
     `''` into a `delete_post_meta()`, so without that guard an empty box took the
     dedupe key off a record shared with every event the speaker appears at, and
@@ -1858,7 +1930,45 @@ then follows the link that appears and writes that event's confirmation.
   session rows honour a posted session ID, so a forged value reaches nothing; a
   row with no ID (a newly added speaker) falls back to match-or-create and the
   gap-fill rule. The ID counts as machinery in the "a started row must be
-  complete" check, so clearing a row to delete it still works.
+  complete" check, so clearing a row to delete it still works. A posted ID is
+  an edit only while the name stays the same name; anything else is a
+  replacement (see the upsert above). The photo already on this event is carried
+  forward by speaker, so a different person does not inherit it; a row that
+  moved only because the new name adds to the old one ("KC", a middle name,
+  `law_speaker_same_person()`) keeps it, and a fixed typo does not (no guessing
+  that it is the same face). Session ticks travel as row keys, so they follow the
+  row to the replacement.
+- **Only what the host changed is written** (review of 19 November 2026). Each
+  existing row also round-trips what the form showed for the person, as hidden
+  `was_name`, `was_email` and `was_website` inputs (`law_events_form_values()`,
+  `parts/events/event-form-speakers.php`), and
+  `law_events_form_speaker_upsert_options()` hands them to the upsert as
+  `shown`. A field posted back exactly as shown is not written, and a name
+  posted back as shown is never a replacement, so a form opened before the
+  committee corrected "Jon" to "John" on Manage Speakers no longer splits the
+  record or puts the old email and website back. Forging `shown` can only make
+  a save write less. The three keys count as machinery in the started-row check.
+- **The address is checked on the server** on a full submit: a speaker email
+  that fails `is_email()` is refused ("The email address in speaker row N does
+  not look right").
+- **One person, one row** (19 November 2026). `law_events_form_save()` and
+  `law_external_event_save()` refuse a save, drafts included, where two rows
+  would land on the same record, or name the same person
+  (`law_speaker_same_person()`) with the same address or with no address on one
+  of them ("X is listed twice (rows 1 and 3)"). The second rule catches what the
+  record prediction cannot, such as one row changing an existing speaker's
+  address and another adding them again with the new one. Two people of the same
+  name at different addresses are two people. `law_events_form_duplicate_speaker_error()`
+  builds the message for both forms; `law_events_form_speaker_row_target()` makes
+  the upsert's decision without writing. `law_events_form_save_speakers()` keeps
+  only the first such row as a backstop and logs `speaker_listed_twice`; the
+  dropped row's index still resolves for session ticks.
+  `law_flagship_resolve_speaker_rows()` (the flagship screens and the content
+  transfer) keeps one row per speaker in a session the same way. The failed-save
+  dialog's jump line for a repeater's own errors (`speakers`, `co_owners`,
+  `contacts`, `sessions`) now goes to the first row (`[name^="speakers["]`,
+  `law_events_form_error_selector()`); it used to point at nothing and was shown
+  disabled.
 - **Speaker details are per appearance** (Denis, 8 September 2026, extended to
   the biography on 8 September 2026): the organisation, job title, photo **and
   biography** a speaker had at a given event live on that event's
@@ -4614,7 +4724,7 @@ they stay the same length.
   live in `notifications.php` and are shared with the committee's front-end
   Manage emails screen (`emails-dashboard.php`).
 
-### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/merge-speakers.php`, `migration/content-transfer.php`)
+### Migration (`migration/report.php`, `migration/runner.php`, `migration/page.php`, `migration/repair-owners.php`, `migration/repair-references.php`, `migration/repair-stripe-invoice-ids.php`, `migration/repair-nbsp.php`, `migration/merge-speakers.php`, `migration/repair-speakers.php`, `migration/content-transfer.php`)
 
 - **`report.php`** — a custom log table (`law_migration_log`), `law_migration_log()`,
   per-step summaries and a tail for the admin panel, plus the snapshot-download
@@ -4962,6 +5072,40 @@ they stay the same length.
   address), stamps `_law_speaker_merged_into` and trashes the second record.
   The main speaker's own record is never written. See "Two speakers can be
   merged (26 October 2026)" at the end.
+- **`repair-speakers.php`** (19 November 2026): "Repair: speakers turned into
+  somebody else", the clean-up after the overwrite described under
+  `law_speaker_upsert()`. Dry run by default, tick boxes, one Apply button,
+  every change logged (`speaker_repaired`) on each event the record appears at.
+  Three parts. **Known fixes** (`law_speakers_repair_known_fixes()`): a reviewed
+  list from the 19 November scan of the prod database, each naming the state
+  that must still hold (`law_speakers_repair_check_fix()`), so a fix whose
+  record has moved on is shown as skipped and never forced: Campbell Herbert's
+  website (#2028, still Kathleen Donnelly KC's chambers page), Lord Hamblen's
+  email (#823, still Sarra Kay's address), and event #1073's Andy Moody row
+  (still pointing at #954, now Ed Poulton) moved to Andy's own record, found by
+  email and name, then by exact name, and created if he had none.
+  **Profiles** (`law_speakers_repair_scan()`): every published speaker whose
+  slug is not the same person as its name gets a URL from its name with **no**
+  redirect from the old one (it names somebody else, so its `_wp_old_slug` entry
+  is deleted), its featured image set to the photo on its own event row (the
+  public first appearance, else any status), and its website cleared when the
+  link's path names the slug's person and not the current one. A same-named
+  record the squatter pushed to `-N` then takes the freed clean URL, keeping a
+  redirect (`law_speakers_repair_slug_heir()`). A re-slugged record whose old
+  URL has the same surname (a misspelling of the same person: "noami-tarawali",
+  "mr-justice-stanley") keeps its redirect and frees nothing. Since the review
+  of 19 November the profile pass also takes every record the log
+  (`law_speakers_repair_history()`) shows was turned into a different person,
+  even when its URL is right, and clears an **email** whose part before the @
+  names a person the record used to be (`law_speakers_repair_names_other()`, by
+  substring, so jjudge@ is John Judge's), as it does a website whose path does.
+  The Andy Moody re-point also requires the row to still say "Travers Smith LLP"
+  (`row_is`). **For a look**: events holding such a record that either never
+  named it themselves or last named it something it no longer is (another
+  event's later save overrode theirs, as 1041 and 1042 did to each other), with
+  what they last set and the row's organisation, photo file and biography, for
+  a human to judge. See "Retyping a speaker row replaces the speaker
+  (19 November 2026)" at the end.
 - **`page.php`** — the LAW > Migration screen and the
   `wp_ajax_law_migration_run` batched-step AJAX. All migration handlers are
   `manage_options` + nonce gated with a running-step lock.
@@ -11278,6 +11422,166 @@ minutes, and a 551-booking reception is classified one row at a time.
   opening now.
 
 Tests: `RegistrationTest` (2 new).
+
+## Retyping a speaker row replaces the speaker (19 November 2026)
+
+**The report** (Emily, 18 November, Basecamp "Domitille Baizeau overwritten by
+Noradele Radjai"; a second from Olivia Cosgrove of Blackstone the same day):
+a host replaced Domitille Baizeau on "Off With Their Heads" by typing Noradèle
+Radjai over her row, and Domitille's profile and her row on the David D. Caron
+Praelium became Noradèle. Campbell Herbert became Kathleen Donnelly KC the same
+way. Trevor repaired the first by hand and advised hosts to remove and re-add.
+
+**What the prod log showed** (the database copied down on 19 November): 107
+saves renamed a shared record into a different person, across 31 events; of the
+80 distinct renames made on the event form, 54 were replacements and 26
+corrections. Two mechanisms: a host typing the new person over the row (the
+overwrite mode built on 9 September for corrections wrote it onto the shared
+record), and two people on one address (a clerks' inbox, or the host's own
+address for several speakers), which merged them into one record whose name
+then flipped on every save ("Lord Richards of Camberwell" / "Dame Elizabeth
+Gloster" about 20 times on 13 October). Trevor's proposed trigger, a changed
+email, would have missed 59 of the 107 (the address on the record was left
+alone, or the clash guard dropped it, as with Kathleen) and would have split
+genuine firm moves (10 email-only changes, Louise Woods among them).
+
+**Decisions** (Denis, 19 November): an address may be shared, and a person is
+matched on email and name together; the URL of a record named after somebody
+else moves to its own name with no redirect; and an edit on the event form may
+only change capitals, accents, spaces and punctuation of a shared speaker's
+name, any other change giving that event a new speaker (no similarity guessing
+for edits; a forgiving match only for linking new rows, which renames nobody).
+
+**What it does now.**
+- `law_speaker_same_name()` decides correction or replacement; the forgiving
+  `law_speaker_same_person()` is only for linking new rows (speakers.php above).
+- A posted speaker ID is an edit only while the name stays the same name; a
+  replacement leaves the old record alone and resolves the row like a new one,
+  never back onto the old record, logging `speaker_replaced`.
+- `law_speaker_find_existing()` matches an address only with a same-person name,
+  so a shared inbox gives each speaker their own record. The upsert's and Manage
+  Speakers' clash checks, and `law_speaker_rows_name_person()` (the restore
+  check after a delete), follow the same rule.
+- The form refuses the same person on two rows.
+- The activity log's context JSON is stored slashed, so it parses.
+- LAW → Migration has the one-off repair (`migration/repair-speakers.php`).
+- The host event form no longer prefills a blank biography from the speaker
+  post's editor content (`law_events_form_values()`). That content is the first
+  biography any host typed for the person, so a host whose own row had none was
+  shown another event's text and published it on an untouched re-save; the
+  26 October change ("A blank biography prints nothing") had taken the fallback
+  out of every reader but this one. Denis, 19 November: a blank biography stays
+  blank.
+
+**Run on the prod copy** (inside a rolled-back transaction, after the review
+fixes): 3 known fixes, 34 profiles (27 URLs, two of them misspellings that keep a
+redirect; fallback photos, Simon Dack's among them, which was Kevin Nash's; 2
+websites: Chris Bogart's still linked to Geoff Nicholas' Burford page, Roger
+Gherson's to Emma Anderson's; 2 emails: Kenny Lau's on Abraham Vergis S.C. and
+John Judge's on J. Brian Casey), and 5 clean URLs handed back (Sarra Kay, Andy
+Moody, Amy Worley, Alexander Brown KC, David Samuels): 42 changes, none failed,
+and a second scan found nothing. Of the four "for a look" rows, three (Sophie
+Nappert on the flagship, Daniel Wilmot on #994, Niamh Leinwather on #9415) were
+checked by hand against their row photo and biography and are right; the fourth
+is Paul Stothard on #1041, which last set "Joseph Bentley" before #1042's save
+overrode it, and whose row photo (ps.webp, uploaded 15 October) suggests the host
+settled on Paul.
+
+**The review of 19 November** (an independent read of the change, every write
+path to a speaker record and to `_law_speakers`) found five gaps, all fixed the
+same day: a row without a usable email matched a namesake by name and the next
+save rewrote them; the typo allowance read Maria and Mario as one person; a
+stale form undid a committee correction; the duplicate check missed a changed
+address and the external form and flagship did not run it; and the repair panel
+missed other people's emails, a wrong photo on a profile whose URL was right,
+and events overridden by a later save. Left as decided: a website or email
+edited on the event form for the same person still applies on every event that
+person appears at (Denis: leave it for now).
+
+**A second review the same day** (an independent read of the fixes) found two
+more, both fixed:
+- **A returning speaker's address was dropped in a loop.** A draft saved without
+  an email made an empty record (no name matching from forms); the full submit's
+  address belonged to the person's real profile, so the clash check skipped it,
+  silently, and the next save showed the email blank and demanded it again. Now
+  an address another record of the same person holds moves the row onto that
+  profile (`speaker_linked` in the log), keeping this event's photo, and
+  `law_events_form_speaker_row_target()` predicts it.
+- **A replacement inherited the old website.** A host typing a new name and email
+  over a row and leaving the website box alone gave the new person the old
+  person's page (gap-filled onto their profile). A website posted back as shown
+  is now "not given" on a replacement. The email is kept as typed, since one
+  address can serve several people.
+And smaller ones: two placeholders ("TBC" twice) are no longer "listed twice";
+the row-number in the speaker messages is the row as the host sees it, not the
+posted index; the error dialog's jump skips the hidden `speaker_id` input; the
+Manage Speakers clash check excludes the speaker being edited; the repair
+panel's preview shows the URL the apply will actually give (a name somebody
+else holds shows as "-2"; a name a profile in the same run is leaving shows
+clean, and apply makes a second pass so the order of processing does not
+matter). The flagship screens no longer match a "new speaker" row without an
+email on the name alone either (Denis, the same day): the committee picks
+existing people from the search, so a row typed in as new is somebody new.
+`law_flagship_resolve_speaker_rows()` and `law_flagship_save_sessions()` take a
+`$by_name` argument, `false` by default; only the content transfer passes `true`,
+because it copies the same people between sites, many with no email, and would
+otherwise duplicate them on every import. It was built for the September launch
+(staging to production) and is not in regular use.
+
+**Known edges.**
+- A host fixing a spelling, or adding "KC", on a speaker shared with another
+  event gives their event a new profile; the other event keeps the old spelling
+  and the archive shows the person twice until the committee merges them (or
+  corrects the name on Manage Speakers). The host is not told. About four times
+  in two months on the prod data.
+- Capitals, accents and punctuation still change everywhere; two hosts with
+  different house styles can undo each other's capitalisation.
+- A genuine change of surname (marriage) makes a new record too; the committee
+  renames the original on Manage Speakers instead, and can merge the duplicate.
+- Manage Speakers and the wp-admin speaker screen still rename a record outright
+  (that is their job) and still leave the slug; the repair panel's profile scan
+  lists any record whose URL ends up naming somebody else.
+- J. Brian Casey has three records on prod (#857, #5993, and #1473, which was
+  John Judge), and Naomi Tarawali two (#845, and #4952, which was "Noami"); merges
+  on LAW → Migration, not this repair.
+- From an event form, a row without a usable email always makes a new speaker,
+  so a draft saved without addresses creates records. When the full submit
+  gives the address, a speaker new to LAW keeps that record and gains the
+  address; a returning speaker's row moves onto their existing profile, and the
+  empty record is left with no events (its page 404s). A speaker re-entered with
+  no address is a duplicate.
+
+**Verified** with `tests/SpeakerIdentityTest.php` (30: the 80 real renames,
+the strict same-name rule against them (13 of the 26 corrections cosmetic), near
+names a letter apart, a fixed spelling on a shared speaker (new profile, the
+photo dropped for a typo and kept for an added "KC", the other event untouched,
+the next row linking to the right spelling), a returning speaker's address
+moving the row onto their profile, a replacement not inheriting the website,
+two placeholders on one event, a flagship "new speaker" without an email,
+placeholders and thin names, the Domitille and Campbell incidents, a new name on
+the old address, a shared inbox stable across three re-saves, a shared
+placeholder, the photo not carried into a replacement, session ticks following
+the replacement, one person one row, the clash rule, the repair's URL, photo and
+freed-slug hand-back, the log context, and the form not prefilling another
+event's biography; and, after the review, no namesake link without an email,
+names a letter apart or told apart by initials, the stale form, the listed-twice
+rule on the external form and the flagship, the repair's row guard, and a
+profile cleaned though its URL was right), two new form tests in
+`SpeakerNamesTest.php` (listed twice; an address WordPress cannot use), three
+of its older tests reworded to a change of capitals, the only correction an event
+form still writes to the shared record, and `FormErrorModalTest.php` extended to
+the repeater jump. Every `Speaker*` test, `ContentTransferTest`,
+`FlagshipTest`, `FlagshipDashboardTest`, `ReferenceAndMigrationTest`,
+`ExternalEventsTest`, `SessionsTest`, `WorkflowTest` and
+`SubmissionFormLockTest` pass.
+
+Touched: `functions/events/speakers.php`, `functions/events/submission-form.php`,
+`functions/events/speakers-dashboard.php`, `functions/events/log.php`,
+`functions/events/migration/repair-speakers.php` (new),
+`functions/events/migration/page.php`, `functions/events/_load.php`,
+`functions/events/external-events.php`, `functions/events/flagship.php`,
+`parts/events/event-form-speakers.php`, `tests/SpeakerIdentityTest.php` (new),
+`tests/SpeakerNamesTest.php`, `tests/FormErrorModalTest.php`.
 
 ---
 

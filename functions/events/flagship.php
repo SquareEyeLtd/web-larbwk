@@ -988,7 +988,7 @@ function law_flagship_save( array $input, $actor ) {
  *
  * @return int[] The session IDs that survived.
  */
-function law_flagship_save_sessions( $event_id, array $sessions, $actor ) {
+function law_flagship_save_sessions( $event_id, array $sessions, $actor, $by_name = false ) {
 	$owned    = law_event_session_ids( $event_id );
 	$kept     = array();
 	$position = 0;
@@ -1054,7 +1054,7 @@ function law_flagship_save_sessions( $event_id, array $sessions, $actor ) {
 		$position++;
 		law_event_update_meta( $session_id, '_law_start_time', $row['start'] );
 		law_event_update_meta( $session_id, '_law_end_time', $row['end'] );
-		law_event_update_meta( $session_id, '_law_speakers', law_flagship_resolve_speaker_rows( $row['speakers'], $event_id, $actor ) );
+		law_event_update_meta( $session_id, '_law_speakers', law_flagship_resolve_speaker_rows( $row['speakers'], $event_id, $actor, $by_name ) );
 	}
 
 	foreach ( array_diff( $owned, $kept ) as $orphan ) {
@@ -1066,12 +1066,26 @@ function law_flagship_save_sessions( $event_id, array $sessions, $actor ) {
 
 /**
  * Turn the posted speaker rows into appearance rows, creating a law_speaker
- * record for each "new speaker" row first. law_speaker_upsert() dedupes by
- * email and then by normalised name, so entering someone who already has a
- * profile links to it rather than making a second one; in gap-fill mode it
+ * record for each "new speaker" row first. law_speaker_upsert() matches by
+ * email and name, so entering someone who already has a profile under that
+ * address links to it rather than making a second one; in gap-fill mode it
  * never blanks a field another event filled in.
+ *
+ * From the flagship screens a "new speaker" row without an email is never
+ * matched on the name alone (Denis, 19 November 2026), as on every event form:
+ * the committee picks an existing speaker from the search, so a row typed in
+ * as new is somebody new, and a name match could only attach a namesake. The
+ * content transfer passes $by_name = true and keeps the old behaviour: it was
+ * built (15 September 2026) to copy the flagship as entered on staging onto
+ * production, the same people on both sides, many of them with no email, and
+ * without it every import would duplicate them. It is not in regular use.
+ *
+ * @param array $rows     Posted (or bundled) speaker rows.
+ * @param int   $event_id The flagship.
+ * @param int   $actor    Who is saving.
+ * @param bool  $by_name  Whether a row without an email may match on its name.
  */
-function law_flagship_resolve_speaker_rows( array $rows, $event_id, $actor ) {
+function law_flagship_resolve_speaker_rows( array $rows, $event_id, $actor, $by_name = false ) {
 	$out = array();
 
 	foreach ( $rows as $row ) {
@@ -1085,7 +1099,8 @@ function law_flagship_resolve_speaker_rows( array $rows, $event_id, $actor ) {
 					'bio'        => $row['bio'],
 					'photo_id'   => $row['photo_id'],
 				),
-				array( 'event_id' => $event_id, 'actor' => $actor )
+				array( 'event_id' => $event_id, 'actor' => $actor ),
+				array( 'by_name' => (bool) $by_name )
 			);
 			if ( ! $speaker_id ) {
 				// Only an empty name gets here, which validation already refused.
@@ -1093,6 +1108,19 @@ function law_flagship_resolve_speaker_rows( array $rows, $event_id, $actor ) {
 			}
 		} else {
 			$speaker_id = absint( $row['speaker_id'] );
+		}
+
+		// One person, one row (19 November 2026): a session that names the same
+		// speaker twice, picked twice or entered once as new and once picked,
+		// keeps the first row. Logged, so it is never silent.
+		if ( in_array( (int) $speaker_id, array_map( 'intval', array_column( $out, 'speaker_id' ) ), true ) ) {
+			law_event_log(
+				(int) $event_id,
+				sprintf( 'Speaker "%s" was listed twice in one session; kept once.', law_speaker_raw_name( $speaker_id ) ),
+				array( 'action' => 'speaker_listed_twice', 'speaker' => (int) $speaker_id, 'source' => 'flagship' ),
+				array( 'user_id' => (int) $actor )
+			);
+			continue;
 		}
 
 		$out[] = array(

@@ -105,7 +105,7 @@ class SpeakerNamesTest extends LAW_Test_Case {
 		law_events_form_save_speakers(
 			$event,
 			array(
-				array( 'first_name' => 'Barbara', 'last_name' => 'Mclintok', 'email' => 'barbara-edit@example.test', 'website' => 'https://old.example.test', 'organisation' => 'Firm G', 'job_title' => 'Partner' ),
+				array( 'first_name' => 'Barbara', 'last_name' => 'mcclintock', 'email' => 'barbara-edit@example.test', 'website' => 'https://old.example.test', 'organisation' => 'Firm G', 'job_title' => 'Partner' ),
 			),
 			array()
 		);
@@ -117,20 +117,22 @@ class SpeakerNamesTest extends LAW_Test_Case {
 		$values = law_events_form_values( get_post( $event ), array( 'errors' => array(), 'input' => array() ) );
 		$this->assertSame( $speaker, (int) $values['speakers'][0]['speaker_id'] );
 
+		// A correction of capitals only: since 19 November 2026 any other change
+		// to the name gives the event a new speaker (tests/SpeakerIdentityTest.php).
 		$row               = $values['speakers'][0];
-		$row['last_name']  = 'Mcclintock';
+		$row['last_name']  = 'McClintock';
 		$row['website']    = 'https://new.example.test';
 		law_events_form_save_speakers( $event, array( $row ), array() );
 
 		$this->assertSame( $speaker, (int) law_event_meta( $event, '_law_speakers' )[0]['speaker_id'], 'Still the same record: a correction is not a new speaker.' );
-		$this->assertSame( 'Barbara Mcclintock', get_the_title( $speaker ) );
-		$this->assertSame( array( 'first' => 'Barbara', 'last' => 'Mcclintock' ), law_speaker_name_parts( $speaker ) );
+		$this->assertSame( 'Barbara McClintock', get_the_title( $speaker ) );
+		$this->assertSame( array( 'first' => 'Barbara', 'last' => 'McClintock' ), law_speaker_name_parts( $speaker ) );
 		$this->assertSame( 'https://new.example.test', (string) law_event_meta( $speaker, '_law_website' ), 'The website is replaced, not gap-filled.' );
 
 		// The profile is shared across events, so the change is on the record.
 		$log = implode( "\n", wp_list_pluck( law_event_log_entries( $event ), 'comment_content' ) );
 		$this->assertStringContainsString( 'Speaker profile updated from this submission', $log );
-		$this->assertStringContainsString( 'Mclintok', $log, 'The log keeps the old value so a bad edit can be put back.' );
+		$this->assertStringContainsString( 'Barbara mcclintock', $log, 'The log keeps the old value so a bad edit can be put back.' );
 	}
 
 	public function test_a_posted_speaker_id_the_event_does_not_hold_is_ignored(): void {
@@ -219,11 +221,14 @@ class SpeakerNamesTest extends LAW_Test_Case {
 		$this->posts = array_merge( $this->posts, $session_ids );
 		$this->assertSame( $speaker, (int) law_event_meta( $session_ids[0], '_law_speakers' )[0]['speaker_id'] );
 
-		// Now rename the speaker and re-save both halves the way the form does.
+		// Now correct the speaker's name and re-save both halves the way the form
+		// does. Capitals only: since 19 November 2026 any other change gives the
+		// event a new speaker (tests/SpeakerIdentityTest.php covers the session
+		// following that too).
 		$speaker_ids = law_events_form_save_speakers(
 			$event,
 			array(
-				array( 'speaker_id' => $speaker, 'first_name' => 'Rename', 'last_name' => 'Testafter', 'email' => 'rename-session@example.test', 'organisation' => 'Firm B', 'job_title' => 'Partner' ),
+				array( 'speaker_id' => $speaker, 'first_name' => 'Rename', 'last_name' => 'TESTBEFORE', 'email' => 'rename-session@example.test', 'organisation' => 'Firm B', 'job_title' => 'Partner' ),
 			),
 			array()
 		);
@@ -233,7 +238,7 @@ class SpeakerNamesTest extends LAW_Test_Case {
 			$speaker_ids
 		);
 
-		$this->assertSame( 'Rename Testafter', get_post( $speaker )->post_title, 'The rename landed.' );
+		$this->assertSame( 'Rename TESTBEFORE', get_post( $speaker )->post_title, 'The rename landed.' );
 		$this->assertSame(
 			$speaker,
 			(int) law_event_meta( $session_ids[0], '_law_speakers' )[0]['speaker_id'],
@@ -376,14 +381,14 @@ class SpeakerNamesTest extends LAW_Test_Case {
 			);
 		}
 
-		// Event A renames them and changes ITS organisation.
+		// Event A corrects the capitals of their name and changes ITS organisation.
 		law_events_form_save_speakers(
 			$event_a,
-			array( array( 'speaker_id' => $shared, 'first_name' => 'Crossevent', 'last_name' => 'Testafter', 'email' => 'cross-event@example.test', 'organisation' => 'Firm A2', 'job_title' => 'Partner' ) ),
+			array( array( 'speaker_id' => $shared, 'first_name' => 'Crossevent', 'last_name' => 'TESTBEFORE', 'email' => 'cross-event@example.test', 'organisation' => 'Firm A2', 'job_title' => 'Partner' ) ),
 			array()
 		);
 
-		$this->assertSame( 'Crossevent Testafter', get_post( $shared )->post_title, 'Identity is shared, so the rename is global.' );
+		$this->assertSame( 'Crossevent TESTBEFORE', get_post( $shared )->post_title, 'Identity is shared, so a correction is global.' );
 		$this->assertSame( 'Firm A2', law_event_meta( $event_a, '_law_speakers' )[0]['organisation'] );
 		$this->assertSame( 'Firm B', law_event_meta( $event_b, '_law_speakers' )[0]['organisation'], 'The appearance is per event and stays put.' );
 	}
@@ -528,6 +533,39 @@ class SpeakerNamesTest extends LAW_Test_Case {
 			array( 'speaker_id' => $speaker, 'overwrite_identity' => true )
 		);
 		$this->assertSame( 'new-address@example.test', (string) law_event_meta( $speaker, '_law_speaker_email' ) );
+	}
+
+	/** A full submit checks the address itself: "john@firm" passes the browser but not is_email(). */
+	public function test_the_form_refuses_a_speaker_email_wordpress_cannot_use(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+		$event  = get_post( $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed', $host ) );
+		$input  = $this->speaker_form_input( 'Bad address', array( array( 'first_name' => 'Bad', 'last_name' => 'Testaddress', 'email' => 'john@firm' ) ) );
+		$result = law_events_form_save( $input, array(), $event, $host );
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertStringContainsString( 'does not look right', $result->get_error_message( 'speakers' ) );
+	}
+
+	/** One person, one row (19 November 2026): the form says so rather than printing them twice. */
+	public function test_the_form_refuses_the_same_speaker_on_two_rows(): void {
+		$host = $this->make_user();
+		wp_set_current_user( $host );
+		$event = get_post( $this->make_event( array( '_law_fee_tier' => 'uk' ), 'law-proposed', $host ) );
+
+		$input  = $this->speaker_form_input(
+			'Twice over',
+			array(
+				array( 'first_name' => 'Twice', 'last_name' => 'Testformrow', 'email' => 'twice-form@example.test' ),
+				array( 'first_name' => 'Twice', 'last_name' => 'Testformrow', 'email' => 'twice-form@example.test' ),
+			)
+		);
+		$result = law_events_form_save( $input, array(), $event, $host );
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertStringContainsString( 'Twice Testformrow is listed twice (rows 1 and 2)', $result->get_error_message( 'speakers' ) );
+
+		// A draft is refused too: the rows would still print the person twice.
+		$input['law_form_action'] = 'draft';
+		$this->assertInstanceOf( WP_Error::class, law_events_form_save( $input, array(), $event, $host ) );
 	}
 
 	public function test_speaker_cards_are_listed_alphabetically_by_surname(): void {

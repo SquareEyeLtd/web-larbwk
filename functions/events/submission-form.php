@@ -487,11 +487,11 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 		// What remains is deliberate and should not be relaxed without reading
 		// why. Both names, because law_events_form_save_speakers() silently
 		// drops a row with no name, so a nameless row would vanish rather than
-		// be reported. And the email, because it is the speaker dedupe key:
-		// with it blank law_speaker_find_existing() falls back to matching on
-		// the name, which would attach a new person to an existing, publicly
-		// displayed profile that happens to share their name. The reasoning is
-		// in full at functions/events/speakers.php:110-121.
+		// be reported. And the email, because it is how a returning speaker is
+		// linked to their existing profile: the forms never match on a name
+		// alone (19 November 2026), so a row without one always makes a new
+		// speaker, and a namesake is never attached by accident. The reasoning
+		// is at law_speaker_find_existing() in functions/events/speakers.php.
 		$row_rules = array(
 			'speakers'  => array( 'label' => 'speaker', 'fields' => array( 'first_name' => 'a first name', 'last_name' => 'a last name', 'email' => 'an email address' ) ),
 			'co_owners' => array( 'label' => 'additional event owner', 'fields' => array( 'name' => 'a name', 'organisation' => 'an organisation', 'email' => 'an email address' ) ),
@@ -499,13 +499,17 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 			'sessions'  => array( 'label' => 'session', 'fields' => array( 'title' => 'a title', 'start' => 'a start time', 'description' => 'a description' ) ),
 		);
 		foreach ( $row_rules as $group => $rule ) {
+			$row_number = 0; // The row as the host sees it: posted indexes have gaps once a row is removed.
 			foreach ( (array) ( $input[ $group ] ?? array() ) as $i => $row ) {
+				if ( is_array( $row ) ) {
+					++$row_number;
+				}
 				// Machinery, not host input: photo_id is a display-only echo of the
 				// stored photo, speaker_id is the speaker post being edited and id is
 				// the session's post ID. None of them makes an emptied row count as
 				// started, or clearing a row to delete it would fail validation
 				// instead.
-				$machinery = array( 'photo_id', 'speaker_id', 'id' );
+				$machinery = array( 'photo_id', 'speaker_id', 'id', 'was_name', 'was_email', 'was_website' );
 				$filled    = is_array( $row ) ? array_filter( $row, function ( $v, $k ) use ( $machinery ) { return ! in_array( $k, $machinery, true ) && is_scalar( $v ) && '' !== trim( (string) $v ); }, ARRAY_FILTER_USE_BOTH ) : array();
 				if ( ! $filled ) {
 					continue; // Untouched row: dropped on save, so nothing to require.
@@ -523,9 +527,14 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 							'Each %s needs %s. Please complete row %d, or clear it.',
 							$rule['label'],
 							law_events_list_words( $missing ),
-							(int) $i + 1
+							$row_number
 						)
 					);
+				} elseif ( 'speakers' === $group && ! is_email( sanitize_email( (string) $row['email'] ) ) ) {
+					// Checked here as well as by the browser (19 November 2026): an
+					// address like "john@firm" passes type="email" but not is_email(),
+					// and a speaker's address is what links them to their profile.
+					$errors->add( $group, sprintf( 'The email address in speaker row %d does not look right. Please check it.', $row_number ) );
 				}
 			}
 		}
@@ -534,6 +543,16 @@ function law_events_form_save( array $input, array $files, $post, $user_id ) {
 				$errors->add( 'terms', 'Please accept the terms and conditions.' );
 			}
 		}
+	}
+
+	// One person, one row (Denis, 19 November 2026), drafts included. Two rows
+	// that resolve to the same speaker record would print the person twice, and
+	// before the replacement rule they also fought over the record's name on every
+	// save. law_events_form_save_speakers() keeps only the first as a backstop for
+	// the forms that skip this check (the committee's external-event form).
+	$duplicate = law_events_form_duplicate_speaker_error( (array) ( $input['speakers'] ?? array() ), $post ? (int) $post->ID : 0 );
+	if ( $duplicate ) {
+		$errors->add( 'speakers', $duplicate );
 	}
 
 	// Speaker photo uploads validated up front so a bad file blocks nothing else.
@@ -870,6 +889,134 @@ function law_events_validate_photos( array $files ) {
 }
 
 /**
+ * Which speaker record a posted row would land on, without writing anything:
+ * the same decision law_speaker_upsert() makes. A row carrying a speaker ID the
+ * event holds stays on that record while the name is the same name (capitals,
+ * accents, spaces and punctuation aside); any other row is matched by email and
+ * name, then by name when no email is given, never back onto the record a
+ * replaced row is leaving.
+ *
+ * @param array $row   One posted speakers[] row.
+ * @param array $owned speaker_id => true, the records the event already holds.
+ * @return array{id:int,name:string,email:string} id 0 = a new record would be created.
+ */
+function law_events_form_speaker_row_target( array $row, array $owned ) {
+	$parts   = law_speaker_row_name_parts( $row );
+	$name    = law_speaker_full_name( $parts['first'], $parts['last'] );
+	$email   = mb_strtolower( trim( (string) ( $row['email'] ?? '' ) ) );
+	$posted  = (int) ( $row['speaker_id'] ?? 0 );
+	$options = law_events_form_speaker_upsert_options( $row, $owned );
+	if ( '' === $name ) {
+		return array( 'id' => 0, 'name' => '', 'email' => $email );
+	}
+	if ( ! empty( $options['speaker_id'] ) ) {
+		$untouched = isset( $options['shown']['name'] ) && $options['shown']['name'] === $name;
+		if ( ! $untouched && ! law_speaker_same_name( law_speaker_raw_name( $posted ), $name ) ) {
+			return array( 'id' => law_speaker_find_existing( $email, $name, $posted, false ), 'name' => $name, 'email' => $email );
+		}
+		// The same person, given an address another of their records holds: the
+		// upsert moves the row onto that record.
+		$was = isset( $options['shown']['email'] ) ? mb_strtolower( trim( (string) $options['shown']['email'] ) ) : null;
+		$id  = $posted;
+		if ( is_email( $email ) && $email !== $was && $email !== mb_strtolower( (string) law_event_meta( $posted, '_law_speaker_email' ) ) ) {
+			$id = law_speaker_find_existing( $email, $name, $posted, false ) ?: $posted;
+		}
+		return array( 'id' => $id, 'name' => $name, 'email' => $email );
+	}
+	return array( 'id' => law_speaker_find_existing( $email, $name, 0, false ), 'name' => $name, 'email' => $email );
+}
+
+/**
+ * The law_speaker_upsert() options for one posted row of an event form: edit
+ * the record the event already holds (honoured only for a speaker it does
+ * hold, so a forged ID reaches nothing), with what the form showed for it, and
+ * never a match on the name alone.
+ *
+ * @param array $row   One posted speakers[] row.
+ * @param array $owned speaker_id => true, the records the event already holds.
+ */
+function law_events_form_speaker_upsert_options( array $row, array $owned ) {
+	$options = array( 'by_name' => false );
+	$posted  = (int) ( $row['speaker_id'] ?? 0 );
+	if ( $posted && isset( $owned[ $posted ] ) ) {
+		$options['speaker_id']         = $posted;
+		$options['overwrite_identity'] = true;
+		$shown                         = array();
+		foreach ( array( 'name', 'email', 'website' ) as $field ) {
+			if ( isset( $row[ 'was_' . $field ] ) && is_scalar( $row[ 'was_' . $field ] ) ) {
+				$shown[ $field ] = 'name' === $field
+					? law_speaker_full_name( (string) $row['was_name'], '' )
+					: (string) $row[ 'was_' . $field ];
+			}
+		}
+		if ( $shown ) {
+			$options['shown'] = $shown;
+		}
+	}
+	return $options;
+}
+
+/**
+ * The "listed twice" message for a set of posted speaker rows on an event, or
+ * '' when every person is listed once. Shared by the host and committee event
+ * form and the committee's external-event form.
+ *
+ * @param array $rows     Posted speakers[] rows.
+ * @param int   $event_id The event being edited (0 for a new one).
+ */
+function law_events_form_duplicate_speaker_error( array $rows, $event_id ) {
+	$owned = array();
+	foreach ( $event_id ? law_event_meta( (int) $event_id, '_law_speakers' ) : array() as $row ) {
+		$owned[ (int) ( $row['speaker_id'] ?? 0 ) ] = true;
+	}
+	$duplicate = law_events_form_duplicate_speaker( $rows, $owned );
+	return $duplicate
+		? sprintf( '%s is listed twice (rows %d and %d). Please remove one.', $duplicate['name'], $duplicate['rows'][0], $duplicate['rows'][1] )
+		: '';
+}
+
+/**
+ * The first pair of posted speaker rows that would name the same person: rows
+ * that land on the same existing record, or two rows whose names are the same
+ * person (law_speaker_same_person()) with the same email or with no email on
+ * one of them. The second rule catches what the first cannot predict, such as
+ * one row changing an existing speaker's email and another adding them again
+ * with the new address. Two people of the same name with different addresses
+ * are two people.
+ *
+ * @param array $rows  Posted speakers[] rows.
+ * @param array $owned speaker_id => true, the records the event already holds.
+ * @return array{name:string,rows:int[]}|null Row numbers are 1-based, as the form shows them.
+ */
+function law_events_form_duplicate_speaker( array $rows, array $owned ) {
+	$seen = array();
+	$n    = 0;
+	foreach ( $rows as $row ) {
+		if ( ! is_array( $row ) ) {
+			continue;
+		}
+		++$n;
+		$target = law_events_form_speaker_row_target( $row, $owned );
+		if ( '' === $target['name'] ) {
+			continue;
+		}
+		foreach ( $seen as $earlier ) {
+			// Placeholders ("TBC" twice, for two unconfirmed places) are only the
+			// same when they are the same record.
+			$same = ( $target['id'] && $target['id'] === $earlier['id'] )
+				|| ( ! law_speaker_is_placeholder_name( $target['name'] )
+					&& ( $target['email'] === $earlier['email'] || '' === $target['email'] || '' === $earlier['email'] )
+					&& law_speaker_same_person( $target['name'], $earlier['name'] ) );
+			if ( $same ) {
+				return array( 'name' => $target['name'], 'rows' => array( $earlier['row'], $n ) );
+			}
+		}
+		$seen[] = $target + array( 'row' => $n );
+	}
+	return null;
+}
+
+/**
  * Speaker rows: match-or-create law_speaker posts (dedupe by email then
  * name, §3.2) and store the appearance rows on the event. The organisation,
  * job title, photo and biography the host typed are THIS event's values and go
@@ -893,6 +1040,7 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 	}
 
 	$relationships = array();
+	$listed        = array(); // speaker_id => true, already on a row of this save.
 	$sort          = 0;
 	foreach ( $rows as $i => $row ) {
 		if ( ! is_array( $row ) ) {
@@ -928,6 +1076,12 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 		// silent data loss (Denis, 9 September 2026). Every change is logged on
 		// the event, since the profile is shared across events. A brand-new row
 		// carries no ID and keeps the old match-or-create, backfill-only rule.
+		//
+		// An edit that changes the name beyond capitals, accents, spaces and
+		// punctuation is a replacement, not an edit (Denis, 19 November 2026), a
+		// fixed typo included: law_speaker_upsert() leaves the old record alone
+		// and resolves the row as if it were new, so the photo carried forward
+		// below (keyed by speaker) is not the old record's.
 		$posted_speaker = (int) ( $row['speaker_id'] ?? 0 );
 		$speaker_id     = law_speaker_upsert(
 			array(
@@ -939,17 +1093,40 @@ function law_events_form_save_speakers( $event_id, array $rows, array $files ) {
 				'photo_id'   => $photo_id, // Fallback featured image only, set once.
 			),
 			array( 'event_id' => (int) $event_id, 'actor' => get_current_user_id() ),
-			isset( $owned[ $posted_speaker ] )
-				? array( 'speaker_id' => $posted_speaker, 'overwrite_identity' => true )
-				: array()
+			law_events_form_speaker_upsert_options( $row, $owned )
 		);
+		if ( $speaker_id && isset( $listed[ $speaker_id ] ) ) {
+			// Backstop for law_events_form_duplicate_speaker(), which every form
+			// runs before saving: one row per person. Logged, so a dropped row is
+			// never silent. A session tick on the dropped row still resolves.
+			$resolved[ (int) $i ] = (int) $speaker_id;
+			law_event_log(
+				(int) $event_id,
+				sprintf( 'Speaker "%s" was listed twice; kept once.', law_speaker_raw_name( $speaker_id ) ),
+				array( 'action' => 'speaker_listed_twice', 'speaker' => (int) $speaker_id, 'source' => 'submission' )
+			);
+			continue;
+		}
+		// The photo already on this event for this speaker, when no new one was
+		// uploaded. A row that moved to another record of the same person keeps
+		// it: one the new name only adds to ("KC", a middle name), or one moved
+		// to the person's existing profile by their address. A fixed typo
+		// ("Noami" → "Naomi") does not, because the linking test has no typo
+		// allowance and nothing is guessed; the host uploads it again. A
+		// different person never inherits it.
+		$kept_photo = (int) ( $previous[ $speaker_id ] ?? 0 );
+		if ( ! $kept_photo && isset( $owned[ $posted_speaker ] ) && $posted_speaker !== (int) $speaker_id
+			&& law_speaker_same_person( law_speaker_raw_name( $posted_speaker ), law_speaker_full_name( $name['first'], $name['last'] ) ) ) {
+			$kept_photo = (int) ( $previous[ $posted_speaker ] ?? 0 );
+		}
 		if ( $speaker_id ) {
+			$listed[ $speaker_id ] = true;
 			$relationships[] = array(
 				'speaker_id'   => $speaker_id,
 				'role'         => (string) ( $row['role'] ?? '' ), // Canonicalised by the schema sanitiser.
 				'organisation' => (string) ( $row['organisation'] ?? '' ),
 				'job_title'    => (string) ( $row['job_title'] ?? '' ),
-				'photo_id'     => $photo_id ?: (int) ( $previous[ $speaker_id ] ?? 0 ),
+				'photo_id'     => $photo_id ?: $kept_photo,
 				'bio'          => (string) ( $row['bio'] ?? '' ),
 				'sort'         => $sort++,
 			);
@@ -1353,6 +1530,13 @@ function law_events_form_error_selector( $key ) {
 	if ( preg_match( '/^speaker_photo_(\d+)$/', $key, $matches ) ) {
 		return '[name="speaker_photo[' . $matches[1] . ']"]';
 	}
+	// A repeater's own errors ("Each speaker needs …", "… is listed twice") are
+	// keyed by the group, whose inputs are named group[i][field]: jump to the
+	// first row's first control rather than offer a line that goes nowhere.
+	if ( in_array( $key, array( 'speakers', 'co_owners', 'contacts', 'sessions' ), true ) ) {
+		// Not a hidden input: an existing speaker row starts with its speaker_id.
+		return '[name^="' . $key . '["]:not([type="hidden"])';
+	}
 	// A repeater row's own control, keyed by its full input name
 	// (slots[3][label] on Manage time slots). Only word characters inside the
 	// brackets, so nothing posted can break out of the attribute selector.
@@ -1458,10 +1642,13 @@ function law_events_form_values( $post, array $state ) {
 	foreach ( law_event_meta( $post->ID, '_law_speakers' ) as $row ) {
 		$speaker_id = (int) $row['speaker_id'];
 		// Role, organisation, job title, photo and biography are this event's own
-		// (the appearance row); name, email and website are the person's. The
-		// biography falls back to the speaker post's editor content for rows saved
-		// before biographies became per appearance.
-		$row_bio      = trim( (string) ( $row['bio'] ?? '' ) );
+		// (the appearance row); name, email and website are the person's. A blank
+		// biography stays blank (Denis, 19 November 2026). It used to fall back to
+		// the speaker post's editor content, which is the first biography ANY host
+		// typed for the person, so a host whose own row had none was shown another
+		// event's text and published it on an untouched re-save. The 26 October
+		// change ("A blank biography prints nothing") took that fallback out of
+		// every reader but this one.
 		$speaker_name = law_speaker_name_parts( $speaker_id );
 		$speakers[]   = array(
 			// Round-tripped so a re-save edits THIS record rather than re-matching
@@ -1477,8 +1664,14 @@ function law_events_form_values( $post, array $state ) {
 			'organisation' => (string) ( $row['organisation'] ?? '' ),
 			'job_title'    => (string) ( $row['job_title'] ?? '' ),
 			'website'      => (string) law_event_meta( $speaker_id, '_law_website' ),
-			'bio'          => '' !== $row_bio ? $row_bio : (string) get_post_field( 'post_content', $speaker_id ),
+			'bio'          => (string) ( $row['bio'] ?? '' ),
 			'photo_id'     => (int) ( $row['photo_id'] ?? 0 ),
+			// What the form SHOWED, posted back unchanged in hidden inputs, so the
+			// save can tell the fields the host actually edited from a stale copy
+			// (law_speaker_upsert()'s 'shown' option, 19 November 2026).
+			'was_name'     => law_speaker_full_name( $speaker_name['first'], $speaker_name['last'] ),
+			'was_email'    => (string) law_event_meta( $speaker_id, '_law_speaker_email' ),
+			'was_website'  => (string) law_event_meta( $speaker_id, '_law_website' ),
 		);
 	}
 	$sessions = array();

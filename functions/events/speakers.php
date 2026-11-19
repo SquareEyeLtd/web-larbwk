@@ -105,25 +105,59 @@ function law_speaker_role_heading( $role ) {
 }
 
 /**
- * Find an existing speaker: by email first (same email = same person), then by
- * normalised full name.
+ * Find an existing speaker: by email AND name together, then (only when no
+ * email was given) by normalised full name.
+ *
+ * An email on its own no longer identifies a person (Denis, 19 November 2026).
+ * Clerks' team inboxes (teamd@oeclaw.co.uk), a firm's events address, or a host
+ * typing their own address for several speakers all give one address to
+ * several people, and matching on the address alone merged them into one
+ * shared, publicly displayed record. Every save of that event then flipped the
+ * record's name between the rows: the prod log shows "Lord Richards of
+ * Camberwell" and "Dame Elizabeth Gloster" swapping about 20 times on
+ * 13 October. So an address match counts only when the name is the same person
+ * too (law_speaker_same_person()); the same address under a different name is
+ * somebody new who shares an inbox, and gets their own record.
+ *
+ * A caller that passes an empty $name is looking an address up, not matching a
+ * person (the tests, and lookups that only have the address), and gets the
+ * first record holding it.
  *
  * The name fallback runs ONLY when no usable email was given. An email is an
  * identity claim, so a row carrying one that matches nothing is a new person,
  * even if somebody with the same name is already on file: two different
  * solicitors called "John Smith" at two different firms must not be collapsed
  * into one shared, publicly-displayed profile that then carries the wrong
- * email. The fallback still exists for the sources that have no email at all —
+ * email. The fallback still exists for the sources that have no email at all,
  * the legacy List field 48 rows the migration reads, which pass '' here.
  * A duplicate record is a nuisance an administrator can merge on LAW →
  * Migration (migration/merge-speakers.php); a wrong merge silently rewrites a
  * real person's profile.
  *
- * @param string $email Email (may be empty).
- * @param string $name  Full display name.
+ * The event forms switch the name fallback off ($by_name = false, Denis,
+ * 19 November 2026): a host's draft skips validation, an address like
+ * "john@firm" passes the browser but not is_email(), and the committee's
+ * external-event form validates no speaker rows, and in each case a name match
+ * attached the row to whoever already had that name. The next save then wrote
+ * the host's email and website onto that other person's shared record. From a
+ * form, a row without a usable email is a new speaker.
+ *
+ * Among the records holding the address, one with the SAME NAME
+ * (law_speaker_same_name()) is preferred to a merely similar one, so after a
+ * host corrected "Noami" to "Naomi" (which gives the event a new record), the
+ * next "Naomi" links to the new record and not to the misspelt one.
+ *
+ * @param string $email   Email (may be empty).
+ * @param string $name    Full display name ('' = look the address up only).
+ * @param int    $exclude A record that must not be returned: the one a
+ *                        replacement is leaving, so a corrected spelling does
+ *                        not link straight back to it.
+ * @param bool   $by_name Whether a row with no usable email may match on the
+ *                        name alone (the legacy sources do; the forms do not).
  * @return int Post ID, 0 when no match.
  */
-function law_speaker_find_existing( $email, $name ) {
+function law_speaker_find_existing( $email, $name, $exclude = 0, $by_name = true ) {
+	$exclude = (int) $exclude;
 	$email = mb_strtolower( trim( (string) $email ) );
 	if ( is_email( $email ) ) {
 		$by_email = get_posts(
@@ -133,17 +167,27 @@ function law_speaker_find_existing( $email, $name ) {
 				'meta_key'       => '_law_speaker_email',
 				'meta_value'     => $email,
 				'fields'         => 'ids',
-				'posts_per_page' => 1,
+				'posts_per_page' => -1,
+				'orderby'        => 'ID',
+				'order'          => 'ASC',
 			)
 		);
-		if ( $by_email ) {
-			return (int) $by_email[0];
+		$by_email = array_values( array_diff( array_map( 'intval', $by_email ), array( $exclude ) ) );
+		if ( '' === trim( (string) $name ) ) {
+			return $by_email ? $by_email[0] : 0;
 		}
-		return 0; // A real, unrecognised email: a new person, not a name match.
+		foreach ( array( 'law_speaker_same_name', 'law_speaker_same_person' ) as $test ) {
+			foreach ( $by_email as $candidate ) {
+				if ( $test( law_speaker_raw_name( $candidate ), $name ) ) {
+					return $candidate;
+				}
+			}
+		}
+		return 0; // A real email with no same-named holder: a new person, not a name match.
 	}
 
 	$normalised = law_speaker_normalise_name( $name );
-	if ( '' === $normalised ) {
+	if ( ! $by_name || '' === $normalised ) {
 		return 0;
 	}
 	$candidates = get_posts(
@@ -156,7 +200,7 @@ function law_speaker_find_existing( $email, $name ) {
 		)
 	);
 	foreach ( $candidates as $candidate ) {
-		if ( law_speaker_normalise_name( law_speaker_raw_name( $candidate ) ) === $normalised ) {
+		if ( (int) $candidate !== $exclude && law_speaker_normalise_name( law_speaker_raw_name( $candidate ) ) === $normalised ) {
 			return (int) $candidate;
 		}
 	}
@@ -179,6 +223,139 @@ function law_speaker_normalise_name( $name ) {
 		array( "\u{2018}" => "'", "\u{2019}" => "'", "\u{201A}" => "'", "\u{201B}" => "'", "\u{201C}" => '"', "\u{201D}" => '"', "\u{2013}" => '-', "\u{2014}" => '-' )
 	);
 	return preg_replace( '/\s+/', ' ', mb_strtolower( trim( $name ) ) );
+}
+
+/**
+ * Words in a name that say nothing about WHO the person is: titles,
+ * honorifics, post-nominals, name particles and the "TBC" a host types while a
+ * speaker is unconfirmed. law_speaker_name_tokens() drops them, together with
+ * LAW_SPEAKER_NAME_SUFFIXES, so "Toby Landau" and "Toby Landau KC", or "Prof.
+ * Dr. Maxi Scherer" and "Maxi Scherer", compare as the same person.
+ */
+const LAW_SPEAKER_NAME_NOISE = array( 'mr', 'mrs', 'ms', 'miss', 'mx', 'dr', 'prof', 'professor', 'sir', 'dame', 'lord', 'lady', 'the', 'rt', 'hon', 'honourable', 'justice', 'judge', 'hhj', 'his', 'her', 'honour', 'of', 'and', 'but', 'tba', 'tbd', 'dbe', 'pc', 'kcmg', 'llm', 'fciarb', 'jr', 'sr', 'ii', 'iii', 'de', 'da', 'di', 'van', 'von', 'der', 'le', 'la', 'du' );
+
+/**
+ * The words that identify a person, for law_speaker_same_person(): lower case,
+ * accents folded, a dotted abbreviation closed up ("S.C." → "sc", so it is
+ * recognised as a post-nominal), anything in brackets dropped ("(Scot)",
+ * "(Johan)"), every run of punctuation a word break (so a hyphen, a
+ * non-breaking hyphen and a bullet all split the same way), and
+ * LAW_SPEAKER_NAME_NOISE / the honorific suffixes dropped. Initials are KEPT
+ * (19 November 2026): "A. Smith" and "B. Smith" are different people.
+ *
+ * @param string $name Full name.
+ * @return string[] Unique tokens, in order.
+ */
+function law_speaker_name_tokens( $name ) {
+	$name  = remove_accents( law_speaker_normalise_name( $name ) );
+	$name  = (string) preg_replace_callback( '/(?<![\p{L}\p{N}])(?:\p{L}\.){2,}/u', fn( $m ) => str_replace( '.', '', $m[0] ), $name );
+	$name  = preg_replace( '/\([^)]*\)/u', ' ', $name );
+	$name  = preg_replace( '/[^\p{L}\p{N}]+/u', ' ', $name );
+	$noise = array_merge( LAW_SPEAKER_NAME_NOISE, array_map( 'strtolower', LAW_SPEAKER_NAME_SUFFIXES ) );
+	$out   = array();
+	foreach ( explode( ' ', trim( $name ) ) as $token ) {
+		if ( '' === $token || in_array( $token, $noise, true ) ) {
+			continue;
+		}
+		$out[] = $token;
+	}
+	return array_values( array_unique( $out ) );
+}
+
+/**
+ * Whether a name is a stand-in rather than a person: "TBC", "Other speakers
+ * to be confirmed shortly", "Law firm counsel (TBC)". Such a record is matched
+ * by name across events (it has no email), so it is often shared, and typing
+ * the real speaker over it must never rename the shared stand-in: record 745 on
+ * prod was "Other speakers to be confirmed shortly" on two events until one
+ * host made it Kevin Nash and the other made it Simon Dack.
+ *
+ * @param string $name Full name.
+ */
+function law_speaker_is_placeholder_name( $name ) {
+	if ( ! law_speaker_name_tokens( $name ) ) {
+		return true;
+	}
+	return (bool) preg_match( '/\b(speakers?|to be (confirmed|announced)|counsel|panell?ists?|moderators?|representatives?)\b/u', law_speaker_normalise_name( $name ) );
+}
+
+/**
+ * A name with capitals, accents, spaces and punctuation taken out: "NiaLL
+ * McCulloch KC", "Niall Mc-Culloch KC" and "niall mcculloch kc" all give
+ * "niallmccullochkc".
+ */
+function law_speaker_name_key( $name ) {
+	return (string) preg_replace( '/[^\p{L}\p{N}]+/u', '', remove_accents( law_speaker_normalise_name( $name ) ) );
+}
+
+/**
+ * Whether an edited name is still the SAME NAME (Denis, 19 November 2026):
+ * identical once capitals, accents, spaces and punctuation are ignored.
+ *
+ * This is what the event form uses to tell a CORRECTION from a REPLACEMENT.
+ * Only a change of that kind ("NAOMI SMITH" → "Naomi Smith", "Noradele" →
+ * "Noradèle") is written to the shared record, and so to every event the
+ * speaker appears at. ANY other change, a fixed typo or an added "KC"
+ * included, gives this event a new speaker and leaves the shared record alone.
+ * Denis chose no guessing over a similarity test: a host can then never change
+ * the name another event shows. The cost, measured on prod: of the 26
+ * corrections hosts made between 18 September and 19 November 2026, 13 were of
+ * this cosmetic kind and still correct everywhere; of the other 13, four were
+ * on speakers shared with other events, which now leave two profiles of the
+ * same person for the committee to merge (or the committee corrects the
+ * spelling on Manage Speakers, which writes it everywhere).
+ *
+ * @param string $a Full name.
+ * @param string $b Full name.
+ */
+function law_speaker_same_name( $a, $b ) {
+	return law_speaker_name_key( $a ) === law_speaker_name_key( $b );
+}
+
+/**
+ * Whether two names are the same human written more or less fully. This is the
+ * FORGIVING test, used only where a wrong answer cannot rewrite anybody:
+ * linking a newly added row to an existing record (law_speaker_find_existing(),
+ * which only fills gaps on a match), spotting the same person on two rows, the
+ * address clash checks, and keeping this event's photo when a host fixed a
+ * name. Deciding whether an EDIT may change a shared record is
+ * law_speaker_same_name()'s job, which is strict.
+ *
+ * Same person: every identifying word of the shorter name appears, EXACTLY, in
+ * the longer one, once capitals, accents, punctuation, titles and post-nominals
+ * are set aside. So an added or dropped middle name or "KC" still matches
+ * ("Toby Landau" / "Toby Landau KC"), and nothing else does. There is no typo
+ * allowance (Denis, 19 November 2026): it read Maria and Mario Rossi, or
+ * Christian and Christina, as one person, which with a shared clerks' inbox
+ * linked one to the other's record. A name with fewer than two identifying words
+ * ("Mr Justice Smith", "Lord Gloster", a lone surname) must be the same name
+ * outright, because one word is too thin to call two people the same and the
+ * titles that were set aside may be all that tells them apart. Placeholders are
+ * only ever the same as themselves.
+ *
+ * Of the 80 distinct renames hosts made on the prod event form between
+ * 18 September and 19 November 2026, all 54 replacements read as different
+ * people; tests/SpeakerIdentityTest.php keeps them as fixtures.
+ *
+ * When it is wrong it errs towards "different": that costs a duplicate record,
+ * which the committee can merge.
+ *
+ * @param string $a Full name.
+ * @param string $b Full name.
+ */
+function law_speaker_same_person( $a, $b ) {
+	if ( law_speaker_is_placeholder_name( $a ) || law_speaker_is_placeholder_name( $b ) ) {
+		return law_speaker_normalise_name( $a ) === law_speaker_normalise_name( $b );
+	}
+	$short = law_speaker_name_tokens( $a );
+	$long  = law_speaker_name_tokens( $b );
+	if ( count( $short ) > count( $long ) ) {
+		list( $short, $long ) = array( $long, $short );
+	}
+	if ( count( $short ) < 2 ) {
+		return law_speaker_same_name( $a, $b );
+	}
+	return ! array_diff( $short, $long );
 }
 
 /**
@@ -300,7 +477,19 @@ function law_speaker_row_name_parts( array $row ) {
  * @param array $options speaker_id: edit THIS record rather than matching one
  *                       (the caller must have already checked the row belongs
  *                       to it). overwrite_identity: write the identity fields
- *                       outright instead of only filling gaps — see below.
+ *                       outright instead of only filling gaps, see below. A
+ *                       name that is not the SAME NAME as the record's
+ *                       (law_speaker_same_name()) is a replacement, never an
+ *                       edit: the record is left alone and the data is matched
+ *                       or created as if new, never back onto that record.
+ *                       shown: the name/email/website the form displayed for
+ *                       this row ('name', 'email', 'website'); a field posted
+ *                       back unchanged is NOT written and an unchanged name is
+ *                       never a replacement, so a form opened before somebody
+ *                       else corrected the record cannot undo the correction.
+ *                       by_name: false for the event forms, so a row without a
+ *                       usable email is never matched on its name alone (see
+ *                       law_speaker_find_existing()).
  * @return int Post ID, 0 on failure.
  */
 function law_speaker_upsert( array $data, array $log = array(), array $options = array() ) {
@@ -316,16 +505,77 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 	// An explicit record beats matching on email/name: it is the only way a
 	// caller can edit the very fields the match is made on. Callers pass one
 	// only for a speaker the event already holds (law_events_form_save_speakers()).
-	$post_id = 0;
+	//
+	// But only while it is still the same name (Denis, 19 November 2026).
+	// Hosts replace a speaker by typing the new person over the old row far more
+	// often than they correct one: 54 of the 80 distinct renames made on the prod
+	// event form were replacements, and each renamed a record shared with every
+	// other event that person appears at (Domitille Baizeau became Noradèle
+	// Radjai on two events, Campbell Herbert became Kathleen Donnelly KC). So any
+	// change beyond capitals, accents, spaces and punctuation is a REPLACEMENT,
+	// a fixed typo included: the old record keeps its name, email, URL and photo
+	// for its other events, and this data goes through match-or-create like a
+	// newly added row, which links to the person's own record when they already
+	// have one. The old record is excluded from that match, so a corrected
+	// spelling cannot link straight back to the misspelt record it is leaving.
+	//
+	// What the host did not touch is not a change at all (19 November 2026).
+	// A form opened before the committee corrected "Jon" to "John" on Manage
+	// Speakers still posts "Jon"; read as an edit, that split the record and
+	// undid the correction for this event. So a name posted back exactly as the
+	// form showed it keeps the row on its record and is not written, and the
+	// same goes for the email and the website below. A forged "shown" can only
+	// keep a row on the record it already holds and stop fields being written;
+	// the email and website it might then let through are ones a host may
+	// change for the same person anyway (Denis, 19 November 2026: they apply on
+	// every event).
+	$shown          = (array) ( $options['shown'] ?? array() );
+	$name_untouched = isset( $shown['name'] ) && law_speaker_full_name( (string) $shown['name'], '' ) === $name;
+	$post_id        = 0;
+	$replaced       = 0;
 	if ( ! empty( $options['speaker_id'] ) ) {
-		$target  = get_post( (int) $options['speaker_id'] );
-		$post_id = ( $target && LAW_SPEAKER_CPT === $target->post_type ) ? (int) $target->ID : 0;
+		$target = get_post( (int) $options['speaker_id'] );
+		if ( $target && LAW_SPEAKER_CPT === $target->post_type ) {
+			if ( ! empty( $options['overwrite_identity'] ) && ! $name_untouched && ! law_speaker_same_name( law_speaker_raw_name( $target->ID ), $name ) ) {
+				$replaced = (int) $target->ID;
+			} else {
+				$post_id = (int) $target->ID;
+			}
+		}
+	}
+	// A replacement does not inherit the website the form showed for the person
+	// it replaced: a host who types a new name and email over a row and leaves
+	// the website box alone is not giving the new person that page. Without this
+	// it was gap-filled onto the new person's profile (the Chris Bogart /
+	// Geoff Nicholas pattern the repair panel cleans up). The email is left as
+	// typed: one address can serve several people.
+	if ( $replaced && isset( $shown['website'] ) && trim( (string) $shown['website'] ) === trim( (string) ( $data['website'] ?? '' ) ) ) {
+		$data['website'] = '';
 	}
 	if ( ! $post_id ) {
-		$post_id = law_speaker_find_existing( (string) ( $data['email'] ?? '' ), $name );
+		$post_id = law_speaker_find_existing( (string) ( $data['email'] ?? '' ), $name, $replaced, ! isset( $options['by_name'] ) || $options['by_name'] );
+	}
+
+	// The host has given this speaker an address that another record of the
+	// SAME person already holds: the person already has a profile, so the row
+	// moves onto it. Without this the address was dropped by the clash check
+	// below, silently, on every save: a draft saved with no email had created
+	// an empty record, the full submit's address belonged to the person's real
+	// profile, and the form then showed the email blank and demanded it again.
+	$joined = 0;
+	if ( $post_id && ! $replaced && ! empty( $options['overwrite_identity'] ) ) {
+		$given = mb_strtolower( trim( (string) ( $data['email'] ?? '' ) ) );
+		$was   = isset( $shown['email'] ) ? mb_strtolower( trim( (string) $shown['email'] ) ) : null;
+		if ( is_email( $given ) && $given !== $was && $given !== mb_strtolower( (string) law_event_meta( $post_id, '_law_speaker_email' ) ) ) {
+			$other = law_speaker_find_existing( $given, $name, $post_id, false );
+			if ( $other ) {
+				$joined  = $post_id;
+				$post_id = $other;
+			}
+		}
 	}
 	$is_new    = ! $post_id;
-	$overwrite = ! $is_new && ! empty( $options['overwrite_identity'] );
+	$overwrite = ! $is_new && ! $replaced && ! $joined && ! empty( $options['overwrite_identity'] );
 	$filled    = array(); // Fields this submission backfilled on a PRE-EXISTING record.
 	$changed   = array(); // Identity fields this submission REPLACED (overwrite mode).
 
@@ -365,6 +615,14 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 			if ( $value === $stored ) {
 				continue;
 			}
+			// Posted back exactly as the form showed it: the host did not change
+			// it, so a value somebody else has since stored stands.
+			if ( isset( $shown[ $field ] ) ) {
+				$was = trim( (string) $shown[ $field ] );
+				if ( ( 'email' === $field ? mb_strtolower( $was ) : $was ) === $value ) {
+					continue;
+				}
+			}
 			// A blank email means "not given", never "delete the one on file"
 			// (15 September 2026). law_event_update_meta() turns '' into a
 			// delete_post_meta(), so without this the record loses its dedupe
@@ -382,14 +640,15 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 			if ( 'email' === $field && '' === $value ) {
 				continue;
 			}
-			// The email is the dedupe key, so it must never be moved onto an
-			// address another record already owns: that would quietly merge two
-			// people. Same guard the Manage Speakers screen applies, except that
-			// here the rest of the row still saves — the host gets their name
-			// change, and the clashing email is simply left alone. $value is
-			// non-empty by the check above.
+			// The email must never be moved onto an address another record of
+			// the SAME person already owns: that would leave two records that
+			// match the same row. Same guard the Manage Speakers screen applies,
+			// except that here the rest of the row still saves — the host gets
+			// their correction, and the clashing email is simply left alone. An
+			// address held by a differently named record is a shared inbox and is
+			// fine (19 November 2026). $value is non-empty by the check above.
 			if ( 'email' === $field ) {
-				$clash = law_speaker_find_existing( $value, '' );
+				$clash = law_speaker_find_existing( $value, $name );
 				if ( $clash && (int) $clash !== (int) $post_id ) {
 					continue;
 				}
@@ -407,7 +666,7 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 		}
 	}
 
-	if ( $overwrite ) {
+	if ( $overwrite && ! $name_untouched ) {
 		// The row belongs to an event the saver is editing, so the name is
 		// written outright rather than gap-filled: the host typed it into a
 		// required field, and silently discarding it is worse than a logged
@@ -422,7 +681,7 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 		foreach ( array( 'first' => '_law_speaker_first_name', 'last' => '_law_speaker_last_name' ) as $part => $key ) {
 			law_event_update_meta( $post_id, $key, $parts[ $part ] );
 		}
-	} else {
+	} elseif ( ! $overwrite ) {
 		// The name parts, gap-filled like everything else here: a record created
 		// before the split (or by an import that only had one name field) gets
 		// them on the next submission, and a submission never renames somebody
@@ -440,6 +699,32 @@ function law_speaker_upsert( array $data, array $log = array(), array $options =
 		if ( ! $is_new ) {
 			$filled[] = 'photo';
 		}
+	}
+
+	if ( $joined && ! empty( $log['event_id'] ) && function_exists( 'law_event_log' ) ) {
+		law_event_log(
+			(int) $log['event_id'],
+			sprintf( 'Speaker "%s" moved to their existing profile (#%d), which holds the address given (%s).', $name, (int) $post_id, mb_strtolower( trim( (string) ( $data['email'] ?? '' ) ) ) ),
+			array( 'action' => 'speaker_linked', 'speaker' => (int) $post_id, 'left' => $joined, 'source' => 'submission' ),
+			array( 'user_id' => (int) ( $log['actor'] ?? 0 ) )
+		);
+	}
+
+	// A replacement leaves the old record exactly as it was, so the log says
+	// what happened on THIS event: which person went and which came.
+	if ( $replaced && ! empty( $log['event_id'] ) && function_exists( 'law_event_log' ) ) {
+		law_event_log(
+			(int) $log['event_id'],
+			sprintf(
+				'Speaker "%s" replaced by "%s" on this event. Their profile is unchanged; "%s" has %s.',
+				law_speaker_raw_name( $replaced ),
+				$name,
+				$name,
+				$is_new ? 'a new profile' : 'their own existing profile'
+			),
+			array( 'action' => 'speaker_replaced', 'speaker' => (int) $post_id, 'replaced' => $replaced, 'source' => 'submission' ),
+			array( 'user_id' => (int) ( $log['actor'] ?? 0 ) )
+		);
 	}
 
 	// A rename or a contact-detail change on a shared, publicly-displayed
@@ -1375,8 +1660,9 @@ function law_speaker_reattach( $speaker_id, array $removed ) {
 
 /**
  * Whether a set of speaker rows already names this person: the same record, or
- * a different record with the same email or the same name (the two keys
- * law_speaker_find_existing() matches on).
+ * a different record with the same email and a same-person name, or the same
+ * name (the keys law_speaker_find_existing() matches on). A shared address
+ * under a different name is a different person (19 November 2026).
  *
  * @param array $rows       _law_speakers rows.
  * @param int   $speaker_id Speaker post ID.
@@ -1384,14 +1670,17 @@ function law_speaker_reattach( $speaker_id, array $removed ) {
 function law_speaker_rows_name_person( array $rows, $speaker_id ) {
 	$speaker_id = (int) $speaker_id;
 	$email      = mb_strtolower( trim( (string) law_event_meta( $speaker_id, '_law_speaker_email' ) ) );
-	$name       = law_speaker_normalise_name( law_speaker_raw_name( $speaker_id ) );
+	$raw_name   = law_speaker_raw_name( $speaker_id );
+	$name       = law_speaker_normalise_name( $raw_name );
 
 	foreach ( $rows as $row ) {
 		$other = (int) ( $row['speaker_id'] ?? 0 );
 		if ( $other === $speaker_id ) {
 			return true;
 		}
-		if ( '' !== $email && mb_strtolower( trim( (string) law_event_meta( $other, '_law_speaker_email' ) ) ) === $email ) {
+		if ( '' !== $email
+			&& mb_strtolower( trim( (string) law_event_meta( $other, '_law_speaker_email' ) ) ) === $email
+			&& law_speaker_same_person( law_speaker_raw_name( $other ), $raw_name ) ) {
 			return true;
 		}
 		if ( '' !== $name && law_speaker_normalise_name( law_speaker_raw_name( $other ) ) === $name ) {
