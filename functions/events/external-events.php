@@ -293,6 +293,13 @@ function law_external_event_save( array $input, $actor, array $files = array() )
 	}
 
 	$valid = law_external_event_validate( $input, $publish, $files );
+	// One person, one row, as on the host form (19 November 2026). Here rather
+	// than in law_external_event_validate(), which does not know the event.
+	$duplicate = law_events_form_duplicate_speaker_error( (array) ( $input['speakers'] ?? array() ), $event_id );
+	if ( $duplicate ) {
+		$valid = is_wp_error( $valid ) ? $valid : new WP_Error();
+		$valid->add( 'speakers', $duplicate );
+	}
 	if ( is_wp_error( $valid ) ) {
 		return $valid;
 	}
