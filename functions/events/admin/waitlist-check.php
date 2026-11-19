@@ -180,6 +180,8 @@ function law_waitlist_check_event_lines( $event_id, array $seated ) {
 	);
 	if ( is_wp_error( $preview['open'] ) ) {
 		$lines[] = '  Nobody can be seated: ' . $preview['open']->get_error_message();
+	} elseif ( ! empty( $preview['frozen'] ) ) {
+		$lines[] = '  Nobody is seated automatically: the attendee list is frozen. The host promotes by hand.';
 	}
 
 	foreach ( $seated as $booking_id ) {

@@ -46,6 +46,13 @@
  * three columns read those live from each attendee's profile and somebody
  * booked in by phone has nobody else to fill them in.
  *
+ * "Freeze the attendee list" sits beside it (client, 19 November 2026): once
+ * badges are printed, a place given up stays empty and the waitlist stops
+ * promoting by itself, while Promote now and Register an attendee carry on.
+ * The engine is law_event_set_attendee_list_frozen() (waitlist.php); this
+ * list reads law_event_places_left(), the places actually free, wherever the
+ * host is the one acting.
+ *
  * Args: event_id.
  */
 
@@ -105,8 +112,20 @@ $law_bl_export_base = wp_nonce_url( admin_url( 'admin-post.php?action=law_bookin
 // allow_priced: registering somebody onto a PAID reception from this list is
 // the committee giving a complimentary place, which it may do
 // (law_booking_register_by_manager(), RECEPTIONS.md §2.1).
+//
+// The places actually LEFT, not the places on offer: a frozen attendee list
+// offers the public none, but the host filling a freed place themselves is
+// exactly what freezing leaves them able to do.
+$law_bl_places_left  = law_event_places_left( $law_bl_event_id );
 $law_bl_can_register = true === law_booking_guard_form_open( $law_bl_event_id, array( 'allow_priced' => true ) )
-	&& 0 !== law_event_tickets_remaining( $law_bl_event_id );
+	&& 0 !== $law_bl_places_left;
+// Freeze the attendee list (client, 19 November 2026): offered while the event
+// can still take a booking or a promotion at all. Outside that window nothing
+// moves anyway, so the switch would lead nowhere. Invitation-only receptions
+// take neither, so they are left out too.
+$law_bl_frozen     = law_event_attendee_list_frozen( $law_bl_event_id );
+$law_bl_can_freeze = true === law_booking_guard_open( $law_bl_event_id )
+	&& ! ( function_exists( 'law_event_is_invitation_only' ) && law_event_is_invitation_only( $law_bl_event_id ) );
 $law_bl_is_committee = law_user_is_committee();
 $law_bl_form_state   = law_booking_form_state();
 $law_bl_typed        = (array) ( $law_bl_form_state['rows'][0] ?? array() );
@@ -382,7 +401,9 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					<?php if ( $law_bl_has_actions ) : ?>
 						<td class="law-dashboard__row-actions">
 							<?php if ( $law_bl_waiting ) :
-								$law_bl_remaining  = law_event_tickets_remaining( $law_bl_event_id );
+								// The places actually left: on a frozen list with places
+								// free, promoting does not over-book.
+								$law_bl_remaining  = law_event_places_left( $law_bl_event_id );
 								$law_bl_full       = 0 === $law_bl_remaining;
 								$law_bl_over_by    = $law_bl_available > 0 ? max( 0, $law_bl_total + 1 - $law_bl_available ) : 0;
 								$law_bl_promote_id = 'law-modal-promote-' . $law_bl_booking->ID;
@@ -511,31 +532,87 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 					) )
 				);
 			}
+			// Said where the counts are, because a frozen list is why "2 places
+			// left" is not being filled. Only while the switch is offered:
+			// after the event starts nothing moves either way.
+			if ( $law_bl_frozen && $law_bl_can_freeze ) {
+				printf( ' <strong>%s</strong>', esc_html__( 'Attendee list frozen.', 'law' ) );
+			}
 			?>
 		</p>
 
+		<?php if ( $law_bl_can_register || $law_bl_can_freeze ) : ?>
+			<div class="law-booking-register__actions">
+				<?php if ( $law_bl_can_register ) : ?>
+					<?php
+					// Above the table, as a dialog rather than a form sitting open at
+					// the foot of the page (Denis, 11 September 2026). The opener
+					// ships hidden and law-modal.js reveals it once the dialog it
+					// names is on the page; without JavaScript the <noscript>
+					// disclosure below carries the same form.
+					?>
+					<button type="button" class="button orange law-booking-register__opener"
+						data-law-modal-open="<?php echo esc_attr( $law_bl_register_modal ); ?>"
+						data-law-modal-enhanced hidden>
+						<?php esc_html_e( 'Register an attendee', 'law' ); ?>
+					</button>
+				<?php endif; ?>
+				<?php if ( $law_bl_can_freeze ) :
+					// Freeze the attendee list (client, 19 November 2026). A plain
+					// submit without JavaScript, a confirm dialog with it, the way
+					// Promote now works. The unfreeze copy says what will happen to
+					// the places that are free right now, because unfreezing acts
+					// on them at once (law_event_set_attendee_list_frozen()).
+					$law_bl_freeze_modal = 'law-modal-attendee-list-freeze';
+					if ( ! $law_bl_frozen ) {
+						$law_bl_freeze_copy = __( 'Places freed by cancellations stay empty and nobody is promoted from the waitlist automatically.', 'law' );
+					} elseif ( $law_bl_places_left > 0 && $law_bl_waitlist ) {
+						$law_bl_freeze_copy = __( 'The free places are offered to the waitlist now, and anyone promoted is emailed their confirmation.', 'law' );
+					} elseif ( $law_bl_places_left > 0 ) {
+						$law_bl_freeze_copy = __( 'The free places can be booked again.', 'law' );
+					} else {
+						$law_bl_freeze_copy = __( 'Places freed by cancellations are offered to the waitlist automatically again.', 'law' );
+					}
+					?>
+					<form class="law-booking-form law-booking-manage__action" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+						<input type="hidden" name="action" value="law_attendee_list_freeze">
+						<input type="hidden" name="event_id" value="<?php echo esc_attr( (string) $law_bl_event_id ); ?>">
+						<input type="hidden" name="freeze" value="<?php echo $law_bl_frozen ? '0' : '1'; ?>">
+						<?php wp_nonce_field( 'law_attendee_list_freeze' ); ?>
+						<?php law_events_honeypot_field(); ?>
+						<button type="submit" class="button second" data-law-modal-open="<?php echo esc_attr( $law_bl_freeze_modal ); ?>">
+							<?php echo esc_html( $law_bl_frozen ? __( 'Unfreeze the attendee list', 'law' ) : __( 'Freeze the attendee list', 'law' ) ); ?>
+						</button>
+						<?php
+						get_template_part(
+							'parts/layout/modal',
+							null,
+							array(
+								'id'      => $law_bl_freeze_modal,
+								'title'   => $law_bl_frozen ? __( 'Unfreeze the attendee list', 'law' ) : __( 'Freeze the attendee list', 'law' ),
+								'copy'    => $law_bl_freeze_copy,
+								'confirm' => array(
+									'label' => $law_bl_frozen ? __( 'Unfreeze the list', 'law' ) : __( 'Freeze the list', 'law' ),
+									'class' => 'button orange',
+									'busy'  => $law_bl_frozen ? __( 'Unfreezing…', 'law' ) : __( 'Freezing…', 'law' ),
+								),
+								'close'   => $law_bl_frozen ? __( 'Keep it frozen', 'law' ) : __( 'Leave it open', 'law' ),
+							)
+						);
+						?>
+					</form>
+				<?php endif; ?>
+			</div>
+		<?php endif; ?>
+
 		<?php if ( $law_bl_can_register ) : ?>
 			<?php
-			// Above the table, as a dialog rather than a form sitting open at the
-			// foot of the page (Denis, 11 September 2026), the way "Add an
-			// attendee without payment" works on the flagship bookings dashboard.
-			// The page's subject is the attendee list; registering somebody on
-			// their behalf is an occasional, deliberate act, and the opener
-			// belongs with the other things you can do TO the list.
-			//
-			// The opener ships hidden and law-modal.js reveals it once the dialog
-			// it names is on the page, so a browser without JavaScript is never
-			// shown a button that cannot open anything: it gets the <noscript>
-			// disclosure below instead, which holds exactly the same form.
+			// The Register an attendee dialog its opener above names. The page's
+			// subject is the attendee list; registering somebody on their behalf
+			// is an occasional, deliberate act, and the opener belongs with the
+			// other things you can do TO the list, the way "Add an attendee
+			// without payment" works on the flagship bookings dashboard.
 			?>
-			<p class="law-booking-register__actions">
-				<button type="button" class="button orange law-booking-register__opener"
-					data-law-modal-open="<?php echo esc_attr( $law_bl_register_modal ); ?>"
-					data-law-modal-enhanced hidden>
-					<?php esc_html_e( 'Register an attendee', 'law' ); ?>
-				</button>
-			</p>
-
 			<div class="law-modal" id="<?php echo esc_attr( $law_bl_register_modal ); ?>" hidden>
 				<div class="law-modal__overlay" data-law-modal-close></div>
 				<div class="law-modal__dialog law-modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="law-booking-register-title" tabindex="-1">
@@ -592,7 +669,15 @@ $law_bl_render_table = function ( array $law_bl_set, $law_bl_actionable, $law_bl
 
 		<?php if ( $law_bl_waitlist ) : ?>
 			<h3 class="law-booking-manage__subtitle" id="law-waitlist"><?php echo esc_html( sprintf( __( 'Waitlist (%s)', 'law' ), number_format_i18n( count( $law_bl_waitlist ) ) ) ); ?></h3>
-			<p class="law-booking-substate"><?php esc_html_e( 'Entries are promoted in this order, automatically, as places open up. Move an entry to change the order, or promote it now to register it regardless of places.', 'law' ); ?></p>
+			<p class="law-booking-substate">
+				<?php
+				echo esc_html(
+					$law_bl_frozen
+						? __( 'The attendee list is frozen, so nobody is promoted automatically. Move an entry to change the order, or promote it now to register it regardless of places.', 'law' )
+						: __( 'Entries are promoted in this order, automatically, as places open up. Move an entry to change the order, or promote it now to register it regardless of places.', 'law' )
+				);
+				?>
+			</p>
 			<?php if ( count( $law_bl_waitlist ) >= $law_bl_wait_cap ) : ?>
 				<p class="law-bookings-dashboard__truncated" role="status"><?php echo esc_html( sprintf( __( 'Showing the first %s entries. The rest are still queued and are promoted in turn.', 'law' ), number_format_i18n( $law_bl_wait_cap ) ) ); ?></p>
 			<?php endif; ?>

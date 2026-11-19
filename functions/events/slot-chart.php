@@ -262,7 +262,7 @@ function law_slotchart_item( $post ) {
 		'available'    => (int) law_event_meta( $id, '_law_tickets_available' ),
 		// Null means capacity was never set at approval, i.e. not open for
 		// booking -- the reading law_booking_guard_open() takes, not "none left".
-		'left'         => $bookable && function_exists( 'law_event_tickets_remaining' ) ? law_event_tickets_remaining( $id ) : null,
+		'left'         => $bookable && function_exists( 'law_event_places_left' ) ? law_event_places_left( $id ) : null,
 		'waiting'      => function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $id ) : 0,
 	);
 }

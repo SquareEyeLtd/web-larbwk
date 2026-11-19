@@ -759,4 +759,129 @@ class WaitlistTest extends LAW_Test_Case {
 		$this->assertSame( 0, $result['remaining'] );
 		$this->assertCount( $before, law_event_log_entries( $event ), 'A batch that did nothing logs nothing.' );
 	}
+
+	/* Freezing the attendee list (client, 19 November 2026) ________________ */
+
+	public function test_a_frozen_list_promotes_nobody_whatever_frees_a_place(): void {
+		$event  = $this->make_bookable_event();
+		$booked = $this->fill( $event );
+		$host   = (int) get_post_field( 'post_author', $event );
+		$entry  = $this->make_waitlist( $event, $this->make_user() )[0];
+
+		$result = law_event_set_attendee_list_frozen( $event, true, $host );
+		$this->assertTrue( $result['changed'] );
+		$this->assertTrue( law_event_attendee_list_frozen( $event ) );
+		$this->assertStringContainsString( 'Attendee list frozen at 2 of 2 places taken, 1 on the waitlist.', $this->log_text( $event ) );
+
+		// A cancellation: the place stays empty (120 becomes 119).
+		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
+		$this->assertSame( 'law-waitlisted', get_post_status( $entry ) );
+		$this->assertSame( 1, law_event_places_left( $event ), 'The place is really free.' );
+		$this->assertSame( 0, law_event_tickets_remaining( $event ), 'But it is not on offer.' );
+
+		// Raising the places, the hourly sweep and the check page's preview.
+		law_event_update_meta( $event, '_law_tickets_available', 3 );
+		law_event_tickets_changed( $event, 2, 3, $host, 'test' );
+		$this->assertFalse( law_waitlist_has_promotable( $event ) );
+		$this->assertSame( array(), law_waitlist_sweep( 'test', array( $event ) ) );
+		$this->assertSame( 'law-waitlisted', get_post_status( $entry ) );
+
+		$preview = law_waitlist_preview( $event );
+		$this->assertTrue( $preview['frozen'] );
+		$this->assertSame( 2, $preview['remaining'], 'The preview counts the places actually free.' );
+		$this->assertNotContains( 'seat', wp_list_pluck( $preview['rows'], 'state' ) );
+	}
+
+	public function test_a_frozen_list_is_full_to_the_public_but_the_waitlist_stays_open(): void {
+		$event  = $this->make_bookable_event( array( '_law_tickets_available' => 3 ) );
+		$booker = $this->make_user();
+		$this->assertIsArray( $this->make_booking( $event, $booker ) );
+		law_event_set_attendee_list_frozen( $event, true, (int) get_post_field( 'post_author', $event ) );
+		$this->assertSame( 2, law_event_places_left( $event ) );
+
+		// Booking a free place, or bringing a colleague into one, is refused.
+		$this->assertWPError( $this->make_booking( $event, $this->make_user() ), 'law_booking_full' );
+		$this->assertWPError(
+			$this->make_colleague_booking( $event, $booker, $this->row( 'Late Colleague', $this->unique_email( 'late' ) ) ),
+			'law_booking_full'
+		);
+
+		// Every booking surface reads the event as full, with the waitlist on offer.
+		$state = law_booking_state( $event, array( 'user_id' => 0 ) );
+		$this->assertSame( 'full', $state['state'] );
+		$this->assertSame( 'waitlist', $state['mode'] );
+
+		// And joining the waitlist works although places are free.
+		$ids = $this->make_waitlist( $event, $this->make_user() );
+		$this->assertIsArray( $ids );
+		$this->assertSame( 'law-waitlisted', get_post_status( $ids[0] ) );
+	}
+
+	public function test_the_host_still_promotes_and_registers_on_a_frozen_list(): void {
+		$event  = $this->make_bookable_event();
+		$booked = $this->fill( $event );
+		$host   = (int) get_post_field( 'post_author', $event );
+		$entry  = $this->make_waitlist( $event, $this->make_user() )[0];
+		law_event_set_attendee_list_frozen( $event, true, $host );
+
+		// Two places come free; neither is filled by itself.
+		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
+		law_booking_cancel( $booked[1]['booking'], $booked[1]['user'], 'self' );
+		$this->assertSame( 2, law_event_places_left( $event ) );
+
+		// Promote now takes a free place, so it does not over-book.
+		$result = law_waitlist_promote( $entry, $host );
+		$this->assertIsArray( $result );
+		$this->assertSame( 0, $result['overbooked_by'] );
+		$this->assertSame( 'publish', get_post_status( $entry ) );
+
+		// Register an attendee fills the other one.
+		$booking = law_booking_register_by_manager( $event, $this->row( 'Phoned In', $this->unique_email( 'phoned' ) ), $host );
+		$this->assertIsInt( $booking );
+		$this->posts[] = $booking;
+		$created = get_user_by( 'id', (int) get_post_field( 'post_author', $booking ) );
+		if ( $created ) {
+			$this->users[] = (int) $created->ID;
+		}
+		$this->assertSame( 0, law_event_places_left( $event ) );
+		$this->assertTrue( law_event_attendee_list_frozen( $event ), 'Filling the list by hand does not unfreeze it.' );
+	}
+
+	public function test_unfreezing_offers_the_free_places_at_once(): void {
+		$event  = $this->make_bookable_event();
+		$booked = $this->fill( $event );
+		$host   = (int) get_post_field( 'post_author', $event );
+		$first  = $this->make_waitlist( $event, $this->make_user() )[0];
+		$second = $this->make_waitlist( $event, $this->make_user() )[0];
+		law_event_set_attendee_list_frozen( $event, true, $host );
+		law_booking_cancel( $booked[0]['booking'], $booked[0]['user'], 'self' );
+		$this->assertSame( 'law-waitlisted', get_post_status( $first ) );
+		$this->mail = array();
+
+		$result = law_event_set_attendee_list_frozen( $event, false, $host );
+
+		$this->assertTrue( $result['changed'] );
+		$this->assertSame( array( (int) $first ), $result['promoted'], 'The head of the queue takes the free place straight away.' );
+		$this->assertSame( 'publish', get_post_status( $first ) );
+		$this->assertSame( 'law-waitlisted', get_post_status( $second ) );
+		$this->assertFalse( law_event_attendee_list_frozen( $event ) );
+		$this->assertStringContainsString( 'Attendee list unfrozen at 1 of 2 places taken, 2 on the waitlist.', $this->log_text( $event ) );
+
+		// The promoted attendee is told; freezing and unfreezing themselves email nobody else.
+		$promoted = get_userdata( (int) get_post_field( 'post_author', $first ) );
+		$this->assertNotEmpty( $this->mail_to( $promoted->user_email ) );
+		$second_user = get_userdata( (int) get_post_field( 'post_author', $second ) );
+		$this->assertEmpty( $this->mail_to( $second_user->user_email ) );
+	}
+
+	public function test_freezing_an_already_frozen_list_changes_nothing(): void {
+		$event = $this->make_bookable_event();
+		$host  = (int) get_post_field( 'post_author', $event );
+		law_event_set_attendee_list_frozen( $event, true, $host );
+		$before = count( law_event_log_entries( $event ) );
+
+		$this->assertFalse( law_event_set_attendee_list_frozen( $event, true, $host )['changed'] );
+		$this->assertFalse( law_event_set_attendee_list_frozen( $this->make_bookable_event(), false, $host )['changed'], 'Unfreezing a list that was never frozen is a no-op too.' );
+		$this->assertCount( $before, law_event_log_entries( $event ), 'A second tab or a double click logs nothing.' );
+	}
 }

@@ -1368,6 +1368,15 @@ block the queue. Joining is refused while places are free.
   moves the date and raises the places cannot email an invitation carrying the
   old date. Raising the places offers them to the queue; lowering them only
   logs.
+- **Freezing the attendee list** (client, 19 November 2026; see the change
+  history entry of that date). `_law_attendee_list_frozen`, read by
+  `law_event_attendee_list_frozen()` (bookings.php) and written only by
+  `law_event_set_attendee_list_frozen( $event_id, $frozen, $actor, $source )`,
+  which logs `attendee_list_frozen` / `attendee_list_unfrozen` with the counts
+  and, on unfreezing, runs `law_waitlist_offer( $event_id, 'unfrozen' )` at
+  once. While frozen, `law_waitlist_process()` and
+  `law_waitlist_has_promotable()` refuse (before and again under the lock), and
+  `law_waitlist_preview()` reports `frozen` with the places actually free.
 - Handlers: `law_waitlist_join` (signed in, on the shared `booking` rate
   surface), `law_waitlist_reorder` and `law_waitlist_promote` (both
   `law_user_can_manage_event()` on `post_parent`, on a new `waitlist_manage`
@@ -11582,6 +11591,92 @@ Touched: `functions/events/speakers.php`, `functions/events/submission-form.php`
 `functions/events/external-events.php`, `functions/events/flagship.php`,
 `parts/events/event-form-speakers.php`, `tests/SpeakerIdentityTest.php` (new),
 `tests/SpeakerNamesTest.php`, `tests/FormErrorModalTest.php`.
+
+## Hosts can freeze the attendee list (19 November 2026)
+
+**The request** (Emily, Basecamp, 19 November, "Is there any way to manually
+set a waitlist end point on a event"): some hosts have printed badges and do
+not want automatic promotion any more. Agreed in the thread: a switch the host
+turns on, called "Freeze the attendee list". A freed place stays empty ("if on
+120 and someone cancels should stay on 119 unless the host decides to manually
+promote"), the host can still promote by hand, and the public can still join
+the waitlist. Denis decided the rest: unfreezing offers the free places to the
+queue at once (left to the hourly sweep, the gap would read as places free and
+a member of the public could book ahead of the queue), receptions get the
+switch too, and nobody is emailed about a freeze either way.
+
+**One reading, two numbers.** `law_event_tickets_remaining()` now means the
+places ON OFFER and reads 0 on a frozen event; the old body is
+`law_event_places_left()`, the places actually free. Every public surface
+(the card and event-page states in `law_booking_resolve_state()`, the
+booking and checkout dialogs, Add a colleague, the reception checkout's and the
+public form's capacity guards) already read the first, so a frozen event is
+"full, join the waitlist" everywhere with no per-surface check, and a surface
+nobody remembered fails safe, as full. `law_booking_guard_seats()` lets a
+waitlist entry in for the same reason. The places-left reading is used
+wherever the host or committee is the one acting or counting:
+`law_booking_register_by_manager()` (the new `$manager` argument on
+`law_booking_guard_capacity()` / `law_booking_guard_seats()`, passed from
+`law_booking_create()`'s `on_behalf`), Promote now's over-booking warning on the
+bookings list, the bookings list's own Register an attendee opener, the
+dashboard list's places-left column, Manage receptions, the slot chart, the
+committee export, the capacity emails and the `{tickets_remaining}` placeholder
+(every email carrying it goes to a host or the committee).
+
+**Automatic promotion** stops in `law_waitlist_process()`, which every
+automatic route goes through (cancellations, raised places, reorders, the
+resume cron, the hourly sweep), and `law_waitlist_has_promotable()`, so
+`law_waitlist_offer()` and `/wp-admin/?check-waitlists` see it too; that page
+now says "the attendee list is frozen" rather than nothing. Promote now seats
+its own entry first, so it carries on. A reception delegate whose charge failed
+and who then saves a new card is put back at the front of the queue on a
+frozen event rather than charged (`law_reception_retry_charge()` reads the
+places on offer), which is the conservative reading: the host can Promote now.
+
+**The control.** "Freeze the attendee list" / "Unfreeze the attendee list" sits
+beside Register an attendee above the bookings list
+(`parts/events/booking-list.php`), offered while `law_booking_guard_open()`
+passes and the event is not invitation only: a `.law-booking-form` with a
+`parts/layout/modal` confirm, posted over fetch by booking-form.js, and a plain
+submit without JavaScript, the way Promote now works. Handler
+`law_attendee_list_freeze_handler()` (`admin_post_law_attendee_list_freeze`,
+`law_user_can_manage_event()`, the `waitlist_manage` rate surface); notices
+`attendee-list-frozen` / `attendee-list-unfrozen`. The counts line says
+"Attendee list frozen." and the waitlist's own line explains why nobody is
+promoted. The action row became a flex `div` because the freeze button sits in
+its own form.
+
+**Tests.** Five in `tests/WaitlistTest.php` (33 there now): nothing promotes on
+a frozen list whatever frees the place; the event is full to the public and to
+Add a colleague but open to the waitlist; Promote now and Register an attendee
+still work and do not over-book; unfreezing seats the head of the queue at once
+and emails only them; a repeated freeze logs nothing. `BookingsTest`,
+`ReceptionWaitlistTest`, `BookingCardActionTest`, `BookingsDashboardTest`,
+`SlotChartTest`, `MetaSchemaTest` and `ReceptionsTest` pass. The full suite
+ran 1,423 tests with 10 failures, all from the production database copied down
+on 19 November rather than from this change: six email tests compare against
+templates the client saved with Windows line endings
+(`law_events_email_overrides`, `law_events_email_signoff`), and the others are
+the local Friday reception not being invitation only, the
+`/account/events/submit/` page restriction, a flagship complimentary email and
+the flagship application emails.
+
+**End to end** (Playwright against the local site, temporary host, committee
+and attendee accounts, all removed afterwards; 42 checks passed): freeze through
+the dialog, a self-cancel leaving the place empty with no promotion email, the
+public event page reading fully booked, a signed-in visitor joining the
+waitlist while a place was free, Promote now without an over-booking warning,
+unfreezing seating the head of the queue at once and emailing them, the same
+two actions without JavaScript (plain submit and page notice), another host
+refused with a 403, the committee seeing the same switch, `?check-waitlists`
+naming the freeze, no console errors and no page overflow at 375px.
+
+Touched: `functions/events/bookings.php`, `functions/events/waitlist.php`,
+`functions/events/meta.php`, `functions/events/admin/waitlist-check.php`,
+`functions/events/export.php`, `functions/events/slot-chart.php`,
+`functions/events/receptions-dashboard.php`, `functions/account-bookings.php`,
+`parts/events/booking-list.php`, `parts/events/dashboard-list.php`,
+`assets/css/event-form.css`, `tests/WaitlistTest.php`.
 
 ---
 
