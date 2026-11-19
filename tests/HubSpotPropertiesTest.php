@@ -269,9 +269,10 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 				'law26_access'         => 'law26',
 				'law26_access_other'   => 'law26',
 				'law26_badge_manual'   => 'law26',
+				'law26_ec_arrived'     => 'law26',
 			),
 			$created,
-			'All seven, every one in the year group; nothing un-prefixed recreated.'
+			'All eight, every one in the year group; nothing un-prefixed recreated.'
 		);
 		$this->assertSame( array(), array_filter( $actions, fn( $a ) => 'error' === $a['result'] ) );
 
@@ -423,6 +424,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 				'law26_access',
 				'law26_access_other',
 				'law26_badge_manual',
+				'law26_ec_arrived',
 				'law_events_registered_count',
 				'law_events_registered',
 				'law_event_sectors',
@@ -441,6 +443,8 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		$this->assertSame( array( 'Captions', 'Sign language', 'Animal / PCA', 'Wheelchair' ), array_column( $definitions['law26_access']['options'], 'value' ) );
 		$this->assertSame( 'booleancheckbox', $definitions['law26_badge_manual']['fieldType'] );
 		$this->assertSame( array( 'true', 'false' ), array_column( $definitions['law26_badge_manual']['options'], 'value' ) );
+		$this->assertSame( 'datetime', $definitions['law26_ec_arrived']['type'] );
+		$this->assertSame( 'date', $definitions['law26_ec_arrived']['fieldType'] );
 		$this->assertSame( 'number', $definitions['law_events_registered_count']['type'] );
 		$this->assertSame( 'datetime', $definitions['law_sync_updated']['type'] );
 		foreach ( $definitions as $name => $definition ) {

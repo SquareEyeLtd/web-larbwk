@@ -465,6 +465,7 @@ function law_hubspot_preview_columns() {
 		'access',
 		'access_other',
 		'badge_manual',
+		'ec_arrived',
 		'hosted_count',
 		'hosted_titles',
 		'event_sectors',
@@ -508,6 +509,7 @@ function law_hubspot_preview( ?array $emails = null ) {
 			$sources = $plan['state']['sources'];
 			$site    = (array) ( $plan['state']['site_properties'] ?? array() );
 			$manual  = law_hubspot_property_name( 'badge_manual' );
+			$arrived = law_hubspot_property_name( 'ec_arrived' );
 			$rows[]  = array(
 				'events_attending'    => implode( ';', (array) ( $site['events_attending'] ?? array() ) ),
 				'passtype'            => (string) ( $site['passtype'] ?? '' ),
@@ -517,6 +519,7 @@ function law_hubspot_preview( ?array $emails = null ) {
 				'access'              => (string) ( $site['access'] ?? '' ),
 				'access_other'        => (string) ( $site['access_other'] ?? '' ),
 				'badge_manual'        => '' !== $manual ? (string) ( $plan['current'][ $manual ] ?? '' ) : '',
+				'ec_arrived'          => '' !== $arrived ? (string) ( $plan['current'][ $arrived ] ?? '' ) : '',
 				'hosted_count'        => (string) ( $site['events_registered_count'] ?? '' ),
 				'hosted_titles'       => str_replace( "\n", ' | ', (string) ( $site['events_registered'] ?? '' ) ),
 				'event_sectors'       => (string) ( $site['event_sectors'] ?? '' ),

@@ -434,20 +434,19 @@ class HubSpotSyncTest extends LAW_Test_Case {
 
 	/* ---- the site-owned properties (phase 3) ------------------------------ */
 
-	/** A confirmed place at a published reception in 2026, with the committee's type. */
+	/** A confirmed place at a published (badged) reception in 2026, with the committee's type. */
 	private function book_reception( int $user_id, string $type = '', string $slug_option = '' ): int {
 		$event = $this->make_event( array( '_law_tickets_available' => 5, '_law_is_reception' => 1 ), 'publish' );
 		wp_set_object_terms( $event, '2026', 'law_year', false );
-		if ( '' !== $slug_option ) {
-			$slug = get_post_field( 'post_name', $event );
-			add_filter(
-				'law_hubspot_config',
-				function ( array $config ) use ( $slug, $slug_option ) {
-					$config['attending_options'][ $slug ] = $slug_option;
-					return $config;
-				}
-			);
-		}
+		$slug         = get_post_field( 'post_name', $event );
+		$slug_option  = '' !== $slug_option ? $slug_option : '2026 Test reception';
+		add_filter(
+			'law_hubspot_config',
+			function ( array $config ) use ( $slug, $slug_option ) {
+				$config['attending_options'][ $slug ] = $slug_option;
+				return $config;
+			}
+		);
 		law_hubspot_attending_options( true );
 		$booking = wp_insert_post( array( 'post_type' => LAW_BOOKING_CPT, 'post_status' => 'publish', 'post_title' => 'b', 'post_author' => $user_id, 'post_parent' => $event ) );
 		$this->posts[] = $booking;

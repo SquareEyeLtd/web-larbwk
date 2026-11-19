@@ -186,8 +186,9 @@ class BookingsDashboardTest extends LAW_Test_Case {
 			// The four money columns are always in the export, even on a free
 			// programme: a spreadsheet with four empty columns is cheaper to
 			// read than two exports whose columns depend on what happened to
-			// be booked that week (RECEPTIONS.md §8.3).
-			array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary', 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ),
+			// be booked that week (RECEPTIONS.md §8.3). Ticket type matches
+			// the Flagship export (Emily, 17 November 2026).
+			array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Ticket type', 'Status', 'Booked on', 'Accessibility', 'Dietary', 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ),
 			$data['columns']
 		);
 		$this->assertStringContainsString( get_the_title( $f['event_a'] ), $data['title'] );
@@ -199,7 +200,7 @@ class BookingsDashboardTest extends LAW_Test_Case {
 		$this->assertSame( 'Pat', $press[0][5] );
 		$this->assertSame( 'Press', $press[0][6] );
 		$this->assertSame( 'Yes', $press[0][11] );
-		$this->assertSame( 'Confirmed', $press[0][12] );
+		$this->assertSame( 'Confirmed', $press[0][13] );
 		$this->assertSame( '', $press[0][1], 'Registered on their own behalf, so no invited-by tag.' );
 
 		$owner = array_values( array_filter( $data['rows'], fn( $r ) => get_userdata( $f['owner_a'] )->user_email === $r[7] ) );

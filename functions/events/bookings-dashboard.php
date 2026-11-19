@@ -290,6 +290,7 @@ function law_bookings_dashboard_rows( array $filters, $limit = LAW_BOOKINGS_DASH
 			'job_title'     => $person['job_title'],
 			'country'       => (string) ( $profile['country'] ?? '' ),
 			'is_press'      => (bool) law_event_meta( $booking->ID, '_law_is_press' ),
+			'ticket_label'  => law_booking_ticket_type_label( (string) law_event_meta( $booking->ID, '_law_ticket_type' ) ),
 			'accessibility' => law_booking_profile_requirements( $profile, 'accessibility' ),
 			'dietary'       => law_booking_profile_requirements( $profile, 'dietary' ),
 			// The money, on any event that charges for a place. Blank
@@ -345,6 +346,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 			$row['job_title'],
 			$row['country'],
 			$row['is_press'] ? 'Yes' : '',
+			$row['ticket_label'],
 			// The label the rest of the site uses, not the internal key.
 			law_booking_status_label(
 				array(
@@ -396,7 +398,7 @@ function law_bookings_dashboard_export_rows( array $filters ) {
 
 	return array(
 		'title'   => 'Bookings: ' . implode( ', ', $scope ),
-		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Status', 'Booked on', 'Accessibility', 'Dietary', 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ),
+		'columns' => array( 'Booking ID', 'Invited by', 'Event', 'Event date', 'Reference', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Ticket type', 'Status', 'Booked on', 'Accessibility', 'Dietary', 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ),
 		'rows'    => $rows,
 	);
 }

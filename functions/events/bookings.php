@@ -5372,6 +5372,9 @@ function law_booking_export_rows( $event_id ) {
 			$person['job_title'],
 			(string) ( $profile['country'] ?? '' ),
 			law_event_meta( $booking->ID, '_law_is_press' ) ? 'Yes' : '',
+			// Same column as the Flagship bookings export (Emily, 17 November
+			// 2026: the opening reception Excel was missing it).
+			law_booking_ticket_type_label( (string) law_event_meta( $booking->ID, '_law_ticket_type' ) ),
 			law_booking_profile_requirements( $profile, 'accessibility' ),
 			law_booking_profile_requirements( $profile, 'dietary' ),
 		);
@@ -5387,7 +5390,7 @@ function law_booking_export_rows( $event_id ) {
 		}
 	}
 
-	$columns = array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Accessibility', 'Dietary' );
+	$columns = array( 'Booking ID', 'Invited by', 'First name', 'Surname', 'Email', 'Organisation', 'Job title', 'Country', 'Press', 'Ticket type', 'Accessibility', 'Dietary' );
 	if ( $priced ) {
 		$columns = array_merge( $columns, array( 'Payment status', 'Amount paid', 'Discount code', 'Invoice URL' ) );
 	}

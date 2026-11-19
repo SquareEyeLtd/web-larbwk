@@ -201,6 +201,7 @@ function law_hubspot_config() {
 			'access'                  => $prefix . '_access',
 			'access_other'            => $prefix . '_access_other',
 			'badge_manual'            => $prefix . '_badge_manual',
+			'ec_arrived'              => $prefix . '_ec_arrived',
 			'events_registered_count' => 'law_events_registered_count',
 			'events_registered'       => 'law_events_registered',
 			'event_sectors'           => 'law_event_sectors',
@@ -208,12 +209,12 @@ function law_hubspot_config() {
 		),
 
 		// Properties the site creates in the portal but NEVER writes: LAW staff
-		// own the value. `badge_manual` is "a human has set this contact's badge
-		// by hand" (Emily, November 2026): while it is Yes the sync leaves the
-		// pass type and the dietary icon alone, so a correction made in HubSpot
-		// is not undone by the next booking. (Reading of the brief; see
-		// HUBSPOT_SYNC.md §11.4.)
-		'owned_by_law'          => array( 'badge_manual' ),
+		// (or Event Connections) own the value. `badge_manual` is "a human has
+		// set this contact's badge by hand" (Emily, November 2026): while it is
+		// Yes the sync leaves the pass type and the dietary icon alone.
+		// `ec_arrived` is the date/time Event Connections first printed the
+		// badge (Kitty, 9 November; Emily asked for it 16 November 2026).
+		'owned_by_law'          => array( 'badge_manual', 'ec_arrived' ),
 
 		// The earlier Phase 3 design's properties (HUBSPOT_SYNC.md §5.2 before
 		// 12 November 2026), created in the portal on 4 October and now
@@ -224,11 +225,11 @@ function law_hubspot_config() {
 
 		// law_events_attending options, keyed by the reception seed slug
 		// (law_reception_seed_map()) or 'flagship'. Year-prefixed so 2027 adds
-		// options rather than overwriting 2026. These are the FIXED labels;
-		// law_hubspot_attending_options() adds every other reception the year
-		// has (16 November 2026: production had a fourth, Evensong at St
-		// Paul's, that a hard-coded list silently left out) as
-		// "{year} {event title}". A label here wins over the title.
+		// options rather than overwriting 2026. Fixed list only: Emily
+		// (16 November 2026) declined extending badging to Evensong — those
+		// guests are covered by the opening reception. A fourth LAW-run
+		// reception can still sync dietary/access; it simply earns no
+		// attending option and no Evening only badge on its own.
 		'attending_options'     => array(
 			'flagship'            => $year . ' Flagship',
 			'opening-drinks'      => $year . ' Monday reception',

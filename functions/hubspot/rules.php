@@ -358,48 +358,18 @@ function law_hubspot_event_year( $event_id ) {
 
 /**
  * Every law_events_attending option for this year, keyed by 'flagship' or the
- * reception's slug: the config's fixed labels plus "{year} {title}" for any
- * other reception the year has in a bookable status (approved or confirmed).
- * The config label wins where both exist, so the three seeded receptions keep
- * the names already in the portal whatever their titles become.
+ * reception seed slug: the config's fixed labels only (Flagship + the three
+ * seeded receptions). Emily (16 November 2026) declined extending the badging
+ * list to Evensong — those guests are covered by the opening reception.
  *
- * A hard-coded list left production's fourth reception (Evensong at St
- * Paul's, 16 November 2026) off the property and the badging segment while
- * its attendees' access needs were still sent: the two halves of the rule
- * disagreed about what a LAW-run event was. Deriving the options from the
- * receptions themselves keeps them in step, and check-properties --create
- * adds a new option to the portal as it adds any other.
- *
- * The reception lookup is cached for the request; the config is merged fresh
- * each call so a law_hubspot_config filter still applies. Pass true to drop
- * the cache (tests that create receptions mid-run).
+ * `$reset` is kept so call sites and tests that clear a request cache stay
+ * valid; there is nothing to cache beyond the config filter.
  *
  * @return array<string,string> 'flagship' | slug => option value.
  */
 function law_hubspot_attending_options( $reset = false ) {
-	static $derived = null;
-	static $for     = 0;
-
-	$year = law_hubspot_year();
-	if ( $reset || null === $derived || $for !== $year ) {
-		$derived = array();
-		$for     = $year;
-		if ( function_exists( 'law_reception_ids' ) ) {
-			foreach ( law_reception_ids( $year ) as $reception_id ) {
-				$post = get_post( $reception_id );
-				if ( ! $post || ! in_array( $post->post_status, array( 'publish', 'law-approved' ), true ) ) {
-					continue;
-				}
-				$title = trim( html_entity_decode( get_the_title( $post ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
-				if ( '' !== $title ) {
-					$derived[ $post->post_name ] = $year . ' ' . $title;
-				}
-			}
-		}
-	}
-
-	// Config first so its label wins; '+' keeps the left operand's keys.
-	return (array) law_hubspot_setting( 'attending_options', array() ) + $derived;
+	unset( $reset );
+	return (array) law_hubspot_setting( 'attending_options', array() );
 }
 
 /**
@@ -460,11 +430,19 @@ function law_hubspot_passtype_from_law_run( array $law_run ) {
 	$has_reception = false;
 
 	foreach ( $law_run as $booking ) {
-		$kind = law_booking_kind( $booking );
+		$event_id = (int) $booking->post_parent;
+		$kind     = law_booking_kind( $booking );
+		// Only Flagship and the three seeded receptions count for the badge
+		// colour (Emily, 16 November 2026: Evensong is not a badged event).
+		$badged = 'flagship' === $kind
+			|| ( 'reception' === $kind && '' !== law_hubspot_attending_option_for_event( $event_id ) );
 		if ( 'flagship' === $kind ) {
 			$has_flagship = true;
-		} elseif ( 'reception' === $kind ) {
+		} elseif ( $badged ) {
 			$has_reception = true;
+		}
+		if ( ! $badged ) {
+			continue;
 		}
 		$type = (string) law_event_meta( $booking->ID, '_law_ticket_type' );
 		if ( '' !== $type ) {

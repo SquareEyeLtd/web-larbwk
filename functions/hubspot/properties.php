@@ -45,9 +45,6 @@ function law_hubspot_property_definitions() {
 			'description' => 'Confirmed bookings on the conference and receptions, by year. Set by the LAW website; overwritten on every sync.',
 			'type'        => 'enumeration',
 			'fieldType'   => 'checkbox',
-			// Every reception the year has, not only the seeded three
-			// (law_hubspot_attending_options()); a new one becomes a
-			// missing option that check-properties --create adds.
 			'options'     => law_hubspot_options_from_values( array_values( law_hubspot_attending_options() ) ),
 		),
 		// The badging set (HUBSPOT_SYNC.md §5.2, 12 November 2026): one per
@@ -109,6 +106,13 @@ function law_hubspot_property_definitions() {
 				array( 'label' => 'Yes', 'value' => 'true', 'displayOrder' => 0, 'hidden' => false ),
 				array( 'label' => 'No', 'value' => 'false', 'displayOrder' => 1, 'hidden' => false ),
 			),
+		),
+		$names['ec_arrived']              => array(
+			'label'       => $year . ' badge first printed',
+			'group'       => 'year',
+			'description' => 'Date and time Event Connections first printed this person\'s ' . $year . ' badge. Written by Event Connections; the LAW website never writes this.',
+			'type'        => 'datetime',
+			'fieldType'   => 'date',
 		),
 		$names['events_registered_count'] => array(
 			'label'       => 'Hosted events booked (count, current year)',
