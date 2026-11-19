@@ -61,6 +61,20 @@ $law_value = function ( $key, $default = '' ) use ( $law_values ) {
 				if ( ! $law_is_template && ! empty( $law_row['speaker_id'] ) ) :
 					?>
 					<input type="hidden" name="speakers[<?php echo esc_attr( $law_i ); ?>][speaker_id]" value="<?php echo esc_attr( (string) (int) $law_row['speaker_id'] ); ?>">
+					<?php
+					// What the form showed for the person, posted back as it was, so the
+					// save writes only the fields the host actually changed and a form
+					// opened before somebody else corrected the record cannot undo it
+					// (19 November 2026). A re-render after a failed save carries the
+					// posted values, so the originals survive it.
+					foreach ( array( 'was_name', 'was_email', 'was_website' ) as $law_was_key ) :
+						if ( isset( $law_row[ $law_was_key ] ) ) :
+							?>
+							<input type="hidden" name="speakers[<?php echo esc_attr( $law_i ); ?>][<?php echo esc_attr( $law_was_key ); ?>]" value="<?php echo esc_attr( (string) $law_row[ $law_was_key ] ); ?>">
+							<?php
+						endif;
+					endforeach;
+					?>
 				<?php endif; ?>
 				<div class="law-row-grid">
 					<?php

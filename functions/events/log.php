@@ -58,7 +58,11 @@ function law_event_log( $event_id, $message, array $context = array(), array $ar
 	);
 
 	if ( $comment_id ) {
-		add_comment_meta( $comment_id, '_law_log_context', wp_json_encode( $context ) );
+		// wp_slash(): add_comment_meta() unslashes its value, which stripped the
+		// backslashes out of the JSON's escapes, so any context holding a quote
+		// or a non-ASCII character (every speaker change, with its "→") was
+		// stored as JSON that no longer parsed (found 19 November 2026).
+		add_comment_meta( $comment_id, '_law_log_context', wp_slash( wp_json_encode( $context ) ) );
 	}
 
 	return (int) $comment_id;

@@ -3056,7 +3056,9 @@ function law_content_transfer_write_event( $event_id, array $values, $external, 
 		law_event_update_meta(
 			$event_id,
 			'_law_speakers',
-			law_flagship_resolve_speaker_rows( $values['speakers'], (int) $event_id, (int) $actor )
+			// By name too: the transfer copies the same people between sites, many
+			// with no email (see law_flagship_resolve_speaker_rows()).
+			law_flagship_resolve_speaker_rows( $values['speakers'], (int) $event_id, (int) $actor, true )
 		);
 	}
 	// A reconciler: law_flagship_save_sessions() deletes whatever the posted
@@ -3066,7 +3068,7 @@ function law_content_transfer_write_event( $event_id, array $values, $external, 
 	// with no stable key of their own — and the reason the sentinel above has
 	// to be honoured rather than inferred from an empty array.
 	if ( $values['sessions_present'] ) {
-		$kept = law_flagship_save_sessions( (int) $event_id, $values['sessions'], (int) $actor );
+		$kept = law_flagship_save_sessions( (int) $event_id, $values['sessions'], (int) $actor, true ); // By name too, as above.
 		law_content_transfer_restamp_sessions( $kept, $values['sessions'], $notes );
 	}
 

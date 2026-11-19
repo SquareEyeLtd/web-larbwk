@@ -567,11 +567,13 @@ function law_speakers_dashboard_save_handler() {
 	if ( '' === $raw_email ) {
 		$input['email'] = '';
 	}
-	// The email is the dedupe key, so it must not already belong to somebody
-	// else: silently merging two speaker records is not something a save button
-	// should be able to do.
+	// The email must not already belong to another record of the SAME person:
+	// two records that both match the same row is a merge job, not something a
+	// save button should quietly create. A differently named record holding the
+	// address is a shared inbox (a clerks' team address), which is allowed
+	// (Denis, 19 November 2026).
 	if ( '' !== $input['email'] ) {
-		$clash = law_speaker_find_existing( $input['email'], '' );
+		$clash = law_speaker_find_existing( $input['email'], $input['name'], $speaker_id );
 		if ( $clash && $clash !== $speaker_id ) {
 			$errors['email'] = sprintf( 'That email already belongs to another speaker record (%s).', get_the_title( $clash ) );
 		}
