@@ -658,4 +658,54 @@ class HubSpotSyncTest extends LAW_Test_Case {
 		$this->assertSame( 'error', law_hubspot_log_recent( 1, 'ghost@example.test' )[0]->result );
 		$this->assertSame( 'ok', law_hubspot_log_recent( 1, $c['unbooked'][0] )[0]->result );
 	}
+
+	/* ---- clear-stale-evening-only (Evensong / stuck Evening only) --------- */
+
+	/** Reception place that is not on the badging list (Evensong-shaped). */
+	private function book_unbadged_reception( int $user_id ): int {
+		$event = $this->make_event( array( '_law_tickets_available' => 5, '_law_is_reception' => 1 ), 'publish' );
+		wp_set_object_terms( $event, '2026', 'law_year', false );
+		$booking = wp_insert_post( array( 'post_type' => LAW_BOOKING_CPT, 'post_status' => 'publish', 'post_title' => 'b', 'post_author' => $user_id, 'post_parent' => $event ) );
+		$this->posts[] = $booking;
+		return (int) $booking;
+	}
+
+	public function test_clear_stale_evening_only_plan_keeps_real_evening_guests(): void {
+		list( $keep_user, $keep_email ) = $this->make_person();
+		$this->book_reception( $keep_user ); // seeded reception, blank type → Evening only
+		$keep_id = $this->seed_contact( $keep_email, array( 'law26_ec_passtype' => 'Evening only' ) );
+
+		list( $stale_user, $stale_email ) = $this->make_person();
+		$this->book_unbadged_reception( $stale_user );
+		$stale_id = $this->seed_contact( $stale_email, array( 'law26_ec_passtype' => 'Evening only' ) );
+
+		list( , $empty_email ) = $this->make_person();
+		$empty_id = $this->seed_contact( $empty_email, array( 'law26_ec_passtype' => 'Evening only' ) );
+
+		$ghost_id = $this->seed_contact( 'ghost-evening@example.test', array( 'law26_ec_passtype' => 'Evening only' ) );
+		$this->seed_contact( 'delegate@example.test', array( 'law26_ec_passtype' => 'Delegate' ) );
+
+		$plan = law_hubspot_clear_stale_evening_only_plan();
+
+		$this->assertNull( $plan['error'] );
+		$this->assertSame( array( $keep_id ), array_column( $plan['kept'], 'hubspot_id' ) );
+		$this->assertSame( array( $stale_id, $empty_id, $ghost_id ), array_column( $plan['rows'], 'hubspot_id' ) );
+		$this->assertSame( '', $plan['rows'][0]['after'] );
+		$this->assertSame( 'no badged LAW-run place', $plan['rows'][0]['reason'] );
+		$this->assertSame( array(), $this->writes, 'The plan reads only.' );
+	}
+
+	public function test_clear_stale_evening_only_apply_empties_passtype(): void {
+		list( , $email ) = $this->make_person();
+		$id = $this->seed_contact( $email, array( 'law26_ec_passtype' => 'Evening only' ) );
+		$plan = law_hubspot_clear_stale_evening_only_plan();
+
+		$totals = law_hubspot_remove_option_apply( law_hubspot_property_name( 'passtype' ), $plan['rows'] );
+
+		$this->assertSame( array( 'written' => 1, 'dry' => 0, 'failed' => 0, 'errors' => array() ), $totals );
+		$this->assertSame( '', $this->contacts[ $id ]['properties']['law26_ec_passtype'] );
+		$log = law_hubspot_log_recent( 1, $email )[0];
+		$this->assertSame( 'remove_option', $log->action );
+		$this->assertSame( 'ok', $log->result );
+	}
 }

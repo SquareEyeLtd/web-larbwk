@@ -315,6 +315,12 @@ other value. Dry run by default (lists the contacts, before and after, writes no
 `--unless-booked` leaves it on anyone whose account has a confirmed booking. Built for clearing
 "2026 Attendee" before the backfill (§8, §13).
 
+`wp law hubspot clear-stale-evening-only [--apply]` clears `law26_ec_passtype` where HubSpot
+still holds **Evening only** but the site no longer wants that badge (Evensong-only or no
+badged LAW-run place). Real Monday/Wednesday/Friday reception-only guests are kept. Dry run
+by default; the sync never blanks pass type itself, so this is the one-shot fix after the
+Evensong badging change (19 November 2026).
+
 ### 6.7 Logging
 
 Each push logs one line per person to `{prefix}law_hubspot_log` (email, action, properties
@@ -865,8 +871,9 @@ Approved 13 October 2026 (16 hours). What is left after the 12–19 November bui
 
 1. ~~Internal names / properties / backfill / Evening only / arrived / Evensong decline~~ done.
    Later: `--archive --live` for the three superseded properties (ask first).
-2. **Production after this deploy:** `check-properties --create` (`law26_ec_arrived`), then
-   `backfill` (clears Evensong from attending / Evening only where it was alone).
+2. **Production after this deploy:** `check-properties --create` (`law26_ec_arrived`) if needed;
+   `clear-stale-evening-only` then `--apply` (Evensong / no badged place stuck with Evening only —
+   backfill cannot blank pass type).
 3. **Hand Kitty the property pack** (table above) and book the Matt authorisation call.
 4. Plain-English `badge_manual` note for Emily (she asked for a re-explain).
 5. Privacy notice update if Peter wants one (§7.3).

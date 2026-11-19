@@ -722,6 +722,86 @@ function law_hubspot_remove_option_apply( $property, array $rows ) {
 	return $totals;
 }
 
+/**
+ * One-off clean-up: contacts whose HubSpot pass type is still "Evening only"
+ * after Emily declined Evensong as a badged event (16–19 November 2026). The
+ * sync never blanks pass type, so those stuck values would otherwise survive.
+ *
+ * Searches the portal for `Evening only`, then keeps the value only when the
+ * site's rules still want that badge (a real Monday/Wednesday/Friday
+ * reception-only guest). Everyone else is planned for a clear.
+ *
+ * @return array{rows:array[],kept:array[],error:WP_Error|null} Each row:
+ *         hubspot_id, email, before, after (''), in_wordpress, reason.
+ */
+function law_hubspot_clear_stale_evening_only_plan() {
+	$property = law_hubspot_property_name( 'passtype' );
+	$labels   = (array) law_hubspot_setting( 'passtype_values', array() );
+	$label    = (string) ( $labels['evening'] ?? 'Evening only' );
+	if ( '' === $property ) {
+		return array( 'rows' => array(), 'kept' => array(), 'error' => new WP_Error( 'law_hubspot_no_passtype', 'Pass type property is not configured.' ) );
+	}
+
+	$rows  = array();
+	$kept  = array();
+	$after = null;
+	$pages = 0;
+	do {
+		$body = array(
+			'filterGroups' => array(
+				array(
+					'filters' => array(
+						// IN (not EQ) matches the remove-option search shape the
+						// test portal mock already understands for selects.
+						array( 'propertyName' => $property, 'operator' => 'IN', 'values' => array( $label ) ),
+					),
+				),
+			),
+			'properties'   => array( 'email', $property ),
+			'sorts'        => array( array( 'propertyName' => 'hs_object_id', 'direction' => 'ASCENDING' ) ),
+			'limit'        => 100,
+		);
+		if ( null !== $after ) {
+			$body['after'] = (string) $after;
+		}
+		$result = law_hubspot_request( 'POST', '/crm/v3/objects/contacts/search', $body );
+		if ( is_wp_error( $result ) ) {
+			return array( 'rows' => $rows, 'kept' => $kept, 'error' => $result );
+		}
+
+		foreach ( (array) ( $result['results'] ?? array() ) as $contact ) {
+			$props  = (array) ( $contact['properties'] ?? array() );
+			$before = (string) ( $props[ $property ] ?? '' );
+			if ( $label !== $before ) {
+				continue;
+			}
+			$email = law_hubspot_normalise_email( (string) ( $props['email'] ?? '' ) );
+			$state = '' !== $email ? law_hubspot_desired_state( $email ) : null;
+			$want  = is_array( $state ) ? (string) ( $state['site_properties']['passtype'] ?? '' ) : '';
+			$row   = array(
+				'hubspot_id'   => (string) ( $contact['id'] ?? '' ),
+				'email'        => $email,
+				'before'       => $before,
+				'after'        => '',
+				'booked'       => false,
+				'in_wordpress' => is_array( $state ),
+				'reason'       => '' === $want ? 'no badged LAW-run place' : 'site wants ' . $want,
+			);
+			if ( $label === $want ) {
+				$row['reason'] = 'still Evening only on the site';
+				$kept[]        = $row;
+				continue;
+			}
+			$rows[] = $row;
+		}
+
+		$after = $result['paging']['next']['after'] ?? null;
+		$pages++;
+	} while ( null !== $after && '' !== (string) $after && $pages < 100 );
+
+	return array( 'rows' => $rows, 'kept' => $kept, 'error' => null );
+}
+
 /** One log line for one contact in a remove-option write, and the running totals. */
 function law_hubspot_remove_option_log( $property, array $row, $result, array &$totals ) {
 	$detail = array(

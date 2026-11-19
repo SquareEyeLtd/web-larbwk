@@ -11,6 +11,7 @@
  *   wp law hubspot person <email>
  *   wp law hubspot preview [--out=<file.csv>] [--email=<email>]
  *   wp law hubspot backfill [--limit=<n>] [--yes]
+ *   wp law hubspot clear-stale-evening-only [--apply] [--yes]
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -519,6 +520,96 @@ class LAW_HubSpot_CLI {
 				'%s "%s" from %d contact(s) %s. Continue?',
 				'live' === $mode ? 'Remove' : 'Dry-run removing',
 				$value,
+				count( $plan['rows'] ),
+				'live' === $mode ? 'in the live portal ' . LAW_HUBSPOT_PORTAL_ID : '(writes logged, not sent)'
+			),
+			$assoc_args
+		);
+
+		$totals = law_hubspot_remove_option_apply( $property, $plan['rows'] );
+		foreach ( $totals['errors'] as $line ) {
+			WP_CLI::warning( $line );
+		}
+		if ( $totals['dry'] ) {
+			WP_CLI::success( sprintf( 'Dry mode: %d write(s) logged, none sent. See `wp law hubspot log`.', $totals['dry'] ) );
+			return;
+		}
+		if ( $totals['failed'] ) {
+			WP_CLI::warning( sprintf( '%d failed; see `wp law hubspot log`.', $totals['failed'] ) );
+		}
+		WP_CLI::success( sprintf( '%d contact(s) updated; before and after are in the log.', $totals['written'] ) );
+	}
+
+	/**
+	 * Clear HubSpot "Evening only" where the site no longer wants that badge.
+	 *
+	 * After Evensong left the badging list, the sync could not blank pass type
+	 * (by design), so Evensong-only contacts kept Evening only. This finds
+	 * those contacts and clears them; real Monday/Wednesday/Friday
+	 * reception-only guests are kept.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--apply]
+	 * : Write the change. Without it, nothing is written.
+	 *
+	 * [--yes]
+	 * : Skip the confirmation (--apply only).
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp law hubspot clear-stale-evening-only
+	 *     wp law hubspot clear-stale-evening-only --apply
+	 *
+	 * @subcommand clear-stale-evening-only
+	 * @when after_wp_load
+	 */
+	public function clear_stale_evening_only( $args, $assoc_args ) {
+		if ( ! law_hubspot_enabled() ) {
+			WP_CLI::error( 'The HubSpot mode is off; set LAW_HUBSPOT_MODE to dry to read.' );
+		}
+		$apply    = ! empty( $assoc_args['apply'] );
+		$property = law_hubspot_property_name( 'passtype' );
+
+		WP_CLI::log( sprintf( 'Searching the portal for %s = "Evening only"…', $property ) );
+		$plan = law_hubspot_clear_stale_evening_only_plan();
+		if ( $plan['error'] ) {
+			WP_CLI::error( $plan['error']->get_error_message() );
+		}
+
+		$found = count( $plan['rows'] ) + count( $plan['kept'] );
+		WP_CLI::log( sprintf( '%d contact(s) hold Evening only.', $found ) );
+		if ( $plan['kept'] ) {
+			WP_CLI::log( sprintf( '%d kept: the site still wants Evening only for them.', count( $plan['kept'] ) ) );
+		}
+		if ( ! $plan['rows'] ) {
+			WP_CLI::success( 'Nothing to clear.' );
+			return;
+		}
+
+		$table = array();
+		foreach ( $plan['rows'] as $row ) {
+			$table[] = array(
+				'hubspot_id' => $row['hubspot_id'],
+				'email'      => $row['email'],
+				'reason'     => $row['reason'],
+				'before'     => $row['before'],
+				'after'      => '(empty)',
+			);
+		}
+		WP_CLI\Utils\format_items( 'table', $table, array( 'hubspot_id', 'email', 'reason', 'before', 'after' ) );
+		WP_CLI::log( sprintf( '%d contact(s) would lose Evening only.', count( $plan['rows'] ) ) );
+
+		if ( ! $apply ) {
+			WP_CLI::success( 'Dry run: nothing written. Add --apply to make the change.' );
+			return;
+		}
+
+		$mode = law_hubspot_mode();
+		WP_CLI::confirm(
+			sprintf(
+				'%s Evening only from %d contact(s) %s. Continue?',
+				'live' === $mode ? 'Clear' : 'Dry-run clearing',
 				count( $plan['rows'] ),
 				'live' === $mode ? 'in the live portal ' . LAW_HUBSPOT_PORTAL_ID : '(writes logged, not sent)'
 			),
