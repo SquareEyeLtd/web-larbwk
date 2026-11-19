@@ -101,7 +101,9 @@ function law_committee_export_row( WP_Post $post ) {
 		// leaving the two numbers to disagree with the bookings list
 		// (RECEPTIONS.md §1.3).
 		law_booking_pending_payment_count( $id ) ?: '',
-		null === law_event_tickets_remaining( $id ) ? '' : law_event_tickets_remaining( $id ),
+		// The places actually left: a frozen attendee list reads as full to
+		// the public, but the committee is counting what is really free.
+		null === law_event_places_left( $id ) ? '' : law_event_places_left( $id ),
 		(string) law_event_meta( $id, '_law_venue' ),
 	);
 }

@@ -38,7 +38,36 @@ function law_booking_max_additional() {
 /* Places _____________________________________________________________________ */
 
 /**
- * Places remaining on an event: available minus sold, clamped at 0.
+ * Places ON OFFER to the public: what every booking surface, card, dialog and
+ * public capacity guard reads.
+ *
+ * Normally the places left (law_event_places_left()). An event whose attendee
+ * list is frozen offers none, whatever is free: a place given up after the
+ * host has printed badges stays empty unless the host fills it themselves
+ * (client, 19 November 2026). Reading 0 rather than adding a check to each
+ * surface is deliberate, because it fails safe: a booking surface nobody
+ * remembered to update shows a frozen event as full, where a separate check
+ * forgotten on one surface would quietly sell the empty place.
+ *
+ * The host's and the committee's own screens, the capacity emails and the
+ * register-on-behalf path need the true number, and read
+ * law_event_places_left() instead.
+ *
+ * NULL means no places released, exactly as law_event_places_left() says;
+ * freezing never turns "not open" into "full".
+ *
+ * @return int|null
+ */
+function law_event_tickets_remaining( $event_id ) {
+	$left = law_event_places_left( $event_id );
+	if ( null !== $left && law_event_attendee_list_frozen( $event_id ) ) {
+		return 0;
+	}
+	return $left;
+}
+
+/**
+ * Places actually left on an event: available minus sold, clamped at 0.
  *
  * Returns NULL when _law_tickets_available is 0/unset, which means the event
  * is NOT OPEN for booking ("Bookings open soon") — the int sanitiser floors
@@ -46,13 +75,25 @@ function law_booking_max_additional() {
  *
  * @return int|null
  */
-function law_event_tickets_remaining( $event_id ) {
+function law_event_places_left( $event_id ) {
 	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
 	if ( $available < 1 ) {
 		return null;
 	}
 	$sold = (int) law_event_meta( $event_id, '_law_tickets_sold' );
 	return max( 0, $available - $sold );
+}
+
+/**
+ * Has the host frozen this event's attendee list?
+ *
+ * While frozen, nobody is promoted from the waitlist automatically and the
+ * public cannot book a freed place; people can still join the waitlist, and
+ * the host or committee can still promote or register somebody by hand
+ * (client, 19 November 2026). Set by law_event_set_attendee_list_frozen().
+ */
+function law_event_attendee_list_frozen( $event_id ) {
+	return '1' === (string) law_event_meta( (int) $event_id, '_law_attendee_list_frozen' );
 }
 
 /**
@@ -1469,10 +1510,15 @@ function law_booking_duplicate_error( $name, $is_self, $waiting, $row = null ) {
  * Enough places left for the seats requested. Run inside the event lock,
  * after a fresh recount.
  *
+ * @param bool $manager The host or committee registering somebody themselves
+ *                      (law_booking_register_by_manager()). They count the
+ *                      places actually left, because freezing the attendee
+ *                      list stops the PUBLIC taking a freed place, not the
+ *                      host deciding to fill it (client, 19 November 2026).
  * @return true|WP_Error
  */
-function law_booking_guard_capacity( $event_id, $seats ) {
-	$remaining = law_event_tickets_remaining( $event_id );
+function law_booking_guard_capacity( $event_id, $seats, $manager = false ) {
+	$remaining = $manager ? law_event_places_left( $event_id ) : law_event_tickets_remaining( $event_id );
 	if ( null === $remaining ) {
 		return new WP_Error( 'law_booking_not_open', 'Booking for this event has not opened yet.' );
 	}
@@ -1781,11 +1827,15 @@ function law_booking_holding_statuses() {
  * waitlist entries need the opposite (you only join a waitlist when the event
  * is full, otherwise you would just register).
  *
- * @param int    $seats  People in the submission.
- * @param string $status The status the bookings would be created with.
+ * A frozen attendee list reads as full here (law_event_tickets_remaining()),
+ * so the waitlist stays open to join while the freed places stay shut.
+ *
+ * @param int    $seats   People in the submission.
+ * @param string $status  The status the bookings would be created with.
+ * @param bool   $manager See law_booking_guard_capacity().
  * @return true|WP_Error
  */
-function law_booking_guard_seats( $event_id, $seats, $status = 'publish' ) {
+function law_booking_guard_seats( $event_id, $seats, $status = 'publish', $manager = false ) {
 	if ( 'law-waitlisted' === $status ) {
 		$remaining = law_event_tickets_remaining( $event_id );
 		if ( null === $remaining ) {
@@ -1799,7 +1849,7 @@ function law_booking_guard_seats( $event_id, $seats, $status = 'publish' ) {
 		}
 		return true;
 	}
-	return law_booking_guard_capacity( $event_id, $seats );
+	return law_booking_guard_capacity( $event_id, $seats, $manager );
 }
 
 /**
@@ -3563,7 +3613,7 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
 	if ( is_wp_error( $dup ) ) {
 		return law_booking_log_refusal( $event_id, 0, $dup, $actor_id );
 	}
-	$cap = law_booking_guard_seats( $event_id, count( $people ), $args['status'] );
+	$cap = law_booking_guard_seats( $event_id, count( $people ), $args['status'], ! empty( $args['on_behalf'] ) );
 	if ( is_wp_error( $cap ) ) {
 		return law_booking_log_refusal( $event_id, 0, $cap, $actor_id );
 	}
@@ -3646,7 +3696,7 @@ function law_booking_create( $event_id, $booker_id, array $additional_rows, arra
 		}
 	}
 
-	$cap = law_booking_guard_seats( $event_id, count( $people ), $args['status'] );
+	$cap = law_booking_guard_seats( $event_id, count( $people ), $args['status'], ! empty( $args['on_behalf'] ) );
 	if ( is_wp_error( $cap ) ) {
 		return $refuse( $cap );
 	}
@@ -3910,7 +3960,7 @@ function law_booking_register_by_manager( $event_id, array $raw_row, $actor_id, 
 	if ( is_wp_error( $dup ) ) {
 		return law_booking_log_refusal( $event_id, 0, $dup, $actor_id );
 	}
-	$cap = law_booking_guard_capacity( $event_id, 1 );
+	$cap = law_booking_guard_capacity( $event_id, 1, true );
 	if ( is_wp_error( $cap ) ) {
 		return law_booking_log_refusal( $event_id, 0, $cap, $actor_id );
 	}
@@ -4527,7 +4577,7 @@ function law_booking_email_placeholders( $booking_id, array $party_ids = array()
 	}
 
 	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
-	$remaining = law_event_tickets_remaining( $event_id );
+	$remaining = law_event_places_left( $event_id );
 
 	// Only say anything about colleagues when there ARE colleagues: most
 	// bookings are one person, and a paragraph about people who do not exist
@@ -4564,7 +4614,7 @@ function law_booking_email_placeholders( $booking_id, array $party_ids = array()
  * latch as well, so the host never gets two emails in the same second.
  */
 function law_booking_maybe_capacity_warning( $event_id ) {
-	$remaining = law_event_tickets_remaining( $event_id );
+	$remaining = law_event_places_left( $event_id );
 	if ( null === $remaining ) {
 		return;
 	}

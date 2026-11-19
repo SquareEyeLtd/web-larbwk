@@ -215,7 +215,7 @@ foreach ( (array) wp_count_posts( LAW_EVENT_CPT ) as $law_status_key => $law_sta
 					// booking" -- the same reading law_booking_guard_open() takes.
 					$law_row_sold      = function_exists( 'law_event_attendee_total' ) ? law_event_attendee_total( $law_row->ID ) : 0;
 					$law_row_available = (int) law_event_meta( $law_row->ID, '_law_tickets_available' );
-					$law_row_left      = function_exists( 'law_event_tickets_remaining' ) ? law_event_tickets_remaining( $law_row->ID ) : null;
+					$law_row_left      = function_exists( 'law_event_places_left' ) ? law_event_places_left( $law_row->ID ) : null;
 					$law_row_waiting   = function_exists( 'law_waitlist_count' ) ? law_waitlist_count( $law_row->ID ) : 0;
 					// An external event is booked on the organiser's own website, so it
 					// can never hold one here. Both the count and the Bookings button

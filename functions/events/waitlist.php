@@ -267,7 +267,12 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 	}
 	// A closed, started, unpublished or not-yet-open event promotes nobody,
 	// silently: this runs after every cancellation, and a no-op is not news.
-	if ( true !== law_booking_guard_open( $event_id ) || 0 === law_waitlist_count( $event_id ) ) {
+	// Nor does one whose host has frozen the attendee list (client,
+	// 19 November 2026): every automatic route comes through here, so this one
+	// check covers cancellations, raised places, reorders, the resume cron and
+	// the hourly sweep. Promote now seats its own entry before it calls this.
+	if ( true !== law_booking_guard_open( $event_id ) || law_event_attendee_list_frozen( $event_id )
+		|| 0 === law_waitlist_count( $event_id ) ) {
 		return array();
 	}
 
@@ -293,8 +298,9 @@ function law_waitlist_process( $event_id, $source = 'bookings' ) {
 		// than one per candidate inside the duplicate guard.
 		$taken = law_booking_taken_index( $event_id );
 		// Re-read the event under the lock: a committee cancel can complete
-		// while this pass waits for it, and its sweep has already passed.
-		if ( true !== law_booking_guard_open( $event_id ) ) {
+		// while this pass waits for it, and its sweep has already passed. A
+		// freeze can land in the same window.
+		if ( true !== law_booking_guard_open( $event_id ) || law_event_attendee_list_frozen( $event_id ) ) {
 			return array();
 		}
 		$window = law_waitlist_for_event( $event_id, LAW_WAITLIST_PASS_WINDOW );
@@ -421,7 +427,7 @@ function law_waitlist_has_promotable( $event_id ) {
 	if ( function_exists( 'law_flagship_is' ) && law_flagship_is( $event_id ) ) {
 		return false;
 	}
-	if ( true !== law_booking_guard_open( $event_id ) ) {
+	if ( true !== law_booking_guard_open( $event_id ) || law_event_attendee_list_frozen( $event_id ) ) {
 		return false;
 	}
 	$remaining = law_event_tickets_remaining( $event_id );
@@ -591,13 +597,16 @@ function law_waitlist_passed_over_text( $entry, WP_Error $error, $name_event = t
  * place. Walks the WHOLE queue rather than one pass's window, because this is
  * the report the committee reads, not the work itself.
  *
- * @return array{open:true|WP_Error,remaining:int|null,rows:array<int,array{entry:WP_Post,state:string,reason:string}>}
+ * @return array{open:true|WP_Error,remaining:int|null,frozen:bool,rows:array<int,array{entry:WP_Post,state:string,reason:string}>}
  */
 function law_waitlist_preview( $event_id ) {
 	$event_id  = (int) $event_id;
 	$open      = law_booking_guard_open( $event_id );
-	$remaining = law_event_tickets_remaining( $event_id );
-	$seats     = true === $open && null !== $remaining ? $remaining : 0;
+	// The places actually free, so the check page can say "2 of 120 places
+	// free" on a frozen event and then why nobody takes them.
+	$remaining = law_event_places_left( $event_id );
+	$frozen    = law_event_attendee_list_frozen( $event_id );
+	$seats     = true === $open && ! $frozen && null !== $remaining ? $remaining : 0;
 	$taken     = law_booking_taken_index( $event_id );
 	$rows      = array();
 
@@ -621,7 +630,7 @@ function law_waitlist_preview( $event_id ) {
 		$rows[] = array( 'entry' => $entry, 'state' => 'waiting', 'reason' => '' );
 	}
 
-	return array( 'open' => $open, 'remaining' => $remaining, 'rows' => $rows );
+	return array( 'open' => $open, 'remaining' => $remaining, 'frozen' => $frozen, 'rows' => $rows );
 }
 
 /**
@@ -1027,6 +1036,8 @@ add_action( 'admin_post_law_waitlist_reorder', 'law_waitlist_reorder_handler' );
 add_action( 'admin_post_nopriv_law_waitlist_reorder', 'law_events_nopriv_json' );
 add_action( 'admin_post_law_waitlist_promote', 'law_waitlist_promote_handler' );
 add_action( 'admin_post_nopriv_law_waitlist_promote', 'law_events_nopriv_json' );
+add_action( 'admin_post_law_attendee_list_freeze', 'law_attendee_list_freeze_handler' );
+add_action( 'admin_post_nopriv_law_attendee_list_freeze', 'law_events_nopriv_json' );
 
 /** Join the waitlist for a full event (the sold-out control's form). */
 function law_waitlist_join_handler() {
@@ -1191,4 +1202,126 @@ function law_event_tickets_changed( $event_id, $old, $new, $actor_id = 0, $sourc
 	if ( $new > $old ) {
 		law_waitlist_process( $event_id, 'tickets' );
 	}
+}
+
+/* Freezing the attendee list _________________________________________________ */
+
+/**
+ * Freeze or unfreeze an event's attendee list (client, 19 November 2026).
+ *
+ * Hosts asked for it once badges are printed and numbers are with the caterer:
+ * a place given up after that should stay empty unless the host fills it
+ * themselves ("if on 120 and someone cancels should stay on 119 unless the
+ * host decides to manually promote"). While frozen:
+ *
+ *  - nobody is promoted automatically: law_waitlist_process() and
+ *    law_waitlist_has_promotable() refuse, which covers every automatic route;
+ *  - the public sees the event as full, so a freed place cannot be booked or
+ *    bought: law_event_tickets_remaining() reads 0;
+ *  - the public can still join the waitlist, and the host or committee can
+ *    still Promote now and Register an attendee, which count the places
+ *    actually left (law_event_places_left()).
+ *
+ * Unfreezing offers any free places to the queue at once, as raising the
+ * places does (Denis, 19 November 2026). Left to the hourly sweep, the gap
+ * would show as places free and a member of the public could book one ahead
+ * of everybody queueing.
+ *
+ * Nobody is emailed either way: nobody's place or queue position changes.
+ *
+ * @param int    $event_id law_event post ID.
+ * @param bool   $frozen   Freeze (true) or unfreeze (false).
+ * @param int    $actor_id Who did it, for the log.
+ * @param string $source   Where from, for the log.
+ * @return array{changed:bool,promoted:int[]} changed is false when the list was
+ *                                            already in that state (a second
+ *                                            tab, a double click).
+ */
+function law_event_set_attendee_list_frozen( $event_id, $frozen, $actor_id = 0, $source = 'bookings_list' ) {
+	$event_id = (int) $event_id;
+	$frozen   = (bool) $frozen;
+	if ( law_event_attendee_list_frozen( $event_id ) === $frozen ) {
+		return array( 'changed' => false, 'promoted' => array() );
+	}
+
+	law_event_update_meta( $event_id, '_law_attendee_list_frozen', $frozen ? 1 : 0 );
+
+	$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
+	$taken     = law_event_attendee_total( $event_id );
+	$waiting   = law_waitlist_count( $event_id );
+	law_event_log(
+		$event_id,
+		sprintf(
+			$frozen
+				? 'Attendee list frozen at %1$d of %2$d places taken, %3$d on the waitlist. Nobody is promoted from the waitlist automatically and freed places are not offered for booking until it is unfrozen.'
+				: 'Attendee list unfrozen at %1$d of %2$d places taken, %3$d on the waitlist. Free places are offered to the waitlist again.',
+			$taken,
+			$available,
+			$waiting
+		),
+		array(
+			'action'    => $frozen ? 'attendee_list_frozen' : 'attendee_list_unfrozen',
+			'taken'     => $taken,
+			'available' => $available,
+			'waitlist'  => $waiting,
+			'source'    => $source,
+		),
+		array( 'user_id' => (int) $actor_id )
+	);
+
+	return array(
+		'changed'  => true,
+		'promoted' => $frozen ? array() : law_waitlist_offer( $event_id, 'unfrozen' ),
+	);
+}
+
+/** The bookings list's Freeze / Unfreeze button (host, co-owner or committee). */
+function law_attendee_list_freeze_handler() {
+	$event_id = absint( $_POST['event_id'] ?? 0 );
+	$list     = $event_id ? law_booking_list_url( $event_id ) : home_url( '/account/events/' );
+	$is_ajax  = law_events_guard_post(
+		'law_attendee_list_freeze',
+		array(
+			'rate'            => array( 'waitlist_manage', 60, 600, 300 ),
+			'honeypot_json'   => array( 'title' => 'Attendee list updated', 'message' => 'Done.', 'redirect' => $list ),
+			'honeypot_notice' => 'attendee-list-frozen',
+		)
+	);
+
+	$event = get_post( $event_id );
+	if ( ! $event || LAW_EVENT_CPT !== $event->post_type || ! law_user_can_manage_event( get_current_user_id(), $event_id ) ) {
+		law_events_respond( $is_ajax, false, array( 'message' => 'Sorry, you are not allowed to manage this event\'s bookings.', 'status' => 403 ), 'waitlist-failed' );
+	}
+
+	$freeze = ! empty( $_POST['freeze'] );
+	$result = law_event_set_attendee_list_frozen( $event_id, $freeze, get_current_user_id() );
+	$count  = count( $result['promoted'] );
+
+	if ( $freeze ) {
+		$message = 'Nobody will be promoted from the waitlist automatically. Reloading the page…';
+	} elseif ( $count ) {
+		$message = sprintf(
+			_n(
+				'%d person has been promoted from the waitlist and emailed their confirmation. Reloading the page…',
+				'%d people have been promoted from the waitlist and emailed their confirmation. Reloading the page…',
+				$count,
+				'law'
+			),
+			$count
+		);
+	} else {
+		$message = 'Free places will be offered to the waitlist automatically again. Reloading the page…';
+	}
+
+	$notice = $freeze ? 'attendee-list-frozen' : 'attendee-list-unfrozen';
+	law_events_respond(
+		$is_ajax,
+		true,
+		array(
+			'title'    => $freeze ? 'Attendee list frozen' : 'Attendee list unfrozen',
+			'message'  => $message,
+			'redirect' => add_query_arg( 'law_notice', $notice, $list ),
+		),
+		$notice
+	);
 }

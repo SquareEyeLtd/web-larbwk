@@ -130,7 +130,7 @@ function law_receptions_dashboard_rows() {
 		}
 		$price     = (int) law_event_meta( $event_id, '_law_attendee_price_pence' );
 		$available = (int) law_event_meta( $event_id, '_law_tickets_available' );
-		$remaining = law_event_tickets_remaining( $event_id );
+		$remaining = law_event_places_left( $event_id );
 
 		$rows[] = array(
 			'id'         => $event_id,
