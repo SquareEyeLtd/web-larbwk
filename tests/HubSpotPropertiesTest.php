@@ -432,7 +432,7 @@ class HubSpotPropertiesTest extends LAW_Test_Case {
 		);
 		$this->assertSame( 'checkbox', $definitions['law_events_attending']['fieldType'] );
 		$this->assertSame( 'select', $definitions['law26_ec_passtype']['fieldType'] );
-		$this->assertSame( array( 'Delegate', 'Sponsor', 'Speaker', 'Committee', 'Press', 'Patron' ), array_column( $definitions['law26_ec_passtype']['options'], 'value' ), 'Exhibitor is retired; Press and Patron added (Emily, 4 November 2026).' );
+		$this->assertSame( array( 'Delegate', 'Sponsor', 'Speaker', 'Committee', 'Press', 'Patron', 'Evening only' ), array_column( $definitions['law26_ec_passtype']['options'], 'value' ), 'Exhibitor retired; Press/Patron (Emily 4 Nov); Evening only (Milly 18 Nov).' );
 		$this->assertSame( 'select', $definitions['law26_dietary_icon']['fieldType'] );
 		$this->assertSame( array( 'Allergy or intolerance', 'Vegetarian or vegan', 'Pescatarian' ), array_column( $definitions['law26_dietary_icon']['options'], 'value' ) );
 		$this->assertSame( 'checkbox', $definitions['law26_dietary']['fieldType'] );

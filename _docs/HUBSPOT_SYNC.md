@@ -139,7 +139,7 @@ further code. Config `property_groups`; each definition in
 | Internal name | Label | Type | Content |
 |---|---|---|---|
 | `law_events_attending` | LAW-run events | multi-checkbox | Year-prefixed options: `2026 Flagship` plus one per reception the year has in a bookable status — the three seeded ones keep their fixed labels (`2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`), any other is `{year} {event title}` (`2026 Evensong at St Paul’s Cathedral`). `law_hubspot_attending_options()`, derived from the reception events, so a new reception needs no code; `check-properties --create` adds its option. One option per **confirmed** booking (paid where paid). This year's options are replaced on every sync (so a cancelled place drops off); other years' options are kept. |
-| `law26_ec_passtype` | 2026 pass type (badge) | dropdown | Delegate, Speaker, Sponsor, Committee, Press, Patron: the committee's ticket types (`law_booking_ticket_types()`; Exhibitor retired). From `_law_ticket_type` on this year's **confirmed LAW-run** bookings (flagship and receptions); a `_law_is_press` flag counts as Press. One person, several bookings, several types: the first in the config's `passtype_precedence` wins — **Delegate, Press > Sponsor > Committee > Speaker > Patron** (Emily, 12 November 2026; Delegate and Press never coincide; reorder one array to change it). **Never blanked**: an unclassified booking sends nothing, so a value LAW typed by hand survives. |
+| `law26_ec_passtype` | 2026 pass type (badge) | dropdown | Delegate, Speaker, Sponsor, Committee, Press, Patron, **Evening only** (`law_booking_ticket_types()`; Exhibitor retired). From this year's **confirmed LAW-run** bookings via `law_hubspot_passtype_from_law_run()`: a `_law_is_press` flag counts as Press. **Flagship** guests: first in `passtype_precedence` wins — **Delegate, Press > Sponsor > Committee > Speaker > Patron > Evening only** (Emily, 12 November 2026; Evening only last — Milly, 18 November 2026). Unclassified Flagship sends nothing (never blanked), so a HubSpot hand-typed value survives. **Reception-only** (no Flagship place): a named role still wins; otherwise **Evening only** — including when the reception booking is blank or still says Delegate, because Delegate is reserved for the £600 conference (Milly / directors, 18 November 2026). Flagship + evenings stays Delegate (or whichever role wins). |
 | `law26_dietary_icon` | 2026 dietary icon (badge) | dropdown | The one icon Event Connections print: `Vegetarian or vegan`, `Pescatarian`, `Allergy or intolerance`. Folded from the site's dietary choices through the config's `dietary_icon_map` (Vegetarian, Vegan → Vegetarian or vegan; Pescatarian → Pescatarian; Gluten free, Dairy free, Coeliac, Lactose free, Nut allergy → Allergy or intolerance; Other → no icon); when several icons result, `dietary_icon_precedence` picks one, **allergy first** (Emily and Milly, 12 November 2026). Both are one-line config edits. |
 | `law26_dietary` | 2026 dietary requirements | multi-checkbox | The site's own choices as options (`law_registration_dietary_choices()` minus Other). The detail behind the icon. |
 | `law26_dietary_other` | 2026 dietary requirements (other) | single-line text | The free text. |
@@ -460,18 +460,19 @@ This plan names these from reading part of the tree; check each one.
 3. **Attendee meaning for 2026** and whether to clear the September manual tags first (section 8).
 4. **Pass type for people with only a reception booking.** Settled 12 November 2026: the
    reception bookings lists carry the same committee-only Ticket type column as the flagship
-   dashboard (blank by default, nothing assumed), so a reception-only guest is classified the
-   same way, and the HubSpot pass type reads every LAW-run booking. **Precedence** settled by
-   Emily, 12 November 2026: Delegate + Press (never the same person) > Sponsor > Committee >
-   Speaker > Patron — a paying delegate who also speaks is badged Delegate. **Allergy icon wins**
-   confirmed by Emily and Milly the same day. Kitty (Event Connections, 12 November) chose a
-   single-value pass type (option A) and one dietary value per person, which is what
-   `law26_ec_passtype` and `law26_dietary_icon` are; she matches on HubSpot contact ID, not
-   email. Still our reading rather than confirmed: that `law26_badge_manual` = Yes means
-   "leave this contact's pass type and dietary icon alone" (Trevor is showing LAW the populated
-   segment first and will fill holes in the next pass). **`law26_ec_arrived`**: Kitty says
-   arrival push-back is optional and would be one **date/time, the first badge print**, so if LAW
-   want it the property is a LAW-owned datetime in the LAW2026 group; not created until asked.
+   dashboard. **Precedence** settled by Emily, 12 November 2026: Delegate + Press (never the
+   same person) > Sponsor > Committee > Speaker > Patron — a paying delegate who also speaks
+   is badged Delegate. **Evening only** added 18–19 November 2026 (Milly / directors; Kitty
+   can wire it as a seventh pass type): reception-only guests without a named role get
+   Evening only automatically; Flagship + evenings stays Delegate (or the winning role).
+   **Allergy icon wins** confirmed by Emily and Milly the same day. Kitty (Event Connections,
+   12 November) chose a single-value pass type (option A) and one dietary value per person,
+   which is what `law26_ec_passtype` and `law26_dietary_icon` are; she matches on HubSpot
+   contact ID, not email. Still our reading rather than confirmed: that `law26_badge_manual`
+   = Yes means "leave this contact's pass type and dietary icon alone". **`law26_ec_arrived`**:
+   Kitty says arrival push-back is optional and would be one **date/time, the first badge
+   print**, so if LAW want it the property is a LAW-owned datetime in the LAW2026 group; not
+   created until asked.
 5. **Subscription status** (7.2): Fred. **Dietary/access data** (7.3): signed off by Peter.
 6. **Sponsor attendee, Supporting organisation attendee, survey responses**: not built until
    defined.
@@ -812,10 +813,9 @@ never run, and no contact in the portal carried `law_sync_updated`. In order, on
    reviewed then `--apply`. `backfill`: 4,161 queued and processed in the same command, 100 a
    batch: **4,154 succeeded, 7 failed**. All seven are `INVALID_EMAIL` from HubSpot — a
    mistyped domain ending on the site (`.con` ×5, `.fom`, `.com.brbr`), so HubSpot will not
-   create the contact. They retry on the back-off schedule and will park. Emily to correct the
-   addresses on the site (user profile or speaker record); the change requeues the person and
-   the next sync creates the contact. Follow-up idea, not urgent: park an address HubSpot
-   rejects as invalid at once instead of retrying it.
+   create the contact. They park immediately on `INVALID_EMAIL` from 19 November 2026
+   (`law_hubspot_queue_error_is_permanent()`). Emily to correct the addresses on the site
+   (user profile); the change requeues the person and the next sync creates the contact.
 6. Trevor created the "LAW 2026 badging" active segment (*LAW-run events* is any of the four
    2026 values): 954 people. Spot-check of Sophie Nappert's record: pass type Speaker (the
    committee had already set flagship ticket types on production), attending Flagship +
@@ -833,29 +833,47 @@ never run, and no contact in the portal carried `law_sync_updated`. In order, on
    if not, the segment filter simply leaves that option out — the property should still carry
    it, and the disclosure of dietary/access for a LAW-run reception stands under Peter's
    sign-off.
+8. **Evening only** (19 November 2026). Milly (directors, 18 November) asked for a badge
+   colour for guests only attending evening events; Kitty can wire it if HubSpot holds that
+   pass type. Added as a seventh ticket / pass type; the sync derives it for reception-only
+   guests without a named role. On production after deploy: `check-properties --create` adds
+   the option, then `backfill` (differences only) writes Evening only onto the reception-only
+   segment.
+
+### Property list for Event Connections (Kitty)
+
+Send as-is. Match on **HubSpot contact ID**. Master list = active segment **"LAW 2026 badging"**.
+
+| Internal name | Label | Type | Values / notes |
+|---|---|---|---|
+| `law26_ec_passtype` | 2026 pass type (badge) | dropdown | **Delegate, Press, Sponsor, Committee, Speaker, Patron, Evening only.** Single value. Site applies precedence; Reception-only without a named role → Evening only; Flagship + evenings → Delegate (or winning role). |
+| `law26_dietary_icon` | 2026 dietary icon (badge) | dropdown | **Allergy or intolerance, Vegetarian or vegan, Pescatarian.** One icon per person (allergy wins). |
+| `law_events_attending` | LAW-run events | multi-checkbox | `2026 Flagship`, `2026 Monday reception`, `2026 Wednesday reception`, `2026 Friday reception`, plus any other reception titled as `2026 {title}` (e.g. Evensong). |
+| `law26_dietary` | 2026 dietary requirements | multi-checkbox | Detail behind the icon. |
+| `law26_dietary_other` | 2026 dietary other | text | Free text. |
+| `law26_access` | 2026 accessibility requirements | multi-checkbox | |
+| `law26_access_other` | 2026 accessibility other | text | Free text. |
+| `law26_badge_manual` | 2026 badge set by hand | yes/no | LAW-owned; site never writes. While Yes, sync leaves pass type and dietary icon alone. |
+| `firstname`, `lastname`, `company`, `jobtitle` | standard HubSpot | | Kept up to date by the website. |
+
+Optional later: `law26_ec_arrived` (datetime of first badge print) — only if LAW want write-back.
 
 ### Phase 3 to-do
 
-Approved 13 October 2026 (16 hours). What is left after the 12 November build and the
-16 November go-live:
+Approved 13 October 2026 (16 hours). What is left after the 12–19 November build and go-live:
 
-1. ~~Internal names~~ settled by Trevor, 16 November 2026 (the `law26_` set, in the `law26` /
-   "LAW2026" group). ~~Precedence and icon folding~~ confirmed by Emily, 12 November 2026.
-   ~~Create the properties~~ done 16 November 2026 (`check-properties --create --live` from the
-   local copy: group `law26` and the seven properties). ~~Backfill~~ run on production,
-   16 November. Later: `--archive --live` for the three superseded properties (ask first).
-2. **`law26_ec_arrived`**: Kitty says push-back is optional and is one date/time (first badge
-   print). Ask Emily whether LAW want it; if so, a LAW-owned datetime in the LAW2026 group.
-3. Confirm the `badge_manual` reading with Emily: "Yes" freezes the pass type and the icon,
-   the detail keeps flowing.
-4. The "LAW 2026 badging" active segment in HubSpot (everyone with a confirmed place at a
-   LAW-run event), and the property list for Event Connections (names, types, allowed values;
-   the two single-value fields her app reads are `law26_ec_passtype` and `law26_dietary_icon`).
-5. ~~Second backfill preview~~ done on production, 16 November (go-live above).
-6. Privacy notice update if Peter wants one (§7.3).
-7. ~~Production check for Exhibitor bookings~~ none, 16 November.
-8. Pass types: blank for everyone until the committee sets ticket types on the flagship and
-   reception booking lists. The first thing Emily will notice in the segment.
+1. ~~Internal names / properties / backfill / Evening only code~~ done. Later: `--archive --live`
+   for the three superseded properties (ask first).
+2. **Production after this deploy:** `check-properties --create` (Evensong option + Evening only
+   pass-type option), then `backfill`. Confirm Evensong option on a known contact; spot-check
+   a reception-only guest shows Evening only.
+3. **Hand Kitty the property list** (table above) and book the Matt authorisation call.
+4. **`law26_ec_arrived`**: ask Emily; create only if wanted.
+5. Confirm the `badge_manual` reading with Emily.
+6. Segment filter: does Evensong alone put someone in "LAW 2026 badging"? Emily's call.
+7. Privacy notice update if Peter wants one (§7.3).
+8. Flagship pass types still mostly blank until the committee sets them (or asks for a paid →
+   Delegate one-off). Evening only does not need the pencil.
 
 ---
 

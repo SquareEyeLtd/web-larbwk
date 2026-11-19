@@ -96,9 +96,11 @@ function law_flagship_application_statuses() {
  *
  * One list, read by the dashboard cell, the dialog, the filter, the exports,
  * the wp-admin box and the meta sanitiser, so the five cannot drift apart.
- * There is deliberately no default: a registration nobody has classified holds
- * nothing, and the column says "Add type" rather than claiming everyone is a
- * delegate.
+ * There is deliberately no default on the booking itself: a registration nobody
+ * has classified holds nothing, and the column says "Add type" rather than
+ * claiming everyone is a delegate. The HubSpot sync does invent one value for
+ * reception-only guests (Evening only — Milly, 18 November 2026); that lives
+ * in rules.php, not here.
  *
  * @return array<string,string> slug => label.
  */
@@ -110,6 +112,11 @@ function law_booking_ticket_types() {
 		'committee' => 'Committee',
 		'press'     => 'Press',
 		'patron'    => 'Patron',
+		// Reception-only badge colour (Milly / directors, 18 November 2026).
+		// The sync also derives this when a person has confirmed reception
+		// places and no Flagship place, so the committee need not set it by
+		// hand for every evening guest.
+		'evening'   => 'Evening only',
 	);
 }
 

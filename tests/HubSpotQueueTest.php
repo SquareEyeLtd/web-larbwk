@@ -122,6 +122,20 @@ class HubSpotQueueTest extends LAW_Test_Case {
 		$this->assertSame( 1, law_hubspot_queue_stats()['total'] );
 	}
 
+	public function test_invalid_email_parks_on_the_first_attempt(): void {
+		$this->all_fail( 'HubSpot: Property values were not valid: [{"isValid":false,"message":"Email address jfailla@proskauer.fom is invalid","error":"INVALID_EMAIL","name":"email"}]' );
+		law_hubspot_enqueue( 'jfailla@proskauer.fom', 'backfill' );
+
+		$summary = law_hubspot_process_queue();
+		$this->assertSame( 1, $summary['failed'] );
+		$this->assertSame( 1, $summary['parked'], 'A bad TLD will not become valid on retry.' );
+
+		$row = law_hubspot_queue_row( 'jfailla@proskauer.fom' );
+		$this->assertSame( 1, (int) $row->parked );
+		$this->assertSame( 1, (int) $row->attempts );
+		$this->assertSame( 0, law_hubspot_process_queue()['processed'] );
+	}
+
 	public function test_failures_back_off_through_the_schedule_and_then_park(): void {
 		$this->all_fail( 'HubSpot: 2026 Sponsor was not one of the allowed options' );
 		$this->isolate_option( 'law_hubspot_last_run' );

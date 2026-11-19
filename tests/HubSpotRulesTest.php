@@ -518,13 +518,13 @@ class HubSpotRulesTest extends LAW_Test_Case {
 
 	public function test_pass_type_follows_the_precedence_across_law_run_bookings(): void {
 		[ $user_id, $email ] = $this->make_person();
-		$reception_a = $this->make_law_run();
+		$flagship    = $this->make_law_run( 'flagship' );
 		$reception_b = $this->make_law_run();
 
 		$this->assertSame( '', $this->site( $email )['passtype'], 'No LAW-run booking: nothing to say.' );
 
-		$a = $this->insert_booking( $reception_a, $user_id );
-		$this->assertSame( '', $this->site( $email )['passtype'], 'Unclassified: send nothing, never a blank.' );
+		$a = $this->insert_booking( $flagship, $user_id );
+		$this->assertSame( '', $this->site( $email )['passtype'], 'Unclassified Flagship: send nothing, never a blank.' );
 
 		// Emily's order (12 November 2026): Delegate and Press at the top (they
 		// never coincide), then Sponsor, Committee, Speaker, Patron. A paying
@@ -543,7 +543,7 @@ class HubSpotRulesTest extends LAW_Test_Case {
 		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'], 'Sponsor beats Committee.' );
 
 		law_event_update_meta( $a, '_law_ticket_type', 'delegate' );
-		$this->assertSame( 'Delegate', $this->site( $email )['passtype'], 'Delegate beats everything: the paid place is the badge.' );
+		$this->assertSame( 'Delegate', $this->site( $email )['passtype'], 'Delegate beats everything: the paid Flagship place is the badge.' );
 
 		// A cancelled place no longer counts (the status guard only lets the
 		// engine move a booking, so the engine's own path is used).
@@ -554,7 +554,33 @@ class HubSpotRulesTest extends LAW_Test_Case {
 			$GLOBALS['law_booking_transitioning'] = false;
 		}
 		$this->assertSame( 'law-cancelled', get_post_status( $a ) );
+		// Flagship gone: reception-only Sponsor still wins over Evening only.
 		$this->assertSame( 'Sponsor', $this->site( $email )['passtype'] );
+	}
+
+	public function test_reception_only_guests_are_evening_only_unless_they_hold_a_named_role(): void {
+		[ $user_id, $email ] = $this->make_person();
+		$reception = $this->make_law_run();
+
+		$booking = $this->insert_booking( $reception, $user_id );
+		$this->assertSame( 'Evening only', $this->site( $email )['passtype'], 'Blank reception-only → Evening only (Milly, 18 November 2026).' );
+
+		law_event_update_meta( $booking, '_law_ticket_type', 'delegate' );
+		$this->assertSame( 'Evening only', $this->site( $email )['passtype'], 'Delegate is reserved for Flagship; reception-only stays Evening only.' );
+
+		law_event_update_meta( $booking, '_law_ticket_type', 'speaker' );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'], 'A named role on a reception still wins.' );
+
+		// Flagship place takes them out of Evening only, even with a blank type.
+		$flagship = $this->insert_booking( $this->make_law_run( 'flagship' ), $user_id );
+		$this->assertSame( 'Speaker', $this->site( $email )['passtype'], 'Flagship + Speaker reception: Speaker still wins under precedence.' );
+
+		law_event_update_meta( $booking, '_law_ticket_type', '' );
+		$this->assertSame( '', $this->site( $email )['passtype'], 'Flagship unclassified and no other role: send nothing.' );
+
+		law_event_update_meta( $flagship, '_law_ticket_type', 'delegate' );
+		law_event_update_meta( $booking, '_law_ticket_type', 'evening' );
+		$this->assertSame( 'Delegate', $this->site( $email )['passtype'], 'Flagship Delegate beats an Evening only ticket on a reception.' );
 	}
 
 	public function test_pass_type_precedence_is_one_config_edit(): void {

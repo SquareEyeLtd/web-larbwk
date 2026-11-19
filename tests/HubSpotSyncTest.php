@@ -457,6 +457,29 @@ class HubSpotSyncTest extends LAW_Test_Case {
 		return (int) $booking;
 	}
 
+	/** A confirmed place at this year's Flagship, optionally typed. */
+	private function book_flagship( int $user_id, string $type = '' ): int {
+		$event = $this->make_event(
+			array(
+				'_law_tickets_available'   => 5,
+				'_law_is_flagship'         => 1,
+				'_law_flagship_date'       => '2026-12-02',
+				'_law_flagship_price_pence'=> 55000,
+			),
+			'publish'
+		);
+		wp_set_object_terms( $event, '2026', 'law_year', false );
+		remove_all_filters( 'law_flagship_event_id' );
+		add_filter( 'law_flagship_event_id', fn() => $event );
+		law_flagship_event_id( true );
+		$booking = wp_insert_post( array( 'post_type' => LAW_BOOKING_CPT, 'post_status' => 'publish', 'post_title' => 'b', 'post_author' => $user_id, 'post_parent' => $event ) );
+		$this->posts[] = $booking;
+		if ( '' !== $type ) {
+			law_event_update_meta( $booking, '_law_ticket_type', $type );
+		}
+		return (int) $booking;
+	}
+
 	public function test_site_properties_are_written_as_differences_only(): void {
 		list( $user_id, $email ) = $this->make_person();
 		update_user_meta( $user_id, 'dietary', array( 'Vegan' ) );
@@ -490,11 +513,13 @@ class HubSpotSyncTest extends LAW_Test_Case {
 	public function test_pass_type_is_never_blanked_and_badge_manual_protects_the_badge(): void {
 		list( $user_id, $email ) = $this->make_person();
 		update_user_meta( $user_id, 'dietary', array( 'Nut allergy' ) );
-		$this->book_reception( $user_id ); // unclassified
+		// Unclassified Flagship: send nothing, so a HubSpot value survives.
+		// (Reception-only blanks become Evening only — see HubSpotRulesTest.)
+		$this->book_flagship( $user_id );
 		$this->seed_contact( $email, array( 'law26_ec_passtype' => 'Patron', 'law26_dietary_icon' => 'Pescatarian', 'law26_dietary' => '' ) );
 
 		$w = law_hubspot_plan_batch( array( $email ) )['plans'][ $email ]['site_writes'];
-		$this->assertArrayNotHasKey( 'law26_ec_passtype', $w, 'A value LAW typed survives an unclassified booking.' );
+		$this->assertArrayNotHasKey( 'law26_ec_passtype', $w, 'A value LAW typed survives an unclassified Flagship booking.' );
 		$this->assertSame( 'Allergy or intolerance', $w['law26_dietary_icon'], 'The icon follows the site while nobody has set the badge by hand.' );
 		$this->assertSame( 'Nut allergy', $w['law26_dietary'] );
 

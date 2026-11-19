@@ -8,7 +8,9 @@
  * hands the addresses to the sync step in one go, and records per-address
  * success or failure: successes leave the queue, failures back off (5 min,
  * 30 min, 2 h, 12 h) and are then parked for a person to look at on the
- * LAW > HubSpot screen.
+ * LAW > HubSpot screen. Permanent validation failures (HubSpot INVALID_EMAIL
+ * and the like) park on the first attempt — retrying will not make a bad
+ * address valid.
  *
  * The sync step itself -- compute the desired state for each address, read
  * the contact, merge, write -- lives in rules.php and sync.php. The worker
@@ -187,18 +189,20 @@ function law_hubspot_queue_delete( $id ) {
 
 /**
  * Record one failed attempt: bump the count, schedule the next try from the
- * backoff table, or park when the table is exhausted.
+ * backoff table, or park when the table is exhausted. Permanent errors
+ * (law_hubspot_queue_error_is_permanent()) park immediately.
  *
  * @param object $row     Queue row as read before the attempt.
  * @param string $message What went wrong.
+ * @param string $code    Optional WP_Error / HubSpot code for permanent check.
  * @return array{attempts:int,parked:bool,next_attempt_at:string}
  */
-function law_hubspot_queue_fail( $row, $message ) {
+function law_hubspot_queue_fail( $row, $message, $code = '' ) {
 	global $wpdb;
 
 	$backoff  = array_values( (array) law_hubspot_setting( 'backoff', array() ) );
 	$attempts = (int) $row->attempts + 1;
-	$parked   = $attempts > count( $backoff );
+	$parked   = law_hubspot_queue_error_is_permanent( $message, $code ) || $attempts > count( $backoff );
 	$delay    = $parked ? 0 : (int) $backoff[ $attempts - 1 ];
 	$next     = gmdate( 'Y-m-d H:i:s', time() + $delay );
 
@@ -216,6 +220,22 @@ function law_hubspot_queue_fail( $row, $message ) {
 	);
 
 	return array( 'attempts' => $attempts, 'parked' => $parked, 'next_attempt_at' => $next );
+}
+
+/**
+ * Errors that will not succeed on retry: HubSpot rejected the address itself
+ * (typo TLDs like .con, doubled country codes). Transient transport / rate
+ * / 5xx failures stay on the backoff schedule.
+ *
+ * @param string $message Error text (often "HubSpot: Property values were not valid: [{\"isValid\":false,\"message\":\"Email address … is invalid\",\"error\":\"INVALID_EMAIL\",…}]").
+ * @param string $code    WP_Error code when known.
+ */
+function law_hubspot_queue_error_is_permanent( $message, $code = '' ) {
+	$code = strtoupper( (string) $code );
+	if ( in_array( $code, array( 'INVALID_EMAIL', 'LAW_HUBSPOT_INVALID_EMAIL' ), true ) ) {
+		return true;
+	}
+	return (bool) preg_match( '/\bINVALID_EMAIL\b/i', (string) $message );
 }
 
 /* -------------------------------------------------------------------------
@@ -293,7 +313,7 @@ function law_hubspot_process_queue( $limit = null ) {
 				: ( $results[ $row->email ] ?? new WP_Error( 'law_hubspot_no_result', 'The sync step returned nothing for this address.' ) );
 
 			if ( is_wp_error( $result ) ) {
-				$outcome = law_hubspot_queue_fail( $row, $result->get_error_message() );
+				$outcome = law_hubspot_queue_fail( $row, $result->get_error_message(), $result->get_error_code() );
 				$summary['failed']++;
 				if ( $outcome['parked'] ) {
 					$summary['parked']++;

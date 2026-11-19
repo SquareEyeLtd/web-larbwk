@@ -423,8 +423,8 @@ function law_hubspot_attending_option_for_event( $event_id ) {
 /**
  * The badge's pass type from a set of ticket-type slugs: the first of the
  * config's `passtype_precedence` that is present, as its label. '' when none
- * is (an unclassified booking sends nothing, never a blank: a value LAW typed
- * by hand must survive a sync).
+ * is (an unclassified Flagship booking sends nothing, never a blank: a value
+ * LAW typed by hand must survive a sync).
  *
  * @param string[] $slugs Ticket types held (law_booking_ticket_types() keys).
  */
@@ -437,6 +437,67 @@ function law_hubspot_passtype_from_types( array $slugs ) {
 		}
 	}
 	return '';
+}
+
+/**
+ * The badge pass type for this year's confirmed LAW-run bookings.
+ *
+ * Flagship guests: the committee's ticket types win under
+ * `passtype_precedence`. Evening only is stripped — a conference place is
+ * never an evening badge (Milly, 18 November 2026: Flagship stays Delegate
+ * or whatever role was set). Unclassified Flagship still sends nothing.
+ *
+ * Reception-only guests (no Flagship place this year): a named role
+ * (Press, Sponsor, Committee, Speaker, Patron) still wins; otherwise the
+ * badge is Evening only — including when the reception booking is blank or
+ * still says Delegate, because Delegate is reserved for the conference.
+ *
+ * @param WP_Post[] $law_run This year's confirmed LAW-run bookings.
+ */
+function law_hubspot_passtype_from_law_run( array $law_run ) {
+	$types         = array();
+	$has_flagship  = false;
+	$has_reception = false;
+
+	foreach ( $law_run as $booking ) {
+		$kind = law_booking_kind( $booking );
+		if ( 'flagship' === $kind ) {
+			$has_flagship = true;
+		} elseif ( 'reception' === $kind ) {
+			$has_reception = true;
+		}
+		$type = (string) law_event_meta( $booking->ID, '_law_ticket_type' );
+		if ( '' !== $type ) {
+			$types[] = $type;
+		}
+		if ( law_event_meta( $booking->ID, '_law_is_press' ) ) {
+			$types[] = 'press';
+		}
+	}
+
+	if ( $has_flagship ) {
+		$types = array_values( array_filter( $types, static fn( $slug ) => 'evening' !== $slug ) );
+		return law_hubspot_passtype_from_types( $types );
+	}
+
+	if ( ! $has_reception ) {
+		return '';
+	}
+
+	// Named roles keep their badge colour; Delegate / Evening only / blank
+	// collapse to Evening only for reception-only guests.
+	$roles = array_values(
+		array_filter(
+			$types,
+			static fn( $slug ) => ! in_array( $slug, array( 'delegate', 'evening' ), true )
+		)
+	);
+	if ( $roles ) {
+		return law_hubspot_passtype_from_types( $roles );
+	}
+
+	$labels = (array) law_hubspot_setting( 'passtype_values', array() );
+	return (string) ( $labels['evening'] ?? 'Evening only' );
 }
 
 /**
@@ -482,7 +543,8 @@ function law_hubspot_dietary_icon( array $choices ) {
  *
  *  - `events_attending`: the options this year's confirmed LAW-run places
  *    earn (the sync merges them with other years' options, which it keeps).
- *  - `passtype`: the winning ticket type's label, or '' = SEND NOTHING.
+ *  - `passtype`: the winning ticket type's label (law_hubspot_passtype_from_law_run()),
+ *    or '' = SEND NOTHING (unclassified Flagship only).
  *  - `dietary_icon`, `dietary`, `dietary_other`, `access`, `access_other`:
  *    only for someone with a LAW-run place this year, the union across those
  *    places of the account's answers with the booking's as fallback
@@ -502,7 +564,6 @@ function law_hubspot_dietary_icon( array $choices ) {
 function law_hubspot_site_properties( array $bookings ) {
 	$year      = law_hubspot_year();
 	$attending = array();
-	$types     = array();
 	$law_run   = array();
 	$hosted    = array();
 	$sectors   = array();
@@ -524,13 +585,6 @@ function law_hubspot_site_properties( array $bookings ) {
 			$option    = law_hubspot_attending_option_for_event( $event_id );
 			if ( '' !== $option ) {
 				$attending[ $option ] = true;
-			}
-			$type = (string) law_event_meta( $booking->ID, '_law_ticket_type' );
-			if ( '' !== $type ) {
-				$types[] = $type;
-			}
-			if ( law_event_meta( $booking->ID, '_law_is_press' ) ) {
-				$types[] = 'press';
 			}
 		} else {
 			$hosted[ $event_id ] = html_entity_decode( get_the_title( $event_id ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
@@ -564,7 +618,7 @@ function law_hubspot_site_properties( array $bookings ) {
 
 	return array(
 		'events_attending'        => array_keys( $attending ),
-		'passtype'                => law_hubspot_passtype_from_types( $types ),
+		'passtype'                => law_hubspot_passtype_from_law_run( $law_run ),
 		'dietary_icon'            => law_hubspot_dietary_icon( array_keys( $dietary ) ),
 		'dietary'                 => implode( ';', array_keys( $dietary ) ),
 		'dietary_other'           => implode( ' / ', array_keys( $d_other ) ),

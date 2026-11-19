@@ -246,11 +246,13 @@ function law_hubspot_config() {
 		// first wins (Emily, 12 November 2026: "Delegate + Press (will never
 		// be the same) > Sponsor > Committee > Speaker > Patron" -- a paying
 		// delegate who also speaks is badged Delegate; Delegate and Press
-		// never coincide, so their relative order is moot). To change it,
+		// never coincide, so their relative order is moot). Evening only
+		// (Milly, 18 November 2026) is last: it is the reception-only default
+		// and never beats a conference or named role. To change the order,
 		// reorder this list. A type not listed here never wins, and a person
 		// whose only types are unlisted sends nothing. `press` here is the
 		// ticket type OR the _law_is_press flag.
-		'passtype_precedence'   => array( 'delegate', 'press', 'sponsor', 'committee', 'speaker', 'patron' ),
+		'passtype_precedence'   => array( 'delegate', 'press', 'sponsor', 'committee', 'speaker', 'patron', 'evening' ),
 
 		// The dietary icon (law26_dietary_icon): the site's dietary choices
 		// (law_registration_dietary_choices()) folded into the three icons
